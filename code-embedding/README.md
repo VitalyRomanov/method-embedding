@@ -1,0 +1,1 @@
+Implements a simple embedding method for source code. Source code should be converted into the graph represented with adjacency list.

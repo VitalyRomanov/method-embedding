@@ -1,0 +1,6 @@
+model*
+__pycache__
+.DS_Store
+voc.pkl
+voc.tsv
+lda_docstring_embeddings*
