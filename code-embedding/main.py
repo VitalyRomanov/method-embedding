@@ -17,7 +17,7 @@ ckpt_path = "./model/model.ckpt"
 #     print("Provide input file for training")
 #     sys.eit()
 
-data_path = "../method-embeddings/method_callee.txt" #sys.argv[1]
+data_path = "../res/method_callee.txt" #sys.argv[1]
 
 
 def assemble_graph(n_words, n_dims, learning_rate=0.001):
@@ -126,20 +126,20 @@ saveloss_ = tf.summary.scalar('loss', loss_)
 # sys.exit()
 
 with tf.Session() as sess:
-    sess.run(tf.global_variables_initializer())
-    summary_writer = tf.summary.FileWriter(graph_saving_path, graph=sess.graph)
+    # sess.run(tf.global_variables_initializer())
+    # summary_writer = tf.summary.FileWriter(graph_saving_path, graph=sess.graph)
 
     # Restore from checkpoint
-    # saver.restore(sess, ckpt_path)
-    # sess.graph.as_default()
+    saver.restore(sess, ckpt_path)
+    sess.graph.as_default()
 
-    # import numpy as np
-    # in_m = sess.run(terminals['in_matr'])
-    # np.savetxt("in_m.txt", in_m, delimiter="\t")
-    # out_m = sess.run(terminals['out_matr'])
-    # np.savetxt("out_m.txt", out_m, delimiter="\t")
+    import numpy as np
+    in_m = sess.run(terminals['in_matr'])
+    np.savetxt("in_m.txt", in_m, delimiter="\t")
+    out_m = sess.run(terminals['out_matr'])
+    np.savetxt("out_m.txt", out_m, delimiter="\t")
 
-    # sys.exit()
+    sys.exit()
 
     for e in range(epochs):
         # batch = reader.next_batch()

@@ -46,9 +46,11 @@ while True:
     if f_n in f_names:
         f_v = in_vectors[f_names.index(f_n), :]
         score = out_vectors @ f_v
-        ind = np.flip(np.argsort(score))[:10]
+        ind = np.flip(np.argsort(score))[:20]
         # for d, i in zip(dist[0], ind[0]):
         #     print("%s\t%.4f" % (f_names[i], d))
         # print(dist, ind)
         for i in ind:
             print("%s\t%.4f" % (f_names[i], in_vectors[f_names.index(f_n)].dot(out_vectors[i])))
+    else:
+        print("Nothing found")
