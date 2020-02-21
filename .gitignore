@@ -4,3 +4,5 @@ __pycache__
 voc.pkl
 voc.tsv
 lda_docstring_embeddings*
+.idea
+

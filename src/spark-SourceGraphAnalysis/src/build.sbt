@@ -2,7 +2,7 @@ name := "src"
 
 version := "0.1"
 
-scalaVersion := "2.11.11"
+scalaVersion := "2.11.12"
 
 resolvers += "bintray-spark-packages" at "https://dl.bintray.com/spark-packages/maven/"
 // https://mvnrepository.com/artifact/graphframes/graphframes
