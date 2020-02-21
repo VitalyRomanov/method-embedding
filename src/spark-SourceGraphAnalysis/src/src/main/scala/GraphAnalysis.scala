@@ -35,39 +35,42 @@ object GraphAnalysis {
 //    sc.setCheckpointDir("temp")
     val cc_result = g.connectedComponents.run()
 
+    val g_cc = GraphFrame(cc_result, edges)
+
     var onlyConnected_g : GraphFrame = null
 
     if (lang == "python") {
-      onlyConnected_g = g.filterVertices("component == \"0\"").filterEdges("rel_type != \"4\"").dropIsolatedVertices()
+      onlyConnected_g = g_cc.filterVertices("component == 0").filterEdges("rel_type != \"4\"").dropIsolatedVertices()
     } else if (lang == "java") {
-      onlyConnected_g = g.filterVertices("component == \"0\"").dropIsolatedVertices()
+      onlyConnected_g = g_cc.filterVertices("component == 0").dropIsolatedVertices()
     }
 
     onlyConnected_g.vertices.write.format("csv").save("components_0_nodes.csv")
     onlyConnected_g.edges.write.format("csv").save("components_0_edges.csv")
 
-    val node_degres = nodes.join(g.inDegrees, "id")
+    // val node_degres = nodes.join(g.inDegrees, "id")
+    val node_inDegrees = onlyConnected_g.vertices.join(onlyConnected_g.inDegrees, "id")
 
-    node_degres.sort(desc("inDegree")).write.format("csv").save("node_degrees.csv")
+    node_inDegrees.sort(desc("inDegree")).write.format("csv").save("components_0_node_in_degrees.csv")
+    node_inDegrees.groupBy("type").agg(mean("inDegree")).sort(desc("avg(inDegree)")).write.format("csv").save("components_0_node_avg_in_degree.csv")
+    node_inDegrees.groupBy("inDegree").count().sort(desc("count(id)")).write.format("csv").save("components_0_in_degree_count.csv") //  produces  |inDegree|count(id)|
 
-    node_degres.groupBy("type").agg(mean("inDegree")).sort(desc("avg(inDegree)")).write.format("csv").save("node_avg_indegree.csv")
+    // val node_outDegres = nodes.join(g.outDegrees, "id")
+    val node_outDegrees = onlyConnected_g.vertices.join(onlyConnected_g.outDegrees, "id")
 
-    val node_outDegres = nodes.join(g.outDegrees, "id")
+    node_outDegrees.sort(desc("outDegree")).write.format("csv").save("component_0_node_out_degrees.csv")
+    node_outDegrees.groupBy("type").agg(mean("outDegree")).sort(desc("avg(outDegree)")).write.format("csv").save("component_0_node_avg_out_degree.csv")
+    node_outDegrees.groupBy("outDegree").count().sort(desc("count(id)")).write.format("csv").save("components_0_out_degree_count.csv")
 
-    node_outDegres.sort(desc("outDegree")).write.format("csv").save("node_out_degrees.csv")
+    onlyConnected_g.edges.groupBy("rel_type").count().write.format("csv").save("component_0_edge_type_count.csv")
+    onlyConnected_g.vertices.groupBy("type").count().write.format("csv").save("component_0_node_type_count.csv")
 
-    node_outDegres.groupBy("type").agg(mean("outDegree")).sort(desc("avg(outDegree)")).write.format("csv").save("node_avg_out_indegree.csv")
+//    val cc_result = g.connectedComponents.run()
+//    cc_result.write.format("csv").save("components.csv")
+//    cc_result.groupBy("component").count().orderBy().write.format("csv").save("components_count.csv")
 
-    edges.groupBy("rel_type").count().write.format("csv").save("edge_type_count.csv")
-
-    x
-
-    val cc_result = g.connectedComponents.run()
-
-    cc_result.write.format("csv").save("components.csv")
-
-    cc_result.groupBy("component").count().orderBy().write.format("csv").save("components_count.csv")
-
+    val triangles = onlyConnected_g.triangleCount.run()
+    triangles.show(10)
 
 
 //    val pr_results = g.pageRank.resetProbability(0.15).tol(0.01).run()
