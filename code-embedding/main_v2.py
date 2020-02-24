@@ -22,9 +22,9 @@ data_path = sys.argv[1]
 
 def assemble_graph(n_words, n_dims, learning_rate=0.001):
     """
-    Assemble tensorflow graph to train word embeddigns
+    Assemble tensorflow graph to train word embeddings
     :param n_words: number of words in vocabulary
-    :param n_dims: embeddign dimensionality
+    :param n_dims: embedding dimensionality
     :return: dictionary with the following tensors:
     - in_words: placeholder for IN words
     - out_words: placeholder for OUT words
@@ -33,18 +33,18 @@ def assemble_graph(n_words, n_dims, learning_rate=0.001):
     - train
     - adder: count minibatches. Useful when restoring the session for checkpoint
     - assign_final: calculate final embeddings
-    - in_out: return final embeddigns
+    - in_out: return final embeddings
     """
     counter = tf.Variable(0, dtype=tf.int32)
-    adder = tf.assign(counter, counter + 1)
+    adder = tf.compat.v1.assign(counter, counter + 1)
 
     # embedding matrices
-    in_matr = tf.get_variable("IN", shape=(n_words, n_dims), dtype=tf.float32)
-    out_matr = tf.get_variable("OUT", shape=(n_words, n_dims), dtype=tf.float32)
+    in_matr = tf.compat.v1.get_variable("IN", shape=(n_words, n_dims), dtype=tf.float32)
+    out_matr = tf.compat.v1.get_variable("OUT", shape=(n_words, n_dims), dtype=tf.float32)
 
-    in_words = tf.placeholder(dtype=tf.int32, shape=(None,), name="in_words")
-    out_words = tf.placeholder(dtype=tf.int32, shape=(None,), name="out_words")
-    labels = tf.placeholder(dtype=tf.float32, shape=(None,), name="labels")
+    in_words = tf.compat.v1.placeholder(dtype=tf.int32, shape=(None,), name="in_words")
+    out_words = tf.compat.v1.placeholder(dtype=tf.int32, shape=(None,), name="out_words")
+    labels = tf.compat.v1.placeholder(dtype=tf.float32, shape=(None,), name="labels")
 
     in_emb = tf.nn.embedding_lookup(in_matr, in_words)
     out_emb = tf.nn.embedding_lookup(out_matr, out_words)
@@ -57,8 +57,8 @@ def assemble_graph(n_words, n_dims, learning_rate=0.001):
     # train = tf.train.AdamOptimizer(learning_rate).minimize(loss)
     train = tf.contrib.opt.LazyAdamOptimizer(learning_rate).minimize(loss)
 
-    final_emb = tf.get_variable("final", shape=(n_words, n_dims), dtype=tf.float32)
-    calculate_final = tf.assign(final_emb, tf.nn.l2_normalize(in_matr + out_matr, axis=1))
+    final_emb = tf.compat.v1.get_variable("final", shape=(n_words, n_dims), dtype=tf.float32)
+    calculate_final = tf.compat.v1.assign(final_emb, tf.nn.l2_normalize(in_matr + out_matr, axis=1))
     in_out = tf.nn.embedding_lookup(calculate_final, in_words)
 
     return {
@@ -108,8 +108,8 @@ loss_ = terminals['loss']
 adder_ = terminals['adder']
 final_ = terminals['assign_final']
 
-saver = tf.train.Saver()
-saveloss_ = tf.summary.scalar('loss', loss_)
+saver = tf.compat.v1.train.Saver()
+saveloss_ = tf.compat.v1.summary.scalar('loss', loss_)
 
 # batch = reader.next_batch(top_n_for_sampling=top_words)
 # while batch is not None:
@@ -125,9 +125,9 @@ saveloss_ = tf.summary.scalar('loss', loss_)
 #
 # sys.exit()
 
-with tf.Session() as sess:
-    sess.run(tf.global_variables_initializer())
-    summary_writer = tf.summary.FileWriter(graph_saving_path, graph=sess.graph)
+with tf.compat.v1.Session() as sess:
+    sess.run(tf.compat.v1.global_variables_initializer())
+    summary_writer = tf.compat.v1.summary.FileWriter(graph_saving_path, graph=sess.graph)
 
     # Restore from checkpoint
     # saver.restore(sess, ckpt_path)

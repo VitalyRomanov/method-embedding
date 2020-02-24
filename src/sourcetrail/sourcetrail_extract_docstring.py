@@ -6,7 +6,7 @@ import json
 working_directory = "/Volumes/External/datasets/Code/source-graphs/python-source-graph"
 
 source_location_path = os.path.join(working_directory, "source_location.csv")
-occurence_path = os.path.join(working_directory, "occurrence.csv")
+occurrence_path = os.path.join(working_directory, "occurrence.csv")
 node_path = os.path.join(working_directory, "normalized_sourcetrail_nodes.csv")
 filecontent_path = os.path.join(working_directory, "filecontent.csv")
 
@@ -16,7 +16,7 @@ filecontent_path = os.path.join(working_directory, "filecontent.csv")
 #%%
 
 source_location = pd.read_csv(source_location_path, sep=",")
-occurence = pd.read_csv(occurence_path, sep=",")
+occurrence = pd.read_csv(occurrence_path, sep=",")
 node = pd.read_csv(node_path, sep=",")
 
 #%%
@@ -25,7 +25,7 @@ node.rename(columns={'id':'element_id'}, inplace=True)
 
 DEFINITION_TYPE = 1
 
-definition_nodes = occurence.merge( 
+definition_nodes = occurrence.merge( 
                             source_location[source_location.type == DEFINITION_TYPE], 
                             on='source_location_id',)
 
