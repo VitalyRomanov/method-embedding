@@ -61,7 +61,8 @@ mnames = list(map(lambda name: name.split(".")[0], allowed_fnames))
 from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPClassifier
 from sklearn.model_selection import GridSearchCV, ParameterGrid
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, accuracy_score
+
 
 def evaluate_model(model, X, y):
     return pandas.DataFrame(classification_report(y,
@@ -71,31 +72,35 @@ def evaluate_model(model, X, y):
 def evaluate(data, labels):
 
     param_grid = {
-        'hidden_layer_sizes': [(70,), (50,), (70, 100,), (50, 70,),],
+        'hidden_layer_sizes': [(70,), (50,), (70, 100,), (50, 70,)],
         'activation': ['relu'],
         'solver': ['adam'],
-        'learning_rate_init': [0.001],
-        'early_stopping': [True]
+        'learning_rate_init': [0.01],
+        'early_stopping': [False],
+        'max_iter': [300]
     }
 
     X_train, X_test, y_train, y_test = train_test_split(data, labels, train_size = 0.7, random_state = 42)
 
     for params in ParameterGrid(param_grid):
-        model = MLPClassifier()
+
+        print(params)
+        model = MLPClassifier(**params)
 
         model.fit(X_train, y_train)
 
-        print(params)
-        print(evaluate_model(model, X_test, y_test))
+        
+        print("Accuracy:", accuracy_score(y_test, model.predict(X_test)))
+        # print(evaluate_model(model, X_test, y_test))
         break
 
 print("\n\n\n reps=in, names=func")
-evaluate(reprs_in, fnames)
-print("\n\n\n reps=in, names=func")
+evaluate(reprs_in[:100], fnames[:100])
+print("\n\n\n reps=out, names=func")
 evaluate(reprs_out, fnames)
-print("\n\n\n reps=in, names=func")
+print("\n\n\n reps=in, names=mod")
 evaluate(reprs_in, mnames)
-print("\n\n\n reps=in, names=func")
+print("\n\n\n reps=out, names=mod")
 evaluate(reprs_out, mnames)
         
 
