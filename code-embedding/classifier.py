@@ -95,7 +95,7 @@ def evaluate(data, labels):
         break
 
 print("\n\n\n reps=in, names=func")
-evaluate(reprs_in[:100], fnames[:100])
+evaluate(reprs_in, fnames)
 print("\n\n\n reps=out, names=func")
 evaluate(reprs_out, fnames)
 print("\n\n\n reps=in, names=mod")
