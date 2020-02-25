@@ -92,7 +92,6 @@ def evaluate(data, labels):
         
         print("Accuracy:", accuracy_score(y_test, model.predict(X_test)))
         # print(evaluate_model(model, X_test, y_test))
-        break
 
 print("\n\n\n reps=in, names=func")
 evaluate(reprs_in, fnames)
