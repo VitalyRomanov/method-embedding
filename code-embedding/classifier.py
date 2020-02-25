@@ -72,7 +72,7 @@ def evaluate_model(model, X, y):
 def evaluate(data, labels):
 
     param_grid = {
-        'hidden_layer_sizes': [(70,), (50,), (70, 100,), (50, 70,)],
+        'hidden_layer_sizes': [(200,), (300,), (200, 400,), (300, 500,)],
         'activation': ['relu'],
         'solver': ['adam'],
         'learning_rate_init': [0.01],
