@@ -45,7 +45,7 @@ def train(model, g_labels):
     best_val_acc = torch.tensor(0)
     best_test_acc = torch.tensor(0)
 
-    for epoch in range(3):
+    for epoch in range(200):
         logits = model()
         logp = nn.functional.log_softmax(logits, 1)
         # we only compute loss for labeled nodes
