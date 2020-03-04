@@ -11,6 +11,7 @@ import torch
 import torch.nn as nn
 import dgl.function as fn
 from dgl.nn.pytorch import edge_softmax, GATConv
+from graphtools import Embedder
 
 
 class GAT(nn.Module):
@@ -60,13 +61,16 @@ class GAT(nn.Module):
 
     def get_layers(self):
         h = self.embed
-        l_out = [h]
+        l_out = [h.detach().numpy()]
         for l in range(self.num_layers):
             h = self.gat_layers[l](self.g, h).flatten(1)
-            l_out.append(h)
+            l_out.append(h.detach().numpy())
         # output projection
         logits = self.gat_layers[-1](self.g, h).mean(1)
-        l_out.append(logits)
+        l_out.append(logits.detach().numpy())
 
         return l_out
+
+    def get_embeddings(self, id_maps):
+        return [Embedder(id_maps, e) for e in self.get_layers()]
 

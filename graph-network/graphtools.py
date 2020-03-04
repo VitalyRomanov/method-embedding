@@ -22,10 +22,19 @@ def create_hetero_graph(nodes, edges):
 
         llabels = {}
 
+        id_maps = {}
+
         for type_id, type in enumerate(uniq_types):
             nodes_of_type = nodes[nodes['type'] == type].shape[0]
             nodes.loc[nodes[nodes['type'] == type].index, 'typed_id'] = list(range(nodes_of_type))
             type_counts[str(type)] = nodes_of_type
+
+            id_maps[str(type)] = dict(
+                zip(
+                    nodes.loc[nodes[nodes['type'] == type].index, 'id'].values,
+                    nodes.loc[nodes[nodes['type'] == type].index, 'typed_id'].values
+                )
+            )
 
             # TODO
             # node types as labels
@@ -33,7 +42,7 @@ def create_hetero_graph(nodes, edges):
 
         assert any(nodes['typed_id'].isna()) == False
 
-        return nodes, type_counts, llabels
+        return nodes, type_counts, llabels, id_maps
 
     def assess_need_for_self_loops(nodes, edges):
         need_self_loop = set(edges['src'].values.tolist()) - set(edges['dst'].values.tolist())
@@ -49,7 +58,7 @@ def create_hetero_graph(nodes, edges):
 
     nodes, edges = assess_need_for_self_loops(nodes, edges)
 
-    nodes, node_type_counts, llabels = add_typed_ids(nodes)
+    nodes, node_type_counts, llabels, id_maps = add_typed_ids(nodes)
 
     node2gid = dict(zip(nodes['id'].values, nodes['typed_id'].values))
 
@@ -98,7 +107,7 @@ def create_hetero_graph(nodes, edges):
 
     labels = np.concatenate([llabels[ntype] for ntype in g.ntypes])
 
-    return g, labels, nodes #, llabels
+    return g, labels, id_maps #nodes #, llabels
 
 def create_graph(nodes, edges):
 
@@ -122,4 +131,14 @@ def create_graph(nodes, edges):
     type_map = dict(zip(uniq_node_types, range(len(uniq_node_types))))
     labels = nodes['type'].apply(lambda type: type_map[type]).values
 
-    return g, labels, nodes
+    return g, labels, node_id_map
+
+class Embedder:
+    def __init__(self, id_map, embeddings):
+        self.e = embeddings
+        self.ind = id_map
+        aid, iid = zip(*id_map.items())
+        self.inv = dict(zip(iid, aid))
+
+    def __getitem__(self, key):
+        return self.e[self.ind[key], :]
