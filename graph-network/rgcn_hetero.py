@@ -220,7 +220,8 @@ class EntityClassify(nn.Module):
                  num_bases,
                  num_hidden_layers=1,
                  dropout=0,
-                 use_self_loop=False):
+                 use_self_loop=False,
+                 activation=None):
         super(EntityClassify, self).__init__()
         out_dim = num_classes
         self.g = g
@@ -256,6 +257,15 @@ class EntityClassify(nn.Module):
 
         h = torch.cat(h, dim=0)
         return h
+
+    def get_layers(self):
+        h = self.embed_layer()
+        l_out = [torch.cat(h, dim=0)]
+        for layer in self.layers:
+            h = layer(self.g, h)
+            l_out.append(torch.cat(h, dim=0))
+
+        return l_out
 
 
 def main(args):

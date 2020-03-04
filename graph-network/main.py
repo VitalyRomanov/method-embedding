@@ -4,9 +4,12 @@ from data import load_data, get_train_test_val_indices
 from graphtools import *
 import numpy as np
 from models import *
-from sklearn.model_selection import ParameterGrid
+
 from datetime import datetime
 from params import gat_params, rgcn_params
+
+import pickle
+import json
 
 node_path = "/home/ltv/data/datasets/source_code/python-source-graph/normalized_sourcetrail_nodes.csv"
 edge_path = "/home/ltv/data/datasets/source_code/python-source-graph/non-ambiguous_edges.csv"
@@ -29,7 +32,7 @@ print("Using GPU:", torch.cuda.is_available())
 
 models = {
     GAT: gat_params,
-    # EntityClassify: rgcn_params
+    EntityClassify: rgcn_params
 }
 
 def train(model, g_labels):
@@ -42,7 +45,7 @@ def train(model, g_labels):
     best_val_acc = torch.tensor(0)
     best_test_acc = torch.tensor(0)
 
-    for epoch in range(300):
+    for epoch in range(3):
         logits = model()
         logp = nn.functional.log_softmax(logits, 1)
         # we only compute loss for labeled nodes
@@ -71,27 +74,62 @@ def train(model, g_labels):
             best_test_acc.item(),
         ))
 
+
+
 #%%
 
 
 for model, param_grid in models.items():
-    for params in ParameterGrid(param_grid):
+    for params in param_grid:
         dateTimeObj = str(datetime.now())
         print("\n\n")
         print(dateTimeObj)
         print("Model: {}, Params: {}".format(model.__name__, params))
 
         if model.__name__ == "GAT":
-            g, labels = create_graph(nodes, edges)
+            g, labels, node_mappings = create_graph(nodes, edges)
         elif model.__name__ == "EntityClassify":
-            g, labels = create_hetero_graph(nodes, edges)
+            g, labels, node_mappings = create_hetero_graph(nodes, edges)
         else:
             raise Exception("Unknown model: {}".format(model.__name__))
 
-        m = model(g, num_classes=np.unique(labels).size, **params)
+        m = model(g,
+                  num_classes=np.unique(labels).size,
+                  activation=nn.functional.leaky_relu,
+                  **params)
 
-        train(m, labels)
+        try:
+            train(m, labels)
+        except KeyboardInterrupt:
+            print("Training interrupted")
+        finally:
+            m.eval()
+            scores = final_evaluation(m, labels)
 
-        torch.save(m, open("{} {}".format(model.__name__, dateTimeObj), "wb"))
+        print("Saving...", end="")
+
+        model_filename = "{} {}".format(model.__name__, dateTimeObj)
+
+        metadata = {
+            "name": "models/" + model_filename,
+            "parameters": params,
+            "layers": "models/" + model_filename + " LAYERS.pkl",
+            "mappings": "models/" + model_filename + "_MAPPINGS.csv",
+            "scores": scores
+        }
+
+        pickle.dump(m.get_layers(), open(metadata['layers'], "wb"))
+
+        node_mappings.to_csv(metadata['mappings'], index=False)
+
+        with open(metadata['name']+".json", "w") as mdata:
+            mdata.write(json.dumps(metadata, indent=4))
+
+        torch.save(m, open(metadata['name'], "wb"))
+
+        # with open("mode_file_log.log", "a") as filelog:
+        #     filelog.write("%s\t%s\n" % (model_filename, repr(metadata)))
+
+        print("done")
 
 

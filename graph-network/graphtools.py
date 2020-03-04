@@ -98,7 +98,7 @@ def create_hetero_graph(nodes, edges):
 
     labels = np.concatenate([llabels[ntype] for ntype in g.ntypes])
 
-    return g, labels #, llabels
+    return g, labels, nodes #, llabels
 
 def create_graph(nodes, edges):
 
@@ -122,4 +122,4 @@ def create_graph(nodes, edges):
     type_map = dict(zip(uniq_node_types, range(len(uniq_node_types))))
     labels = nodes['type'].apply(lambda type: type_map[type]).values
 
-    return g, labels
+    return g, labels, nodes
