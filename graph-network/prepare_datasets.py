@@ -37,7 +37,7 @@ def generate_edge_files(train, test, prefix):
     print("%s\t%s\t%s\t%s" % (filtered_nodes + "_512_1", nodes_path, edges_train_512_1_path, edges_test_path))
     print("%s\t%s\t%s\t%s" % (filtered_nodes + "_512_1_16_2", nodes_path, edges_train_512_1_16_2_path, edges_test_path))
 
-    test.to_csv(edges_test_path, index=False)
+    # test.to_csv(edges_test_path, index=False)
 
     train.to_csv(edges_train_path, index=False)
 
@@ -80,9 +80,9 @@ def mkall(prefix, nodes, edges, excluded=[]):
         mkdir(prefix)
     if excluded:
         nodes, edges = filter_module(nodes, edges, excluded)
-    train, test = split(edges)
+    # train, test = split(edges)
     nodes.to_csv(join(prefix, "nodes.csv"), index=False)
-    generate_edge_files(train, test, prefix)
+    generate_edge_files(edges, edges, prefix)
 
 
 mkall("data/full", nodes, edges)

@@ -19,8 +19,8 @@ def evaluate(logits, labels, train_idx, test_idx, val_idx):
 
     return train_acc, val_acc, test_acc
 
-def final_evaluation(model, g_labels):
-    train_idx, test_idx, val_idx = get_train_test_val_indices(g_labels)
+def final_evaluation(model, g_labels, splits):
+    train_idx, test_idx, val_idx = splits #get_train_test_val_indices(g_labels)
     labels = torch.tensor(g_labels)
 
     logits = model()
@@ -47,10 +47,12 @@ def final_evaluation(model, g_labels):
     return scores
 
 
-def train(model, g_labels, epochs):
+def train(model, g_labels, epochs, splits):
 
-    train_idx, test_idx, val_idx = get_train_test_val_indices(g_labels)
+    train_idx, test_idx, val_idx = splits #get_train_test_val_indices(g_labels)
     labels = torch.tensor(g_labels)
+
+    heldout_idx = test_idx.tolist() + val_idx.tolist()
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
@@ -87,3 +89,4 @@ def train(model, g_labels, epochs):
             best_test_acc.item(),
         ))
 
+    return heldout_idx

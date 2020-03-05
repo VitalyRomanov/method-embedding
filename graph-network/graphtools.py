@@ -56,7 +56,9 @@ def create_hetero_graph(nodes, edges):
 
         return nodes, edges
 
-    nodes, edges = assess_need_for_self_loops(nodes, edges)
+    # TODO
+    # this is a hack when where are only outgoing connections from this node type
+    # nodes, edges = assess_need_for_self_loops(nodes, edges)
 
     nodes, node_type_counts, llabels, id_maps = add_typed_ids(nodes)
 
