@@ -3,7 +3,7 @@ import sys
 from data import load_data
 from graphtools import *
 import numpy as np
-from models import GAT, RGCN, train, final_evaluation, get_train_test_val_indices
+from models import GAT, RGCN, train, final_evaluation
 from datetime import datetime
 from params import gat_params, rgcn_params
 import pandas
@@ -12,6 +12,7 @@ import json
 from os import mkdir
 from os.path import isdir, join
 import torch
+from Dataset import SourceGraphDataset
 
 # node_path = "/home/ltv/data/datasets/source_code/python-source-graph/normalized_sourcetrail_nodes.csv"
 # edge_path = "/home/ltv/data/datasets/source_code/python-source-graph/non-ambiguous_edges.csv"
@@ -34,8 +35,12 @@ import torch
 
 #%%
 
+def get_name(model, timestamp):
+    return "{} {}".format(model.__name__, timestamp).replace(":","-").replace(" ","-").replace(".","-")
 
-def main(nodes, edges, models, desc):
+
+
+def main(nodes_path, edges_path, models, desc):
 
     for model, param_grid in models.items():
         for params in param_grid:
@@ -46,29 +51,33 @@ def main(nodes, edges, models, desc):
             print("Model: {}, Params: {}, Desc: {}".format(model.__name__, params, desc))
 
             if model.__name__ == "GAT":
-                g, labels, node_mappings = create_graph(nodes, edges)
+                dataset = SourceGraphDataset(nodes_path, edges_path, label_from='type')
             elif model.__name__ == "RGCN":
-                g, labels, node_mappings = create_hetero_graph(nodes, edges)
+                dataset = SourceGraphDataset(nodes_path,
+                                  edges_path,
+                                  label_from='type',
+                                  node_types=False,
+                                  edge_types=True
+                                  )
             else:
                 raise Exception("Unknown model: {}".format(model.__name__))
 
-            m = model(g,
-                      num_classes=np.unique(labels).size,
+            m = model(dataset.g,
+                      num_classes=dataset.num_classes,
                       activation=torch.nn.functional.leaky_relu,
                       **params)
 
-            splits = get_train_test_val_indices(labels)
             try:
-                train(m, labels, EPOCHS, splits)
+                train(m, dataset.labels, dataset.splits, EPOCHS)
             except KeyboardInterrupt:
                 print("Training interrupted")
             finally:
                 m.eval()
-                scores = final_evaluation(m, labels, splits)
+                scores = final_evaluation(m, dataset.labels, dataset.splits)
 
             print("Saving...", end="")
 
-            model_attempt = "{} {}".format(model.__name__, dateTime).repalce(":","-").repalce(" ","-").repalce(".","-")
+            model_attempt = get_name(model, dateTime)
 
             MODEL_BASE = join(MODELS_PATH, model_attempt)
 
@@ -87,9 +96,7 @@ def main(nodes, edges, models, desc):
                 "description": desc
             }
 
-            pickle.dump(m.get_embeddings(node_mappings), open(join(metadata['base'], metadata['layers']), "wb"))
-
-            # node_mappings.to_csv(join(metadata['base'], metadata['mappings']), index=False)
+            pickle.dump(m.get_embeddings(dataset.node_id_map), open(join(metadata['base'], metadata['layers']), "wb"))
 
             with open(join(metadata['base'], "metadata.json"), "w") as mdata:
                 mdata.write(json.dumps(metadata, indent=4))
@@ -97,13 +104,14 @@ def main(nodes, edges, models, desc):
             torch.save(
                 {
                     'model_state_dict': m.state_dict(),
-                    'splits': splits
+                    'splits': dataset.splits
                 },
                 join(metadata['base'], metadata['state'])
             )
 
-            # with open("mode_file_log.log", "a") as filelog:
-            #     filelog.write("%s\t%s\n" % (model_filename, repr(metadata)))
+            dataset.nodes.to_csv(join(metadata['base'], "nodes.csv"), index=False)
+            dataset.edges.to_csv(join(metadata['base'], "edges.csv"), index=False)
+            dataset.held.to_csv(join(metadata['base'], "held.csv"), index=False)
 
             print("done")
 
@@ -117,7 +125,7 @@ if __name__ == "__main__":
 
     data_paths = pandas.read_csv("data_paths.tsv", sep="\t")
     MODELS_PATH = "models"
-    EPOCHS = 300
+    EPOCHS = 3
 
     if not isdir(MODELS_PATH):
         mkdir(MODELS_PATH)
@@ -128,7 +136,10 @@ if __name__ == "__main__":
         node_path = row.nodes
         edge_path = row.edges_train
         desc_ = row.desc
+        node_path = "/Volumes/External/dev/method-embeddings/res/python/normalized_sourcetrail_nodes.csv"
+        edge_path = "/Volumes/External/dev/method-embeddings/res/python/edges.csv"
 
-        nodes_, edges_ = load_data(node_path, edge_path)
+        # nodes_, edges_ = load_data(node_path, edge_path)
 
-        main(nodes_, edges_, models_, desc_)
+        main(node_path, edge_path, models_, desc_)
+        break

@@ -36,13 +36,3 @@ def load_data(node_path, edge_path):
     return nodes_, edges_
 
 
-def get_train_test_val_indices(labels):
-    np.random.seed(42)
-
-    indices = np.arange(start=0, stop=labels.size)
-    np.random.shuffle(indices)
-
-    train = int(indices.size * 0.6)
-    test = int(indices.size * 0.7)
-
-    return indices[:train], indices[train: test], indices[test:]

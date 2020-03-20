@@ -8,7 +8,7 @@ from dgl.nn.pytorch import edge_softmax, GATConv
 from gat import GAT
 from rgcn_hetero import RGCN
 
-from data import get_train_test_val_indices
+# from data import get_train_test_val_indices
 
 def evaluate(logits, labels, train_idx, test_idx, val_idx):
 
@@ -47,7 +47,7 @@ def final_evaluation(model, g_labels, splits):
     return scores
 
 
-def train(model, g_labels, epochs, splits):
+def train(model, g_labels, splits, epochs):
 
     train_idx, test_idx, val_idx = splits #get_train_test_val_indices(g_labels)
     labels = torch.tensor(g_labels)

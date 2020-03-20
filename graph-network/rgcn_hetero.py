@@ -272,17 +272,17 @@ class RGCN(nn.Module):
 
     def get_embeddings(self, id_maps):
         # TODO
-        # move this to graph generation
-        orig_id = []
-        graph_id = []
-
-        prev_offset = 0
-        for type in self.g.ntypes:
-            from_id, to_id = zip(*id_maps[type].items())
-            orig_id.extend(from_id)
-            graph_id.extend([t + prev_offset for t in to_id])
-            prev_offset += self.g.number_of_nodes(type)
-
-        id_maps = dict(zip(orig_id, graph_id))
+        # X. move this to graph generation - moved
+        # orig_id = []
+        # graph_id = []
+        #
+        # prev_offset = 0
+        # for type in self.g.ntypes:
+        #     from_id, to_id = zip(*id_maps[type].items())
+        #     orig_id.extend(from_id)
+        #     graph_id.extend([t + prev_offset for t in to_id])
+        #     prev_offset += self.g.number_of_nodes(type)
+        #
+        # id_maps = dict(zip(orig_id, graph_id))
         return [Embedder(id_maps, e) for e in self.get_layers()]
 
