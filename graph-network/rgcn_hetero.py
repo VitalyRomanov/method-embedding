@@ -10,7 +10,11 @@ import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 from functools import partial
-from graphtools import Embedder
+# from graphtools import Embedder
+from Embedder import Embedder
+
+# import torch
+# torch.manual_seed(42)
 
 import dgl.function as fn
 from dgl.data.rdf import AIFB, MUTAG, BGS, AM
@@ -271,18 +275,5 @@ class RGCN(nn.Module):
         return l_out
 
     def get_embeddings(self, id_maps):
-        # TODO
-        # X. move this to graph generation - moved
-        # orig_id = []
-        # graph_id = []
-        #
-        # prev_offset = 0
-        # for type in self.g.ntypes:
-        #     from_id, to_id = zip(*id_maps[type].items())
-        #     orig_id.extend(from_id)
-        #     graph_id.extend([t + prev_offset for t in to_id])
-        #     prev_offset += self.g.number_of_nodes(type)
-        #
-        # id_maps = dict(zip(orig_id, graph_id))
         return [Embedder(id_maps, e) for e in self.get_layers()]
 

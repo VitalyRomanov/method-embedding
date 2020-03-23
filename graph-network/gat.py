@@ -11,8 +11,11 @@ import torch
 import torch.nn as nn
 import dgl.function as fn
 from dgl.nn.pytorch import edge_softmax, GATConv
-from graphtools import Embedder
+# from graphtools import Embedder
+from Embedder import Embedder
 
+# import torch
+# torch.manual_seed(42)
 
 class GAT(nn.Module):
     def __init__(self,

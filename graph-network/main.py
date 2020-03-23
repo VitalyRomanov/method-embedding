@@ -96,7 +96,7 @@ def main(nodes_path, edges_path, models, desc):
                 "description": desc
             }
 
-            pickle.dump(m.get_embeddings(dataset.node_id_map), open(join(metadata['base'], metadata['layers']), "wb"))
+            pickle.dump(m.get_embeddings(dataset.global_id_map), open(join(metadata['base'], metadata['layers']), "wb"))
 
             with open(join(metadata['base'], "metadata.json"), "w") as mdata:
                 mdata.write(json.dumps(metadata, indent=4))
@@ -119,25 +119,29 @@ def main(nodes_path, edges_path, models, desc):
 if __name__ == "__main__":
 
     models_ = {
-        GAT: gat_params,
+        # GAT: gat_params,
         RGCN: rgcn_params
     }
 
     data_paths = pandas.read_csv("data_paths.tsv", sep="\t")
     MODELS_PATH = "models"
-    EPOCHS = 3
+    EPOCHS = 150
 
     if not isdir(MODELS_PATH):
         mkdir(MODELS_PATH)
 
     for ind, row in data_paths.iterrows():
 
-        if ind == 3: break
+        if ind == 1: break
         node_path = row.nodes
         edge_path = row.edges_train
         desc_ = row.desc
-        node_path = "/Volumes/External/dev/method-embeddings/res/python/normalized_sourcetrail_nodes.csv"
-        edge_path = "/Volumes/External/dev/method-embeddings/res/python/edges.csv"
+        # node_path = "/Volumes/External/dev/method-embeddings/res/python/normalized_sourcetrail_nodes.csv"
+        # edge_path = "/Volumes/External/dev/method-embeddings/res/python/edges.csv"
+        node_path = "/home/ltv/data/datasets/source_code/python-source-graph/02_largest_component/nodes_component_0.csv.bz2"
+        edge_path = "/home/ltv/data/datasets/source_code/python-source-graph/02_largest_component/edges_component_0.csv.bz2"
+        # node_path = "/home/ltv/data/datasets/source_code/sample-python/normalized_sourcetrail_nodes.csv"
+        # edge_path = "/home/ltv/data/datasets/source_code/sample-python/edges.csv"
 
         # nodes_, edges_ = load_data(node_path, edge_path)
 
