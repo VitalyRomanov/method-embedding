@@ -52,7 +52,21 @@ def get_train_test_val_indices(labels):
 class SourceGraphDataset:
     def __init__(self, nodes_path, edges_path,
                  label_from, node_types=False,
-                 edge_types=False, filter=None):
+                 edge_types=False, filter=None, holdout_frac=0.01/100):
+        """
+        Create dataset object. Loads the graph into Deep Graph Library structure.
+        :param nodes_path: path to csv or compressed csv for nodes witch columns
+                "id", "type", {"name", "serialized_name"}, {any column with labels}
+        :param edges_path: path to csv or compressed csv for edges with columns
+                "id", "type", {"source_node_id", "src"}, {"target_node_id", "dst"}
+        :param label_from: the column where the labels are taken from
+        :param node_types: boolean value, whether to use node types or not
+                (node-heterogeneous graph}
+        :param edge_types: boolean value, whether to use edge types or not
+                (edge-heterogeneous graph}
+        :param filter: list[str], the types of edges to filter from graph
+        :param holdout_frac: float in [0, 1]
+        """
         # TODO
         # implemet filtering, so that when you filter a package
         # isolated nodes drop
@@ -60,9 +74,11 @@ class SourceGraphDataset:
         # self.nodes = pandas.read_csv(nodes_path)
         # self.edges = pandas.read_csv(edges_path)
 
+        self.holdout_frac = holdout_frac
+
         self.nodes, self.edges = load_data(nodes_path, edges_path)
 
-        self.nodes, self.edges, self.held = SourceGraphDataset.holdout(self.nodes, self.edges)
+        self.nodes, self.edges, self.held = SourceGraphDataset.holdout(self.nodes, self.edges, self.holdout_frac)
 
         self.nodes_have_types = node_types
         self.edges_have_types = edge_types
@@ -84,10 +100,11 @@ class SourceGraphDataset:
 
     @property
     def labels(self):
-        compact_label = lambda lbl: self.label_map[lbl]
+        compact_label = lambda lbl: lbl #self.label_map[lbl]
 
         if self.edges_have_types:
-            typed_labels = self.typed_labels
+            # typed_labels = self.typed_labels
+            typed_labels = self.het_labels
             return numpy.concatenate(
                 [
                     numpy.array([compact_label(lbl) for lbl in typed_labels[ntype]])
@@ -95,7 +112,8 @@ class SourceGraphDataset:
                 ]
             )
         else:
-            return self.nodes['label'].apply(compact_label).values
+            return self.dg_labels
+            # return self.nodes['label'].apply(compact_label).values
 
     @property
     def typed_labels(self):
@@ -168,7 +186,8 @@ class SourceGraphDataset:
         if self.edges_have_types:
             orig_id = []; graph_id = []; prev_offset = 0
 
-            typed_node_id_maps = self.typed_node_id_maps
+            # typed_node_id_maps = self.typed_node_id_maps
+            typed_node_id_maps = self.het_id_maps
 
             for type in self.g.ntypes:
                 from_id, to_id = zip(*typed_node_id_maps[type].items())
@@ -179,7 +198,8 @@ class SourceGraphDataset:
             return dict(zip(orig_id, graph_id))
 
         else:
-            return compact_property(self.nodes['id'].values)
+            return self.dg_id_maps
+            # return compact_property(self.nodes['id'].values)
 
 
     @property
@@ -199,18 +219,31 @@ class SourceGraphDataset:
         nodes = self.nodes.copy()
         edges = self.edges.copy()
 
-        node_id2graph_id = self.node_id_map
+        # node_id2graph_id = self.node_id_map
+        #
+        # id2new = lambda id: node_id2graph_id[id]
+        #
+        # graph_src = edges['src'].apply(id2new).values.tolist()
+        # graph_dst = edges['dst'].apply(id2new).values.tolist()
+        #
+        # g = dgl.DGLGraph()
+        # g.add_nodes(nodes.shape[0])
+        # g.add_edges(graph_src, graph_dst)
+        #
+        # self.g = g
 
-        id2new = lambda id: node_id2graph_id[id]
+        # TODO
+        # labels are the same
+        # src are the same
+        # dst are the same
+        # but still does not work
 
-        graph_src = edges['src'].apply(id2new).values.tolist()
-        graph_dst = edges['dst'].apply(id2new).values.tolist()
-
-        g = dgl.DGLGraph()
-        g.add_nodes(nodes.shape[0])
-        g.add_edges(graph_src, graph_dst)
-
+        from graphtools import create_graph
+        g, labels, id_maps = create_graph(nodes, edges)
+        self.dg_labels = labels
+        self.dg_id_maps = id_maps
         self.g = g
+
 
     def create_hetero_graph(self, node_types=False, edge_types=False):
         # TODO
@@ -218,6 +251,13 @@ class SourceGraphDataset:
 
         nodes = self.nodes.copy()
         edges = self.edges.copy()
+
+        from graphtools import create_hetero_graph
+        g, labels, id_maps = create_hetero_graph(nodes, edges)
+        self.g = g
+        self.het_labels = labels
+        self.het_id_maps = id_maps
+        return
 
         # TODO
         # this is a hack when where are only outgoing connections from this node type
@@ -328,8 +368,8 @@ class SourceGraphDataset:
         return nodes, edges
 
     @classmethod
-    def holdout(cls, nodes, edges):
-        train, test = split(edges)
+    def holdout(cls, nodes, edges, HOLDOUT_FRAC):
+        train, test = split(edges, HOLDOUT_FRAC)
 
         nodes, train_edges = ensure_connectedness(nodes, train)
 
@@ -340,22 +380,29 @@ class SourceGraphDataset:
 
 
 
-def split(edges):
+def split(edges, HOLDOUT_FRAC):
     edges_shuffled = edges.sample(frac=1., random_state=42)
 
-    # TODO
-    # 0.9 is too much, need much less for evaluation
-    train_frac = int(edges_shuffled.shape[0] * 0.9)
-    # print("Current train frac: ", train_frac)
+    train_frac = int(edges_shuffled.shape[0] * (1. - HOLDOUT_FRAC))
 
     train = edges_shuffled \
                 .iloc[:train_frac]
     test = edges_shuffled \
                .iloc[train_frac:]
+    print("Splitting edges into train and test set. Train: {}. Test: {}. Fraction: {}".\
+          format(train.shape[0], test.shape[0], HOLDOUT_FRAC))
     return train, test
 
 
-def ensure_connectedness(nodes, edges):
+def ensure_connectedness(nodes: pandas.DataFrame, edges: pandas.DataFrame):
+    """
+    Filtering isolated nodes
+    :param nodes: DataFrame
+    :param edges: DataFrame
+    :return:
+    """
+
+    print("Filtering isolated nodes. Starting from {} nodes and {} edges...".format(nodes.shape[0], edges.shape[0]), end="")
     unique_nodes = set(edges['src'].values.tolist() +
                        edges['dst'].values.tolist())
 
@@ -363,9 +410,20 @@ def ensure_connectedness(nodes, edges):
         nodes['id'].apply(lambda nid: nid in unique_nodes)
     ]
 
+    print("ending up with {} nodes and {} edges".format(nodes.shape[0], edges.shape[0]))
+
     return nodes, edges
 
 def ensure_valid_edges(nodes, edges):
+    """
+    Filter edges that link to nodes that do not exist
+    :param nodes:
+    :param edges:
+    :return:
+    """
+    print("Filtering edges to invalid nodes. Starting from {} nodes and {} edges...".format(nodes.shape[0], edges.shape[0]),
+          end="")
+
     unique_nodes = set(nodes['id'].values.tolist())
 
     edges = edges[
@@ -375,5 +433,7 @@ def ensure_valid_edges(nodes, edges):
     edges = edges[
         edges['dst'].apply(lambda nid: nid in unique_nodes)
     ]
+
+    print("ending up with {} nodes and {} edges".format(nodes.shape[0], edges.shape[0]))
 
     return nodes, edges
