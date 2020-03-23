@@ -13,7 +13,7 @@ def create_hetero_graph(nodes, edges):
     def add_typed_ids(nodes):
         nodes = nodes.copy()
 
-        nodes = compact_prop(nodes, 'type')
+        # nodes = compact_prop(nodes, 'type')
         nodes['type'] = 0
 
         nodes['typed_id'] = None
@@ -38,7 +38,7 @@ def create_hetero_graph(nodes, edges):
 
             # TODO
             # node types as labels
-            llabels[str(type)] = nodes.loc[nodes[nodes['type'] == type].index, 'compact_type'].values
+            llabels[str(type)] = nodes.loc[nodes[nodes['type'] == type].index, 'label'].values
 
         assert any(nodes['typed_id'].isna()) == False
 
@@ -107,9 +107,9 @@ def create_hetero_graph(nodes, edges):
 
     g = dgl.heterograph(subsets, node_type_counts)
 
-    labels = np.concatenate([llabels[ntype] for ntype in g.ntypes])
+    # labels = np.concatenate([llabels[ntype] for ntype in g.ntypes])
 
-    return g, labels, id_maps #nodes #, llabels
+    return g, llabels, id_maps #nodes #, llabels
 
 def create_graph(nodes, edges):
 
@@ -129,9 +129,9 @@ def create_graph(nodes, edges):
     g.add_nodes(nodes.shape[0])
     g.add_edges(edges['new_src'].values.tolist(), edges['new_dst'].values.tolist())
 
-    uniq_node_types = nodes['type'].unique()
+    uniq_node_types = nodes['label'].unique()
     type_map = dict(zip(uniq_node_types, range(len(uniq_node_types))))
-    labels = nodes['type'].apply(lambda type: type_map[type]).values
+    labels = nodes['label'].apply(lambda type: type_map[type]).values
 
     return g, labels, node_id_map
 
