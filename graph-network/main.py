@@ -119,7 +119,7 @@ def main(nodes_path, edges_path, models, desc):
 if __name__ == "__main__":
 
     models_ = {
-        # GAT: gat_params,
+        GAT: gat_params,
         RGCN: rgcn_params
     }
 
