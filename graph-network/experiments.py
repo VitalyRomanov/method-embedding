@@ -29,7 +29,7 @@ class Experiments:
         self.base_path = base_path
 
         if base_path is not None:
-            self.embed = pickle.load(open(join(self.base_path, "embeddings.pkl"), "rb"))[2]
+            self.embed = pickle.load(open(join(self.base_path, "embeddings.pkl"), "rb"))[1]
 
         # e = pickle.load(open(join(self.base_path, "embeddings.pkl"), "rb"))
         #
@@ -251,7 +251,7 @@ class Experiment:
 
 #%%
 
-BASE_PATH = "/home/ltv/data/local_run/graph-network/models/GAT-2020-03-23-10-07-17-549418"
+BASE_PATH = "/home/ltv/data/local_run/graph-network/GAT-2020-03-24-03-37-36-421131"
 # API_SEARCH = "/Volumes/External/datasets/Code/source-graphs/python-source-graph/04_api_sequence_calls/flat_calls.csv"
 API_SEQ = "/home/ltv/data/datasets/source_code/python-source-graph/04_api_sequence_calls/flat_calls.csv"
 
