@@ -45,17 +45,19 @@ def main(nodes_path, edges_path, models, desc):
     for model, param_grid in models.items():
         for params in param_grid:
 
+            LABELS_FROM = "type"
+
             dateTime = str(datetime.now())
             print("\n\n")
             print(dateTime)
             print("Model: {}, Params: {}, Desc: {}".format(model.__name__, params, desc))
 
             if model.__name__ == "GAT":
-                dataset = SourceGraphDataset(nodes_path, edges_path, label_from='type')
+                dataset = SourceGraphDataset(nodes_path, edges_path, label_from=LABELS_FROM)
             elif model.__name__ == "RGCN":
                 dataset = SourceGraphDataset(nodes_path,
                                   edges_path,
-                                  label_from='type',
+                                  label_from=LABELS_FROM,
                                   node_types=False,
                                   edge_types=True
                                   )
@@ -120,7 +122,7 @@ if __name__ == "__main__":
 
     models_ = {
         GAT: gat_params,
-        RGCN: rgcn_params
+        # RGCN: rgcn_params
     }
 
     data_paths = pandas.read_csv("data_paths.tsv", sep="\t")

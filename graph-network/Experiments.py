@@ -29,7 +29,7 @@ class Experiments:
         self.base_path = base_path
 
         if base_path is not None:
-            self.embed = pickle.load(open(join(self.base_path, "embeddings.pkl"), "rb"))[1]
+            self.embed = pickle.load(open(join(self.base_path, "embeddings.pkl"), "rb"))[2]
 
         # e = pickle.load(open(join(self.base_path, "embeddings.pkl"), "rb"))
         #
@@ -46,12 +46,12 @@ class Experiments:
         nodes = pandas.read_csv(join(self.base_path, "nodes.csv"))
         edges = pandas.read_csv(join(self.base_path, "held.csv"))
         if type == "link":
-            nodes = pandas.read_csv(join(self.base_path, "nodes.csv"))
+            # nodes = pandas.read_csv(join(self.base_path, "nodes.csv"))
             held = pandas.read_csv(join(self.base_path, "held.csv"))
 
-            held = held.query('type == 8')
+            held = held.query('type == 8')[['src', 'dst']]
 
-            return nodes, edges, held
+            return Experiment(self.embed, nodes, edges, held)
 
         elif type == "apicall":
             api_seq = pandas.read_csv(self.experiments['apicall'])
@@ -84,19 +84,33 @@ class Experiments:
                 var_use['src'].apply(lambda nid: nid in unique_nodes)
             ]
 
-            return nodes, edges, var_use
+            return Experiment2(self.embed, nodes, edges, var_use)
 
         elif type == "fname":
 
-            fname = pandas.read_csv(self.experiments['fname'])
+            # fname = pandas.read_csv(self.experiments['fname'])
+            functions = nodes.query('label == 4096')
+            functions['fname'] = functions['name'].apply(lambda name: name.split(".")[-1])
 
-            unique_nodes = set(nodes['id'].values.tolist())
+            functions['src'] = functions['id']
+            functions['dst'] = functions['fname']
 
-            fname = fname[
-                fname['src'].apply(lambda nid: nid in unique_nodes)
-            ]
+            # unique_nodes = set(nodes['id'].values.tolist())
+            #
+            # fname = fname[
+            #     fname['src'].apply(lambda nid: nid in unique_nodes)
+            # ]
 
-            return nodes, edges, fname
+            return Experiment2(self.embed, nodes, edges, functions[['src', 'dst']])
+
+        elif type == "nodetype":
+
+            types = nodes.copy()
+            types['src'] = nodes['id']
+            types['dst'] = nodes['label']
+
+            return Experiment3(self.embed, nodes, edges, types[['src', 'dst']])
+
 
 class Experiment:
     def __init__(self,
@@ -123,7 +137,7 @@ class Experiment:
         self.y_test = None
 
         self.embed_size = self.embed.e.shape[1]
-        self.n_classes = target['dst'].unique().size
+        # self.n_classes = target['dst'].unique().size
 
     def get_train_test_split(self):
         self.train_ind, self.test_ind = train_test_split(
@@ -136,8 +150,8 @@ class Experiment:
         return keys
         # filtered = np.array([key for key in keys if key in self.embed.ind], dtype=np.int32)
         filtered = np.array(list(filter(lambda key: key in self.embed.ind, keys)), dtype=np.int32)
-        self.last_filtered = keys.size - filtered
-        return filtered
+        # self.last_filtered = keys.size - filtered
+        # return filtered
 
     def get_random_ind(self, set_size, num):
         return np.random.randint(low=0, high=set_size, size=num)
@@ -235,11 +249,11 @@ class Experiment:
             # dimensionality is wrong
 
             assert y_b.shape[0] == X_b.shape[0]
-            yield X_b, y_b
+            yield {"x": X_b, "y": y_b}
             # yield np.ones((10,10)), y_b
         X_b = self._embed(X[X.shape[0] // size * size:])
         y_b = y[X.shape[0] // size * size:]
-        yield X_b, y_b
+        yield {"x": X_b, "y": y_b}
 
     def test_batches(self):
         if self.X_test is None:
@@ -254,6 +268,95 @@ class Experiment:
         return self.batch(self.X_train, self.y_train)
 
 
+def compact_property(values):
+    uniq = np.unique(values)
+    prop2pid = dict(zip(uniq, range(uniq.size)))
+    return prop2pid
+
+class Experiment2(Experiment):
+    def __init__(self, embeddings: Embedder,
+                 nodes: pandas.DataFrame,
+                 edges: pandas.DataFrame,
+                 target: pandas.DataFrame):
+        super(Experiment2, self).__init__(embeddings, nodes, edges, target)
+
+        # def compact_property(values):
+        #     uniq = np.unique(values)
+        #     prop2pid = dict(zip(uniq, range(uniq.size)))
+        #     return prop2pid
+
+        self.name_map = compact_property(target['dst'])
+        self.dst_orig = target['dst']
+        target['dst'] = target['dst'].apply(lambda name: self.name_map[name])
+
+        self.unique_elements = len(self.name_map)
+
+        print(f"Doing experiment with {len(self.name_map)} distinct target elements")
+
+    def _embed(self, edges):
+        pass
+        # src = edges[:,0]
+        # dst = edges[:,1]
+        #
+        # return np.hstack([self.embed[src], self.embed[dst]])
+
+    def batch(self, X, y, size=256):
+        for i in range(0, X.shape[0], size):
+            if i + size >= X.shape[0]: continue
+
+            src = X[i: i+size, 0]
+            dst = X[i: i+size, 1]
+
+            X_src = self.embed[src]
+
+            y_b = y[i: i+size]
+
+            assert y_b.shape[0] == X_src.shape[0] == dst.shape[0]
+            yield {"x": X_src, "elements": dst, "y": y_b}
+
+        src = X[X.shape[0] // size * size:, 0]
+        dst = X[X.shape[0] // size * size:, 1]
+        X_src = self.embed[src]
+        y_b = y[X.shape[0] // size * size:]
+        yield {"x": X_src, "elements": dst, "y": y_b}
+
+
+class Experiment3(Experiment2):
+    def __init__(self, embeddings: Embedder,
+                 nodes: pandas.DataFrame,
+                 edges: pandas.DataFrame,
+                 target: pandas.DataFrame):
+        super(Experiment3, self).__init__(embeddings, nodes, edges, target)
+
+    def get_training_data(self):
+
+        self.get_train_test_split()
+
+        train_positive = self.target.iloc[self.train_ind].values
+        test_positive = self.target.iloc[self.test_ind].values
+
+        X_train, y_train = train_positive[:,0].reshape(-1,1), train_positive[:,1].reshape(-1,1)
+        X_test, y_test = test_positive[:, 0].reshape(-1,1), test_positive[:, 1].reshape(-1,1)
+
+        def shuffle(X, y):
+            ind_shuffle = np.arange(0, X.shape[0])
+            np.random.shuffle(ind_shuffle)
+            return X[ind_shuffle], y[ind_shuffle]
+
+        self.X_train, self.y_train = shuffle(X_train, y_train)
+        self.X_test, self.y_test = shuffle(X_test, y_test)
+
+
+    def batch(self, X, y, size=256):
+        for i in range(0, X.shape[0], size):
+            if i + size >= X.shape[0]: continue
+
+            X_src = self.embed[X[i: i+size, 0]]
+
+            yield {"x": X_src, "y": y[i: i+size, :]}
+
+        X_src = self.embed[X[X.shape[0] // size * size:, 0]]
+        yield {"x": X_src, "y": y[X.shape[0] // size * size: , :]}
 
 #%%
 

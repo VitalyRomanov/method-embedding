@@ -21,6 +21,8 @@ def load_data(node_path, edge_path):
         'target_node_id': 'dst'
     }, axis=1)
 
+    nodes_['libname'] = nodes_['name'].apply(lambda name: name.split(".")[0])
+
     return nodes_, edges_
 
 # def compact_prop(df, prop):
