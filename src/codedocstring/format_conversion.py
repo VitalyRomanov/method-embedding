@@ -1,3 +1,9 @@
+# 
+# Replace CodeDocSrting special tokens DCNL and DCSP 
+# with new line and tabulation correspondingly
+#
+#
+
 import os
 import sys
 

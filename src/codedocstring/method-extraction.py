@@ -1,3 +1,8 @@
+#
+# Extract method names from codedocstring data
+#
+#
+
 import sys
 import os
 import re 
