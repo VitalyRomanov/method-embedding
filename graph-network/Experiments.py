@@ -49,7 +49,7 @@ class Experiments:
             nodes = pandas.read_csv(join(self.base_path, "nodes.csv"))
             held = pandas.read_csv(join(self.base_path, "held.csv"))
 
-            held = held.filter('type == 8')
+            held = held.query('type == 8')
 
             return nodes, edges, held
 
@@ -69,9 +69,9 @@ class Experiments:
             return Experiment(self.embed, nodes, edges, api_seq)
 
         elif type == "typeuse":
-            held = pandas.read_csv(join(self.base_path), "held.csv")
+            held = pandas.read_csv(join(self.base_path, "held.csv"))
 
-            held = held.filter('type == 2')
+            held = held.query('type == 2')[['src', 'dst']]
 
             return Experiment(self.embed, nodes, edges, held)
 
@@ -181,6 +181,7 @@ class Experiment:
         test_positive = self.target.iloc[self.test_ind].values
 
         # print(train_positive.shape, train_negative.shape, test_positive.shape, test_negative.shape)
+        print(f"Working with {train_positive.shape[0]} positive and {train_negative.shape[0]} negative samples in the train set, {test_positive.shape[0]} and {test_negative.shape[0]} - in test set")
 
         X_train = np.vstack([
             train_positive,
@@ -205,6 +206,8 @@ class Experiment:
 
         self.X_train, self.y_train = shuffle(X_train, y_train)
         self.X_test, self.y_test = shuffle(X_test, y_test)
+
+        print(f"Splitting into {self.X_train.shape[0]} train and {self.X_test.shape[0]} test samples")
 
         # return X_train, X_test, y_train, y_test
 
@@ -233,7 +236,10 @@ class Experiment:
 
             assert y_b.shape[0] == X_b.shape[0]
             yield X_b, y_b
-            yield np.ones((10,10)), y_b
+            # yield np.ones((10,10)), y_b
+        X_b = self._embed(X[X.shape[0] // size * size:])
+        y_b = y[X.shape[0] // size * size:]
+        yield X_b, y_b
 
     def test_batches(self):
         if self.X_test is None:
@@ -251,105 +257,4 @@ class Experiment:
 
 #%%
 
-BASE_PATH = "/home/ltv/data/local_run/graph-network/GAT-2020-03-24-03-37-36-421131"
-# API_SEARCH = "/Volumes/External/datasets/Code/source-graphs/python-source-graph/04_api_sequence_calls/flat_calls.csv"
-API_SEQ = "/home/ltv/data/datasets/source_code/python-source-graph/04_api_sequence_calls/flat_calls.csv"
-
-e = Experiments(base_path=BASE_PATH,
-                api_seq_path=API_SEQ,
-                type_use_path=None,
-                node_type_path=None,
-                variable_use_path=None,
-                function_name_path=None
-                )
-
-experiment = e["apicall"]
-
-#%%
-####################################################################
-# from sklearn.linear_model import LogisticRegression
-# from sklearn.metrics import classification_report, accuracy_score
-#
-# lr = LogisticRegression(max_iter=1000)
-#
-# experiment.get_training_data()
-# X_train, y_train = experiment._embed(experiment.X_train), experiment.y_train
-# X_test, y_test = experiment._embed(experiment.X_test), experiment.y_test
-#
-# lr.fit(X_train, y_train)
-#
-# print(pandas.DataFrame(classification_report(y_test, lr.predict(X_test), output_dict=True)))
-#
-# print(accuracy_score(y_test, lr.predict(X_test)))
-#
-# # print(test_positive_dst.size / (test_positive_dst.size + test_negative_dst.size))
-
-#####################################################################
-
-from classifiers import LRClassifier, NNClassifier
-import tensorflow as tf
-
-clf = LRClassifier(experiment.embed_size)
-
-# clf.compile(optimizer='adam',
-#             loss='sparse_categorical_crossentropy')
-
-loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-optimizer = tf.keras.optimizers.Adam()
-
-train_loss = tf.keras.metrics.Mean(name='train_loss')
-train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='train_accuracy')
-
-test_loss = tf.keras.metrics.Mean(name='test_loss')
-test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='test_accuracy')
-
-@tf.function
-def train_step(images, labels):
-  with tf.GradientTape() as tape:
-    # training=True is only needed if there are layers with different
-    # behavior during training versus inference (e.g. Dropout).
-    predictions = clf(images, training=True)
-    # print(": )", labels.shape, predictions.shape)
-    loss = loss_object(labels, predictions)
-  gradients = tape.gradient(loss, clf.trainable_variables)
-  optimizer.apply_gradients(zip(gradients, clf.trainable_variables))
-
-  train_loss(loss)
-  train_accuracy(labels, predictions)
-
-@tf.function
-def test_step(images, labels):
-  # training=False is only needed if there are layers with different
-  # behavior during training versus inference (e.g. Dropout).
-  predictions = clf(images, training=False)
-  t_loss = loss_object(labels, predictions)
-
-  test_loss(t_loss)
-  test_accuracy(labels, predictions)
-
-EPOCHS = 5
-
-for epoch in range(EPOCHS):
-  # Reset the metrics at the start of the next epoch
-  train_loss.reset_states()
-  train_accuracy.reset_states()
-  test_loss.reset_states()
-  test_accuracy.reset_states()
-
-
-  for X, y in experiment.train_batches():
-    print(X.shape, y.shape)
-    train_step(X, y)
-
-  for X, y in experiment.test_batches():
-    test_step(X, y)
-
-  # print(clf.count_params())
-
-  template = 'Epoch {}, Loss: {}, Accuracy: {}, Test Loss: {}, Test Accuracy: {}'
-  print(template.format(epoch+1,
-                        train_loss.result(),
-                        train_accuracy.result()*100,
-                        test_loss.result(),
-                        test_accuracy.result()*100))
 
