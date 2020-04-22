@@ -29,7 +29,8 @@ class GAT(nn.Module):
                  feat_drop,
                  attn_drop,
                  negative_slope,
-                 residual):
+                 residual,
+                 produce_logits=True):
         super(GAT, self).__init__()
         self.g = g
         self.num_layers = num_layers
@@ -49,10 +50,14 @@ class GAT(nn.Module):
             self.gat_layers.append(GATConv(
                 num_hidden * heads[l-1], num_hidden, heads[l],
                 feat_drop, attn_drop, negative_slope, residual, self.activation))
+            self.emb_size = num_hidden * heads[l]
         # output projection
-        self.gat_layers.append(GATConv(
-            num_hidden * heads[-2], num_classes, heads[-1],
-            feat_drop, attn_drop, negative_slope, residual, None))
+        if produce_logits:
+            self.gat_layers.append(GATConv(
+                num_hidden * heads[-2], num_classes, heads[-1],
+                feat_drop, attn_drop, negative_slope, residual, None))
+
+            self.emb_size = num_classes
 
     def forward(self, inputs=None):
         h = self.embed
@@ -63,6 +68,10 @@ class GAT(nn.Module):
         return logits
 
     def get_layers(self):
+        """
+        Retrieve tensor values on the layers for further use as node embeddings.
+        :return:
+        """
         h = self.embed
         l_out = [h.detach().numpy()]
         for l in range(self.num_layers):

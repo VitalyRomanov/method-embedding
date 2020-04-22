@@ -226,7 +226,8 @@ class RGCN(nn.Module):
                  num_hidden_layers=1,
                  dropout=0,
                  use_self_loop=False,
-                 activation=None):
+                 activation=None,
+                 produce_logits=True):
         # TODO
         # 1. Parameter activation is not used
         super(RGCN, self).__init__()
@@ -252,10 +253,13 @@ class RGCN(nn.Module):
                 self.num_bases, activation=F.relu, self_loop=self.use_self_loop,
                 dropout=self.dropout, g=g))
         # h2o
-        self.layers.append(RelGraphConvHetero(
-            self.h_dim, self.out_dim, self.rel_names, "basis",
-            self.num_bases, activation=None,
-            self_loop=self.use_self_loop, g=g))
+        if produce_logits:
+            self.layers.append(RelGraphConvHetero(
+                self.h_dim, self.out_dim, self.rel_names, "basis",
+                self.num_bases, activation=None,
+                self_loop=self.use_self_loop, g=g))
+
+        self.emb_size = out_dim
 
     def forward(self):
         h = self.embed_layer()
@@ -266,6 +270,10 @@ class RGCN(nn.Module):
         return h
 
     def get_layers(self):
+        """
+        Retrieve tensor values on the layers for further use as node embeddings.
+        :return:
+        """
         h = self.embed_layer()
         l_out = [torch.cat(h, dim=0).detach().numpy()]
         for layer in self.layers:
