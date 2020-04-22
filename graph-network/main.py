@@ -3,7 +3,7 @@ import sys
 from data import load_data
 from graphtools import *
 import numpy as np
-from models import GAT, RGCN, train, final_evaluation
+from models import GAT, RGCN, train, final_evaluation, train_no_classes, final_evaluation_no_classes
 from datetime import datetime
 from params import gat_params, rgcn_params
 import pandas
@@ -40,7 +40,7 @@ def get_name(model, timestamp):
 
 
 
-def main(nodes_path, edges_path, models, desc):
+def main(nodes_path, edges_path, models, desc, training_mode):
 
     for model, param_grid in models.items():
         for params in param_grid:
@@ -64,18 +64,64 @@ def main(nodes_path, edges_path, models, desc):
             else:
                 raise Exception("Unknown model: {}".format(model.__name__))
 
-            m = model(dataset.g,
-                      num_classes=dataset.num_classes,
-                      activation=torch.nn.functional.leaky_relu,
-                      **params)
+            if training_mode == 'classify_nodes':
+                m = model(dataset.g,
+                          num_classes=dataset.num_classes,
+                          activation=torch.nn.functional.leaky_relu,
+                          produce_logits=True,
+                          **params)
+                try:
+                    train(m, dataset.labels, dataset.splits, EPOCHS)
+                except KeyboardInterrupt:
+                    print("Training interrupted")
+                finally:
+                    m.eval()
+                    scores = final_evaluation(m, dataset.labels, dataset.splits)
 
-            try:
-                train(m, dataset.labels, dataset.splits, EPOCHS)
-            except KeyboardInterrupt:
-                print("Training interrupted")
-            finally:
-                m.eval()
-                scores = final_evaluation(m, dataset.labels, dataset.splits)
+
+            elif training_mode == "link_predictor":
+
+                m = model(dataset.g,
+                          num_classes=dataset.num_classes,
+                          activation=torch.nn.functional.leaky_relu,
+                          produce_logits=False,
+                          **params)
+                # get data for models with large number of classes, possibly several labels for
+                # a single input id
+                element_data = dataset.nodes[['global_graph_id', 'name']].rename(mapper={
+                        'global_graph_id': 'id'
+                    }, axis=1)
+                element_data['dst'] = element_data['name'].apply(lambda name: name.split(".")[-1])
+                from ElementEmbedder import ElementEmbedder
+                ee = ElementEmbedder(element_data, 100)
+
+                from LinkPredictor import LinkPredictor
+                lp = LinkPredictor(ee.emb_size + model.emb_size)
+
+                try:
+                    train_no_classes(model, ee, lp, dataset.splits, EPOCHS)
+                except KeyboardInterrupt:
+                    print("Training interrupted")
+                finally:
+                    model.eval()
+                    ee.eval()
+                    lp.eval()
+                    scores = final_evaluation_no_classes(model, ee, lp, dataset.splits)
+
+                    torch.save(
+                        {
+                            'elem_embeder': ee.state_dict(),
+                            'link_predictor': lp.state_dict(),
+                        },
+                        join(metadata['base'], "no_classses.pt")
+                    )
+
+            elif training_mode == "predict_next_function":
+                raise NotImplementedError()
+            else:
+                raise ValueError("Unknown training mode:", training_mode)
+
+
 
             print("Saving...", end="")
 
@@ -125,6 +171,8 @@ if __name__ == "__main__":
         # RGCN: rgcn_params
     }
 
+    training_mode = sys.argv[1]
+
     data_paths = pandas.read_csv("data_paths.tsv", sep="\t")
     MODELS_PATH = "models"
     EPOCHS = 150
@@ -147,5 +195,5 @@ if __name__ == "__main__":
 
         # nodes_, edges_ = load_data(node_path, edge_path)
 
-        main(node_path, edge_path, models_, desc_)
+        main(node_path, edge_path, models_, desc_, training_mode)
         break
