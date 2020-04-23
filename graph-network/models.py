@@ -101,7 +101,8 @@ def train(model, g_labels, splits, epochs):
     return heldout_idx
 
 def evaluate_no_classes(logits, labels):
-    pred = logits.argmax(1)
+    # pred = logits.argmax(1)
+    pred = (logits > 0.).float() * 1.0
     acc = (pred == labels).float().mean()
     return acc
 
@@ -130,19 +131,22 @@ def prepare_batch_no_classes(node_embeddings,
 
     element_embeddings = elem_embeder(elem_embeder[indices])
     node_embeddings_batch = node_embeddings[indices]
-    positive_batch = torch.cat([node_embeddings_batch, element_embeddings], 1)
-    labels_pos = torch.ones(batch_size, dtype=torch.long)
+    # positive_batch = torch.cat([node_embeddings_batch, element_embeddings], 1)
+    labels_pos = torch.ones(batch_size)
 
     node_embeddings_neg_batch = node_embeddings_batch.repeat(K, 1)
     negative_indices = torch.LongTensor(np.random.randint(low=0, high=elem_embeder.n_elements, size=batch_size * K))
     negative_random = elem_embeder(negative_indices)
-    negative_batch = torch.cat([node_embeddings_neg_batch, negative_random], 1)
-    labels_neg = torch.zeros(batch_size * K, dtype=torch.long)
+    # negative_batch = torch.cat([node_embeddings_neg_batch, negative_random], 1)
+    labels_neg = torch.zeros(batch_size * K)
 
-    batch = torch.cat([positive_batch, negative_batch], 0)
+    nodes_batch = torch.cat([node_embeddings_batch, node_embeddings_neg_batch], 0)
+    elements_batch = torch.cat([element_embeddings, negative_random], 0)
+    # batch = torch.cat([positive_batch, negative_batch], 0)
+    logits = (nodes_batch * elements_batch).sum(1)
     labels = torch.cat([labels_pos, labels_neg], 0)
 
-    logits = link_predictor(batch)
+    # logits = link_predictor(batch)
 
     return logits, labels
 
@@ -176,8 +180,9 @@ def final_evaluation_no_classes(model, elem_embeder, link_predictor, splits):
                                    evaluate_no_classes(test_logits, test_labels), \
                                    evaluate_no_classes(val_logits, val_labels)
 
-    logp = nn.functional.log_softmax(train_logits, 1)
-    loss = nn.functional.nll_loss(logp, train_labels)
+    # logp = nn.functional.log_softmax(train_logits, 1)
+    # loss = nn.functional.nll_loss(logp, train_labels)
+    loss = nn.functional.binary_cross_entropy_with_logits(train_logits, train_labels)
 
     scores = {
         "loss": loss.item(),
@@ -232,8 +237,9 @@ def train_no_classes(model, elem_embeder, link_predictor, splits, epochs):
             train_acc = evaluate_no_classes(train_logits, train_labels)
 
 
-            logp = nn.functional.log_softmax(train_logits, 1)
-            loss = nn.functional.nll_loss(logp, train_labels)
+            # logp = nn.functional.log_softmax(train_logits, 1)
+            # loss = nn.functional.nll_loss(logp, train_labels)
+            loss = nn.functional.binary_cross_entropy_with_logits(train_logits, train_labels)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
