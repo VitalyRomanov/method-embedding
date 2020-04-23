@@ -81,8 +81,11 @@ def main(nodes_path, edges_path, models, desc, training_mode):
 
             elif training_mode == "link_predictor":
 
+                NODE_EMB_SIZE = 100
+                ELEM_EMB_SIZE = 100
+
                 m = model(dataset.g,
-                          num_classes=dataset.num_classes,
+                          num_classes=NODE_EMB_SIZE,
                           activation=torch.nn.functional.leaky_relu,
                           produce_logits=False,
                           **params)
@@ -93,20 +96,20 @@ def main(nodes_path, edges_path, models, desc, training_mode):
                     }, axis=1)
                 element_data['dst'] = element_data['name'].apply(lambda name: name.split(".")[-1])
                 from ElementEmbedder import ElementEmbedder
-                ee = ElementEmbedder(element_data, 100)
+                ee = ElementEmbedder(element_data, ELEM_EMB_SIZE)
 
                 from LinkPredictor import LinkPredictor
-                lp = LinkPredictor(ee.emb_size + model.emb_size)
+                lp = LinkPredictor(ee.emb_size + m.emb_size)
 
                 try:
-                    train_no_classes(model, ee, lp, dataset.splits, EPOCHS)
+                    train_no_classes(m, ee, lp, dataset.splits, EPOCHS)
                 except KeyboardInterrupt:
                     print("Training interrupted")
                 finally:
-                    model.eval()
+                    m.eval()
                     ee.eval()
                     lp.eval()
-                    scores = final_evaluation_no_classes(model, ee, lp, dataset.splits)
+                    scores = final_evaluation_no_classes(m, ee, lp, dataset.splits)
 
                     torch.save(
                         {

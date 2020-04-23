@@ -40,7 +40,7 @@ class ElementEmbedder(nn.Module):
         self.n_elements = len(self.elem2id)
 
     def __getitem__(self, ids):
-        return np.array([rnd.choice(self.element_lookup[id]) for id in ids])
+        return torch.LongTensor(np.array([rnd.choice(self.element_lookup[id]) for id in ids]))
 
     def __len__(self):
         return len(self.element_lookup)

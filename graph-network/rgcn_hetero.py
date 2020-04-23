@@ -226,8 +226,7 @@ class RGCN(nn.Module):
                  num_hidden_layers=1,
                  dropout=0,
                  use_self_loop=False,
-                 activation=None,
-                 produce_logits=True):
+                 activation=None):
         # TODO
         # 1. Parameter activation is not used
         super(RGCN, self).__init__()
@@ -253,11 +252,10 @@ class RGCN(nn.Module):
                 self.num_bases, activation=F.relu, self_loop=self.use_self_loop,
                 dropout=self.dropout, g=g))
         # h2o
-        if produce_logits:
-            self.layers.append(RelGraphConvHetero(
-                self.h_dim, self.out_dim, self.rel_names, "basis",
-                self.num_bases, activation=None,
-                self_loop=self.use_self_loop, g=g))
+        self.layers.append(RelGraphConvHetero(
+            self.h_dim, self.out_dim, self.rel_names, "basis",
+            self.num_bases, activation=None,
+            self_loop=self.use_self_loop, g=g))
 
         self.emb_size = out_dim
 

@@ -50,14 +50,12 @@ class GAT(nn.Module):
             self.gat_layers.append(GATConv(
                 num_hidden * heads[l-1], num_hidden, heads[l],
                 feat_drop, attn_drop, negative_slope, residual, self.activation))
-            self.emb_size = num_hidden * heads[l]
         # output projection
-        if produce_logits:
-            self.gat_layers.append(GATConv(
-                num_hidden * heads[-2], num_classes, heads[-1],
-                feat_drop, attn_drop, negative_slope, residual, None))
+        self.gat_layers.append(GATConv(
+            num_hidden * heads[-2], num_classes, heads[-1],
+            feat_drop, attn_drop, negative_slope, residual, None))
 
-            self.emb_size = num_classes
+        self.emb_size = num_classes
 
     def forward(self, inputs=None):
         h = self.embed
