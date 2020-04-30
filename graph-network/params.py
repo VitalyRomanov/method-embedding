@@ -2,6 +2,8 @@ import itertools
 
 from sklearn.model_selection import ParameterGrid
 
+import torch
+
 gat_grids = [
     {
         # 'activation': [nn.functional.leaky_relu],
@@ -13,7 +15,8 @@ gat_grids = [
         'feat_drop': [0.3],
         'attn_drop': [0.3],
         'negative_slope': [0.2],
-        'residual': [False]
+        'residual': [False],
+        'activation': [torch.nn.functional.leaky_relu] #torch.nn.functional.leaky_relu
     },
     # {
     #     'num_layers': [1],
@@ -85,7 +88,8 @@ rgcn_grids = [
         'num_bases': [-1],
         'num_hidden_layers': [1],
         'dropout': [0.3],
-        'use_self_loop': [False]
+        'use_self_loop': [False],
+        'activation': [torch.nn.functional.hardtanh] #torch.nn.functional.leaky_relu
     }
 ]
 
