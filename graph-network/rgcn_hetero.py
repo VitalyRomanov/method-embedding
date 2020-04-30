@@ -226,7 +226,7 @@ class RGCN(nn.Module):
                  num_hidden_layers=1,
                  dropout=0,
                  use_self_loop=False,
-                 activation=None):
+                 activation=F.relu):
         # TODO
         # 1. Parameter activation is not used
         super(RGCN, self).__init__()
@@ -240,16 +240,17 @@ class RGCN(nn.Module):
         self.num_hidden_layers = num_hidden_layers
         self.dropout = dropout
         self.use_self_loop = use_self_loop
+        self.activation = activation
 
         self.embed_layer = RelGraphConvHeteroEmbed(
-            self.h_dim, g, activation=F.relu, self_loop=self.use_self_loop,
+            self.h_dim, g, activation=self.activation, self_loop=self.use_self_loop,
             dropout=self.dropout)
         self.layers = nn.ModuleList()
         # h2h
         for i in range(self.num_hidden_layers):
             self.layers.append(RelGraphConvHetero(
                 self.h_dim, self.h_dim, self.rel_names, "basis",
-                self.num_bases, activation=F.relu, self_loop=self.use_self_loop,
+                self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
                 dropout=self.dropout, g=g))
         # h2o
         self.layers.append(RelGraphConvHetero(
