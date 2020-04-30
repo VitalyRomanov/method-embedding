@@ -30,6 +30,7 @@ class Experiments:
 
         if base_path is not None:
             self.embed = pickle.load(open(join(self.base_path, "embeddings.pkl"), "rb"))[2]
+            # self.embed.e = np.random.rand(self.embed.e.shape[0], self.embed.e.shape[1])
 
         # e = pickle.load(open(join(self.base_path, "embeddings.pkl"), "rb"))
         #
@@ -142,6 +143,12 @@ class Experiment:
         self.unique_src = self.target['src'].unique()
         self.unique_dst = self.target['dst'].unique()
 
+        counts = self.target['dst'].value_counts(normalize=True)
+        freq = counts.values ** 3/4
+        self.freq = freq / sum(freq)
+        self.dst_idxs = counts.index
+        self.dst_neg_sampling = lambda size: np.random.choice(self.dst_idxs, size, replace=True, p=self.freq)
+
 
     def get_train_test_split(self):
         self.train_ind, self.test_ind = train_test_split(
@@ -172,6 +179,7 @@ class Experiment:
 
         src_negative = self.filter_valid(src_set[src_negative_ind])
         dst_negative = self.filter_valid(dst_set[dst_negative_ind])
+        # dst_negative = self.dst_neg_sampling(num)
 
         # while min(src_negative.size, dst_negative.size, num) != num:
         #     # print(min(src_negative.size, dst_negative.size, num))
@@ -265,7 +273,7 @@ class Experiment:
             y_b = np.concatenate([y[i: i+size], np.zeros(size * K,)])
 
 
-            assert y_b.shape[0] == X_b.shape[0]
+            assert y_b.shape[0] == X_b.shape[0] == size * (1 + K)
             yield {"x": X_b_e, "y": y_b}
             # yield np.ones((10,10)), y_b
 

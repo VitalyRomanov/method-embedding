@@ -70,6 +70,8 @@ from classifiers import LRClassifier, NNClassifier, ElementPredictor, NodeClassi
 import tensorflow as tf
 
 if EXPERIMENT_NAME in {'link', 'apicall', 'typeuse'}:
+    # TODO
+    # these three do not work ocrrectly, check old version
     clf = NNClassifier(experiment.embed_size)
 elif EXPERIMENT_NAME in {'varuse', 'fname'}:
     clf = ElementPredictor(experiment.embed_size, experiment.unique_elements, 100)
