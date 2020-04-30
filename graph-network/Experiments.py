@@ -270,10 +270,10 @@ class Experiment:
             # yield np.ones((10,10)), y_b
 
         last_piece = X[X.shape[0] // size * size:, :]
-        neg = self.get_negative_edges(last_piece[:, 0], self.unique_dst, size * K)
+        neg = self.get_negative_edges(last_piece[:, 0], self.unique_dst, last_piece.shape[0] * K)
         X_b = np.vstack([last_piece, neg])
         X_b_e = self._embed(X_b)
-        y_b = np.concatenate([y[X.shape[0] // size * size:], np.zeros(size * K, )])
+        y_b = np.concatenate([y[X.shape[0] // size * size:], np.zeros(last_piece.shape[0] * K, )])
 
         assert y_b.shape[0] == X_b.shape[0]
 
@@ -289,7 +289,7 @@ class Experiment:
         if self.X_train is None:
             self.get_training_data()
 
-        return self.batch(self.X_train, self.y_train, K = 25)
+        return self.batch(self.X_train, self.y_train, K = 1)
 
 
 def compact_property(values):
@@ -348,7 +348,7 @@ class Experiment2(Experiment):
             yield {"x": X_src, "elements": dst, "y": y_b}
 
         last_piece = X[X.shape[0] // size * size:]
-        neg = self.get_negative_edges(last_piece[:, 0], self.unique_dst, size * K)
+        neg = self.get_negative_edges(last_piece[:, 0], self.unique_dst, last_piece.shape[0] * K)
         X_ = np.vstack([last_piece, neg])
         src = X_[:, 0]
         dst = X_[:, 1]
@@ -357,7 +357,7 @@ class Experiment2(Experiment):
         # dst = X[X.shape[0] // size * size:, 1]
         X_src = self.embed[src]
         # y_b = y[X.shape[0] // size * size:]
-        y_b = np.concatenate([y[X.shape[0] // size * size:], np.zeros(size * K, )])
+        y_b = np.concatenate([y[X.shape[0] // size * size:], np.zeros(last_piece.shape[0] * K, )])
         assert y_b.shape[0] == X_src.shape[0] == dst.shape[0]
         yield {"x": X_src, "elements": dst, "y": y_b}
 
