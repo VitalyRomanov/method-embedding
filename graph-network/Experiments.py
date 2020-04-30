@@ -139,6 +139,10 @@ class Experiment:
         self.embed_size = self.embed.e.shape[1]
         # self.n_classes = target['dst'].unique().size
 
+        self.unique_src = self.target['src'].unique()
+        self.unique_dst = self.target['dst'].unique()
+
+
     def get_train_test_split(self):
         self.train_ind, self.test_ind = train_test_split(
             np.arange(start=0, stop=self.target.shape[0]),
@@ -160,23 +164,26 @@ class Experiment:
         src_size = src_set.size
         dst_size = dst_set.size
 
+        # TODO
+        # try word2vec like unigram sampling
+
         src_negative_ind = self.get_random_ind(src_size, num) # * 5)
         dst_negative_ind = self.get_random_ind(dst_size, num) # * 5)
 
         src_negative = self.filter_valid(src_set[src_negative_ind])
         dst_negative = self.filter_valid(dst_set[dst_negative_ind])
 
-        while min(src_negative.size, dst_negative.size, num) != num:
-            # print(min(src_negative.size, dst_negative.size, num))
-            src_negative_ind = self.get_random_ind(src_size, num)
-            dst_negative_ind = self.get_random_ind(dst_size, num)
+        # while min(src_negative.size, dst_negative.size, num) != num:
+        #     # print(min(src_negative.size, dst_negative.size, num))
+        #     src_negative_ind = self.get_random_ind(src_size, num)
+        #     dst_negative_ind = self.get_random_ind(dst_size, num)
+        #
+        #     src_negative = np.concatenate([src_negative, self.filter_valid(src_set[src_negative_ind])])
+        #     dst_negative = np.concatenate([dst_negative, self.filter_valid(dst_set[dst_negative_ind])])
 
-            src_negative = np.concatenate([src_negative, self.filter_valid(src_set[src_negative_ind])])
-            dst_negative = np.concatenate([dst_negative, self.filter_valid(dst_set[dst_negative_ind])])
 
-
-        src_negative = src_negative[:num]
-        dst_negative = dst_negative[:num]
+        # src_negative = src_negative[:num]
+        # dst_negative = dst_negative[:num]
 
         negative_edges = np.hstack([src_negative.reshape(-1,1), dst_negative.reshape(-1,1)])
         return negative_edges
@@ -188,27 +195,36 @@ class Experiment:
         src_set = self.target['src'].values
         dst_set = self.target['dst'].values
 
-        train_negative = self.get_negative_edges(src_set, dst_set, self.train_ind.shape[0]) # * self.K)
-        test_negative = self.get_negative_edges(src_set, dst_set, self.test_ind.shape[0])
+        # TODO
+        # number of negative samples is currently the same as positive
+
+        # train_negative = self.get_negative_edges(src_set, dst_set, self.train_ind.shape[0]) # * self.K)
+        # test_negative = self.get_negative_edges(src_set, dst_set, self.test_ind.shape[0])
 
         train_positive = self.target.iloc[self.train_ind].values
         test_positive = self.target.iloc[self.test_ind].values
 
-        # print(train_positive.shape, train_negative.shape, test_positive.shape, test_negative.shape)
-        print(f"Working with {train_positive.shape[0]} positive and {train_negative.shape[0]} negative samples in the train set, {test_positive.shape[0]} and {test_negative.shape[0]} - in test set")
+        # # print(train_positive.shape, train_negative.shape, test_positive.shape, test_negative.shape)
+        # print(f"Working with {train_positive.shape[0]} positive and {train_negative.shape[0]} negative samples in the train set, {test_positive.shape[0]} and {test_negative.shape[0]} - in test set")
 
-        X_train = np.vstack([
-            train_positive,
-            train_negative
-        ])
+        X_train = train_positive
+        X_test = test_positive
 
-        X_test = np.vstack([
-            test_positive,
-            test_negative
-        ])
+        y_train = np.ones((self.train_ind.shape[0],))
+        y_test = np.ones((self.test_ind.shape[0],))
 
-        y_train = np.concatenate([np.ones((self.train_ind.shape[0],)), np.zeros((self.train_ind.shape[0]),)]) # self.train_ind.shape[0]) * self.K
-        y_test = np.concatenate([np.ones((self.test_ind.shape[0],)), np.zeros((self.test_ind.shape[0],))])
+        # X_train = np.vstack([
+        #     train_positive,
+        #     train_negative
+        # ])
+
+        # X_test = np.vstack([
+        #     test_positive,
+        #     test_negative
+        # ])
+
+        # y_train = np.concatenate([np.ones((self.train_ind.shape[0],)), np.zeros((self.train_ind.shape[0]),)]) # self.train_ind.shape[0]) * self.K
+        # y_test = np.concatenate([np.ones((self.test_ind.shape[0],)), np.zeros((self.test_ind.shape[0],))])
 
         assert X_train.shape[0] == y_train.shape[0]
         assert X_test.shape[0] == y_test.shape[0]
@@ -231,7 +247,7 @@ class Experiment:
 
         return np.hstack([self.embed[src], self.embed[dst]])
 
-    def batch(self, X, y, size=256):
+    def batch(self, X, y, size=256, K=15):
 
         def encode_binary(y):
             y_encoded = np.zeros((y.shape[0], 2))
@@ -241,31 +257,39 @@ class Experiment:
         for i in range(0, X.shape[0], size):
             if i + size >= X.shape[0]: continue
 
-            X_b = self._embed(X[i: i+size])
-            # y_b = encode_binary(y[i: i+size])
-            y_b = y[i: i+size]
+            neg = self.get_negative_edges(X[i: i + size, 0], self.unique_dst, size * K)
+            X_b = np.vstack([X[i: i+size], neg])
 
-            # TODO
-            # dimensionality is wrong
+            X_b_e = self._embed(X_b)
+            # y_b = encode_binary(y[i: i+size])
+            y_b = np.concatenate([y[i: i+size], np.zeros(size * K,)])
+
 
             assert y_b.shape[0] == X_b.shape[0]
-            yield {"x": X_b, "y": y_b}
+            yield {"x": X_b_e, "y": y_b}
             # yield np.ones((10,10)), y_b
-        X_b = self._embed(X[X.shape[0] // size * size:])
-        y_b = y[X.shape[0] // size * size:]
-        yield {"x": X_b, "y": y_b}
+
+        last_piece = X[X.shape[0] // size * size:, :]
+        neg = self.get_negative_edges(last_piece[:, 0], self.unique_dst, size * K)
+        X_b = np.vstack([last_piece, neg])
+        X_b_e = self._embed(X_b)
+        y_b = np.concatenate([y[X.shape[0] // size * size:], np.zeros(size * K, )])
+
+        assert y_b.shape[0] == X_b.shape[0]
+
+        yield {"x": X_b_e, "y": y_b}
 
     def test_batches(self):
         if self.X_test is None:
             self.get_training_data()
 
-        return self.batch(self.X_test, self.y_test)
+        return self.batch(self.X_test, self.y_test, K = 1)
 
     def train_batches(self):
         if self.X_train is None:
             self.get_training_data()
 
-        return self.batch(self.X_train, self.y_train)
+        return self.batch(self.X_train, self.y_train, K = 25)
 
 
 def compact_property(values):
@@ -293,6 +317,9 @@ class Experiment2(Experiment):
 
         print(f"Doing experiment with {len(self.name_map)} distinct target elements")
 
+        self.unique_src = self.target['src'].unique()
+        self.unique_dst = self.target['dst'].unique()
+
     def _embed(self, edges):
         pass
         # src = edges[:,0]
@@ -300,24 +327,38 @@ class Experiment2(Experiment):
         #
         # return np.hstack([self.embed[src], self.embed[dst]])
 
-    def batch(self, X, y, size=256):
+    def batch(self, X, y, size=256, K=15):
         for i in range(0, X.shape[0], size):
             if i + size >= X.shape[0]: continue
 
-            src = X[i: i+size, 0]
-            dst = X[i: i+size, 1]
+            neg = self.get_negative_edges(X[i: i + size, 0], self.unique_dst, size * K)
+            X_ = np.vstack([X[i: i+size], neg])
+            src = X_[:, 0]
+            dst = X_[:, 1]
+
+            # src = X[i: i+size, 0]
+            # dst = X[i: i+size, 1]
 
             X_src = self.embed[src]
 
-            y_b = y[i: i+size]
+            # y_b = y[i: i+size]
+            y_b = np.concatenate([y[i: i + size], np.zeros(size * K, )])
 
             assert y_b.shape[0] == X_src.shape[0] == dst.shape[0]
             yield {"x": X_src, "elements": dst, "y": y_b}
 
-        src = X[X.shape[0] // size * size:, 0]
-        dst = X[X.shape[0] // size * size:, 1]
+        last_piece = X[X.shape[0] // size * size:]
+        neg = self.get_negative_edges(last_piece[:, 0], self.unique_dst, size * K)
+        X_ = np.vstack([last_piece, neg])
+        src = X_[:, 0]
+        dst = X_[:, 1]
+
+        # src = X[X.shape[0] // size * size:, 0]
+        # dst = X[X.shape[0] // size * size:, 1]
         X_src = self.embed[src]
-        y_b = y[X.shape[0] // size * size:]
+        # y_b = y[X.shape[0] // size * size:]
+        y_b = np.concatenate([y[X.shape[0] // size * size:], np.zeros(size * K, )])
+        assert y_b.shape[0] == X_src.shape[0] == dst.shape[0]
         yield {"x": X_src, "elements": dst, "y": y_b}
 
 
@@ -347,7 +388,7 @@ class Experiment3(Experiment2):
         self.X_test, self.y_test = shuffle(X_test, y_test)
 
 
-    def batch(self, X, y, size=256):
+    def batch(self, X, y, size=256, **kwargs):
         for i in range(0, X.shape[0], size):
             if i + size >= X.shape[0]: continue
 
