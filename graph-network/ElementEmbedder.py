@@ -19,12 +19,16 @@ class ElementEmbedder(nn.Module):
     #       used to generate negative samples ourside of this class (in the training procedure).
     # 5. Alternatively, I can generate dst for random src and keep the logic in this class simple. I think
     #       this will be better
-    def __init__(self, elements, emb_size):
+    def __init__(self, elements, emb_size, compact_dst=True):
         super(ElementEmbedder, self).__init__()
 
         self.elements = elements.copy()
         self.elem2id = compact_property(elements['dst'])
-        self.elements['emb_id'] = self.elements['dst'].apply(lambda x: self.elem2id[x])
+
+        if compact_dst:
+            self.elements['emb_id'] = self.elements['dst'].apply(lambda x: self.elem2id[x])
+        else:
+            self.elements['emb_id'] = self.elements['dst']
 
         self.element_lookup = {}
         for name, group in self.elements.groupby('id'):
@@ -38,6 +42,26 @@ class ElementEmbedder(nn.Module):
 
         self.emb_size = emb_size
         self.n_elements = len(self.elem2id)
+
+        self.init_neg_sample()
+
+    def init_neg_sample(self):
+        # TODO
+        # 3/4
+        WORD2VEC_SAMPLING_POWER = 3/5
+
+        counts = self.elements['dst'].value_counts(normalize=True)
+        idxs = list(map(lambda x: self.elem2id[x], counts.index))
+        freq = counts.to_list()
+        ind_freq = list(zip(idxs, freq))
+        ind_freq = sorted(ind_freq, key=lambda x:x[0])
+        _, self.elem_probs = zip(*ind_freq)
+        self.elem_probs = np.power(self.elem_probs, WORD2VEC_SAMPLING_POWER)
+        self.elem_probs /= sum(self.elem_probs)
+        self.random_indices = np.arange(0, len(self.elem2id))
+
+    def sample_negative(self, size):
+        return np.random.choice(self.random_indices, size, replace=True, p=self.elem_probs)
 
     def __getitem__(self, ids):
         return torch.LongTensor(np.array([rnd.choice(self.element_lookup[id]) for id in ids]))
@@ -61,3 +85,6 @@ if __name__ == '__main__':
     sample = ee[rand_ind]
     from pprint import pprint
     pprint(list(zip(rand_ind, sample)))
+    print(ee.elem_probs)
+    print(ee.elem2id)
+    print(ee.sample_negative(3))
