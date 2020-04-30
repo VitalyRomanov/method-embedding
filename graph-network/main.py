@@ -3,7 +3,7 @@ import sys
 from data import load_data
 from graphtools import *
 import numpy as np
-from models import GAT, RGCN, train, final_evaluation, train_no_classes, final_evaluation_no_classes
+from models import GAT, RGCN
 from datetime import datetime
 from params import gat_params, rgcn_params
 import pandas
@@ -40,7 +40,7 @@ def get_name(model, timestamp):
 
 
 
-def main(nodes_path, edges_path, models, desc, training_mode):
+def main(nodes_path, edges_path, models, desc, args):
 
     for model, param_grid in models.items():
         for params in param_grid:
@@ -64,69 +64,6 @@ def main(nodes_path, edges_path, models, desc, training_mode):
             else:
                 raise Exception("Unknown model: {}".format(model.__name__))
 
-            if training_mode == 'classify_nodes':
-                m = model(dataset.g,
-                          num_classes=dataset.num_classes,
-                          activation=torch.nn.functional.leaky_relu,
-                          produce_logits=True,
-                          **params)
-                try:
-                    train(m, dataset.labels, dataset.splits, EPOCHS)
-                except KeyboardInterrupt:
-                    print("Training interrupted")
-                finally:
-                    m.eval()
-                    scores = final_evaluation(m, dataset.labels, dataset.splits)
-
-
-            elif training_mode == "link_predictor":
-
-                NODE_EMB_SIZE = 100
-                ELEM_EMB_SIZE = 100
-
-                m = model(dataset.g,
-                          num_classes=NODE_EMB_SIZE,
-                          activation=torch.nn.functional.leaky_relu,
-                          produce_logits=False,
-                          **params)
-                # get data for models with large number of classes, possibly several labels for
-                # a single input id
-                element_data = dataset.nodes[['global_graph_id', 'name']].rename(mapper={
-                        'global_graph_id': 'id'
-                    }, axis=1)
-                element_data['dst'] = element_data['name'].apply(lambda name: name.split(".")[-1])
-                from ElementEmbedder import ElementEmbedder
-                ee = ElementEmbedder(element_data, ELEM_EMB_SIZE)
-
-                from LinkPredictor import LinkPredictor
-                lp = LinkPredictor(ee.emb_size + m.emb_size)
-
-                try:
-                    train_no_classes(m, ee, lp, dataset.splits, EPOCHS)
-                except KeyboardInterrupt:
-                    print("Training interrupted")
-                finally:
-                    m.eval()
-                    ee.eval()
-                    lp.eval()
-                    scores = final_evaluation_no_classes(m, ee, lp, dataset.splits)
-
-                    torch.save(
-                        {
-                            'elem_embeder': ee.state_dict(),
-                            'link_predictor': lp.state_dict(),
-                        },
-                        join(metadata['base'], "no_classses.pt")
-                    )
-
-            elif training_mode == "predict_next_function":
-                raise NotImplementedError()
-            else:
-                raise ValueError("Unknown training mode:", training_mode)
-
-
-
-            print("Saving...", end="")
 
             model_attempt = get_name(model, dateTime)
 
@@ -134,6 +71,61 @@ def main(nodes_path, edges_path, models, desc, training_mode):
 
             if not isdir(MODEL_BASE):
                 mkdir(MODEL_BASE)
+
+
+            if args.training_mode == 'node_classifier':
+
+                from train_node_classifier import training_procedure
+
+                m, scores = training_procedure(dataset, model, params, EPOCHS)
+
+            elif args.training_mode == "vector_sim":
+
+                from train_vector_sim import training_procedure
+
+                m, ee, scores = training_procedure(dataset, model, params, EPOCHS)
+
+                torch.save(
+                    {
+                        'elem_embeder': ee.state_dict(),
+                    },
+                    join(MODEL_BASE, "vector_sim.pt")
+                )
+
+            elif args.training_mode == "vector_sim_classifier":
+
+                from train_vector_sim_with_classifier import training_procedure
+
+                m, ee, lp, scores = training_procedure(dataset, model, params, EPOCHS, args.data_file)
+
+                torch.save(
+                    {
+                        'elem_embeder': ee.state_dict(),
+                        'link_predictor': lp.state_dict(),
+                    },
+                    join(MODEL_BASE, "vector_sim_with_classifier.pt")
+                )
+
+            elif args.training_mode == "predict_next_function":
+
+                from train_vector_sim_next_call import  training_procedure
+
+                m, ee, lp, scores = training_procedure(dataset, model, params, EPOCHS, args.call_seq_file)
+
+                torch.save(
+                    {
+                        'elem_embeder': ee.state_dict(),
+                        'link_predictor': lp.state_dict(),
+                    },
+                    join(MODEL_BASE, "vector_sim_next_call.pt")
+                )
+            else:
+                raise ValueError("Unknown training mode:", args.training_mode)
+
+
+            print("Saving...", end="")
+
+            params['activation'] = params['activation'].__name__
 
             metadata = {
                 "base": MODEL_BASE,
@@ -144,7 +136,8 @@ def main(nodes_path, edges_path, models, desc, training_mode):
                 "state": "state_dict.pt",
                 "scores": scores,
                 "time": dateTime,
-                "description": desc
+                "description": desc,
+                "training_mode": args.training_mode
             }
 
             pickle.dump(m.get_embeddings(dataset.global_id_map), open(join(metadata['base'], metadata['layers']), "wb"))
@@ -169,12 +162,26 @@ def main(nodes_path, edges_path, models, desc, training_mode):
 
 if __name__ == "__main__":
 
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Process some integers.')
+    parser.add_argument('--training_mode', dest='training_mode', default=None,
+                        help='Selects one of training procedures [node_classifier|vector_sim|vector_sim_classifier|predict_next_function]')
+    parser.add_argument('--call_seq_file', dest='call_seq_file', default=None,
+                        help='Path to the file with edges that represent API call sequence. Used only with training mode \'predict_next_function\'')
+    parser.add_argument('--node_path', dest='node_path', default=None,
+                        help='Path to the file with nodes')
+    parser.add_argument('--edge_path', dest='edge_path', default=None,
+                        help='Path to the file with edges')
+    parser.add_argument('--data_file', dest='data_file', default=None,
+                        help='Path to the file with edges that are used for training')
+
+    args = parser.parse_args()
+
     models_ = {
         GAT: gat_params,
         # RGCN: rgcn_params
     }
-
-    training_mode = sys.argv[1]
 
     data_paths = pandas.read_csv("data_paths.tsv", sep="\t")
     MODELS_PATH = "models"
@@ -183,20 +190,22 @@ if __name__ == "__main__":
     if not isdir(MODELS_PATH):
         mkdir(MODELS_PATH)
 
-    for ind, row in data_paths.iterrows():
+    main(args.node_path, args.edge_path, models_, "full", args)
 
-        if ind == 1: break
-        node_path = row.nodes
-        edge_path = row.edges_train
-        desc_ = row.desc
-        # node_path = "/Volumes/External/dev/method-embeddings/res/python/normalized_sourcetrail_nodes.csv"
-        # edge_path = "/Volumes/External/dev/method-embeddings/res/python/edges.csv"
-        node_path = "/home/ltv/data/datasets/source_code/python-source-graph/02_largest_component/nodes_component_0.csv.bz2"
-        edge_path = "/home/ltv/data/datasets/source_code/python-source-graph/02_largest_component/edges_component_0.csv.bz2"
-        # node_path = "/home/ltv/data/datasets/source_code/sample-python/normalized_sourcetrail_nodes.csv"
-        # edge_path = "/home/ltv/data/datasets/source_code/sample-python/edges.csv"
-
-        # nodes_, edges_ = load_data(node_path, edge_path)
-
-        main(node_path, edge_path, models_, desc_, training_mode)
-        break
+    # for ind, row in data_paths.iterrows():
+    #
+    #     if ind == 1: break
+    #     node_path = row.nodes
+    #     edge_path = row.edges_train
+    #     desc_ = row.desc
+    #     # node_path = "/Volumes/External/dev/method-embeddings/res/python/normalized_sourcetrail_nodes.csv"
+    #     # edge_path = "/Volumes/External/dev/method-embeddings/res/python/edges.csv"
+    #     # node_path = "/home/ltv/data/datasets/source_code/python-source-graph/02_largest_component/nodes_component_0.csv.bz2"
+    #     # edge_path = "/home/ltv/data/datasets/source_code/python-source-graph/02_largest_component/edges_component_0.csv.bz2"
+    #     # node_path = "/home/ltv/data/datasets/source_code/sample-python/normalized_sourcetrail_nodes.csv"
+    #     # edge_path = "/home/ltv/data/datasets/source_code/sample-python/edges.csv"
+    #
+    #     # nodes_, edges_ = load_data(node_path, edge_path)
+    #
+    #     main(args.node_path, args.edge_path, models_, desc_, args)
+    #     break
