@@ -30,6 +30,7 @@ BASE_PATH = "/home/ltv/dev/method-embedding/graph-network/models/GAT-2020-04-24-
 # BASE_PATH = "/home/ltv/dev/method-embedding/graph-network/models/GAT-2020-04-24-22-12-19-718445" # trained on variables
 # API_SEARCH = "/Volumes/External/datasets/Code/source-graphs/python-source-graph/04_api_sequence_calls/flat_calls.csv"
 API_SEQ = "/home/ltv/data/datasets/source_code/python-source-graph/04_api_sequence_calls/flat_calls.csv"
+# API_SEQ = "/home/ltv/dev/method-embedding/graph-network/edges2.csv"
 VAR_USE = "/home/ltv/data/datasets/source_code/python-source-graph/03_variables_on_functions/node_to_var.csv"
 
 e = Experiments(base_path=BASE_PATH,
