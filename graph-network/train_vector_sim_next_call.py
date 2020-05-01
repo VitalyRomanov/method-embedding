@@ -4,6 +4,7 @@ import dgl.function as fn
 from dgl.nn.pytorch import edge_softmax, GATConv
 import numpy as np
 import pandas as pd
+import pickle
 
 from ElementEmbedder import ElementEmbedder
 from LinkPredictor import LinkPredictor
@@ -129,6 +130,9 @@ def final_evaluation_no_classes(model, elem_embeder, link_predictor, splits):
 
 
 def train_no_classes(model, elem_embeder, link_predictor, splits, epochs):
+    # TODO
+    # investigate this split policy. is it applicable to a new set of edges?
+    # there should be no leak. the nodes appear either in train or in test set
     train_idx, test_idx, val_idx = splits
 
     pool = set(elem_embeder.elements['id'].to_list())
@@ -182,7 +186,7 @@ def train_no_classes(model, elem_embeder, link_predictor, splits, epochs):
             optimizer.step()
 
             if batch_ind % 1 == 0:
-                print("\r%d/%d batches complete, acc: %.4f" % (batch_ind, num_batches, train_acc.item()), end="\n")
+                print("\r%d/%d batches complete, acc: %.4f / %.4f" % (batch_ind, num_batches, train_acc.item(), np.average(train_labels.numpy())), end="\n")
 
 
         test_logits, test_labels = prepare_batch_no_classes(node_embeddings,
@@ -202,7 +206,10 @@ def train_no_classes(model, elem_embeder, link_predictor, splits, epochs):
         test_acc, val_acc = evaluate_no_classes(test_logits, test_labels), \
                             evaluate_no_classes(val_logits, val_labels)
 
+        # print(np.average(test_labels.numpy()), np.average(val_labels.numpy()))
         track_best(epoch, loss, train_acc, val_acc, test_acc, best_val_acc, best_test_acc)
+        # pickle.dump(node_embeddings.detach().numpy(), open("nodes.pkl", "wb"))
+        # elem_embeder.elements.to_csv("edges.csv", index=False)
 
 def training_procedure(dataset, model, params, EPOCHS, call_seq_file):
     NODE_EMB_SIZE = 100
@@ -220,6 +227,10 @@ def training_procedure(dataset, model, params, EPOCHS, call_seq_file):
     function2nodeid = dict(zip(dataset.nodes['id'].values, dataset.nodes['global_graph_id'].values))
     element_data['id'] = element_data['src'].apply(lambda x: function2nodeid[x])
     element_data['dst'] = element_data['dst'].apply(lambda x: function2nodeid[x])
+    element_data.drop_duplicates(['id', 'dst'], inplace=True, ignore_index=True)
+
+    # element_data.to_csv("id2graphid.csv", index=False)
+    # import sys; sys.exit()
     # element_data['dst'] = element_data['name'].apply(lambda name: name.split(".")[-1])
     from ElementEmbedder import ElementEmbedder
     ee = ElementEmbedder(element_data, ELEM_EMB_SIZE, compact_dst=False)
