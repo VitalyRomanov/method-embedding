@@ -146,7 +146,7 @@ def train_no_classes(model, elem_embeder, link_predictor, splits, epochs):
     optimizer = torch.optim.Adagrad(
         [
             {'params': model.parameters(), 'lr': 1e-2},
-            {'params': link_predictor.parameters(), 'lr': 1e-3}
+            {'params': link_predictor.parameters(), 'lr': 1e-2}
         ], lr=0.01)
 
     best_val_acc = torch.tensor(0)
