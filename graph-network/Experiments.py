@@ -8,6 +8,8 @@ import numpy as np
 # from graphtools import Embedder
 from Embedder import Embedder
 import pickle
+import random as rnd
+
 
 class Experiments:
     """
@@ -90,7 +92,7 @@ class Experiments:
 
             held = held.query('type == 8')[['src', 'dst']]
 
-            return Experiment(self.embed, nodes, edges, held)
+            return Experiment(self.embed, nodes, edges, held, split_on="nodes", neg_sampling_strategy="word2vec")
 
         elif type == "apicall":
             api_seq = pandas.read_csv(self.experiments['apicall'])
@@ -111,14 +113,14 @@ class Experiments:
                 api_seq['dst'].apply(lambda nid: nid in unique_nodes)
             ]
 
-            return Experiment(self.embed, nodes, edges, api_seq)
+            return Experiment(self.embed, nodes, edges, api_seq, split_on="nodes", neg_sampling_strategy="word2vec", compact_dst=False)
 
         elif type == "typeuse":
             held = pandas.read_csv(join(self.base_path, "held.csv"))
 
             held = held.query('type == 2')[['src', 'dst']]
 
-            return Experiment(self.embed, nodes, edges, held)
+            return Experiment(self.embed, nodes, edges, held, split_on="nodes", neg_sampling_strategy="word2vec")
 
         elif type == "varuse":
             var_use = pandas.read_csv(self.experiments['varuse'])
@@ -129,7 +131,7 @@ class Experiments:
                 var_use['src'].apply(lambda nid: nid in unique_nodes)
             ]
 
-            return Experiment2(self.embed, nodes, edges, var_use)
+            return Experiment2(self.embed, nodes, edges, var_use, split_on="nodes", neg_sampling_strategy="word2vec")
 
         elif type == "fname":
 
@@ -146,7 +148,9 @@ class Experiments:
             #     fname['src'].apply(lambda nid: nid in unique_nodes)
             # ]
 
-            return Experiment2(self.embed, nodes, edges, functions[['src', 'dst']])
+            # use edge splits when outgoing degree is 1
+
+            return Experiment2(self.embed, nodes, edges, functions[['src', 'dst']], split_on="edges", neg_sampling_strategy="word2vec")
 
         elif type == "nodetype":
 
@@ -154,7 +158,7 @@ class Experiments:
             types['src'] = nodes['id']
             types['dst'] = nodes['label']
 
-            return Experiment3(self.embed, nodes, edges, types[['src', 'dst']])
+            return Experiment3(self.embed, nodes, edges, types[['src', 'dst']], split_on="edges", neg_sampling_strategy="word2vec")
 
 
 class Experiment:
@@ -162,31 +166,26 @@ class Experiment:
                  embeddings: Embedder,
                  nodes: pandas.DataFrame,
                  edges: pandas.DataFrame,
-                 target: pandas.DataFrame):
+                 target: pandas.DataFrame,
+                 split_on="nodes",
+                 neg_sampling_strategy="word2vec",
+                 K = 1,
+                 test_frac=0.1, compact_dst=True):
 
-        # store local copies
+        # store local copies"
         self.embed = embeddings
         self.nodes = nodes
         self.edges = edges
         self.target = target
-        # make sure to drop duplicate edges to prevent leakage into the test set
-        self.target.drop_duplicates(['src', 'dst'], inplace=True, ignore_index=True)
-
-        # train test split will be stored here
-        # these arrays store indices with respect to target data (edge indices)
-        self.train_ind = None
-        self.test_ind = None
-
         # internal variables
-        self.TEST_FRAC = 0.1
-        # self.K = 10 # how much more of negative samples should be in training data
-        # self.last_filtered = 0
+        self.split_on = split_on
+        self.neg_smpl_strategy = neg_sampling_strategy
+        self.K = K
+        self.TEST_FRAC = test_frac
 
-        # these arrays sore edge lists and labels for these edges
-        self.X_train = None
-        self.X_test = None
-        self.y_train = None
-        self.y_test = None
+        # make sure to drop duplicate edges to prevent leakage into the test set
+        # do it before creating experiment?
+        self.target.drop_duplicates(['src', 'dst'], inplace=True, ignore_index=True)
 
         # size of embeddigns given by gnn model
         self.embed_size = self.embed.e.shape[1]
@@ -195,43 +194,62 @@ class Experiment:
         # initialize negative sampler
         self.unique_src = self.target['src'].unique()
         self.unique_dst = self.target['dst'].unique()
-        self.init_negative_sampler()
+        self.init_negative_sampler(strategy=self.neg_smpl_strategy)
 
-    def init_negative_sampler(self, unigram_power=3/4):
+        if self.split_on == "edges":
+            # train test split will be stored here
+            # these arrays store indices with respect to target data (edge indices)
+            self.train_edge_ind, self.test_edge_ind = train_test_split(np.arange(start=0, stop=self.target.shape[0]),
+                                                                       test_size=self.TEST_FRAC, random_state=42)
+            #
+            # # these arrays sore edge lists and labels for these edges
+            # self.X_train = None
+            # self.X_test = None
+            # self.y_train = None
+            # self.y_test = None
+
+        elif self.split_on == "nodes":
+            # # this is useful if you use ElementEmbedder
+            self.target['id'] = self.target['src']
+            from ElementEmbedderBase import ElementEmbedderBase
+            self.ee = ElementEmbedderBase(self.target, compact_dst=compact_dst)
+            self.train_nodes, self.test_nodes = train_test_split(self.unique_src, test_size=self.TEST_FRAC,
+                                                                 random_state=42)
+        else:
+            raise ValueError("Unsupported split mode:", self.split_on)
+
+
+    def init_negative_sampler(self, unigram_power=3/4, strategy="word2vec"):
         """
         Initialize word2vec style negative sampler. Unigram for target nodes is computed. Negative samples
         are drawn from modified unigram distribution.
         :return: np array of dst nodes (as given in self.target table)
         """
-        counts = self.target['dst'].value_counts(normalize=True)
-        freq = counts.values ** unigram_power
-        self.freq = freq / sum(freq)
-        self.dst_idxs = counts.index
-        self.dst_neg_sampling = lambda size: np.random.choice(self.dst_idxs, size, replace=True, p=self.freq)
+        if strategy == "word2vec":
+            counts = self.target['dst'].value_counts(normalize=True)
+            freq = counts.values ** unigram_power
+            self.freq = freq / sum(freq)
+            self.dst_idxs = counts.index
+            self.dst_neg_sampling = lambda size: np.random.choice(self.dst_idxs, size, replace=True, p=self.freq)
+        elif strategy == "uniform":
+            self.dst_neg_sampling = lambda size: np.random.choice(self.unique_dst, size, replace=True)
 
-    def get_train_test_split(self):
-        self.train_ind, self.test_ind = train_test_split(
-            np.arange(start=0, stop=self.target.shape[0]),
-            test_size=self.TEST_FRAC,
-            random_state=42
-        )
+    # def filter_valid(self, keys):
+    #     # not used, all nodes are considered to be already filtered
+    #     return keys
+    #     # filtered = np.array([key for key in keys if key in self.embed.ind], dtype=np.int32)
+    #     filtered = np.fromiter(filter(lambda key: key in self.embed.ind, keys), dtype=np.int32)
+    #     # self.last_filtered = keys.size - filtered
+    #     # return filtered
 
-    def filter_valid(self, keys):
-        # not used, all nodes are considered to be already filtered
-        return keys
-        # filtered = np.array([key for key in keys if key in self.embed.ind], dtype=np.int32)
-        filtered = np.fromiter(filter(lambda key: key in self.embed.ind, keys), dtype=np.int32)
-        # self.last_filtered = keys.size - filtered
-        # return filtered
-
-    def get_random_ind(self, set_size, num):
-        """
-        Used for simple negative sampling strategy.
-        :param set_size: range of values from which negative samples are grawn
-        :param num: size of negative sample
-        :return: array of contiguous indices from range 0:set_size
-        """
-        return np.random.randint(low=0, high=set_size, size=num)
+    # def get_random_ind(self, set_size, num):
+    #     """
+    #     Used for simple negative sampling strategy.
+    #     :param set_size: range of values from which negative samples are grawn
+    #     :param num: size of negative sample
+    #     :return: array of contiguous indices from range 0:set_size
+    #     """
+    #     return np.random.randint(low=0, high=set_size, size=num)
 
     def get_negative_edges(self, src_set, dst_set, num):
         """
@@ -244,14 +262,13 @@ class Experiment:
         src_size = src_set.size
         dst_size = dst_set.size
 
-        # TODO
-        # try word2vec like unigram sampling
-
-        src_negative_ind = self.get_random_ind(src_size, num)
+        src_negative_ind = np.random.randint(low=0, high=src_size, size=num)
+        # src_negative_ind = self.get_random_ind(src_size, num)
         # dst_negative_ind = self.get_random_ind(dst_size, num)
 
-        src_negative = self.filter_valid(src_set[src_negative_ind])
+        # src_negative = self.filter_valid(src_set[src_negative_ind])
         # dst_negative = self.filter_valid(dst_set[dst_negative_ind])
+        src_negative = src_set[src_negative_ind]
         dst_negative = self.dst_neg_sampling(num)
 
         # while min(src_negative.size, dst_negative.size, num) != num:
@@ -275,20 +292,16 @@ class Experiment:
         Split edges provided by self.target into train and test sets
         :return:
         """
-        self.get_train_test_split()
 
         # this actually never was a set
         # src_set = self.target['src'].values
         # dst_set = self.target['dst'].values
 
-        # TODO
-        # number of negative samples is currently the same as positive
-
         # train_negative = self.get_negative_edges(src_set, dst_set, self.train_ind.shape[0]) # * self.K)
         # test_negative = self.get_negative_edges(src_set, dst_set, self.test_ind.shape[0])
 
-        train_positive = self.target.iloc[self.train_ind].values
-        test_positive = self.target.iloc[self.test_ind].values
+        train_positive = self.target.iloc[self.train_edge_ind].values
+        test_positive = self.target.iloc[self.test_edge_ind].values
 
         # # print(train_positive.shape, train_negative.shape, test_positive.shape, test_negative.shape)
         # print(f"Working with {train_positive.shape[0]} positive and {train_negative.shape[0]} negative samples in the train set, {test_positive.shape[0]} and {test_negative.shape[0]} - in test set")
@@ -296,8 +309,8 @@ class Experiment:
         X_train = train_positive
         X_test = test_positive
 
-        y_train = np.ones((self.train_ind.shape[0],))
-        y_test = np.ones((self.test_ind.shape[0],))
+        y_train = np.ones((self.train_edge_ind.shape[0],))
+        y_test = np.ones((self.test_edge_ind.shape[0],))
 
         # X_train = np.vstack([
         #     train_positive,
@@ -331,13 +344,10 @@ class Experiment:
         src = edges[:,0]
         dst = edges[:,1]
 
-        # disabled for testing
-
-        # return np.hstack([self.embed.e[src], self.embed.e[dst]])
         return np.hstack([self.embed[src], self.embed[dst]])
         # return np.hstack([np.random.rand(src.shape[0], self.embed.e.shape[1]), np.random.rand(src.shape[0], self.embed.e.shape[1])])
 
-    def batch(self, X, y, size=256, K=15):
+    def batch_edges(self, X, size=256, K=15):
         """
         Generate batch
         :param X: input edge list in 2d numpy array
@@ -374,7 +384,7 @@ class Experiment:
             X_b = np.vstack([X[i: i+size], neg])
 
             X_b_e = self._embed(X_b)
-            y_b = np.concatenate([y[i: i+size], np.zeros(size * K,)])
+            y_b = np.concatenate([np.ones(size,), np.zeros(size * K,)])
 
             assert np.average(y_b) == 1/(1+K)
             assert y_b.shape[0] == X_b.shape[0] == size * (1 + K)
@@ -385,7 +395,7 @@ class Experiment:
         neg = self.get_negative_edges(last_piece[:, 0], self.unique_dst, last_piece.shape[0] * K)
         # neg = self.get_negative_edges(self.unique_src, self.unique_dst, last_piece.shape[0] * K)
         X_b = np.vstack([last_piece, neg])
-        y_b = np.concatenate([y[X.shape[0] // size * size:], np.zeros(last_piece.shape[0] * K, )])
+        y_b = np.concatenate([np.ones(last_piece.shape[0], ), np.zeros(last_piece.shape[0] * K, )])
 
         assert np.average(y_b) == 1 / (1 + K)
         assert y_b.shape[0] == X_b.shape[0] == last_piece.shape[0] * (1 + K)
@@ -393,16 +403,44 @@ class Experiment:
         yield {"x": self._embed(X_b), "y": y_b}
 
     def test_batches(self):
-        if self.X_test is None:
-            self.get_training_data()
-
-        return self.batch(self.X_test, self.y_test, K=1)
+        # if self.X_test is None:
+        #     self.get_training_data()
+        if self.split_on == "nodes":
+            return self.batch_nodes(self.test_nodes, K=1)
+        elif self.split_on == "edges":
+            return self.batch_edges(self.target.iloc[self.test_edge_ind][['src', 'dst']].values, K=1)
 
     def train_batches(self):
-        if self.X_train is None:
-            self.get_training_data()
+        # if self.X_train is None:
+        #     self.get_training_data()
+        if self.split_on == "nodes":
+            return self.batch_nodes(self.train_nodes, K=1)
+        elif self.split_on == "edges":
+            return self.batch_edges(self.target.iloc[self.train_edge_ind][['src', 'dst']].values, K=1)
 
-        return self.batch(self.X_train, self.y_train, K=1)
+
+    def batch_nodes(self, indices, size=256, K=15):
+
+        for _ in range(indices.size // size):
+            batch_ind = np.random.choice(indices, size)
+            positive_in = self.embed[batch_ind]
+            positive_out = self.embed[self.ee[batch_ind]]
+
+            negative_in = np.repeat(positive_in, K, axis=0)
+            negative_out = self.embed[self.ee.sample_negative(size * K)]
+            # negative_out = self.embed[np.random.choice(self.unique_dst, size=size * K)]
+            X_b = np.concatenate([
+                np.concatenate([
+                    positive_in, positive_out
+                ], axis=1),
+                np.concatenate([
+                    negative_in, negative_out
+                ], axis=1)
+            ], axis=0)
+
+            y_b = np.concatenate([np.ones(size,), np.zeros(size*K,)])
+
+            yield {"x": X_b, "y": y_b}
 
 
 def compact_property(values):
@@ -414,8 +452,12 @@ class Experiment2(Experiment):
     def __init__(self, embeddings: Embedder,
                  nodes: pandas.DataFrame,
                  edges: pandas.DataFrame,
-                 target: pandas.DataFrame):
-        super(Experiment2, self).__init__(embeddings, nodes, edges, target)
+                 target: pandas.DataFrame,
+                 split_on="nodes",
+                 neg_sampling_strategy="word2vec",
+                 K = 1,
+                 test_frac=0.1, compact_dst=True):
+        super(Experiment2, self).__init__(embeddings, nodes, edges, target, split_on=split_on, neg_sampling_strategy=neg_sampling_strategy, K=K, test_frac=test_frac, compact_dst=compact_dst)
 
         # def compact_property(values):
         #     uniq = np.unique(values)
@@ -426,12 +468,13 @@ class Experiment2(Experiment):
         self.dst_orig = target['dst']
         target['dst'] = target['dst'].apply(lambda name: self.name_map[name])
 
-        self.unique_elements = len(self.name_map)
-
         print(f"Doing experiment with {len(self.name_map)} distinct target elements")
 
         self.unique_src = self.target['src'].unique()
         self.unique_dst = self.target['dst'].unique()
+        self.unique_elements = self.unique_dst.size
+
+        self.init_negative_sampler(strategy=self.neg_smpl_strategy)
 
     def _embed(self, edges):
         pass
@@ -440,22 +483,39 @@ class Experiment2(Experiment):
         #
         # return np.hstack([self.embed[src], self.embed[dst]])
 
-    def batch(self, X, y, size=256, K=15):
+    def batch_nodes(self, indices, size=256, K=15):
+        for _ in range(indices.size // size):
+            batch_ind = np.random.choice(indices, size)
+            positive_in = self.embed[batch_ind]
+            positive_out = self.ee[batch_ind]
+
+            negative_in = np.repeat(positive_in, K, axis=0)
+            negative_out = self.ee.sample_negative(size * K)
+            # negative_out = self.embed[np.random.choice(self.unique_dst, size=size * K)]
+            in_ = np.concatenate([
+                positive_in, negative_in
+            ], axis=0)
+            dst_ = np.concatenate([
+                positive_out, negative_out
+            ], axis=0)
+
+            y_b = np.concatenate([np.ones(size, ), np.zeros(size * K, )])
+
+            yield {"x": in_, 'elements': dst_ , "y": y_b}
+
+    def batch_edges(self, X, size=256, K=15):
         for i in range(0, X.shape[0], size):
             if i + size >= X.shape[0]: continue
 
             neg = self.get_negative_edges(X[i: i + size, 0], self.unique_dst, size * K)
             X_ = np.vstack([X[i: i+size], neg])
+
             src = X_[:, 0]
             dst = X_[:, 1]
 
-            # src = X[i: i+size, 0]
-            # dst = X[i: i+size, 1]
-
             X_src = self.embed[src]
 
-            # y_b = y[i: i+size]
-            y_b = np.concatenate([y[i: i + size], np.zeros(size * K, )])
+            y_b = np.concatenate([np.ones(size, ), np.zeros(size * K, )])
 
             assert y_b.shape[0] == X_src.shape[0] == dst.shape[0] == size * (1 + K)
             yield {"x": X_src, "elements": dst, "y": y_b}
@@ -463,15 +523,16 @@ class Experiment2(Experiment):
         last_piece = X[X.shape[0] // size * size:]
         neg = self.get_negative_edges(last_piece[:, 0], self.unique_dst, last_piece.shape[0] * K)
         X_ = np.vstack([last_piece, neg])
+
         src = X_[:, 0]
         dst = X_[:, 1]
 
-        # src = X[X.shape[0] // size * size:, 0]
-        # dst = X[X.shape[0] // size * size:, 1]
         X_src = self.embed[src]
-        # y_b = y[X.shape[0] // size * size:]
-        y_b = np.concatenate([y[X.shape[0] // size * size:], np.zeros(last_piece.shape[0] * K, )])
+
+        y_b = np.concatenate([np.ones(last_piece.shape[0], ), np.zeros(last_piece.shape[0] * K, )])
+
         assert y_b.shape[0] == X_src.shape[0] == dst.shape[0] == last_piece.shape[0] * (1 + K)
+
         yield {"x": X_src, "elements": dst, "y": y_b}
 
 
@@ -479,15 +540,20 @@ class Experiment3(Experiment2):
     def __init__(self, embeddings: Embedder,
                  nodes: pandas.DataFrame,
                  edges: pandas.DataFrame,
-                 target: pandas.DataFrame):
-        super(Experiment3, self).__init__(embeddings, nodes, edges, target)
+                 target: pandas.DataFrame,
+                 split_on="nodes",
+                 neg_sampling_strategy="word2vec",
+                 K=1,
+                 test_frac=0.1, compact_dst=True
+                 ):
+        super(Experiment3, self).__init__(embeddings, nodes, edges, target, split_on=split_on, neg_sampling_strategy=neg_sampling_strategy, K=K, test_frac=test_frac, compact_dst=compact_dst)
 
     def get_training_data(self):
 
-        self.get_train_test_split()
+        # self.get_train_test_split()
 
-        train_positive = self.target.iloc[self.train_ind].values
-        test_positive = self.target.iloc[self.test_ind].values
+        train_positive = self.target.iloc[self.train_edge_ind].values
+        test_positive = self.target.iloc[self.test_edge_ind].values
 
         X_train, y_train = train_positive[:,0].reshape(-1,1), train_positive[:,1].reshape(-1,1)
         X_test, y_test = test_positive[:, 0].reshape(-1,1), test_positive[:, 1].reshape(-1,1)
@@ -511,6 +577,19 @@ class Experiment3(Experiment2):
 
         X_src = self.embed[X[X.shape[0] // size * size:, 0]]
         yield {"x": X_src, "y": y[X.shape[0] // size * size: , :]}
+
+
+    def train_batches(self):
+        if not hasattr(self, "X_train"):
+            self.get_training_data()
+
+        return self.batch(self.X_train, self.y_train)
+
+    def test_batches(self):
+        if not hasattr(self, "X_test"):
+            self.get_training_data()
+
+        return self.batch(self.X_test, self.y_test)
 
 #%%
 
