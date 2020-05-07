@@ -61,6 +61,12 @@ def prepare_batch_no_classes(node_embeddings,
 def final_evaluation_no_classes(model, elem_embeder, splits):
     train_idx, test_idx, val_idx = splits
 
+    pool = set(elem_embeder.elements['id'].to_list())
+
+    train_idx = np.fromiter(pool.intersection(train_idx), dtype=np.int64)
+    test_idx = np.fromiter(pool.intersection(test_idx), dtype=np.int64)
+    val_idx = np.fromiter(pool.intersection(val_idx), dtype=np.int64)
+
     node_embeddings = model()
     subsample = np.random.choice(train_idx, size=1000, replace=False)
     train_logits, train_labels = prepare_batch_no_classes(node_embeddings,
@@ -108,6 +114,16 @@ def final_evaluation_no_classes(model, elem_embeder, splits):
 
 def train_no_classes(model, elem_embeder, splits, epochs):
     train_idx, test_idx, val_idx = splits
+
+    pool = set(elem_embeder.elements['id'].to_list())
+
+    print(f"Original set sizes: train {train_idx.size} test {test_idx.size} val {val_idx.size}")
+
+    train_idx = np.fromiter(pool.intersection(train_idx), dtype=np.int64)
+    test_idx = np.fromiter(pool.intersection(test_idx), dtype=np.int64)
+    val_idx = np.fromiter(pool.intersection(val_idx), dtype=np.int64)
+
+    print(f"Set sizes after filtering: train {train_idx.size} test {test_idx.size} val {val_idx.size}")
 
     # this is heldout because it was not used during training
     heldout_idx = test_idx.tolist() + val_idx.tolist()
@@ -182,6 +198,8 @@ def training_procedure(dataset, model, params, EPOCHS):
               **params)
     # get data for models with large number of classes, possibly several labels for
     # a single input id
+    # TODO
+    # Try other targets
     element_data = dataset.nodes[['global_graph_id', 'name']].rename(mapper={
         'global_graph_id': 'id'
     }, axis=1)
@@ -189,8 +207,10 @@ def training_procedure(dataset, model, params, EPOCHS):
     from ElementEmbedder import ElementEmbedder
     ee = ElementEmbedder(element_data, ELEM_EMB_SIZE)
 
-    from LinkPredictor import LinkPredictor
-    lp = LinkPredictor(ee.emb_size + m.emb_size)
+    assert ee.emb_size == m.emb_size, "Embedding sizes for GNN and ElementEmbedder should match"
+
+    # from LinkPredictor import LinkPredictor
+    # lp = LinkPredictor(ee.emb_size + m.emb_size)
 
     try:
         train_no_classes(m, ee, dataset.splits, EPOCHS)
@@ -199,7 +219,7 @@ def training_procedure(dataset, model, params, EPOCHS):
     finally:
         m.eval()
         ee.eval()
-        lp.eval()
+        # lp.eval()
         scores = final_evaluation_no_classes(m, ee, dataset.splits)
 
     return m, ee, scores
