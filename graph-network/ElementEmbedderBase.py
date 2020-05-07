@@ -41,6 +41,8 @@ class ElementEmbedderBase:
         # self.random_indices = np.arange(0, len(self.elem2id))
 
     def sample_negative(self, size):
+        # TODO
+        # Try other distributions
         return np.random.choice(self.idxs, size, replace=True, p=self.neg_prob)
 
     def __getitem__(self, ids):
