@@ -2,13 +2,8 @@ import pandas
 import dgl
 import numpy
 
-# TODO
-# create model where variable names are in the graph. This way we can feed
-# information about ast inside he function embedding
-
 
 def load_data(node_path, edge_path):
-
     nodes = pandas.read_csv(node_path)
     edges = pandas.read_csv(edge_path)
 
@@ -24,6 +19,7 @@ def load_data(node_path, edge_path):
     nodes_['libname'] = nodes_['name'].apply(lambda name: name.split(".")[0])
 
     return nodes_, edges_
+
 
 # def compact_prop(df, prop):
 #     uniq = df[prop].unique()
@@ -56,9 +52,19 @@ def get_train_test_val_indices(labels):
 class SourceGraphDataset:
     def __init__(self, nodes_path, edges_path,
                  label_from, node_types=False,
-                 edge_types=False, filter=None, holdout_frac=0.01/10):
+                 edge_types=False, filter=None, holdout_frac=0.01 / 10):
         """
-        Create dataset object. Loads the graph into Deep Graph Library structure.
+        Prepares the data for training GNN model. The graph is prepared in the following way:
+            1. Edges are split into the train set and holdout set. Holdout set is used in the future experiments.
+                Without holdout set the results of the future experiments may be biased. After removing holdout edges
+                from the main graph, the disconnected nodes are filtered, so that he graph remain connected.
+            2. Since training objective will be defined on the node embeddings, the nodes are split into train, test,
+                and validation sets. The test set should be used in the future experiments for training. Validation and
+                test sets are equal in size and constitute 40% of all nodes.
+            3. The default label is assumed to be node type. Node types can be incorporated into the model by setting
+                node_types flag to True.
+            4. Graphs require contiguous indexing of nodes. For this reason additional mapping is created that tracks
+                the relationship between the new graph id and the original node id from the training data.
         :param nodes_path: path to csv or compressed csv for nodes witch columns
                 "id", "type", {"name", "serialized_name"}, {any column with labels}
         :param edges_path: path to csv or compressed csv for edges with columns
@@ -72,8 +78,11 @@ class SourceGraphDataset:
         :param holdout_frac: float in [0, 1]
         """
         # TODO
-        # implemet filtering, so that when you filter a package
-        # isolated nodes drop
+        # 1. test with node types and RGCN
+        # 2. GAT RGCN model
+        # 3. GGNN model
+        # 4. create model where variable names are in the graph. This way we can feed
+        #       information about ast inside he function embedding
 
         # self.nodes = pandas.read_csv(nodes_path)
         # self.edges = pandas.read_csv(edges_path)
@@ -112,7 +121,6 @@ class SourceGraphDataset:
         self.nodes.sort_values('global_graph_id', inplace=True)
 
         self.splits = get_train_test_val_indices(self.labels)
-
 
     def add_graph_ids(self):
 
@@ -172,7 +180,9 @@ class SourceGraphDataset:
 
     def update_global_id(self):
         if self.edges_have_types:
-            orig_id = []; graph_id = []; prev_offset = 0
+            orig_id = [];
+            graph_id = [];
+            prev_offset = 0
 
             # typed_node_id_maps = self.typed_node_id_maps
             typed_node_id_maps = self.typed_id_map
@@ -229,7 +239,6 @@ class SourceGraphDataset:
     #         ].values
     #
     #     return typed_labels
-
 
     # @property
     # def node_id_maps(self):
@@ -301,7 +310,6 @@ class SourceGraphDataset:
     #         # return self.dg_id_maps
     #         return compact_property(self.nodes['id'])
 
-
     @property
     def typed_node_counts(self):
 
@@ -341,7 +349,6 @@ class SourceGraphDataset:
 
         self.g = g
 
-
     def create_hetero_graph(self, node_types=False, edge_types=False):
         # TODO
         # arguments are still not used
@@ -366,7 +373,6 @@ class SourceGraphDataset:
         # typed_node_id_maps = self.typed_id_map
 
         # node2type = dict(zip(nodes['id'].values, nodes['type'].values))
-
 
         # def graphid_lookup(nid):
         #     for type, maps in typed_node_id_maps.items():
@@ -479,8 +485,6 @@ class SourceGraphDataset:
         return nodes, train_edges, test_edges
 
 
-
-
 def split(edges, HOLDOUT_FRAC):
     edges_shuffled = edges.sample(frac=1., random_state=42)
 
@@ -490,7 +494,7 @@ def split(edges, HOLDOUT_FRAC):
                 .iloc[:train_frac]
     test = edges_shuffled \
                .iloc[train_frac:]
-    print("Splitting edges into train and test set. Train: {}. Test: {}. Fraction: {}".\
+    print("Splitting edges into train and test set. Train: {}. Test: {}. Fraction: {}". \
           format(train.shape[0], test.shape[0], HOLDOUT_FRAC))
     return train, test
 
@@ -503,7 +507,8 @@ def ensure_connectedness(nodes: pandas.DataFrame, edges: pandas.DataFrame):
     :return:
     """
 
-    print("Filtering isolated nodes. Starting from {} nodes and {} edges...".format(nodes.shape[0], edges.shape[0]), end="")
+    print("Filtering isolated nodes. Starting from {} nodes and {} edges...".format(nodes.shape[0], edges.shape[0]),
+          end="")
     unique_nodes = set(edges['src'].values.tolist() +
                        edges['dst'].values.tolist())
 
@@ -515,6 +520,7 @@ def ensure_connectedness(nodes: pandas.DataFrame, edges: pandas.DataFrame):
 
     return nodes, edges
 
+
 def ensure_valid_edges(nodes, edges):
     """
     Filter edges that link to nodes that do not exist
@@ -522,7 +528,8 @@ def ensure_valid_edges(nodes, edges):
     :param edges:
     :return:
     """
-    print("Filtering edges to invalid nodes. Starting from {} nodes and {} edges...".format(nodes.shape[0], edges.shape[0]),
+    print("Filtering edges to invalid nodes. Starting from {} nodes and {} edges...".format(nodes.shape[0],
+                                                                                            edges.shape[0]),
           end="")
 
     unique_nodes = set(nodes['id'].values.tolist())
