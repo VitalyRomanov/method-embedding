@@ -29,8 +29,7 @@ class GAT(nn.Module):
                  feat_drop,
                  attn_drop,
                  negative_slope,
-                 residual,
-                 produce_logits=True):
+                 residual):
         super(GAT, self).__init__()
         self.g = g
         self.num_layers = num_layers
