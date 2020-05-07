@@ -9,6 +9,14 @@ import numpy as np
 from Embedder import Embedder
 import pickle
 import random as rnd
+import torch
+import os
+
+
+def keep_from_set(table, pool):
+    table['src'] = table['src'].apply(lambda nid: nid if nid in pool else None)
+    table['dst'] = table['dst'].apply(lambda nid: nid if nid in pool else None)
+    return table.dropna(axis=0)
 
 
 class Experiments:
@@ -48,6 +56,10 @@ class Experiments:
         }
 
         self.base_path = base_path
+
+        # TODO
+        # load splits for state dict and use them for training
+        self.splits = torch.load(os.path.join(self.base_path, "state_dict.pt"))["splits"]
 
         if base_path is not None:
             self.embed = pickle.load(open(join(self.base_path, "embeddings.pkl"), "rb"))[gnn_layer]
@@ -92,12 +104,15 @@ class Experiments:
 
             held = held.query('type == 8')[['src', 'dst']]
 
-            return Experiment(self.embed, nodes, edges, held, split_on="nodes", neg_sampling_strategy="word2vec")
+            # node_pool = set(self.splits[2])
+            # held = keep_from_set(held, node_pool)
+
+            return Experiment(self.embed, nodes, edges, held, split_on="nodes", neg_sampling_strategy="word2vec", compact_dst=False)
 
         elif type == "apicall":
             api_seq = pandas.read_csv(self.experiments['apicall'])
 
-            unique_nodes = set(nodes['id'].values.tolist())
+            # unique_nodes = set(nodes['id'].values.tolist())
 
             # api_seq_test = api_seq.copy()
             # api_seq_test['src'] = api_seq_test['src'].apply(lambda nid: nid if nid in unique_nodes else None)
@@ -105,13 +120,16 @@ class Experiments:
             # api_seq_test.dropna(axis=0, inplace=True)
 
             # disabled for testing
-            api_seq = api_seq[
-                api_seq['src'].apply(lambda nid: nid in unique_nodes)
-            ]
+            # api_seq = api_seq[
+            #     api_seq['src'].apply(lambda nid: nid in unique_nodes)
+            # ]
+            #
+            # api_seq = api_seq[
+            #     api_seq['dst'].apply(lambda nid: nid in unique_nodes)
+            # ]
 
-            api_seq = api_seq[
-                api_seq['dst'].apply(lambda nid: nid in unique_nodes)
-            ]
+            node_pool = set(self.splits[2])
+            api_seq = keep_from_set(api_seq, node_pool)
 
             return Experiment(self.embed, nodes, edges, api_seq, split_on="nodes", neg_sampling_strategy="word2vec", compact_dst=False)
 
@@ -120,15 +138,19 @@ class Experiments:
 
             held = held.query('type == 2')[['src', 'dst']]
 
-            return Experiment(self.embed, nodes, edges, held, split_on="nodes", neg_sampling_strategy="word2vec")
+            # node_pool = set(self.splits[2])
+            # held = keep_from_set(held, node_pool)
+
+            return Experiment(self.embed, nodes, edges, held, split_on="nodes", neg_sampling_strategy="word2vec", compact_dst=False)
 
         elif type == "varuse":
             var_use = pandas.read_csv(self.experiments['varuse'])
 
-            unique_nodes = set(nodes['id'].values.tolist())
+            # unique_nodes = set(nodes['id'].values.tolist())
+            node_pool = set(self.splits[2])
 
             var_use = var_use[
-                var_use['src'].apply(lambda nid: nid in unique_nodes)
+                var_use['src'].apply(lambda nid: nid in node_pool)
             ]
 
             return Experiment2(self.embed, nodes, edges, var_use, split_on="nodes", neg_sampling_strategy="word2vec")
@@ -143,10 +165,11 @@ class Experiments:
             functions['dst'] = functions['fname']
 
             # unique_nodes = set(nodes['id'].values.tolist())
-            #
-            # fname = fname[
-            #     fname['src'].apply(lambda nid: nid in unique_nodes)
-            # ]
+            node_pool = set(self.splits[2])
+
+            functions = functions[
+                functions['src'].apply(lambda nid: nid in node_pool)
+            ]
 
             # use edge splits when outgoing degree is 1
 
@@ -158,7 +181,17 @@ class Experiments:
             types['src'] = nodes['id']
             types['dst'] = nodes['label']
 
+            print("WARNING: Make sure that you target label is stored in the field: label")
+            # raise Warning("Make sure that you target label is stored in the field: label")
+
+            node_pool = set(self.splits[2])
+
+            types['src'] = types['src'].apply(lambda nid: nid if nid in node_pool else None)
+            types = types.dropna(axis=0)
+
             return Experiment3(self.embed, nodes, edges, types[['src', 'dst']], split_on="edges", neg_sampling_strategy="word2vec")
+        else:
+            raise ValueError(f"Unknown experiment: {type}. The following experiments are available: [apicall|link|typeuse|varuse|fname|nodetype].")
 
 
 class Experiment:
@@ -347,7 +380,7 @@ class Experiment:
         return np.hstack([self.embed[src], self.embed[dst]])
         # return np.hstack([np.random.rand(src.shape[0], self.embed.e.shape[1]), np.random.rand(src.shape[0], self.embed.e.shape[1])])
 
-    def batch_edges(self, X, size=256, K=15):
+    def batch_edges(self, X, size=128, K=15):
         """
         Generate batch
         :param X: input edge list in 2d numpy array
@@ -406,7 +439,7 @@ class Experiment:
         # if self.X_test is None:
         #     self.get_training_data()
         if self.split_on == "nodes":
-            return self.batch_nodes(self.test_nodes, K=1)
+            return self.batch_nodes(self.test_nodes, K=1, test=True)
         elif self.split_on == "edges":
             return self.batch_edges(self.target.iloc[self.test_edge_ind][['src', 'dst']].values, K=1)
 
@@ -419,15 +452,25 @@ class Experiment:
             return self.batch_edges(self.target.iloc[self.train_edge_ind][['src', 'dst']].values, K=1)
 
 
-    def batch_nodes(self, indices, size=256, K=15):
+    def batch_nodes(self, indices, size=128, K=15, test=False):
 
-        for _ in range(indices.size // size):
-            batch_ind = np.random.choice(indices, size)
+        if not test and indices.shape[0] < size:
+            raise ValueError("The amount of training data is too small")
+
+        if test:
+            n_batches = 1
+            sample_size = indices.shape[0]
+        else:
+            n_batches = indices.shape[0] // size + 1
+            sample_size = size
+
+        for _ in range(n_batches):
+            batch_ind = np.random.choice(indices, sample_size, replace=False)
             positive_in = self.embed[batch_ind]
             positive_out = self.embed[self.ee[batch_ind]]
 
             negative_in = np.repeat(positive_in, K, axis=0)
-            negative_out = self.embed[self.ee.sample_negative(size * K)]
+            negative_out = self.embed[self.ee.sample_negative(sample_size * K)]
             # negative_out = self.embed[np.random.choice(self.unique_dst, size=size * K)]
             X_b = np.concatenate([
                 np.concatenate([
@@ -438,7 +481,7 @@ class Experiment:
                 ], axis=1)
             ], axis=0)
 
-            y_b = np.concatenate([np.ones(size,), np.zeros(size*K,)])
+            y_b = np.concatenate([np.ones(sample_size,), np.zeros(sample_size*K,)])
 
             yield {"x": X_b, "y": y_b}
 
@@ -483,14 +526,25 @@ class Experiment2(Experiment):
         #
         # return np.hstack([self.embed[src], self.embed[dst]])
 
-    def batch_nodes(self, indices, size=256, K=15):
-        for _ in range(indices.size // size):
-            batch_ind = np.random.choice(indices, size)
+    def batch_nodes(self, indices, size=256, K=15, test=False):
+
+        if not test and indices.shape[0] < size:
+            raise ValueError("The amount of training data is too small")
+
+        if test:
+            n_batches = 1
+            sample_size = indices.shape[0]
+        else:
+            n_batches = indices.shape[0] // size + 1
+            sample_size = size
+
+        for _ in range(n_batches):
+            batch_ind = np.random.choice(indices, sample_size)
             positive_in = self.embed[batch_ind]
             positive_out = self.ee[batch_ind]
 
             negative_in = np.repeat(positive_in, K, axis=0)
-            negative_out = self.ee.sample_negative(size * K)
+            negative_out = self.ee.sample_negative(sample_size * K)
             # negative_out = self.embed[np.random.choice(self.unique_dst, size=size * K)]
             in_ = np.concatenate([
                 positive_in, negative_in
@@ -499,7 +553,7 @@ class Experiment2(Experiment):
                 positive_out, negative_out
             ], axis=0)
 
-            y_b = np.concatenate([np.ones(size, ), np.zeros(size * K, )])
+            y_b = np.concatenate([np.ones(sample_size, ), np.zeros(sample_size * K, )])
 
             yield {"x": in_, 'elements': dst_ , "y": y_b}
 
