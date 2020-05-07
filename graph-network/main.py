@@ -41,6 +41,15 @@ def get_name(model, timestamp):
 
 
 def main(nodes_path, edges_path, models, desc, args):
+    """
+
+    :param nodes_path:
+    :param edges_path:
+    :param models:
+    :param desc:
+    :param args:
+    :return:
+    """
 
     for model, param_grid in models.items():
         for params in param_grid:
@@ -58,7 +67,7 @@ def main(nodes_path, edges_path, models, desc, args):
                 dataset = SourceGraphDataset(nodes_path,
                                   edges_path,
                                   label_from=LABELS_FROM,
-                                  node_types=False,
+                                  node_types=args.use_node_types,
                                   edge_types=True
                                   )
             else:
@@ -137,7 +146,9 @@ def main(nodes_path, edges_path, models, desc, args):
                 "scores": scores,
                 "time": dateTime,
                 "description": desc,
-                "training_mode": args.training_mode
+                "training_mode": args.training_mode,
+                "datafile": args.data_file,
+                "call_seq": args.call_seq_file
             }
 
             pickle.dump(m.get_embeddings(dataset.global_id_map), open(join(metadata['base'], metadata['layers']), "wb"))
@@ -175,12 +186,14 @@ if __name__ == "__main__":
                         help='Path to the file with edges')
     parser.add_argument('--data_file', dest='data_file', default=None,
                         help='Path to the file with edges that are used for training')
+    parser.add_argument('--use_node_types', action='store_true')
+    # parser.add_argument('--use_edge_types', action='store_true')
 
     args = parser.parse_args()
 
     models_ = {
-        GAT: gat_params,
-        # RGCN: rgcn_params
+        # GAT: gat_params,
+        RGCN: rgcn_params
     }
 
     data_paths = pandas.read_csv("data_paths.tsv", sep="\t")
