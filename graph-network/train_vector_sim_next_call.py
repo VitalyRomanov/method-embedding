@@ -78,9 +78,9 @@ def final_evaluation_no_classes(model, elem_embeder, link_predictor, splits):
     train_idx, test_idx, val_idx = splits
 
     pool = set(elem_embeder.elements['id'].to_list())
-    train_idx = np.array(list(filter(lambda x: x in pool, train_idx)), dtype=np.int64)
-    test_idx = np.array(list(filter(lambda x: x in pool, test_idx)), dtype=np.int64)
-    val_idx = np.array(list(filter(lambda x: x in pool, val_idx)), dtype=np.int64)
+    train_idx = np.fromiter(pool.intersection(train_idx), dtype=np.int64)
+    test_idx = np.fromiter(pool.intersection(test_idx), dtype=np.int64)
+    val_idx = np.fromiter(pool.intersection(val_idx), dtype=np.int64)
 
     node_embeddings = model()
     subsample = np.random.choice(train_idx, size=1000, replace=False)
@@ -130,15 +130,25 @@ def final_evaluation_no_classes(model, elem_embeder, link_predictor, splits):
 
 
 def train_no_classes(model, elem_embeder, link_predictor, splits, epochs):
-    # TODO
-    # investigate this split policy. is it applicable to a new set of edges?
-    # there should be no leak. the nodes appear either in train or in test set
+    # there should be no (significant) leak of training signal from the train to test set. the src nodes appear
+    # either in train or in test set. If an node A is from train set, node B is from test set, and C is a common target,
+    # then edge A->C is used for training, B->C used for testing. But in future experiments embedding for C is trained
+    # from scratch, o there should be no leak
     train_idx, test_idx, val_idx = splits
 
     pool = set(elem_embeder.elements['id'].to_list())
-    train_idx = np.array(list(filter(lambda x: x in pool, train_idx)), dtype=np.int64)
-    test_idx = np.array(list(filter(lambda x: x in pool, test_idx)), dtype=np.int64)
-    val_idx = np.array(list(filter(lambda x: x in pool, val_idx)), dtype=np.int64)
+
+    print(f"Original set sizes: train {train_idx.size} test {test_idx.size} val {val_idx.size}")
+
+    train_idx = np.fromiter(pool.intersection(train_idx), dtype=np.int64)
+    test_idx = np.fromiter(pool.intersection(test_idx), dtype=np.int64)
+    val_idx = np.fromiter(pool.intersection(val_idx), dtype=np.int64)
+
+    # train_idx = np.array(list(filter(lambda x: x in pool, train_idx)), dtype=np.int64)
+    # test_idx = np.array(list(filter(lambda x: x in pool, test_idx)), dtype=np.int64)
+    # val_idx = np.array(list(filter(lambda x: x in pool, val_idx)), dtype=np.int64)
+
+    print(f"Set sizes after filtering: train {train_idx.size} test {test_idx.size} val {val_idx.size}")
 
     # this is heldout because it was not used during training
     heldout_idx = test_idx.tolist() + val_idx.tolist()
@@ -217,7 +227,6 @@ def training_procedure(dataset, model, params, EPOCHS, call_seq_file):
 
     m = model(dataset.g,
               num_classes=NODE_EMB_SIZE,
-              produce_logits=False,
               **params)
 
     # get data for models with large number of classes, possibly several labels for

@@ -59,9 +59,10 @@ def final_evaluation_no_classes(model, elem_embeder, link_predictor, splits):
     train_idx, test_idx, val_idx = splits
 
     pool = set(elem_embeder.elements['id'].to_list())
-    train_idx = np.array(list(filter(lambda x: x in pool, train_idx)), dtype=np.int64)
-    test_idx = np.array(list(filter(lambda x: x in pool, test_idx)), dtype=np.int64)
-    val_idx = np.array(list(filter(lambda x: x in pool, val_idx)), dtype=np.int64)
+
+    train_idx = np.fromiter(pool.intersection(train_idx), dtype=np.int64)
+    test_idx = np.fromiter(pool.intersection(test_idx), dtype=np.int64)
+    val_idx = np.fromiter(pool.intersection(val_idx), dtype=np.int64)
 
     node_embeddings = model()
     subsample = np.random.choice(train_idx, size=1000, replace=False)
@@ -114,18 +115,23 @@ def train_no_classes(model, elem_embeder, link_predictor, splits, epochs):
     train_idx, test_idx, val_idx = splits
 
     pool = set(elem_embeder.elements['id'].to_list())
-    train_idx = np.array(list(filter(lambda x: x in pool, train_idx)), dtype=np.int64)
-    test_idx = np.array(list(filter(lambda x: x in pool, test_idx)), dtype=np.int64)
-    val_idx = np.array(list(filter(lambda x: x in pool, val_idx)), dtype=np.int64)
+
+    print(f"Original set sizes: train {train_idx.size} test {test_idx.size} val {val_idx.size}")
+
+    train_idx = np.fromiter(pool.intersection(train_idx), dtype=np.int64)
+    test_idx = np.fromiter(pool.intersection(test_idx), dtype=np.int64)
+    val_idx = np.fromiter(pool.intersection(val_idx), dtype=np.int64)
+
+    print(f"Set sizes after filtering: train {train_idx.size} test {test_idx.size} val {val_idx.size}")
 
     # this is heldout because it was not used during training
     heldout_idx = test_idx.tolist() + val_idx.tolist()
 
     optimizer = torch.optim.Adagrad(
         [
-            {'params': model.parameters(), 'lr': 1e-2},
+            {'params': model.parameters(), 'lr': 1e-1},
             {'params': elem_embeder.parameters(), 'lr': 1e-1},
-            {'params': link_predictor.parameters(), 'lr': 1e-3}
+            {'params': link_predictor.parameters(), 'lr': 1e-2}
         ], lr=0.01)
 
     best_val_acc = torch.tensor(0)
@@ -196,17 +202,18 @@ def training_procedure(dataset, model, params, EPOCHS, data_file):
               **params)
 
 
-    element_data = pd.read_csv(data_file)
-    function2nodeid = dict(zip(dataset.nodes['id'].values, dataset.nodes['global_graph_id'].values))
-    element_data['id'] = element_data['src'].apply(lambda x: function2nodeid.get(x, None))
-    element_data = element_data.dropna(axis=0)
+    # element_data = pd.read_csv(data_file)
+    # function2nodeid = dict(zip(dataset.nodes['id'].values, dataset.nodes['global_graph_id'].values))
+    # element_data['id'] = element_data['src'].apply(lambda x: function2nodeid.get(x, None))
+    # element_data = element_data.dropna(axis=0)
 
-    # # get data for models with large number of classes, possibly several labels for
-    # # a single input id
-    # element_data = dataset.nodes[['global_graph_id', 'name']].rename(mapper={
-    #     'global_graph_id': 'id'
-    # }, axis=1)
-    # element_data['dst'] = element_data['name'].apply(lambda name: name.split(".")[-1])
+    # get data for models with large number of classes, possibly several labels for
+    # a single input id
+    element_data = dataset.nodes[['global_graph_id', 'name']].rename(mapper={
+        'global_graph_id': 'id'
+    }, axis=1)
+    element_data['dst'] = element_data['name'].apply(lambda name: name.split(".")[-1])
+
     from ElementEmbedder import ElementEmbedder
     ee = ElementEmbedder(element_data, ELEM_EMB_SIZE)
 
