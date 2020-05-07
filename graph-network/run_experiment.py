@@ -25,9 +25,9 @@ apicall creates an experiment where we try to predict the exstense of "next call
 
 # BASE_PATH = "/home/ltv/data/local_run/graph-network/GAT-2020-03-24-03-37-36-421131" # trained on node types
 # BASE_PATH = "/home/ltv/dev/method-embedding/graph-network/models/GAT-2020-04-24-00-21-11-377353" # trained on function names
-# BASE_PATH = "/home/ltv/dev/method-embedding/graph-network/models/GAT-2020-04-23-22-33-41-890539" # trained on function names with classifier
-BASE_PATH = "/home/ltv/dev/method-embedding/graph-network/models/GAT-2020-04-24-19-07-55-139367" # trained on next call
-# BASE_PATH = "/home/ltv/dev/method-embedding/graph-network/models/GAT-2020-04-24-22-12-19-718445" # trained on variables
+BASE_PATH = "/home/ltv/dev/method-embedding/graph-network/models/GAT-2020-05-05-17-23-39-269036-fname" # trained on function names with classifier
+# BASE_PATH = "/home/ltv/dev/method-embedding/graph-network/models/GAT-2020-05-04-01-25-52-792623-nextcall" # trained on next call
+# BASE_PATH = "/home/ltv/dev/method-embedding/graph-network/models/GAT-2020-05-05-01-25-38-208819-varnames" # trained on variables
 # API_SEARCH = "/Volumes/External/datasets/Code/source-graphs/python-source-graph/04_api_sequence_calls/flat_calls.csv"
 API_SEQ = "/home/ltv/data/datasets/source_code/python-source-graph/04_api_sequence_calls/flat_calls.csv"
 # API_SEQ = "/home/ltv/dev/method-embedding/graph-network/edges2.csv"
@@ -71,13 +71,13 @@ from classifiers import LRClassifier, NNClassifier, ElementPredictor, NodeClassi
 import tensorflow as tf
 
 if EXPERIMENT_NAME in {'link', 'apicall', 'typeuse'}:
-    # TODO
-    # these three do not work ocrrectly, check old version
     clf = NNClassifier(experiment.embed_size)
 elif EXPERIMENT_NAME in {'varuse', 'fname'}:
     clf = ElementPredictor(experiment.embed_size, experiment.unique_elements, 100)
 elif EXPERIMENT_NAME in {'nodetype'}:
     clf = NodeClassifier(experiment.embed_size, experiment.unique_elements)
+else:
+    raise ValueError(f"Unknown experiment: {type}. The following experiments are available: [apicall|link|typeuse|varuse|fname|nodetype].")
 
 # clf.compile(optimizer='adam',
 #             loss='sparse_categorical_crossentropy')
