@@ -198,7 +198,6 @@ def training_procedure(dataset, model, params, EPOCHS, data_file):
 
     m = model(dataset.g,
               num_classes=NODE_EMB_SIZE,
-              produce_logits=False,
               **params)
 
 
