@@ -208,17 +208,18 @@ def training_procedure(dataset, model, params, EPOCHS, data_file, restore_state)
               **params)
 
 
-    # element_data = pd.read_csv(data_file)
-    # function2nodeid = dict(zip(dataset.nodes['id'].values, dataset.nodes['global_graph_id'].values))
-    # element_data['id'] = element_data['src'].apply(lambda x: function2nodeid.get(x, None))
-    # element_data = element_data.dropna(axis=0)
+    element_data = pd.read_csv(data_file)
+    function2nodeid = dict(zip(dataset.nodes['id'].values, dataset.nodes['global_graph_id'].values))
+    element_data['id'] = element_data['src'].apply(lambda x: function2nodeid.get(x, None))
+    element_data = element_data.dropna(axis=0)
 
     # get data for models with large number of classes, possibly several labels for
     # a single input id
-    element_data = dataset.nodes[['global_graph_id', 'name']].rename(mapper={
-        'global_graph_id': 'id'
-    }, axis=1)
-    element_data['dst'] = element_data['name'].apply(lambda name: name.split(".")[-1])
+    # element_data = dataset.nodes[['global_graph_id', 'name']].rename(mapper={
+    #     'global_graph_id': 'id'
+    # }, axis=1)
+    # element_data['dst'] = element_data['name'].apply(lambda name: name.split(".")[-1])
+    # element_data.to_csv("nodes_to_names.csv", index=False)
 
     from ElementEmbedder import ElementEmbedder
     ee = ElementEmbedder(element_data, ELEM_EMB_SIZE)
