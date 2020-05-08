@@ -192,7 +192,14 @@ def train_no_classes(model, elem_embeder, link_predictor, splits, epochs):
 
         track_best(epoch, loss, train_acc, val_acc, test_acc, best_val_acc, best_test_acc)
 
-def training_procedure(dataset, model, params, EPOCHS, data_file):
+        torch.save({
+            'm': model.state_dict(),
+            'ee': elem_embeder.state_dict(),
+            "lp": link_predictor.state_dict(),
+            "epoch": epoch
+        }, "saved_state.pt")
+
+def training_procedure(dataset, model, params, EPOCHS, data_file, restore_state):
     NODE_EMB_SIZE = 100
     ELEM_EMB_SIZE = 100
 
@@ -218,6 +225,14 @@ def training_procedure(dataset, model, params, EPOCHS, data_file):
 
     from LinkPredictor import LinkPredictor
     lp = LinkPredictor(ee.emb_size + m.emb_size)
+
+    if restore_state:
+        checkpoint = torch.load("saved_state.pt")
+        m.load_state_dict(checkpoint['m'])
+        ee.load_state_dict(checkpoint['ee'])
+        lp.load_state_dict(checkpoint['lp'])
+        print(f"Restored from epoch {checkpoint['epoch']}")
+        checkpoint = None
 
     # from train_vector_sim_with_classifier import train_no_classes, final_evaluation_no_classes
 

@@ -220,8 +220,14 @@ def train_no_classes(model, elem_embeder, link_predictor, splits, epochs):
         track_best(epoch, loss, train_acc, val_acc, test_acc, best_val_acc, best_test_acc)
         # pickle.dump(node_embeddings.detach().numpy(), open("nodes.pkl", "wb"))
         # elem_embeder.elements.to_csv("edges.csv", index=False)
+        torch.save({
+            'm': model.state_dict(),
+            'ee': elem_embeder.state_dict(),
+            "lp": link_predictor.state_dict(),
+            "epoch": epoch
+        }, "saved_state.pt")
 
-def training_procedure(dataset, model, params, EPOCHS, call_seq_file):
+def training_procedure(dataset, model, params, EPOCHS, call_seq_file, restore_state):
     NODE_EMB_SIZE = 100
     ELEM_EMB_SIZE = 100
 
@@ -246,6 +252,14 @@ def training_procedure(dataset, model, params, EPOCHS, call_seq_file):
 
     from LinkPredictor import LinkPredictor
     lp = LinkPredictor(ee.emb_size + m.emb_size)
+
+    if restore_state:
+        checkpoint = torch.load("saved_state.pt")
+        m.load_state_dict(checkpoint['m'])
+        ee.load_state_dict(checkpoint['ee'])
+        lp.load_state_dict(checkpoint['lp'])
+        print(f"Restored from epoch {checkpoint['epoch']}")
+        checkpoint = None
 
     try:
         train_no_classes(m, ee, lp, dataset.splits, EPOCHS)

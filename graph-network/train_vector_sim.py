@@ -187,7 +187,13 @@ def train_no_classes(model, elem_embeder, splits, epochs):
 
         track_best(epoch, loss, train_acc, val_acc, test_acc, best_val_acc, best_test_acc)
 
-def training_procedure(dataset, model, params, EPOCHS):
+        torch.save({
+            'm': model.state_dict(),
+            'ee': elem_embeder.state_dict(),
+            "epoch": epoch
+        }, "saved_state.pt")
+
+def training_procedure(dataset, model, params, EPOCHS, restore_state):
 
     NODE_EMB_SIZE = 100
     ELEM_EMB_SIZE = 100
@@ -208,6 +214,13 @@ def training_procedure(dataset, model, params, EPOCHS):
     ee = ElementEmbedder(element_data, ELEM_EMB_SIZE)
 
     assert ee.emb_size == m.emb_size, "Embedding sizes for GNN and ElementEmbedder should match"
+
+    if restore_state:
+        checkpoint = torch.load("saved_state.pt")
+        m.load_state_dict(checkpoint['m'])
+        ee.load_state_dict(checkpoint['ee'])
+        print(f"Restored from epoch {checkpoint['epoch']}")
+        checkpoint = None
 
     # from LinkPredictor import LinkPredictor
     # lp = LinkPredictor(ee.emb_size + m.emb_size)

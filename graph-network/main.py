@@ -86,13 +86,13 @@ def main(nodes_path, edges_path, models, desc, args):
 
                 from train_node_classifier import training_procedure
 
-                m, scores = training_procedure(dataset, model, params, EPOCHS)
+                m, scores = training_procedure(dataset, model, params, EPOCHS, args.restore_state)
 
             elif args.training_mode == "vector_sim":
 
                 from train_vector_sim import training_procedure
 
-                m, ee, scores = training_procedure(dataset, model, params, EPOCHS)
+                m, ee, scores = training_procedure(dataset, model, params, EPOCHS, args.restore_state)
 
                 torch.save(
                     {
@@ -105,7 +105,7 @@ def main(nodes_path, edges_path, models, desc, args):
 
                 from train_vector_sim_with_classifier import training_procedure
 
-                m, ee, lp, scores = training_procedure(dataset, model, params, EPOCHS, args.data_file)
+                m, ee, lp, scores = training_procedure(dataset, model, params, EPOCHS, args.data_file, args.restore_state)
 
                 torch.save(
                     {
@@ -119,7 +119,7 @@ def main(nodes_path, edges_path, models, desc, args):
 
                 from train_vector_sim_next_call import  training_procedure
 
-                m, ee, lp, scores = training_procedure(dataset, model, params, EPOCHS, args.call_seq_file)
+                m, ee, lp, scores = training_procedure(dataset, model, params, EPOCHS, args.call_seq_file, args.restore_state)
 
                 torch.save(
                     {
@@ -187,7 +187,7 @@ if __name__ == "__main__":
     parser.add_argument('--data_file', dest='data_file', default=None,
                         help='Path to the file with edges that are used for training')
     parser.add_argument('--use_node_types', action='store_true')
-    # parser.add_argument('--use_edge_types', action='store_true')
+    parser.add_argument('--restore_state', action='store_true')
 
     args = parser.parse_args()
 

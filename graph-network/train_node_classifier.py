@@ -91,13 +91,24 @@ def train(model, g_labels, splits, epochs):
             best_test_acc.item(),
         ))
 
+        torch.save({
+            'm': model.state_dict(),
+            "epoch": epoch
+        }, "saved_state.pt")
+
     return heldout_idx
 
-def training_procedure(dataset, model, params, EPOCHS):
+def training_procedure(dataset, model, params, EPOCHS, restore_state):
     m = model(dataset.g,
               num_classes=dataset.num_classes,
               produce_logits=True,
               **params)
+
+    if restore_state:
+        checkpoint = torch.load("saved_state.pt")
+        m.load_state_dict(checkpoint['m'])
+        print(f"Restored from epoch {checkpoint['epoch']}")
+        checkpoint = None
 
     try:
         train(m, dataset.labels, dataset.splits, EPOCHS)
