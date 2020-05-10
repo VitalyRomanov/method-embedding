@@ -117,7 +117,7 @@ def main(nodes_path, edges_path, models, desc, args):
 
             elif args.training_mode == "predict_next_function":
 
-                from train_vector_sim_next_call import  training_procedure
+                from train_vector_sim_next_call import training_procedure
 
                 m, ee, lp, scores = training_procedure(dataset, model, params, EPOCHS, args.call_seq_file, args.restore_state)
 
@@ -127,6 +127,24 @@ def main(nodes_path, edges_path, models, desc, args):
                         'link_predictor': lp.state_dict(),
                     },
                     join(MODEL_BASE, "vector_sim_next_call.pt")
+                )
+            elif args.training_mode == "multitask":
+
+                from train_multitask import training_procedure
+
+                m, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, scores = \
+                    training_procedure(dataset, model, params, EPOCHS, args.call_seq_file, args.fname_file, args.varuse_file, args.restore_state)
+
+                torch.save(
+                    {
+                        'elem_embeder_fname': ee_fname.state_dict(),
+                        'elem_embeder_varuse': ee_varuse.state_dict(),
+                        'elem_embeder_apicall': ee_apicall.state_dict(),
+                        'link_predictor_fname': lp_fname.state_dict(),
+                        'link_predictor_varuse': lp_varuse.state_dict(),
+                        'link_predictor_apicall': lp_apicall.state_dict(),
+                    },
+                    join(MODEL_BASE, "multitask.pt")
                 )
             else:
                 raise ValueError("Unknown training mode:", args.training_mode)
@@ -148,7 +166,9 @@ def main(nodes_path, edges_path, models, desc, args):
                 "description": desc,
                 "training_mode": args.training_mode,
                 "datafile": args.data_file,
-                "call_seq": args.call_seq_file
+                "call_seq": args.call_seq_file,
+                "fname_file": args.fname_file,
+                "varuse_file": args.varuse_file
             }
 
             pickle.dump(m.get_embeddings(dataset.global_id_map), open(join(metadata['base'], metadata['layers']), "wb"))
@@ -184,6 +204,10 @@ if __name__ == "__main__":
                         help='Path to the file with nodes')
     parser.add_argument('--edge_path', dest='edge_path', default=None,
                         help='Path to the file with edges')
+    parser.add_argument('--fname_file', dest='fname_file', default=None,
+                        help='Path to the file with edges that show function names')
+    parser.add_argument('--varuse_file', dest='varuse_file', default=None,
+                        help='Path to the file with edges that show variable names')
     parser.add_argument('--data_file', dest='data_file', default=None,
                         help='Path to the file with edges that are used for training')
     parser.add_argument('--use_node_types', action='store_true')
@@ -192,8 +216,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     models_ = {
-        # GAT: gat_params,
-        RGCN: rgcn_params
+        GAT: gat_params,
+        # RGCN: rgcn_params
     }
 
     data_paths = pandas.read_csv("data_paths.tsv", sep="\t")
