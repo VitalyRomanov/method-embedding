@@ -399,8 +399,7 @@ def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apical
             "lp_fname": lp_fname.state_dict(),
             "lp_varuse": lp_varuse.state_dict(),
             "lp_apicall": lp_apicall.state_dict(),
-            "epoch": epoch,
-            "splits": splits
+            "epoch": epoch
         }, "saved_state.pt")
 
 
@@ -442,7 +441,6 @@ def training_procedure(dataset, model, params, EPOCHS, api_seq_file, fname_file,
         lp_fname.load_state_dict(checkpoint['lp_fname'])
         lp_varuse.load_state_dict(checkpoint['lp_fname'])
         lp_apicall.load_state_dict(checkpoint['lp_apicall'])
-        dataset.splits = checkpoint['splits']
         print(f"Restored from epoch {checkpoint['epoch']}")
         checkpoint = None
 

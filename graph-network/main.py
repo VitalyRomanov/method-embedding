@@ -1,8 +1,5 @@
-#%%
+# %%
 import sys
-from data import load_data
-from graphtools import *
-import numpy as np
 from models import GAT, RGCN
 from datetime import datetime
 from params import gat_params, rgcn_params
@@ -14,30 +11,9 @@ from os.path import isdir, join
 import torch
 from Dataset import SourceGraphDataset
 
-# node_path = "/home/ltv/data/datasets/source_code/python-source-graph/normalized_sourcetrail_nodes.csv"
-# edge_path = "/home/ltv/data/datasets/source_code/python-source-graph/non-ambiguous_edges.csv"
-# node_path = "/home/ltv/data/datasets/source_code/sample-python/normalized_sourcetrail_nodes.csv"
-# edge_path = "/home/ltv/data/datasets/source_code/sample-python/edges.csv"
-# node_path = "/Volumes/External/dev/method-embeddings/res/python/normalized_sourcetrail_nodes.csv"
-# edge_path = "/Volumes/External/dev/method-embeddings/res/python/edges.csv"
-
-
-#%%
-# print("Loading data...", end="")
-# nodes, edges = load_data(node_path, edge_path)
-# print("done")
-# # print("Creating graph...", end="")
-# # g, labels = create_graph(nodes, edges)
-# # print("done")
-#
-# print("Using GPU:", torch.cuda.is_available())
-
-
-#%%
 
 def get_name(model, timestamp):
-    return "{} {}".format(model.__name__, timestamp).replace(":","-").replace(" ","-").replace(".","-")
-
+    return "{} {}".format(model.__name__, timestamp).replace(":", "-").replace(" ", "-").replace(".", "-")
 
 
 def main(nodes_path, edges_path, models, desc, args):
@@ -62,17 +38,18 @@ def main(nodes_path, edges_path, models, desc, args):
             print("Model: {}, Params: {}, Desc: {}".format(model.__name__, params, desc))
 
             if model.__name__ == "GAT":
-                dataset = SourceGraphDataset(nodes_path, edges_path, label_from=LABELS_FROM)
+                dataset = SourceGraphDataset(nodes_path, edges_path, label_from=LABELS_FROM,
+                                             restore_state=args.restore_state)
             elif model.__name__ == "RGCN":
                 dataset = SourceGraphDataset(nodes_path,
-                                  edges_path,
-                                  label_from=LABELS_FROM,
-                                  node_types=args.use_node_types,
-                                  edge_types=True
-                                  )
+                                             edges_path,
+                                             label_from=LABELS_FROM,
+                                             node_types=args.use_node_types,
+                                             edge_types=True,
+                                             restore_state=args.restore_state
+                                             )
             else:
                 raise Exception("Unknown model: {}".format(model.__name__))
-
 
             model_attempt = get_name(model, dateTime)
 
@@ -80,7 +57,6 @@ def main(nodes_path, edges_path, models, desc, args):
 
             if not isdir(MODEL_BASE):
                 mkdir(MODEL_BASE)
-
 
             if args.training_mode == 'node_classifier':
 
@@ -105,7 +81,8 @@ def main(nodes_path, edges_path, models, desc, args):
 
                 from train_vector_sim_with_classifier import training_procedure
 
-                m, ee, lp, scores = training_procedure(dataset, model, params, EPOCHS, args.data_file, args.restore_state)
+                m, ee, lp, scores = training_procedure(dataset, model, params, EPOCHS, args.data_file,
+                                                       args.restore_state)
 
                 torch.save(
                     {
@@ -119,7 +96,8 @@ def main(nodes_path, edges_path, models, desc, args):
 
                 from train_vector_sim_next_call import training_procedure
 
-                m, ee, lp, scores = training_procedure(dataset, model, params, EPOCHS, args.call_seq_file, args.restore_state)
+                m, ee, lp, scores = training_procedure(dataset, model, params, EPOCHS, args.call_seq_file,
+                                                       args.restore_state)
 
                 torch.save(
                     {
@@ -133,7 +111,8 @@ def main(nodes_path, edges_path, models, desc, args):
                 from train_multitask import training_procedure
 
                 m, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, scores = \
-                    training_procedure(dataset, model, params, EPOCHS, args.call_seq_file, args.fname_file, args.varuse_file, args.restore_state)
+                    training_procedure(dataset, model, params, EPOCHS, args.call_seq_file, args.fname_file,
+                                       args.varuse_file, args.restore_state)
 
                 torch.save(
                     {
@@ -148,7 +127,6 @@ def main(nodes_path, edges_path, models, desc, args):
                 )
             else:
                 raise ValueError("Unknown training mode:", args.training_mode)
-
 
             print("Saving...", end="")
 

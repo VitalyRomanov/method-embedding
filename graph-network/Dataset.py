@@ -1,6 +1,7 @@
 import pandas
 import dgl
 import numpy
+import pickle
 
 
 def load_data(node_path, edge_path):
@@ -52,7 +53,7 @@ def get_train_test_val_indices(labels):
 class SourceGraphDataset:
     def __init__(self, nodes_path, edges_path,
                  label_from, node_types=False,
-                 edge_types=False, filter=None, holdout_frac=0.01 / 10):
+                 edge_types=False, filter=None, holdout_frac=0.001, restore_state=False):
         """
         Prepares the data for training GNN model. The graph is prepared in the following way:
             1. Edges are split into the train set and holdout set. Holdout set is used in the future experiments.
@@ -91,7 +92,12 @@ class SourceGraphDataset:
 
         self.nodes, self.edges = load_data(nodes_path, edges_path)
 
-        self.nodes, self.edges, self.held = SourceGraphDataset.holdout(self.nodes, self.edges, self.holdout_frac)
+        if restore_state:
+            self.nodes, self.edges, self.held = pickle.load(open("tmp_edgesplits.pkl", "rb"))
+            print("Restored graph from saved state")
+        else:
+            self.nodes, self.edges, self.held = SourceGraphDataset.holdout(self.nodes, self.edges, self.holdout_frac)
+            pickle.dump((self.nodes, self.edges, self.held), open("tmp_edgesplits.pkl", "wb"))
 
         self.nodes_have_types = node_types
         self.edges_have_types = edge_types
@@ -120,7 +126,13 @@ class SourceGraphDataset:
 
         self.nodes.sort_values('global_graph_id', inplace=True)
 
-        self.splits = get_train_test_val_indices(self.labels)
+        if restore_state:
+            self.splits = pickle.load(open("tmp_splits.pkl", "rb"))
+            print("Restored node splits from saved state")
+        else:
+            self.splits = get_train_test_val_indices(self.labels)
+            pickle.dump(self.splits, open("tmp_splits.pkl", "wb"))
+
 
     def add_graph_ids(self):
 
@@ -486,7 +498,7 @@ class SourceGraphDataset:
 
 
 def split(edges, HOLDOUT_FRAC):
-    edges_shuffled = edges.sample(frac=1., random_state=42)
+    edges_shuffled = edges.sample(frac=1.) #, random_state=42)
 
     train_frac = int(edges_shuffled.shape[0] * (1. - HOLDOUT_FRAC))
 
