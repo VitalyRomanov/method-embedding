@@ -4,6 +4,7 @@ import dgl.function as fn
 from dgl.nn.pytorch import edge_softmax, GATConv
 import numpy as np
 import pandas as pd
+from RAdam import RAdam
 
 from ElementEmbedder import ElementEmbedder
 from LinkPredictor import LinkPredictor
@@ -262,15 +263,25 @@ def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apical
     # this is heldout because it was not used during training
     # heldout_idx = test_idx.tolist() + val_idx.tolist()
 
-    optimizer = torch.optim.Adagrad(
+    # optimizer = torch.optim.Adagrad(
+    #     [
+    #         {'params': model.parameters(), 'lr': 1e-1},
+    #         {'params': ee_fname.parameters(), 'lr': 1e-1},
+    #         {'params': ee_varuse.parameters(), 'lr': 1e-1},
+    #         {'params': ee_apicall.parameters(), 'lr': 1e-1},
+    #         {'params': lp_fname.parameters(), 'lr': 1e-2},
+    #         {'params': lp_varuse.parameters(), 'lr': 1e-2},
+    #         {'params': lp_apicall.parameters(), 'lr': 1e-2},
+    #     ], lr=0.01)
+    optimizer = RAdam(
         [
-            {'params': model.parameters(), 'lr': 1e-1},
-            {'params': ee_fname.parameters(), 'lr': 1e-1},
-            {'params': ee_varuse.parameters(), 'lr': 1e-1},
-            {'params': ee_apicall.parameters(), 'lr': 1e-1},
-            {'params': lp_fname.parameters(), 'lr': 1e-2},
-            {'params': lp_varuse.parameters(), 'lr': 1e-2},
-            {'params': lp_apicall.parameters(), 'lr': 1e-2},
+            {'params': model.parameters(),},
+            {'params': ee_fname.parameters(),},
+            {'params': ee_varuse.parameters(),},
+            {'params': ee_apicall.parameters(),},
+            {'params': lp_fname.parameters(),},
+            {'params': lp_varuse.parameters(),},
+            {'params': lp_apicall.parameters(),},
         ], lr=0.01)
 
     best_val_acc_fname = torch.tensor(0)
