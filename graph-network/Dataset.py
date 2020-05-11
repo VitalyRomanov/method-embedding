@@ -498,7 +498,7 @@ class SourceGraphDataset:
 
 
 def split(edges, HOLDOUT_FRAC):
-    edges_shuffled = edges.sample(frac=1.) #, random_state=42)
+    edges_shuffled = edges.sample(frac=1., random_state=42)
 
     train_frac = int(edges_shuffled.shape[0] * (1. - HOLDOUT_FRAC))
 
