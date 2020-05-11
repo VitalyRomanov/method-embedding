@@ -28,11 +28,13 @@ args = parser.parse_args()
 # BASE_PATH = "models/GAT-2020-05-05-17-23-39-269036-fname" # trained on function names
 # BASE_PATH = "models/GAT-2020-05-05-01-25-38-208819-varnames" # trained on variable names
 # BASE_PATH = "models/GAT-2020-05-04-01-25-52-792623-nextcall" # trained on next call
+# BASE_PATH = "models/GAT-2020-05-10-23-27-05-982293-multitask"
 
 # RGCN
 # BASE_PATH = "models/RGCN-2020-05-09-16-43-46-984454-fname-edgetype" # trained on function names
 # BASE_PATH = "models/RGCN-2020-05-08-21-35-13-542497-varname-edgetype" # trained on variable names
-BASE_PATH = "models/RGCN-2020-05-06-19-53-15-933048-nextcall-edgetypes" # trained on next call
+# BASE_PATH = "models/RGCN-2020-05-06-19-53-15-933048-nextcall-edgetypes" # trained on next call
+BASE_PATH = "models/RGCN-2020-05-11-10-14-50-783337-multitask"
 
 # data files
 API_SEQ = "data_files/python_flat_calls.csv.bz2"
@@ -43,7 +45,8 @@ e = Experiments(base_path=BASE_PATH,
                 type_use_path=None, #not needed
                 node_type_path=None, #not needed
                 variable_use_path=VAR_USE, #not needed
-                function_name_path=None
+                function_name_path=None,
+                gnn_layer=-1
                 )
 
 # if args.random:
