@@ -296,6 +296,8 @@ def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apical
 
     for epoch in range(epochs):
 
+        print("Epoch", epoch)
+
         # since we train in batches, we need to iterate over the nodes
         # since indexes are sampled randomly, it is a little bit hard to make sure we cover all data
         # instead, we sample nodes the same number of times that there are different nodes in the dataset,
@@ -349,58 +351,58 @@ def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apical
                 batch_ind, num_batches, train_acc_fname.item(), train_acc_varuse.item(), train_acc_apicall.item()),
                       end="\n")
 
-        test_logits_fname, test_labels_fname = prepare_batch_with_embeder(node_embeddings,
-                                                                        ee_fname,
-                                                                        lp_fname,
-                                                                        test_idx_fname,
-                                                                        test_idx_fname.size,
-                                                                        1)
-        test_logits_varuse, test_labels_varuse = prepare_batch_with_embeder(node_embeddings,
-                                                                          ee_varuse,
-                                                                          lp_varuse,
-                                                                          test_idx_varuse,
-                                                                          test_idx_varuse.size,
-                                                                          1)
-        test_logits_apicall, test_labels_apicall = prepare_batch_with_nodes(node_embeddings,
-                                                                            ee_apicall,
-                                                                            lp_apicall,
-                                                                            test_idx_apicall,
-                                                                            test_idx_apicall.size,
-                                                                            1)
-
-        val_logits_fname, val_labels_fname = prepare_batch_with_embeder(node_embeddings,
-                                                                      ee_fname,
-                                                                      lp_fname,
-                                                                      val_idx_fname,
-                                                                      val_idx_fname.size,
-                                                                      1)
-        val_logits_varuse, val_labels_varuse = prepare_batch_with_embeder(node_embeddings,
-                                                                        ee_varuse,
-                                                                        lp_varuse,
-                                                                        val_idx_varuse,
-                                                                        val_idx_varuse.size,
-                                                                        1)
-        val_logits_apicall, val_labels_apicall = prepare_batch_with_nodes(node_embeddings,
-                                                                          ee_apicall,
-                                                                          lp_apicall,
-                                                                          val_idx_apicall,
-                                                                          val_idx_apicall.size,
-                                                                          1)
-
-        test_acc_fname, test_acc_varuse, test_acc_apicall, val_acc_fname, val_acc_varuse, val_acc_apicall = \
-            evaluate_no_classes(test_logits_fname, test_labels_fname), \
-            evaluate_no_classes(test_logits_varuse, test_labels_varuse), \
-            evaluate_no_classes(test_logits_apicall, test_labels_apicall), \
-            evaluate_no_classes(val_logits_fname, val_labels_fname), \
-            evaluate_no_classes(val_logits_varuse, val_labels_varuse), \
-            evaluate_no_classes(val_logits_apicall, val_labels_apicall)
-
-        track_best(epoch, loss, train_acc_fname, val_acc_fname, test_acc_fname,
-                   train_acc_varuse, val_acc_varuse, test_acc_varuse,
-                   train_acc_apicall, val_acc_apicall, test_acc_apicall,
-                   best_val_acc_fname, best_test_acc_fname,
-                   best_val_acc_varuse, best_test_acc_varuse,
-                   best_val_acc_apicall, best_test_acc_apicall)
+        # test_logits_fname, test_labels_fname = prepare_batch_with_embeder(node_embeddings,
+        #                                                                 ee_fname,
+        #                                                                 lp_fname,
+        #                                                                 test_idx_fname,
+        #                                                                 test_idx_fname.size,
+        #                                                                 1)
+        # test_logits_varuse, test_labels_varuse = prepare_batch_with_embeder(node_embeddings,
+        #                                                                   ee_varuse,
+        #                                                                   lp_varuse,
+        #                                                                   test_idx_varuse,
+        #                                                                   test_idx_varuse.size,
+        #                                                                   1)
+        # test_logits_apicall, test_labels_apicall = prepare_batch_with_nodes(node_embeddings,
+        #                                                                     ee_apicall,
+        #                                                                     lp_apicall,
+        #                                                                     test_idx_apicall,
+        #                                                                     test_idx_apicall.size,
+        #                                                                     1)
+        #
+        # val_logits_fname, val_labels_fname = prepare_batch_with_embeder(node_embeddings,
+        #                                                               ee_fname,
+        #                                                               lp_fname,
+        #                                                               val_idx_fname,
+        #                                                               val_idx_fname.size,
+        #                                                               1)
+        # val_logits_varuse, val_labels_varuse = prepare_batch_with_embeder(node_embeddings,
+        #                                                                 ee_varuse,
+        #                                                                 lp_varuse,
+        #                                                                 val_idx_varuse,
+        #                                                                 val_idx_varuse.size,
+        #                                                                 1)
+        # val_logits_apicall, val_labels_apicall = prepare_batch_with_nodes(node_embeddings,
+        #                                                                   ee_apicall,
+        #                                                                   lp_apicall,
+        #                                                                   val_idx_apicall,
+        #                                                                   val_idx_apicall.size,
+        #                                                                   1)
+        #
+        # test_acc_fname, test_acc_varuse, test_acc_apicall, val_acc_fname, val_acc_varuse, val_acc_apicall = \
+        #     evaluate_no_classes(test_logits_fname, test_labels_fname), \
+        #     evaluate_no_classes(test_logits_varuse, test_labels_varuse), \
+        #     evaluate_no_classes(test_logits_apicall, test_labels_apicall), \
+        #     evaluate_no_classes(val_logits_fname, val_labels_fname), \
+        #     evaluate_no_classes(val_logits_varuse, val_labels_varuse), \
+        #     evaluate_no_classes(val_logits_apicall, val_labels_apicall)
+        #
+        # track_best(epoch, loss, train_acc_fname, val_acc_fname, test_acc_fname,
+        #            train_acc_varuse, val_acc_varuse, test_acc_varuse,
+        #            train_acc_apicall, val_acc_apicall, test_acc_apicall,
+        #            best_val_acc_fname, best_test_acc_fname,
+        #            best_val_acc_varuse, best_test_acc_varuse,
+        #            best_val_acc_apicall, best_test_acc_apicall)
 
         torch.save({
             'm': model.state_dict(),
