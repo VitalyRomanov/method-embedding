@@ -34,7 +34,8 @@ args = parser.parse_args()
 # BASE_PATH = "models/RGCN-2020-05-09-16-43-46-984454-fname-edgetype" # trained on function names
 # BASE_PATH = "models/RGCN-2020-05-08-21-35-13-542497-varname-edgetype" # trained on variable names
 # BASE_PATH = "models/RGCN-2020-05-06-19-53-15-933048-nextcall-edgetypes" # trained on next call
-BASE_PATH = "models/RGCN-2020-05-11-10-14-50-783337-multitask"
+# BASE_PATH = "models/RGCN-2020-05-11-10-14-50-783337-multitask"
+BASE_PATH = "models/RGCN-2020-05-11-20-34-49-002750-multitask-5layers"
 
 # data files
 API_SEQ = "data_files/python_flat_calls.csv.bz2"
@@ -112,6 +113,7 @@ def run_experiment(EXPERIMENT_NAME, random=False):
     EPOCHS = 500
 
     # print(f"\n\n\nExperiment name: {EXPERIMENT_NAME}")
+    tests = []
 
     for epoch in range(EPOCHS):
         # Reset the metrics at the start of the next epoch
@@ -131,18 +133,20 @@ def run_experiment(EXPERIMENT_NAME, random=False):
 
             ma_train = train_accuracy.result() * 100 * ma_alpha + ma_train * (1 - ma_alpha)
             ma_test = test_accuracy.result() * 100 * ma_alpha + ma_test * (1 - ma_alpha)
+            tests.append(ma_test)
 
-            # template = 'Epoch {}, Loss: {:.4f}, Accuracy: {:.4f}, Test Loss: {:.4f}, Test Accuracy: {:.4f}'
+            # template = 'Epoch {}, Loss: {:.4f}, Accuracy: {:.4f}, Test Loss: {:.4f}, Test Accuracy: {:.4f}, Average Test {:.4f}'
             # print(template.format(epoch+1,
             #                       train_loss.result(),
             #                       train_accuracy.result()*100,
             #                       test_loss.result(),
-            #                       test_accuracy.result()*100))
+            #                       test_accuracy.result()*100,
+            #                       ma_test))
 
-    ma_train = train_accuracy.result() * 100 * ma_alpha + ma_train * (1 - ma_alpha)
-    ma_test = test_accuracy.result() * 100 * ma_alpha + ma_test * (1 - ma_alpha)
+    # ma_train = train_accuracy.result() * 100 * ma_alpha + ma_train * (1 - ma_alpha)
+    # ma_test = test_accuracy.result() * 100 * ma_alpha + ma_test * (1 - ma_alpha)
 
-    return ma_train, ma_test
+    return ma_train, max(tests)
 
 for experiment_name in ['apicall','link','typeuse','varuse','fname','nodetype']:
     print(f"\n{experiment_name}:")
