@@ -96,8 +96,20 @@ class SourceGraphDataset:
             self.nodes, self.edges, self.held = pickle.load(open("tmp_edgesplits.pkl", "rb"))
             print("Restored graph from saved state")
         else:
+            # the next line will delete isolated nodes
             self.nodes, self.edges, self.held = SourceGraphDataset.holdout(self.nodes, self.edges, self.holdout_frac)
             pickle.dump((self.nodes, self.edges, self.held), open("tmp_edgesplits.pkl", "wb"))
+
+        # ablation
+        # print("Edges before filtering", self.edges.shape[0])
+        # 16 inheritance *
+        # 512 import *
+        # 4 use *
+        # 2 typeuse *
+        # 8 call
+        # 1 contain
+        # self.edges = self.edges.query("type != 8")
+        # print("Edges after filtering", self.edges.shape[0])
 
         self.nodes_have_types = node_types
         self.edges_have_types = edge_types
