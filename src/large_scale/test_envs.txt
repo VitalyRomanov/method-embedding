@@ -1,0 +1,11 @@
+Flask
+Django
+requests
+Scrapy
+scikit-learn
+tensorflow
+pandas
+spacy
+bokeh
+matplotlib
+fabric

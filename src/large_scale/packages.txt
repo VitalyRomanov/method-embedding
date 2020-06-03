@@ -1,0 +1,11 @@
+Flask   conda install -c anaconda flask
+Django  conda install -c anaconda django
+requests    conda install -c anaconda requests
+Scrapy  conda install -c conda-forge scrapy
+scikit-learn    conda install scikit-learn
+tensorflow  conda install -c conda-forge tensorflow
+pandas  conda install -c anaconda pandas
+spacy   conda install -c conda-forge spacy
+bokeh   conda install -c bokeh bokeh
+matplotlib  conda install -c conda-forge matplotlib
+fabric  conda install -c anaconda fabric
