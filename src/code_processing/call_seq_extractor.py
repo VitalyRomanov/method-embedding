@@ -6,14 +6,16 @@ import pandas
 import os
 import ast
 
-# base_folder = "/Volumes/External/datasets/Code/source-graphs/python-source-graph/"
-base_folder = "/home/ltv/data/datasets/source_code/python-source-graph/"
 
-bodies_path = base_folder + "functions.csv" # sys.argv[1]
-nodes_path = base_folder + "normalized_sourcetrail_nodes.csv" # sys.argv[2]
-edges_path = base_folder + "edges_component_0.csv" # sys.argv[3]
-occurrence_path = base_folder + "occurrence.csv"
-source_location_path = base_folder + "source_location.csv"
+working_directory = sys.argv[1]
+# base_folder = "/Volumes/External/datasets/Code/source-graphs/python-source-graph/"
+# base_folder = "/home/ltv/data/datasets/source_code/python-source-graph/"
+
+bodies_path = os.path.join(working_directory, "source-graph-functions.csv")
+nodes_path = os.path.join(working_directory, "normalized_sourcetrail_nodes.csv")
+edges_path = os.path.join(working_directory, "edges.csv")
+occurrence_path = os.path.join(working_directory, "occurrence.csv")
+source_location_path = os.path.join(working_directory, "source_location.csv")
 
 #%%
 
@@ -86,7 +88,7 @@ def get_name_from_ast(n, node_id):
 
 CHARS_IN_LINE = 100
 
-with open("consequent_calls.txt", "w") as sink
+with open(os.path.join(working_directory, "source-graph-consequent-calls.txt"), "w") as sink:
 
     for ind, (node_id, group) in enumerate(edges_group):
 
@@ -98,7 +100,7 @@ with open("consequent_calls.txt", "w") as sink
         if body_str is not None:
             
             try:
-                tree = ast.parse(body_str)
+                tree = ast.parse(body_str.strip())
             except SyntaxError:
                 continue
 

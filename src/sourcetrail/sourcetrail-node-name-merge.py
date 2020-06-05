@@ -1,4 +1,4 @@
-import sys
+import sys, os
 import pandas as p
 
 # needs testing
@@ -24,8 +24,9 @@ def normalize(line):
     # as_line = ".".join(parts)
     # return as_line
 
-data = p.read_csv(sys.argv[1])
+nodes_path = sys.argv[1]
+data = p.read_csv(nodes_path)
 data = data[data['type'] != 262144]
 data['serialized_name'] = data['serialized_name'].apply(normalize)
 
-data.to_csv("normalized_sourcetrail_nodes.csv", index=False)
+data.to_csv(os.path.join(os.path.dirname(nodes_path), "normalized_sourcetrail_nodes.csv"), index=False)
