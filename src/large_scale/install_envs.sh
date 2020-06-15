@@ -37,6 +37,7 @@ do
     if [ ! -f "$repo/$repo.srctrlprj" ]; then
       echo "Creating Sourcetrail project for $repo"
       repo_lower=$(echo "$repo" | awk '{print tolower($0)}')
+      repo_lower_under="${repo_lower//[-]/_}"
       echo "<?xml version="1.0" encoding="utf-8" ?>
 <config>
     <source_groups>
@@ -47,7 +48,7 @@ do
                 <source_extension>.py</source_extension>
             </source_extensions>
             <source_paths>
-                <source_path>lib/python3.7/site-packages/$repo_lower</source_path>
+                <source_path>lib/python3.7/site-packages/$repo_lower_under</source_path>
             </source_paths>
             <status>enabled</status>
             <type>Python Source Group</type>
