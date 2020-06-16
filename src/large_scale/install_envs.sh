@@ -80,6 +80,7 @@ do
 
   # Deactivate environment if activated
   if $act_env; then
+    cat $repo/packages.txt | xargs pip uninstall -y
     deactivate
     echo "Deactivated $repo"
   fi
