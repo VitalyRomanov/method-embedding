@@ -33,7 +33,7 @@ do
       pip install $repo > $repo/piplog.log
       pip freeze > $repo/packages.txt
     else
-      cat $repo/packages.txt | xargs pip install -y
+      cat $repo/packages.txt | xargs pip install > piplogsecondary.log
     fi
 
     if [ ! -f "$repo/$repo.srctrlprj" ]; then
@@ -82,7 +82,7 @@ do
 
   # Deactivate environment if activated
   if $act_env; then
-    cat $repo/packages.txt | xargs pip uninstall -y
+    cat $repo/packages.txt | xargs pip uninstall -y > pipuninstlog.log
     deactivate
     echo "Deactivated $repo"
   fi
