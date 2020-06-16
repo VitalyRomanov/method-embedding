@@ -32,6 +32,8 @@ do
       echo "Installing packages for $repo"
       pip install $repo > $repo/piplog.log
       pip freeze > $repo/packages.txt
+    else
+      cat $repo/packages.txt | xargs pip install -y
     fi
 
     if [ ! -f "$repo/$repo.srctrlprj" ]; then
