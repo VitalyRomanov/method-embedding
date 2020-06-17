@@ -3,6 +3,7 @@ import sys
 from collections import defaultdict
 from pprint import pprint
 import pygraphviz
+from time import time
 
 """
 Possible strategies
@@ -24,13 +25,44 @@ def get_call(node):
         return node.id
 
 def parse_func_def(node):
-    return node.name, tuple(parse(n) for n in node.args.args)
+    name  = node.name
+    args =  (parse(n) for n in node.args.args)
+
+    edges = []
+    for a in args:
+        edges.append({"src": a, "dst": name, "type":"def_arg"})
+    return edges
+    # return node.name, tuple(parse(n) for n in node.args.args)
+
+def parse_assign(node):
+    edges = []
+    if type(node.value) == ast.Call:
+        value = parse(node.value.func)
+        edges.extend(parse(node.value))
+        type_ = "assign_to_from_call"
+    else:
+        value = parse(node.value)
+        type_ = "assign_to"
+    print("\t\t", ast.dump(node.value), value)
+    dsts = (parse_name(t) for t in node.targets)
+    
+    for dst in dsts:
+        edges.append({"src": value, "dst": dst, "type": type_})
+    return edges
+    # return tuple(parse_name(t) for t in node.targets), parse(node.value)
 
 def parse_arg(node):
     return node.arg
 
 def parse_call(node):
-    return get_call(node.func), tuple(parse(a) for a in node.args)
+    edges = []
+    # print("\t\t", ast.dump(node))
+    f_name = get_call(node.func)
+    call_args = (parse(a) for a in node.args)
+    for a in call_args:
+        edges.append({"src": a, "dst": f_name, "type": "call_arg"})
+    return edges
+    # return get_call(node.func), tuple(parse(a) for a in node.args)
 
 def parse_name(node):
     if type(node) == ast.Attribute:
@@ -43,6 +75,54 @@ def parse_name_const(node):
 
 def parse_num(node):
     return node.n
+
+def parse_if(node):
+    edges = []
+    condition = parse(node.test)
+    print(condition)
+    cond_name = condition[0]['dst']
+
+    edges.extend(condition)
+    edges.extend(parse_body(node.body))
+    edges.extend(parse_body(node.orelse))
+    return edges
+    # return parse(node.test), parse_body(node.body), parse_body(node.orelse)
+
+def parse_for(node):
+    return [type(node)]
+
+def parse_try(node):
+    return [type(node)]
+
+def parse_while(node):
+    return [type(node)]
+
+def parse_compare(node):
+    edges = []
+    left = parse(node.left)
+    ops = (o.__class__.__name__ for o in node.ops)
+    comps = (parse(c) for c in node.comparators)
+    comp_name = "compare" + str(int(time()))
+    edges.append({"src": left, "dst": comp_name, "type": "comp_left"})
+
+    for o in ops:
+        edges.append({"src": o, "dst": comp_name, "type": "comp_op"})
+    for c in comps:
+        edges.append({"src": c, "dst": comp_name, "type": "comp_right"})
+    
+    return edges
+    # return parse(node.left), tuple(parse(o) for o in node.ops), tuple(parse(c) for c in node.comparators)
+
+def parse_bool_op(node):
+    edges = []
+    bool_op_name = node.op.__class__.__name__ + str(int(time()))
+    for c in node.values:
+        op = parse(c)
+        op_name = op[0]['dst']
+        edges.extend(op)
+        edges.append({"src": op_name, "dst": bool_op_name, "type": "bool_op"})
+    return edges
+
 
 def parse(node):
     n_type = type(node)
@@ -59,13 +139,51 @@ def parse(node):
     elif n_type == ast.Attribute:
         return parse_name(node)
     elif n_type == ast.Assign:
-        return tuple(parse_name(t) for t in node.targets), parse(node.value)
+        return parse_assign(node)
     elif n_type == ast.NameConstant:
         return parse_name_const(node)
     elif n_type == ast.Num:
         return parse_num(node)
+    elif n_type == ast.If:
+        return parse_if(node)
+    elif n_type == ast.Try:
+        return parse_try(node)
+    elif n_type == ast.For:
+        return parse_for(node)
+    elif n_type == ast.While:
+        return parse_while(node)
+    elif n_type == ast.Compare:
+        return parse_compare(node)
+    elif n_type == ast.BoolOp:
+        return parse_bool_op(node)
     else:
-        return type(node)
+        return [type(node)]#type(node)
+        # return node.__class__.__name__
+
+def parse_body(nodes):
+    edges = []
+    for node in nodes:
+        # print(ast.dump(node))
+        n_type = type(node)
+        if n_type == ast.Expr:
+            expr_type = type(node.value)
+            if expr_type == ast.Call:
+                edges.extend(parse(node.value))
+            else:
+                edges.extend(type(node.value))
+        elif n_type == ast.FunctionDef:
+            edges.extend(parse(node))
+        elif n_type == ast.Assign:
+            edges.extend(parse(node))
+        elif n_type == ast.If:
+            edges.extend(parse(node))
+        elif n_type == ast.Try:
+            edges.extend(parse(node))
+        elif n_type == ast.For:
+            edges.extend(parse(node))
+        elif n_type == ast.While:
+            edges.extend(parse(node))
+    return edges
 
 class AstGraphGenerator(object):
 
@@ -104,29 +222,33 @@ class AstGraphGenerator(object):
 
     def generic_visit(self, node):
         """Called if no explicit visitor function exists for a node."""
+        edges = []
         for f_def_node in ast.iter_child_nodes(node):
             # enter module
             if type(f_def_node) == ast.FunctionDef:
-                for node in ast.iter_child_nodes(f_def_node):
-                    n_type = type(node)
-                    if n_type == ast.Expr:
-                        expr_type = type(node.value)
-                        if expr_type == ast.Call:
-                            print(parse(node.value), node.lineno)
-                        else:
-                            print(type(node.value), node.lineno)
-                    elif n_type == ast.FunctionDef:
-                        print(parse(node), node.lineno)
-                    elif n_type == ast.Assign:
-                        print(parse(node), node.lineno)
-                    elif n_type == ast.If:
-                        print(parse(node), node.lineno)
-                    elif n_type == ast.Try:
-                        print(parse(node), node.lineno)
-                    elif n_type == ast.For:
-                        print(parse(node), node.lineno)
-                    elif n_type == ast.While:
-                        print(parse(node), node.lineno)
+                edges.extend(parse(f_def_node))
+                edges.extend(parse_body(ast.iter_child_nodes(f_def_node)))
+        pprint(edges)
+                # for node in ast.iter_child_nodes(f_def_node):
+                #     n_type = type(node)
+                #     if n_type == ast.Expr:
+                #         expr_type = type(node.value)
+                #         if expr_type == ast.Call:
+                #             print(parse(node.value), node.lineno)
+                #         else:
+                #             print(type(node.value), node.lineno)
+                #     elif n_type == ast.FunctionDef:
+                #         print(parse(node), node.lineno)
+                #     elif n_type == ast.Assign:
+                #         print(parse(node), node.lineno)
+                #     elif n_type == ast.If:
+                #         print(parse(node), node.lineno)
+                #     elif n_type == ast.Try:
+                #         print(parse(node), node.lineno)
+                #     elif n_type == ast.For:
+                #         print(parse(node), node.lineno)
+                #     elif n_type == ast.While:
+                #         print(parse(node), node.lineno)
                     # nn = self._getid(node)
                     # print(nn)
         # for _, value in ast.iter_fields(node):
