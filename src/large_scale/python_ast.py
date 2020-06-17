@@ -5,6 +5,7 @@ from pprint import pprint
 import pygraphviz
 from time import time_ns
 from collections.abc import Iterable
+import pandas as pd
 
 """
 Possible strategies
@@ -12,38 +13,16 @@ Possible strategies
 2. If a statement confitions on smth, add "conditions at" edge to every node
 """
 
-func = open(sys.argv[1]).read()
+# func = open(sys.argv[1]).read()
 
 class AstGraphGenerator(object):
 
     def __init__(self, source):
         self.graph = defaultdict(lambda: [])
-        self.source = source  # lines of the source code
+        self.source = source.split("\n")  # lines of the source code
+        self.root = ast.parse(source)
         self.current_contition = []
         self.contition_status = []
-
-    def __str__(self):
-        return str(self.graph)
-
-    def _getid(self, node):
-        
-        try:
-            n_type = type(node)
-            if n_type == ast.FunctionDef:
-                return parse(node)
-            elif n_type == ast.arguments:
-                return parse(node)
-            elif n_type == ast.Expr:
-                expr_type = type(node.value)
-                if expr_type == ast.Call:
-                    return parse(node.value.func), 
-                return type(node.value) #[a.arg for a in node.args]
-            lineno = node.lineno - 1
-            # return node._fields
-            return "%s: %s" % (type(node), self.source[lineno].strip())
-    
-        except AttributeError:
-            return type(node)
 
     def visit(self, node):
         """Visit a node."""
@@ -51,15 +30,15 @@ class AstGraphGenerator(object):
         visitor = getattr(self, method, self.generic_visit)
         return visitor(node)
 
-    def generic_visit(self, node):
+    def generic_visit(self):
         """Called if no explicit visitor function exists for a node."""
         edges = []
-        for f_def_node in ast.iter_child_nodes(node):
+        for f_def_node in ast.iter_child_nodes(self.root):
             # enter module
             if type(f_def_node) == ast.FunctionDef:
                 edges.extend(self.parse(f_def_node))
                 edges.extend(self.parse_body(ast.iter_child_nodes(f_def_node)))
-        pprint(edges)
+        # pprint(edges)
 
     def get_call(self, node):
         if type(node) == ast.Attribute:
@@ -98,12 +77,7 @@ class AstGraphGenerator(object):
 
         value, ext_edges = self.parse_operand(node.value)
         edges.extend(ext_edges)
-        # if type(node.value) == ast.Call:
-        #     call_e = self.parse(node.value)
-        #     edges.extend(call_e)
-        #     value = call_e[0]['dst']
-        # else:
-        #     value = self.parse(node.value)
+        
         assign_name = "assign" + str(int(time_ns()))
 
         dsts = (self.parse_name(t) for t in node.targets)
@@ -134,6 +108,9 @@ class AstGraphGenerator(object):
             # print(iter_e)
             # iter_ = iter_e[0]['dst']
         else:
+            print(ast.dump(node))
+            print(iter_e)
+            print(self.source[node.lineno-1].strip())
             raise Exception()
 
         return iter_, edges
@@ -175,108 +152,51 @@ class AstGraphGenerator(object):
     def parse_Num(self, node):
         return str(node.n)
 
+    def parse_Str(self, node):
+        return node.s
+
     def parse_If(self, node):
         edges = []
         cond_name, ext_edges = self.parse_operand(node.test)
         edges.extend(ext_edges)
-        # if type(node.test) == ast.Name:
-        #     cond_name = self.parse(node.test)
-        # else:
-        #     condition = self.parse(node.test)
-        #     # print(condition)
-        #     cond_name = condition[0]['dst']
-        #     edges.extend(condition)
 
         self.parse_in_context(cond_name, "True", edges, node.body)
-        # self.current_contition.append(cond_name)
-        # self.contition_status.append("True")
-        # edges.extend(self.parse_body(node.body))
-        # self.current_contition.pop(-1)
-        # self.contition_status.pop(-1)
-
         self.parse_in_context(cond_name, "False", edges, node.orelse)
-        # self.current_contition.append(cond_name)
-        # self.contition_status.append("False")
-        # edges.extend(self.parse_body(node.orelse))
-        # self.current_contition.pop(-1)
-        # self.contition_status.pop(-1)
 
         return edges
-        # return parse(node.test), parse_body(node.body), parse_body(node.orelse)
+
 
     def parse_For(self, node):
         edges = []
-        # print("\t\tfordump", ast.dump(node))
+
         for_name = "for" + str(int(time_ns()))
 
         iter_, iter_e = self.parse_operand(node.iter)
         edges.extend(iter_e)
-        # if type(node.iter) == ast.Name:
-        #     iter_ = self.parse(node.iter)
-        # else:
-        #     iter_e = self.parse(node.iter)
-        #     edges.extend(iter_e)
-        #     iter_ = iter_e[0]['dst']
         edges.append({"src": iter_, "dst": self.parse(node.target), "type": "iter"})
-        # print("\t\tfordump", edges)
         
         self.parse_in_context(for_name, "for", edges, node.body)
-        # self.current_contition.append(for_name)
-        # self.contition_status.append("for")
-        # edges.extend(self.parse_body(node.body))
-        # self.current_contition.pop(-1)
-        # self.contition_status.pop(-1)
-
         self.parse_in_context(for_name, "orelse", edges, node.orelse)
-        # self.current_contition.append(for_name)
-        # self.contition_status.append("orelse")
-        # edges.extend(self.parse_body(node.orelse))
-        # self.current_contition.pop(-1)
-        # self.contition_status.pop(-1)
-
-        # print("\t\tfordump", edges)
-
+        
         return edges #, for_name
-        # return [type(node)]
-
+        
     def parse_Try(self, node):
         edges = []
         try_name = "try" + str(int(time_ns()))
 
         self.parse_in_context(try_name, "try", edges, node.body)
-        # self.current_contition.append(try_name)
-        # self.contition_status.append("try")
-        # edges.extend(self.parse_body(node.body))
-        # self.current_contition.pop(-1)
-        # self.contition_status.pop(-1)
-
+        
         for h in node.handlers:
             
             handler_name = "None" if not h.type else self.parse(h.type)
             self.parse_in_context(try_name, "except_"+handler_name, edges, h.body)
-            # self.current_contition.append(try_name)
-            # self.contition_status.append("except_"+handler_name)
-            # edges.extend(self.parse_body(h.body))
-            # self.current_contition.pop(-1)
-            # self.contition_status.pop(-1)
-
+        
         self.parse_in_context(try_name, "final", edges, node.finalbody)
-        # self.current_contition.append(try_name)
-        # self.contition_status.append("final")
-        # edges.extend(self.parse_body(node.finalbody))
-        # self.current_contition.pop(-1)
-        # self.contition_status.pop(-1)
-
+        
         self.parse_in_context(try_name, "else", edges, node.orelse)
-        # self.current_contition.append(try_name)
-        # self.contition_status.append("else")
-        # edges.extend(self.parse_body(node.orelse))
-        # self.current_contition.pop(-1)
-        # self.contition_status.pop(-1)
-
+        
         return edges #, try_name   
-        # return [type(node)]
-
+        
     def parse_While(self, node):
         edges = []
 
@@ -285,28 +205,11 @@ class AstGraphGenerator(object):
         cond_name, ext_edges = self.parse_operand(node.test)
         edges.extend(ext_edges)
 
-        # if type(node.test) == ast.Name:
-        #     cond_name = self.parse(node.test)
-        # else:
-        #     condition = self.parse(node.test)
-        #     # print(condition)
-        #     cond_name = condition[0]['dst']
-        #     edges.extend(condition)
-
         self.parse_in_context([while_name, cond_name], ["while", "True"], edges, node.body)
-        # self.current_contition.append(while_name)
-        # self.contition_status.append("while")
-        # self.current_contition.append(cond_name)
-        # self.contition_status.append("True")
-        # edges.extend(self.parse_body(node.body))
-        # self.current_contition.pop(-1)
-        # self.contition_status.pop(-1)
-        # self.current_contition.pop(-1)
-        # self.contition_status.pop(-1)
-        # print("\t\twhiledump", print(edges))
+        
         return edges #, while_name
-        # return [type(node)]
-
+        
+        
     def parse_Compare(self, node):
         edges = []
         left = self.parse(node.left)
@@ -321,15 +224,12 @@ class AstGraphGenerator(object):
             edges.append({"src": c, "dst": comp_name, "type": "comp_right"})
         
         return edges, comp_name
-        # return parse(node.left), tuple(parse(o) for o in node.ops), tuple(parse(c) for c in node.comparators)
-
+        
     def parse_BoolOp(self, node):
         edges = []
         bool_op_name = node.op.__class__.__name__ + str(int(time_ns()))
         for c in node.values:
             op_name, ext_edges = self.parse_operand(c)
-            # op = self.parse(c)
-            # op_name = op[0]['dst']
             edges.extend(ext_edges)
             edges.append({"src": op_name, "dst": bool_op_name, "type": "bool_op"})
         return edges, bool_op_name
@@ -337,11 +237,9 @@ class AstGraphGenerator(object):
     def parse_Expr(self, node):
         edges = []
 
-        # edges.extend(self.parse(node.value))
         expr_name, ext_edges = self.parse_operand(node.value)
         edges.extend(ext_edges)
-        # expr_name = edges[0]['dst']
-
+        
         for cond_name, cons_stat in zip(self.current_contition, self.contition_status):
             edges.append({"src": expr_name, "dst": cond_name, "type": "depends_on_" + cons_stat})
         return edges
@@ -372,28 +270,16 @@ class AstGraphGenerator(object):
         return edges, name
 
     def parse_List(self, node):
-        # edges = []
-
         list_name = "list" + str(int(time_ns()))
-
         return self.parse_iterable(node, list_name)
-
-        # for e in node.elts:
-        #     val, ext_edges = self.parse_operand(e)
-        #     edges.extend(ext_edges)
-        #     edges.append({"src": val, "dst": list_name, "type": "element_of"})
-        
-        # return edges
 
     def parse_Tuple(self, node):
         list_name = "tuple" + str(int(time_ns()))
-
         return self.parse_iterable(node, list_name)
 
 
     def parse_Set(self, node):
         list_name = "set" + str(int(time_ns()))
-
         return self.parse_iterable(node, list_name)
 
     def parse_Dict(self, node):
@@ -417,6 +303,19 @@ class AstGraphGenerator(object):
         edges.append({"src": vals_name, "dst": dict_name, "type": "vals"})
 
         return edges, dict_name
+
+    def parse_UnaryOp(self, node):
+
+        edges = []
+
+        un_name = "unop" + str(int(time_ns()))
+
+        operand_, ext_edges = self.parse_operand(node.operand)
+        edges.extend(ext_edges)
+        edges.append({"src": operand_, "dst": un_name, "type": "operand"})
+        edges.append({"src": node.op.__class__.__name__, "dst": un_name, "type": "op"})
+
+        return edges, un_name
 
 
     def parse_BinOp(self, node):
@@ -482,62 +381,7 @@ class AstGraphGenerator(object):
             return self.__getattribute__(method_name)(node)
         else:
             return [type(node)]
-        # if n_type == ast.FunctionDef:
-        #     return self.parse_func_def(node)
-        # elif n_type == ast.arg:
-        #     return self.parse_arg(node)
-        # elif n_type == ast.arguments:
-        #     return "XXX", type(node)#[parse(a.arg) for a in node.args]
-        # elif n_type == ast.Call:
-        #     return self.parse_call(node)
-        # elif n_type == ast.Name:
-        #     return self.parse_name(node)
-        # elif n_type == ast.NameConstant:
-        #     return self.parse_name(node)
-        # elif n_type == ast.Attribute:
-        #     return self.parse_name(node)
-        # elif n_type == ast.Assign:
-        #     return self.parse_assign(node)
-        # elif n_type == ast.NameConstant:
-        #     return self.parse_name_const(node)
-        # elif n_type == ast.Num:
-        #     return self.parse_num(node)
-        # elif n_type == ast.If:
-        #     return self.parse_if(node)
-        # elif n_type == ast.Try:
-        #     return self.parse_try(node)
-        # elif n_type == ast.For:
-        #     return self.parse_for(node)
-        # elif n_type == ast.While:
-        #     return self.parse_while(node)
-        # elif n_type == ast.Compare:
-        #     return self.parse_compare(node)
-        # elif n_type == ast.BoolOp:
-        #     return self.parse_bool_op(node)
-        # elif n_type == ast.Expr:
-        #     return self.parse_expr(node)
-        # elif n_type == ast.Continue:
-        #     return self.parse_continue(node)
-        # elif n_type == ast.Pass:
-        #     return self.parse_pass(node)
-        # elif n_type == ast.List:
-        #     return self.parse_list(node)
-        # elif n_type == ast.Tuple:
-        #     return self.parse_tuple(node)
-        # elif n_type == ast.Set:
-        #     return self.parse_set(node)
-        # elif n_type == ast.Dict:
-        #     return self.parse_dict(node)
-        # elif n_type == ast.BinOp:
-        #     return self.parse_binop(node)
-        # elif n_type == ast.GeneratorExp or n_type == ast.ListComp:
-        #     return self.parse_generator(node)
-        # elif n_type == ast.comprehension:
-        #     return self.parse_compreh(node)
-        # else:
-        #     return [type(node)]#type(node)
-            # return node.__class__.__name__
-
+        
     def parse_body(self, nodes):
         cond_name = ""
         cond_stat = ""
@@ -551,33 +395,13 @@ class AstGraphGenerator(object):
                     edges.extend(self.parse(node)[0])
                 else:
                     edges.extend(self.parse(node))
-        #     if n_type == ast.Expr:
-        #         edges.extend(self.parse(node)[0])
-        #         # if expr_type == ast.Call:
-        #         #     edges.extend(self.parse(node.value))
-        #         # else:
-        #         #     edges.extend(type(node.value))
-        #     elif n_type == ast.FunctionDef:
-        #         edges.extend(self.parse(node))
-        #     elif n_type == ast.Assign:
-        #         edges.extend(self.parse(node)[0])
-        #     elif n_type == ast.If:
-        #         edges.extend(self.parse(node))
-        #     elif n_type == ast.Try:
-        #         edges.extend(self.parse(node))
-        #     elif n_type == ast.For:
-        #         edges.extend(self.parse(node))
-        #     elif n_type == ast.While:
-        #         edges.extend(self.parse(node))
-        #     elif n_type == ast.Continue:
-        #         edges.extend(self.parse(node))
-        #     elif n_type == ast.Pass:
-        #         edges.extend(self.parse(node))
         return edges
 
-g = AstGraphGenerator(func.split("\n"))
-print(ast.dump(ast.parse(func)))
-g.generic_visit(ast.parse(func))
+f_bodies = pd.read_csv(sys.argv[1])
+for c in f_bodies['content']:
+    g = AstGraphGenerator(c.strip())
+    # print(ast.dump(ast.parse(func)))
+    g.generic_visit()
 # pygraphviz.AGraph(g)
 # for key, val in g.graph.items():
 #     print(key, val, sep="\t")
