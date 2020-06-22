@@ -77,6 +77,7 @@ do
       # try to install packages (maybe environemnt is empty)
       cat $repo/packages.txt | xargs pip install > $repo/piplogsecondary.log
       Sourcetrail.sh index -i $repo/$repo.srctrlprj >> $repo/sourcetrail.log
+      cat $repo/packages.txt | xargs pip uninstall -y > $repo/pipuninstlog.log
     else
       echo "Already indexed"
     fi
@@ -84,7 +85,6 @@ do
 
   # Deactivate environment if activated
   if $act_env; then
-    cat $repo/packages.txt | xargs pip uninstall -y > $repo/pipuninstlog.log
     deactivate
     echo "Deactivated $repo"
   fi
