@@ -74,6 +74,7 @@ do
 
     if $run_indexing; then
       echo "Begin indexing"
+      # try to install packages (maybe environemnt is empty)
       cat $repo/packages.txt | xargs pip install > $repo/piplogsecondary.log
       Sourcetrail.sh index -i $repo/$repo.srctrlprj >> $repo/sourcetrail.log
     else
