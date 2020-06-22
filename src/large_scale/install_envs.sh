@@ -32,8 +32,8 @@ do
       echo "Installing packages for $repo"
       pip install $repo > $repo/piplog.log
       pip freeze > $repo/packages.txt
-    else
-      cat $repo/packages.txt | xargs pip install > $repo/piplogsecondary.log
+#    else
+#      cat $repo/packages.txt | xargs pip install > $repo/piplogsecondary.log
     fi
 
     if [ ! -f "$repo/$repo.srctrlprj" ]; then
@@ -74,6 +74,7 @@ do
 
     if $run_indexing; then
       echo "Begin indexing"
+      cat $repo/packages.txt | xargs pip install > $repo/piplogsecondary.log
       Sourcetrail.sh index -i $repo/$repo.srctrlprj >> $repo/sourcetrail.log
     else
       echo "Already indexed"
