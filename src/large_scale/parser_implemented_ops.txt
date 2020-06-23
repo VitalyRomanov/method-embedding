@@ -1,16 +1,16 @@
     Add
     And
-AnnAssign
+    AnnAssign
     Assert
     Assign
-AsyncFor
-AsyncFunctionDef
-AsyncWith
+    AsyncFor
+    AsyncFunctionDef
+    AsyncWith
     Attribute
-AugAssign
+    AugAssign
 AugLoad
 AugStore
-Await
+    Await
     BinOp
     BitAnd
     BitOr
@@ -19,7 +19,7 @@ Await
     Break
     Bytes
     Call
-ClassDef
+    ClassDef
     Compare
 Constant
     Continue
@@ -33,10 +33,10 @@ Del
     ExceptHandler
     Expr
 Expression
-ExtSlice
+    ExtSlice
     FloorDiv
     For
-FormattedValue
+    FormattedValue
     FunctionDef
     GeneratorExp
     Global
@@ -52,7 +52,7 @@ Interactive
     Invert
     Is
     IsNot
-JoinedStr
+    JoinedStr
     LShift
     Lambda
     List
