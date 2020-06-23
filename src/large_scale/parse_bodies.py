@@ -100,16 +100,18 @@ for group_id, group in occurrence_group:
                             e_start, e_end = extend_range(start_c, end_c, line)
                             replaced_ranges.append((e_start, e_end))
                             st_id = row_elem.element_id
-                            # name = row_elem.serialized_name
-                            # if not isinstance(name, str):
-                            #     name = node_edge.query(f"element_id == {int(row_elem.target_node_id)}").iloc[0].serialized_name
-                            #     if not isinstance(name, str):
-                            #         name = "empty_name"
-                            #
+                            name = row_elem.serialized_name
+                            if not isinstance(name, str):
+                                name = node_edge.query(f"element_id == {int(row_elem.target_node_id)}").iloc[0].serialized_name
+                                if not isinstance(name, str):
+                                    name = "empty_name"
+
                             # print(curr_line, start_c, end_c, line[e_start: e_end], name)
                             # sources[curr_line - 1] = sources[curr_line - 1].replace(line[e_start: e_end], name)
                             # print(curr_line, start_c, end_c, line[e_start: e_end], f"sourcetrail_node__{st_id}")
-                            sources[curr_line - 1] = sources[curr_line - 1][:e_start] + f"sourcetrail_node__{st_id}" + sources[curr_line - 1][e_end:]
+                            # sources[curr_line - 1] = sources[curr_line - 1][:e_start] + f"sourcetrail_node__{st_id}" + sources[curr_line - 1][e_end:]
+                            sources[curr_line - 1] = sources[curr_line - 1][:e_start] + f"stn_____{name.replace('.', '____')}" + \
+                                                     sources[curr_line - 1][e_end:]
                         prev_line = curr_line
 
             body = "\n".join(sources[row.start_line - 1: row.end_line - 1])
