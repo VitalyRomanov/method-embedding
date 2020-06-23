@@ -1,6 +1,6 @@
 #%%
  
-import ast
+# import ast
 import sys
 import pandas
 import os
@@ -14,8 +14,8 @@ working_directory = sys.argv[1]
 bodies_path = os.path.join(working_directory, "source-graph-functions.csv")
 nodes_path = os.path.join(working_directory, "normalized_sourcetrail_nodes.csv")
 edges_path = os.path.join(working_directory, "edges.csv")
-occurrence_path = os.path.join(working_directory, "occurrence.csv")
-source_location_path = os.path.join(working_directory, "source_location.csv")
+# occurrence_path = os.path.join(working_directory, "occurrence.csv")
+# source_location_path = os.path.join(working_directory, "source_location.csv")
 
 #%%
 
