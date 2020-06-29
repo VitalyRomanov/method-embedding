@@ -3,26 +3,21 @@ import pandas as p
 
 # needs testing
 def normalize(line):
-    # print(line)
-    
     line = line.replace('".	m', "")
     line = line.replace(".	m", "")
-    line = line.replace("	s	p	n",".")
+    line = line.replace("	s	p	n","#") # this will be replaced with .
+    # the following are used by java
     line = line.replace('	s	p"', "")
+    line = line.replace("	s	p", "")
+    line = line.replace("	s", "___")
+    line = line.replace("	p", "___")
+    line = line.replace("	n", "___")
     line = line.replace('"',"")
-    try:
-        end_position = line.index("	")
-    except:
-        end_position = -1
-    return line[:end_position]
-    # parts = line.split("\t")
-    # # print(parts)
-    # parts = list(filter(lambda x: x not in {'.', 's', 'p', ''}, parts))
-    # # print(parts)
-    # parts = list(map(lambda x: x[1:] if len(x)>1 else Exception("Too short %s, %s" % (line, x)), parts))
-    # # print(parts)
-    # as_line = ".".join(parts)
-    # return as_line
+    line = line.replace(" ", "_")
+    line = line.replace(".", "@")
+    # return the dot
+    line = line.replace("#", ".")
+    return line
 
 nodes_path = sys.argv[1]
 data = p.read_csv(nodes_path)

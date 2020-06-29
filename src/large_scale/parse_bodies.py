@@ -13,6 +13,7 @@ node_path = os.path.join(working_directory, "normalized_sourcetrail_nodes.csv")
 edge_path = os.path.join(working_directory, "edges.csv")
 filecontent_path = os.path.join(working_directory, "filecontent.csv")
 
+print("Reading data...", end ="")
 source_location = pd.read_csv(source_location_path, sep=",")
 occurrence = pd.read_csv(occurrence_path, sep=",")
 node = pd.read_csv(node_path, sep=",")
@@ -21,7 +22,9 @@ filecontent = pd.read_csv(filecontent_path, sep=",")
 
 node_edge = pd.concat([node, edge], sort=False)
 
-assert len(node_edge["id"].unique()) == len(node_edge)
+print("ok", end ="\n")
+
+assert len(node_edge["id"].unique()) == len(node_edge), f"{len(node_edge['id'].unique())} != {len(node_edge)}"
 
 source_location.rename(columns={'id':'source_location_id', 'type':'occ_type'}, inplace=True)
 node_edge.rename(columns={'id':'element_id'}, inplace=True)
@@ -50,13 +53,17 @@ def extend_range(start, end, line):
         return start, end
 
 def get_docstring_ast(body):
-    ast_parse = ast.parse(body.strip())
-    function_definitions = [node for node in ast_parse.body if isinstance(node, ast.FunctionDef)]
-    return ast.get_docstring(function_definitions[0])
+    try:
+        # this does not work with java, docstring formats are different
+        ast_parse = ast.parse(body.strip())
+        function_definitions = [node for node in ast_parse.body if isinstance(node, ast.FunctionDef)]
+        return ast.get_docstring(function_definitions[0])
+    except:
+        return ""
 
 bodies = []
 
-for group_id, group in occurrence_group:
+for occ_ind, (group_id, group) in enumerate(occurrence_group):
 
 
     definitions = group.query(f"occ_type == {DEFINITION_TYPE} and (type == 4096 or type == 8192)")
@@ -77,12 +84,24 @@ for group_id, group in occurrence_group:
 
                 valid_elements = sl_grp.query("start_line == end_line")
                 valid_elements.sort_values(by="end_column", inplace=True, ascending=False)
+
+                # TODO:
+                #  sorting does not help with java!!! see hack below
+                #          element_id  type                                    serialized_name  source_node_id  ...  start_column  end_line  end_column  occ_type
+                # 169736           34  8192  edu.stanford.nlp.coref.hybrid.ChineseCorefBenc...             NaN  ...             3        33          75         4
+                # 2516264         152     2                                                NaN            34.0  ...            67        33          75         0
+                # 2516263         150     2                                                NaN            34.0  ...            38        33          44         0
+                # 169734           34  8192  edu.stanford.nlp.coref.hybrid.ChineseCorefBenc...             NaN  ...            25        33          36         0
+                # 2516257         149     2                                                NaN            34.0  ...            18        33          23         0
+                #
+                # [5 rows x 12 columns]
+                #   private static String runCorefTest(boolean deleteOnExit) throws Exception {
+
                 # elements.sort_values(by="start_line", inplace=True)
                 # print(valid_elements)
 
                 prev_line = 0
                 curr_line = 1
-
 
                 for ind, row_elem in valid_elements.iterrows():
                     if row_elem.start_line == row_elem.end_line:
@@ -96,6 +115,10 @@ for group_id, group in occurrence_group:
                         start_c = row_elem.start_column - 1
                         end_c = row_elem.end_column
 
+                        # this is a hack for java, some annotations in java have a large span
+                        if " " in sources[curr_line - 1][start_c: end_c]:
+                            continue
+
                         if not overlap((start_c, end_c), replaced_ranges):
                             e_start, e_end = extend_range(start_c, end_c, line)
                             replaced_ranges.append((e_start, e_end))
@@ -106,19 +129,24 @@ for group_id, group in occurrence_group:
                                 if not isinstance(name, str):
                                     name = "empty_name"
 
-                            # print(curr_line, start_c, end_c, line[e_start: e_end], name)
-                            # sources[curr_line - 1] = sources[curr_line - 1].replace(line[e_start: e_end], name)
-                            # print(curr_line, start_c, end_c, line[e_start: e_end], f"sourcetrail_node__{st_id}")
-                            # sources[curr_line - 1] = sources[curr_line - 1][:e_start] + f"sourcetrail_node__{st_id}" + sources[curr_line - 1][e_end:]
+                            # this is a hack for java
+                            # remove special symbols so that code can later be parsed by ast parser
+                            name = name.replace("___", "__stspace__")
+                            name = name.replace(")", "__strrbr__")
+                            name = name.replace("(", "__stlrbr__")
+                            name = name.replace(">", "__strtbr__")
+                            name = name.replace("<", "__stltbr__")
+                            name = name.replace("@", "__stat__")
+
                             sources[curr_line - 1] = sources[curr_line - 1][:e_start] + f"stn_____{name.replace('.', '____')}" + \
                                                      sources[curr_line - 1][e_end:]
                         prev_line = curr_line
 
+
             body = "\n".join(sources[row.start_line - 1: row.end_line - 1])
-            # print(body)
             bodies[-1]["normalized_body"] = body
             # pprint(bodies[-1])
-            # print("\n\n\n")
+    print(f"\r{occ_ind}/{len(occurrence_group)}", end="")
 
 source_graph_docstring_path = os.path.join(working_directory, "source-graph-bodies.csv")
 pd.DataFrame(bodies).to_csv(source_graph_docstring_path, index=False)
