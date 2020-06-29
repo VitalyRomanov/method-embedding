@@ -4,7 +4,15 @@ import ast
 import sys
 import pandas
 
-working_directory = sys.argv[1]
+lang = sys.argv[1]
+working_directory = sys.argv[2]
+
+if lang == "py":
+    import ast
+elif lang == "java":
+    import javalang
+else:
+    raise ValueError("Valid languages: py, java")
 
 # bodies_path = "/Volumes/External/datasets/Code/source-graphs/python-source-graph/function_bodies/functions.csv" # sys.argv[1]
 # nodes_path = "/Volumes/External/datasets/Code/source-graphs/python-source-graph/normalized_sourcetrail_nodes.csv" # sys.argv[2]
@@ -26,10 +34,23 @@ func_var_pairs = []
 
 for ind, row in bodies.iterrows():
     try:
-        tree = ast.parse(row['content'].strip())
+        if lang == "py":
+            tree = ast.parse(row['body'].strip())
+        elif lang == "java":
+            tokens = javalang.tokenizer.tokenize(row['body'].strip())
+            parser = javalang.parser.Parser(tokens)
+            tree = parser.parse_expression()
+        else: continue
     except SyntaxError:
         continue
-    variables = [n.id for n in ast.walk(tree) if type(n).__name__ == "Name"]
+    except javalang.parser.JavaSyntaxError:
+        continue
+
+    if lang == "py":
+        variables = [n.id for n in ast.walk(tree) if type(n).__name__ == "Name"]
+    elif lang == "java":
+        variables = [node.member for _, node in tree if type(node) is javalang.tree.MemberReference]
+
     for v in variables:
         if v not in variable_names:
             variable_names[v] = id_offset
