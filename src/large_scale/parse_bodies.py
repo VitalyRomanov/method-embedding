@@ -72,7 +72,7 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
         # print("\n\n\n")
         # print(definitions)
         for ind, row in definitions.iterrows():
-            elements = group.query(f"start_line >= {row.start_line} and end_line <= {row.end_line} and occ_type != {DEFINITION_TYPE}")
+            elements = group.query(f"start_line >= {row.start_line} and end_line <= {row.end_line} and occ_type != {DEFINITION_TYPE} and start_line == end_line")
 
             sources = filecontent.query(f"id == {group_id}").iloc[0]['content'].split("\n")
 
@@ -80,10 +80,14 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
             bodies.append({"id": row.element_id, "body": body, "docstring": get_docstring_ast(body)})
             # print(body)
 
-            for start_line_g, sl_grp in elements.groupby("start_line"):
+            elements.sort_values(by=["start_line", "end_column"], inplace=True, ascending=[True, False])
 
-                valid_elements = sl_grp.query("start_line == end_line")
-                valid_elements.sort_values(by="end_column", inplace=True, ascending=False)
+            # print(elements)
+
+            # for start_line_g, sl_grp in elements.groupby("start_line"):
+
+                # valid_elements = sl_grp.query("start_line == end_line")
+                # valid_elements.sort_values(by="end_column", inplace=True, ascending=False)
 
                 # TODO:
                 #  sorting does not help with java!!! see hack below
@@ -100,47 +104,47 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
                 # elements.sort_values(by="start_line", inplace=True)
                 # print(valid_elements)
 
-                prev_line = 0
-                curr_line = 1
+            prev_line = 0
+            curr_line = 1
 
-                for ind, row_elem in valid_elements.iterrows():
-                    if row_elem.start_line == row_elem.end_line:
+            for ind, row_elem in elements.iterrows():
+                if row_elem.start_line == row_elem.end_line:
 
-                        curr_line = row_elem.start_line
-                        if prev_line != curr_line:
-                            replaced_ranges = []
+                    curr_line = row_elem.start_line
+                    if prev_line != curr_line:
+                        replaced_ranges = []
 
-                        line = sources[curr_line - 1]
+                    line = sources[curr_line - 1]
 
-                        start_c = row_elem.start_column - 1
-                        end_c = row_elem.end_column
+                    start_c = row_elem.start_column - 1
+                    end_c = row_elem.end_column
 
-                        # this is a hack for java, some annotations in java have a large span
-                        if " " in sources[curr_line - 1][start_c: end_c]:
-                            continue
+                    # this is a hack for java, some annotations in java have a large span
+                    if " " in sources[curr_line - 1][start_c: end_c]:
+                        continue
 
-                        if not overlap((start_c, end_c), replaced_ranges):
-                            e_start, e_end = extend_range(start_c, end_c, line)
-                            replaced_ranges.append((e_start, e_end))
-                            st_id = row_elem.element_id
-                            name = row_elem.serialized_name
+                    if not overlap((start_c, end_c), replaced_ranges):
+                        e_start, e_end = extend_range(start_c, end_c, line)
+                        replaced_ranges.append((e_start, e_end))
+                        st_id = row_elem.element_id
+                        name = row_elem.serialized_name
+                        if not isinstance(name, str):
+                            name = node_edge.query(f"element_id == {int(row_elem.target_node_id)}").iloc[0].serialized_name
                             if not isinstance(name, str):
-                                name = node_edge.query(f"element_id == {int(row_elem.target_node_id)}").iloc[0].serialized_name
-                                if not isinstance(name, str):
-                                    name = "empty_name"
+                                name = "empty_name"
 
-                            # this is a hack for java
-                            # remove special symbols so that code can later be parsed by ast parser
-                            name = name.replace("___", "__stspace__")
-                            name = name.replace(")", "__strrbr__")
-                            name = name.replace("(", "__stlrbr__")
-                            name = name.replace(">", "__strtbr__")
-                            name = name.replace("<", "__stltbr__")
-                            name = name.replace("@", "__stat__")
+                        # this is a hack for java
+                        # remove special symbols so that code can later be parsed by ast parser
+                        name = name.replace("___", "__stspace__")
+                        name = name.replace(")", "__strrbr__")
+                        name = name.replace("(", "__stlrbr__")
+                        name = name.replace(">", "__strtbr__")
+                        name = name.replace("<", "__stltbr__")
+                        name = name.replace("@", "__stat__")
 
-                            sources[curr_line - 1] = sources[curr_line - 1][:e_start] + f"stn_____{name.replace('.', '____')}" + \
-                                                     sources[curr_line - 1][e_end:]
-                        prev_line = curr_line
+                        sources[curr_line - 1] = sources[curr_line - 1][:e_start] + f"stn_____{name.replace('.', '____')}" + \
+                                                 sources[curr_line - 1][e_end:]
+                    prev_line = curr_line
 
 
             body = "\n".join(sources[row.start_line - 1: row.end_line - 1])
