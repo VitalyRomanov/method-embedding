@@ -94,4 +94,6 @@ for ind, c in enumerate(bodies['normalized_body']):
         pass
 print(" " * 30 , end = "\r")
 # pd.DataFrame(type_maps).to_csv("new_types.csv", index=False)
-pd.concat([node, pd.DataFrame(new_nodes)]).to_csv(os.path.join(working_directory, "nodes_with_ast.csv"), index=False)
+with open(os.path.join(working_directory, "nodes_with_ast.csv"), 'w', encoding='utf8', errors='replace') as f:
+    pd.concat([node, pd.DataFrame(new_nodes)]).to_csv(f, index=False)
+# pd.concat([node, pd.DataFrame(new_nodes)]).to_csv(os.path.join(working_directory, "nodes_with_ast.csv"), index=False)

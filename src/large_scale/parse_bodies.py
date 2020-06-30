@@ -90,7 +90,6 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
             # TODO:
             # check row.end_line is a correct index (alternative is row.end_line - 1)
             body = "\n".join(sources[row.start_line - 1: row.end_line])
-            body = body.encode("utf-8").decode("utf-8")
             bodies.append({"id": row.element_id, "body": body, "docstring": get_docstring_ast(body)})
             # print(body)
 
@@ -167,7 +166,6 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
                     prev_line = curr_line
 
             norm_body = "\n".join(sources[row.start_line - 1: row.end_line])
-            norm_body = norm_body.encode("utf-8").decode("utf-8")
             bodies[-1]["normalized_body"] = norm_body
 
             # for line in sources[row.start_line - 1: row.end_line - 1]:
@@ -187,4 +185,4 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
 print(" " * 30, end="\r")
 
 source_graph_docstring_path = os.path.join(working_directory, "source-graph-bodies.csv")
-pd.DataFrame(bodies).to_csv(source_graph_docstring_path, index=False, encoding="utf-8")
+pd.DataFrame(bodies).to_csv(source_graph_docstring_path, index=False)
