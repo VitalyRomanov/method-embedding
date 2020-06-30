@@ -20,8 +20,15 @@ def normalize(line):
     return line
 
 nodes_path = sys.argv[1]
-data = p.read_csv(nodes_path)
-data = data[data['type'] != 262144]
-data['serialized_name'] = data['serialized_name'].apply(normalize)
 
-data.to_csv(os.path.join(os.path.dirname(nodes_path), "normalized_sourcetrail_nodes.csv"), index=False)
+try:
+    data = p.read_csv(nodes_path)
+    data = data[data['type'] != 262144]
+    data['serialized_name'] = data['serialized_name'].apply(normalize)
+
+    data.to_csv(os.path.join(os.path.dirname(nodes_path), "normalized_sourcetrail_nodes.csv"), index=False)
+except p.errors.EmptyDataError:
+    with open(os.path.join(os.path.dirname(nodes_path), "normalized_sourcetrail_nodes.csv"), "w") as sink:
+        sink.write("id,type,serialized_name\n")
+except:
+    print("Error during merging")
