@@ -4,6 +4,14 @@ import pandas as pd
 # import numpy as np
 import ast
 from pprint import pprint
+# from node_name_serializer import serialize_node_name
+# from nltk import RegexpTokenizer
+#
+# tokenizer = RegexpTokenizer(
+#             "[A-Za-z_0-9]+|[^\w\s]"
+#         )
+
+pd.options.mode.chained_assignment = None  # default='warn'
 
 working_directory = sys.argv[1]
 
@@ -20,7 +28,7 @@ node = pd.read_csv(node_path, sep=",")
 edge = pd.read_csv(edge_path, sep=",")
 filecontent = pd.read_csv(filecontent_path, sep=",")
 
-node_edge = pd.concat([node, edge], sort=False)
+node_edge = pd.concat([node, edge], sort=False).astype({"target_node_id": "Int32", "source_node_id": "Int32"})
 
 print("ok", end ="\n")
 
@@ -44,10 +52,13 @@ def overlap(range, ranges):
     return False
 
 def extend_range(start, end, line):
+    # assume only the following symbols are possible in names: A-Z a-z 0-9 . _
     if start - 1 > 0 and ( \
             line[start - 1] >= "A" and line[start - 1] <= "Z" or \
             line[start - 1] >= "a" and line[start - 1] <= "z" or \
-            line[start - 1] == "."):
+            line[start - 1] == "." or \
+            line[start - 1] == "_" or \
+            line[start - 1] >= "0" and line[start - 1] <= "9"):
         return extend_range(start - 1, end, line)
     else:
         return start, end
@@ -127,30 +138,49 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
                         e_start, e_end = extend_range(start_c, end_c, line)
                         replaced_ranges.append((e_start, e_end))
                         st_id = row_elem.element_id
+
                         name = row_elem.serialized_name
-                        if not isinstance(name, str):
-                            name = node_edge.query(f"element_id == {int(row_elem.target_node_id)}").iloc[0].serialized_name
-                            if not isinstance(name, str):
-                                name = "empty_name"
+                        if not isinstance(name, str): # happens when id refers to an edge, not a node
+                            st_id = row_elem.target_node_id
+                            # name = node_edge.query(f"element_id == {int(row_elem.target_node_id)}").iloc[0].serialized_name
+                            # if not isinstance(name, str):
+                            #     name = "empty_name"
+
+                        name = f"srstrlnd_{st_id}" # sourcetrailnode
 
                         # this is a hack for java
                         # remove special symbols so that code can later be parsed by ast parser
-                        name = name.replace("___", "__stspace__")
-                        name = name.replace(")", "__strrbr__")
-                        name = name.replace("(", "__stlrbr__")
-                        name = name.replace(">", "__strtbr__")
-                        name = name.replace("<", "__stltbr__")
-                        name = name.replace("@", "__stat__")
+                        # name = name.replace("___", "__stspace__")
+                        # name = name.replace(")", "__strrbr__")
+                        # name = name.replace("(", "__stlrbr__")
+                        # name = name.replace(">", "__strtbr__")
+                        # name = name.replace("<", "__stltbr__")
+                        # name = name.replace("?", "__qmark__")
+                        # name = name.replace("@", "__stat__")
+                        # name = name.replace('.', '____')
 
-                        sources[curr_line - 1] = sources[curr_line - 1][:e_start] + f"stn_____{name.replace('.', '____')}" + \
+                        sources[curr_line - 1] = sources[curr_line - 1][:e_start] + name + \
                                                  sources[curr_line - 1][e_end:]
                     prev_line = curr_line
 
+            norm_body = "\n".join(sources[row.start_line - 1: row.end_line - 1])
+            bodies[-1]["normalized_body"] = norm_body
 
-            body = "\n".join(sources[row.start_line - 1: row.end_line - 1])
-            bodies[-1]["normalized_body"] = body
+            # for line in sources[row.start_line - 1: row.end_line - 1]:
+            #     for token in tokenizer.tokenize(line):
+            #         if token.startswith("srstrlnd_"):
+            #             if len(token.split("_")) != 2:
+            #                 print(elements)
+            #                 print()
+            #                 print(body)
+            #                 print()
+            #                 print(norm_body)
+            #                 raise  Exception()
+
             # pprint(bodies[-1])
     print(f"\r{occ_ind}/{len(occurrence_group)}", end="")
+
+print(" " * 30, end="\r")
 
 source_graph_docstring_path = os.path.join(working_directory, "source-graph-bodies.csv")
 pd.DataFrame(bodies).to_csv(source_graph_docstring_path, index=False)
