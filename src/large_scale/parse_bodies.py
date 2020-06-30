@@ -87,7 +87,7 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
 
             sources = filecontent.query(f"id == {group_id}").iloc[0]['content'].split("\n")
 
-            body = "\n".join(sources[row.start_line - 1: row.end_line - 1])
+            body = "\n".join(sources[row.start_line - 1: row.end_line])
             bodies.append({"id": row.element_id, "body": body, "docstring": get_docstring_ast(body)})
             # print(body)
 
@@ -163,7 +163,7 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
                                                  sources[curr_line - 1][e_end:]
                     prev_line = curr_line
 
-            norm_body = "\n".join(sources[row.start_line - 1: row.end_line - 1])
+            norm_body = "\n".join(sources[row.start_line - 1: row.end_line])
             bodies[-1]["normalized_body"] = norm_body
 
             # for line in sources[row.start_line - 1: row.end_line - 1]:
