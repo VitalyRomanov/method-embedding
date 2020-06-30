@@ -77,6 +77,12 @@ for ind, c in enumerate(bodies['normalized_body']):
             edges['source_node_id'] = edges['src'].apply(resolve_node_names)
             edges['target_node_id'] = edges['dst'].apply(resolve_node_names)
             edges['id'] = 0
+        except KeyError:
+            if len(edges) == 0:
+                continue
+            else:
+                print(edges)
+                raise Exception()
         except:
             print(c)
             raise Exception()
