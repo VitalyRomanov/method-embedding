@@ -1,10 +1,10 @@
 import ast
 
-from collections import defaultdict
 from pprint import pprint
 from time import time_ns
 from collections.abc import Iterable
 import pandas as pd
+import os
 
 class AstGraphGenerator(object):
 
@@ -41,11 +41,15 @@ class AstGraphGenerator(object):
 
     def parse_body(self, nodes):
         edges = []
+        last_node = None
         for node in nodes:
             s = self.parse(node)
             if isinstance(s, tuple):
                 # some parsers return edeges and names. at this level, names are not needed
                 edges.extend(s[0])
+                if last_node:
+                    edges.append({"dst": s[1], "src": last_node, "type": "next"})
+                last_node = s[1]
             else:
                 edges.extend(s)
         return edges
@@ -54,6 +58,7 @@ class AstGraphGenerator(object):
         if isinstance(cond_name, str):
             cond_name = [cond_name]
             cond_stat = [cond_stat]
+
         for cn, cs in zip(cond_name, cond_stat):
             self.current_contition.append(cn)
             self.contition_status.append(cs)
@@ -518,7 +523,8 @@ class AstGraphGenerator(object):
 
         cph_name = "comprehension" + str(int(time_ns()))
 
-        target = self.parse(node.target)
+        target, ext_edges = self.parse_operand(node.target)
+        edges.extend(ext_edges)
         edges.append({"src": target, "dst": cph_name, "type": "target"})
 
         iter_, ext_edges = self.parse_operand(node.iter)
@@ -535,7 +541,7 @@ class AstGraphGenerator(object):
 if __name__ == "__main__":
     import sys
     f_bodies = pd.read_csv(sys.argv[1])
-    for ind, c in enumerate(f_bodies['content']):
+    for ind, c in enumerate(f_bodies['normalized_body']):
         try:
             try:
                 c.strip()
@@ -543,7 +549,10 @@ if __name__ == "__main__":
                 print(c)
                 continue
             g = AstGraphGenerator(c.strip())
-            g.get_edges()
-            print("%d/%d" % (ind, len(f_bodies['content'])))
+            edges = g.get_edges()
+            edges.to_csv(os.path.join(os.path.dirname(sys.argv[1]), "body_edges.csv"), mode="a", index=False, header=(ind==0))
+            print("\r%d/%d" % (ind, len(f_bodies['normalized_body'])), end = "")
         except SyntaxError:
             print(c.strip())
+
+    print(" " * 30, end="\r")
