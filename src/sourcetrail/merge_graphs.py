@@ -27,4 +27,8 @@ for ind, row in batch_nodes.iterrows():
         "serialized_name": row.serialized_name
     })
 
-pd.DataFrame(records).to_csv(common_nodes_path, index=False)
+if len(records) != 0:
+    pd.DataFrame(records).to_csv(common_nodes_path, index=False)
+else:
+    with open(common_nodes_path, "w") as sink:
+        sink.write("id,type,serialized_name\n")
