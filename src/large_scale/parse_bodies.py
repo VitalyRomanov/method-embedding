@@ -191,4 +191,8 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
 print(" " * 30, end="\r")
 
 source_graph_docstring_path = os.path.join(working_directory, "source-graph-bodies.csv")
-pd.DataFrame(bodies).to_csv(source_graph_docstring_path, index=False)
+if len(bodies) != 0:
+    pd.DataFrame(bodies).to_csv(source_graph_docstring_path, index=False)
+else:
+    with open(source_graph_docstring_path, "w") as sink:
+        sink.write("id,body,docstring,normalized_body\n")
