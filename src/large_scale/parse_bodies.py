@@ -21,12 +21,18 @@ node_path = os.path.join(working_directory, "normalized_sourcetrail_nodes.csv")
 edge_path = os.path.join(working_directory, "edges.csv")
 filecontent_path = os.path.join(working_directory, "filecontent.csv")
 
+
 print("Reading data...", end ="")
+# try:
 source_location = pd.read_csv(source_location_path, sep=",")
 occurrence = pd.read_csv(occurrence_path, sep=",")
 node = pd.read_csv(node_path, sep=",")
 edge = pd.read_csv(edge_path, sep=",")
 filecontent = pd.read_csv(filecontent_path, sep=",")
+# except pd.errors.EmptyDataError:
+#     with open(os.path.join(working_directory, "source-graph-bodies.csv"), "w") as sink:
+#         sink.write("id,body,docstring,normalized_body\n")
+#     sys.exit()
 
 node_edge = pd.concat([node, edge], sort=False).astype({"target_node_id": "Int32", "source_node_id": "Int32"})
 

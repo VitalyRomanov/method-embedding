@@ -18,13 +18,10 @@ for dir in $(ls $ENVS_DIR); do
     if [ -f $dir.srctrldb ]; then
       sqlite3 $dir.srctrldb < $SQL_Q
       cd $RUN_DIR
-      ans=$(python ../sourcetrail/sourcetrail-node-name-merge.py $ENVS_DIR/$dir/nodes.csv)
-      if [ -n "$ans" ]; then
-        echo "Could not extract nodes: $dir"
-      else
-        python parse_bodies.py $ENVS_DIR/$dir
-        python get_ast_edges.py $ENVS_DIR/$dir
-      fi
+      python verify_files.py $ENVS_DIR/$dir
+      python ../sourcetrail/sourcetrail-node-name-merge.py $ENVS_DIR/$dir/nodes.csv
+      python parse_bodies.py $ENVS_DIR/$dir
+      python get_ast_edges.py $ENVS_DIR/$dir
     else
       echo "Package not indexed"
     fi

@@ -14,12 +14,19 @@ bodies_path = os.path.join(working_directory, "source-graph-bodies.csv")
 
 print("Reading data...", end ="")
 
+# try:
 # source_location = pd.read_csv(source_location_path, sep=",")
 # occurrence = pd.read_csv(occurrence_path, sep=",")
 node = pd.read_csv(node_path, sep=",")
 edge = pd.read_csv(edge_path, sep=",")
 bodies = pd.read_csv(bodies_path, sep=",")
 # filecontent = pd.read_csv(filecontent_path, sep=",")
+# except pd.errors.EmptyDataError:
+#     with open(os.path.join(working_directory, "nodes_with_ast.csv"), "w") as sink:
+#         sink.write("id,type,serialized_name\n")
+#     with open(os.path.join(working_directory, "edges_with_ast.csv"), "w") as sink:
+#         sink.write("id,type,source_node_id,target_node_id\n")
+#     sys.exit()
 
 print("ok", end ="\n")
 
