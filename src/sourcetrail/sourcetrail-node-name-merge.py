@@ -8,6 +8,20 @@ def normalize(line):
     line = line.replace(".	m", "")
     line = line.replace("	s	p	n","#") # this will be replaced with .
     # the following are used by java
+    # TODO
+    # not all names processed correctly in java
+    # .	morg	s	p	ndeeplearning4j	s	p	narbiter	s	p	nlayers	s	p	nLocalResponseNormalizationLayerSpace	s	p	nLocalResponseNormalizationLayerSpace	s	p(org.deeplearning4j.arbiter.layers.LocalResponseNormalizationLayerSpace.Builder)
+    # LocalResponseNormalizationLayerSpace(org@deeplearning4j@arbiter@layers@LocalResponseNormalizationLayerSpace@Builder)
+    #
+    # no rule for this: s   p   nk
+    # 1886698,2048,.	morg	s	p	ndeeplearning4j	s	p	narbiter	s	p	nlayers	s	p	nLocalResponseNormalizationLayerSpace	s	p	nk	sorg.deeplearning4j.arbiter.optimize.api.ParameterSpace<java.lang.Double>	p
+    #
+    # verify
+    # 1886697,2048,"org.deeplearning4j.arbiter.layers.LocalResponseNormalizationLayerSpace.n___org@deeplearning4j@arbiter@optimize@api@ParameterSpace<java@lang@Double>___"
+    # 1886698,2048,"org.deeplearning4j.arbiter.layers.LocalResponseNormalizationLayerSpace.k___org@deeplearning4j@arbiter@optimize@api@ParameterSpace<java@lang@Double>___"
+    # 1886231,8192,"org.deeplearning4j.arbiter.layers.LayerSpace<L>.Builder<T>.dropOut___org@deeplearning4j@arbiter@layers@LayerSpace<L>@Builder<T>@T___(org@deeplearning4j@arbiter@optimize@api@ParameterSpace<java@lang@Double>)"
+    # 1886232,8192,"org.deeplearning4j.arbiter.layers.LayerSpace<L>.Builder<T>.iDropOut___org@deeplearning4j@arbiter@layers@LayerSpace<L>@Builder<T>@T___(org@deeplearning4j@arbiter@optimize@api@ParameterSpace<org@deeplearning4j@nn@conf@dropout@IDropout>)"
+    line = line.replace("	s	p(", "___(")
     line = line.replace('	s	p"', "")
     line = line.replace("	s	p", "")
     line = line.replace("	s", "___")
@@ -18,6 +32,8 @@ def normalize(line):
     line = line.replace(".", "@")
     # return the dot
     line = line.replace("#", ".")
+    # if line.endswith("___"):
+    #     line = line[:-3]
     return line
 
 nodes_path = sys.argv[1]
