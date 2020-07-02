@@ -1,4 +1,5 @@
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.SparkContext
 import org.apache.spark.sql.functions._
 import org.graphframes._
 
@@ -14,27 +15,33 @@ object GraphAnalysis {
       .appName("GraphAnalysis")
       .getOrCreate()
 
-    val lang = "python"
+    val sc = SparkContext.getOrCreate()
 
-    var nodes_path = ""
-    var edges_path = ""
+    val lang = args(0)
+    var nodes_path = args(1)
+    var edges_path = args(2)
 
-    if (lang == "python"){
+//    val lang = "python"
+
+//    var nodes_path = ""
+//    var edges_path = ""
+
+//    if (lang == "python"){
 //      /Volumes/External/datasets/Code/source-graphs/python-source-graph/
-      nodes_path = "normalized_sourcetrail_nodes.csv"
-      edges_path = "non-ambiguous_edges.csv"
-    } else if (lang == "java") {
+//      nodes_path = "normalized_sourcetrail_nodes.csv"
+//      edges_path = "non-ambiguous_edges.csv"
+//    } else if (lang == "java") {
 //      /Volumes/External/datasets/Code/source-graphs/java-source-graph-v2
-      nodes_path = "normalized_sourcetrail_nodes.csv"
-      edges_path = "edge.csv"
-    }
+//      nodes_path = "normalized_sourcetrail_nodes.csv"
+//      edges_path = "edge.csv"
+//    }
 
     val nodes = spark.read.format("csv").option("header",true).load(nodes_path)
     val edges = spark.read.format("csv").option("header",true).load(edges_path).withColumnRenamed("source_node_id", "src").withColumnRenamed("target_node_id", "dst").withColumnRenamed("id", "rel_id").withColumnRenamed("type", "rel_type")
 
     val g = GraphFrame(nodes, edges)
 
-//    sc.setCheckpointDir("temp")
+    sc.setCheckpointDir("temp")
     val cc_result = g.connectedComponents.run()
 
     val g_cc = GraphFrame(cc_result, edges)
@@ -71,7 +78,7 @@ object GraphAnalysis {
 //    cc_result.write.format("csv").save("components.csv")
 //    cc_result.groupBy("component").count().orderBy().write.format("csv").save("components_count.csv")
 
-    val triangles = onlyConnected_g.triangleCount.run() // counts how many triangles pass through a given vertex
+//    val triangles = onlyConnected_g.triangleCount.run() // counts how many triangles pass through a given vertex
 //    triangles.show(10)
 
 
