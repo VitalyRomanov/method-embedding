@@ -1,13 +1,6 @@
-#%%
- 
-# import ast
-import sys
-# import pandas
-import os
-# import ast
+import sys, os
 import pandas as pd
 
-# lang = sys.argv[1]
 working_directory = sys.argv[1]
 # # base_folder = "/Volumes/External/datasets/Code/source-graphs/python-source-graph/"
 # # base_folder = "/home/ltv/data/datasets/source_code/python-source-graph/"
@@ -142,7 +135,6 @@ node_path = os.path.join(working_directory, "normalized_sourcetrail_nodes.csv")
 edge_path = os.path.join(working_directory, "edges.csv")
 # filecontent_path = os.path.join(working_directory, "filecontent.csv")
 
-print("Reading data...", end ="")
 source_location = pd.read_csv(source_location_path, sep=",")
 occurrence = pd.read_csv(occurrence_path, sep=",")
 node = pd.read_csv(node_path, sep=",")
@@ -151,8 +143,6 @@ edge = pd.read_csv(edge_path, sep=",").rename(columns={'type':'e_type'})
 
 node_edge = pd.concat([node, edge], sort=False)
 node_edge = node_edge.astype({"target_node_id": "Int32", "source_node_id": "Int32"})
-
-print("ok", end ="\n")
 
 assert len(node_edge["id"].unique()) == len(node_edge), f"{len(node_edge['id'].unique())} != {len(node_edge)}"
 

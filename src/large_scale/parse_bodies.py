@@ -3,6 +3,7 @@ import sys, os
 import pandas as pd
 # import numpy as np
 import ast
+from csv import QUOTE_NONNUMERIC
 from pprint import pprint
 # from node_name_serializer import serialize_node_name
 # from nltk import RegexpTokenizer
@@ -21,8 +22,6 @@ node_path = os.path.join(working_directory, "normalized_sourcetrail_nodes.csv")
 edge_path = os.path.join(working_directory, "edges.csv")
 filecontent_path = os.path.join(working_directory, "filecontent.csv")
 
-
-print("Reading data...", end ="")
 # try:
 source_location = pd.read_csv(source_location_path, sep=",")
 occurrence = pd.read_csv(occurrence_path, sep=",")
@@ -35,8 +34,6 @@ filecontent = pd.read_csv(filecontent_path, sep=",")
 #     sys.exit()
 
 node_edge = pd.concat([node, edge], sort=False).astype({"target_node_id": "Int32", "source_node_id": "Int32"})
-
-print("ok", end ="\n")
 
 assert len(node_edge["id"].unique()) == len(node_edge), f"{len(node_edge['id'].unique())} != {len(node_edge)}"
 
@@ -192,7 +189,7 @@ print(" " * 30, end="\r")
 
 source_graph_docstring_path = os.path.join(working_directory, "source-graph-bodies.csv")
 if len(bodies) != 0:
-    pd.DataFrame(bodies).to_csv(source_graph_docstring_path, index=False)
+    pd.DataFrame(bodies).to_csv(source_graph_docstring_path, index=False, quoting=QUOTE_NONNUMERIC)
 else:
     with open(source_graph_docstring_path, "w") as sink:
         sink.write("id,body,docstring,normalized_body\n")

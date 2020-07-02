@@ -1,5 +1,6 @@
 import pandas as pd
 import sys, os
+from csv import QUOTE_NONNUMERIC
 
 common_nodes_path = sys.argv[1]
 batch_nodes_path = sys.argv[2]
@@ -28,7 +29,7 @@ for ind, row in batch_nodes.iterrows():
     })
 
 if len(records) != 0:
-    pd.DataFrame(records).to_csv(common_nodes_path, index=False)
+    pd.DataFrame(records).to_csv(common_nodes_path, index=False, quoting=QUOTE_NONNUMERIC)
 else:
     with open(common_nodes_path, "w") as sink:
         sink.write("id,type,serialized_name\n")

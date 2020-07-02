@@ -1,34 +1,18 @@
 from python_ast import AstGraphGenerator
 import sys, os
 import pandas as pd
+from csv import QUOTE_NONNUMERIC
 # from node_name_serializer import deserialize_node_name
 
 working_directory = sys.argv[1]
 
-# source_location_path = os.path.join(working_directory, "source_location.csv")
-# occurrence_path = os.path.join(working_directory, "occurrence.csv")
 node_path = os.path.join(working_directory, "normalized_sourcetrail_nodes.csv")
 edge_path = os.path.join(working_directory, "edges.csv")
 bodies_path = os.path.join(working_directory, "source-graph-bodies.csv")
-# filecontent_path = os.path.join(working_directory, "filecontent.csv")
 
-print("Reading data...", end ="")
-
-# try:
-# source_location = pd.read_csv(source_location_path, sep=",")
-# occurrence = pd.read_csv(occurrence_path, sep=",")
 node = pd.read_csv(node_path, sep=",")
 edge = pd.read_csv(edge_path, sep=",")
 bodies = pd.read_csv(bodies_path, sep=",")
-# filecontent = pd.read_csv(filecontent_path, sep=",")
-# except pd.errors.EmptyDataError:
-#     with open(os.path.join(working_directory, "nodes_with_ast.csv"), "w") as sink:
-#         sink.write("id,type,serialized_name\n")
-#     with open(os.path.join(working_directory, "edges_with_ast.csv"), "w") as sink:
-#         sink.write("id,type,source_node_id,target_node_id\n")
-#     sys.exit()
-
-print("ok", end ="\n")
 
 valid_new_type = 260 # fits about 250 new type
 type_maps = {}
@@ -67,7 +51,7 @@ def resolve_node_names(name):
         return node_maps[name]
 
 edges_with_ast_name = os.path.join(working_directory, "edges_with_ast.csv")
-edge.to_csv(edges_with_ast_name, index=False)
+edge.to_csv(edges_with_ast_name, index=False, quoting=QUOTE_NONNUMERIC)
 
 for ind, c in enumerate(bodies['normalized_body']):
     try:
@@ -100,7 +84,9 @@ for ind, c in enumerate(bodies['normalized_body']):
         # print(c.strip())
         pass
 print(" " * 30 , end = "\r")
-# pd.DataFrame(type_maps).to_csv("new_types.csv", index=False)
+pd.DataFrame(type_maps).to_csv("new_types.csv", index=False)
+
+
 with open(os.path.join(working_directory, "nodes_with_ast.csv"), 'w', encoding='utf8', errors='replace') as f:
-    pd.concat([node, pd.DataFrame(new_nodes)]).to_csv(f, index=False)
+    pd.concat([node, pd.DataFrame(new_nodes)]).to_csv(f, index=False, quoting=QUOTE_NONNUMERIC)
 # pd.concat([node, pd.DataFrame(new_nodes)]).to_csv(os.path.join(working_directory, "nodes_with_ast.csv"), index=False)

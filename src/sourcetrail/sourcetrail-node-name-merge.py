@@ -1,5 +1,6 @@
 import sys, os
 import pandas as p
+from csv import QUOTE_NONNUMERIC
 
 # needs testing
 def normalize(line):
@@ -26,7 +27,7 @@ data = p.read_csv(nodes_path)
 data = data[data['type'] != 262144]
 data['serialized_name'] = data['serialized_name'].apply(normalize)
 
-data.to_csv(os.path.join(os.path.dirname(nodes_path), "normalized_sourcetrail_nodes.csv"), index=False)
+data.to_csv(os.path.join(os.path.dirname(nodes_path), "normalized_sourcetrail_nodes.csv"), index=False, quoting=QUOTE_NONNUMERIC)
 # except p.errors.EmptyDataError:
 #     with open(os.path.join(os.path.dirname(nodes_path), "normalized_sourcetrail_nodes.csv"), "w") as sink:
 #         sink.write("id,type,serialized_name\n")
