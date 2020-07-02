@@ -23,11 +23,11 @@ edge_path = os.path.join(working_directory, "edges.csv")
 filecontent_path = os.path.join(working_directory, "filecontent.csv")
 
 # try:
-source_location = pd.read_csv(source_location_path, sep=",")
-occurrence = pd.read_csv(occurrence_path, sep=",")
-node = pd.read_csv(node_path, sep=",")
-edge = pd.read_csv(edge_path, sep=",")
-filecontent = pd.read_csv(filecontent_path, sep=",")
+source_location = pd.read_csv(source_location_path, sep=",", dtype={'id': int, 'file_node_id': int, 'start_line': int, 'start_column': int, 'end_line': int, 'end_column': int, 'type': int})
+occurrence = pd.read_csv(occurrence_path, sep=",", dtype={'element_id': int, 'source_location_id': int})
+node = pd.read_csv(node_path, sep=",", dtype={"id": int, "type": int, "serialized_name": str})
+edge = pd.read_csv(edge_path, sep=",", dtype={'id': int, 'type': int, 'source_node_id': int, 'target_node_id': int})
+filecontent = pd.read_csv(filecontent_path, sep=",", dtype={'id': int, 'content': str})
 # except pd.errors.EmptyDataError:
 #     with open(os.path.join(working_directory, "source-graph-bodies.csv"), "w") as sink:
 #         sink.write("id,body,docstring,normalized_body\n")

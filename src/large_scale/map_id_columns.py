@@ -2,8 +2,8 @@ import pandas as pd
 import sys, os
 from csv import QUOTE_NONNUMERIC
 
-all_nodes = pd.read_csv(sys.argv[1])
-orig_nodes = pd.read_csv(sys.argv[2])
+all_nodes = pd.read_csv(sys.argv[1], dtype={"id": int, "type": str, "serialized_name": str})
+orig_nodes = pd.read_csv(sys.argv[2], dtype={"id": int, "type": str, "serialized_name": str})
 
 input_path = sys.argv[3]
 output_path = sys.argv[4]

@@ -10,9 +10,9 @@ node_path = os.path.join(working_directory, "normalized_sourcetrail_nodes.csv")
 edge_path = os.path.join(working_directory, "edges.csv")
 bodies_path = os.path.join(working_directory, "source-graph-bodies.csv")
 
-node = pd.read_csv(node_path, sep=",")
-edge = pd.read_csv(edge_path, sep=",")
-bodies = pd.read_csv(bodies_path, sep=",")
+node = pd.read_csv(node_path, sep=",", dtype={"id": int, "type": int, "serialized_name": str})
+edge = pd.read_csv(edge_path, sep=",", dtype={'id': int, 'type': int, 'source_node_id': int, 'target_node_id': int})
+bodies = pd.read_csv(bodies_path, sep=",", dtype={"id": int,"body": str,"docstring": str,"normalized_body": str})
 
 valid_new_type = 260 # fits about 250 new type
 type_maps = {}

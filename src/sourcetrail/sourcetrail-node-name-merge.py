@@ -39,7 +39,7 @@ def normalize(line):
 nodes_path = sys.argv[1]
 
 # try:
-data = p.read_csv(nodes_path)
+data = p.read_csv(nodes_path, dtype={"id": int, "type": int, "serialized_name": str})
 data = data[data['type'] != 262144]
 data['serialized_name'] = data['serialized_name'].apply(normalize)
 
