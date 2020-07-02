@@ -28,7 +28,7 @@ for dir in $(ls $ENVS_DIR); do
   fi
 done
 
-
+rm $ENVS_DIR/common*
 
 for dir in $(ls $ENVS_DIR); do
   if [ -d $ENVS_DIR/$dir ]; then
