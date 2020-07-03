@@ -194,8 +194,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     models_ = {
-        # GAT: gat_params,
-        RGCN: rgcn_params
+        GAT: gat_params,
+        # RGCN: rgcn_params
     }
 
     data_paths = pandas.read_csv("data_paths.tsv", sep="\t")
