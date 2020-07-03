@@ -1,7 +1,9 @@
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.SparkContext
+import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.functions._
 import org.graphframes._
+import org.apache.log4j.Logger
+import org.apache.log4j.Level
 
 //spark-shell --packages graphframes:graphframes:0.6.0-spark2.3-s_2.11
 //--conf "spark.driver.extraJavaOptions=-Djava.io.tmpdir=tmp"
@@ -11,8 +13,10 @@ object GraphAnalysis {
 
   def main(args: Array[String]) {
 
+    Logger.getLogger("org.apache.spark").setLevel(Level.ERROR)
+
     val spark = SparkSession.builder()
-      .appName("GraphAnalysis")
+      .appName("GraphAnalysis").master("local")
       .getOrCreate()
 
     val sc = SparkContext.getOrCreate()
