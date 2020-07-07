@@ -16,7 +16,7 @@ object GraphAnalysis {
     Logger.getLogger("org.apache.spark").setLevel(Level.ERROR)
 
     val spark = SparkSession.builder()
-      .appName("GraphAnalysis").master("local")
+      .appName("GraphAnalysis").master("local[4]")
       .getOrCreate()
 
     val sc = SparkContext.getOrCreate()
@@ -53,7 +53,7 @@ object GraphAnalysis {
     var onlyConnected_g : GraphFrame = null
 
     if (lang == "python") {
-      onlyConnected_g = g_cc.filterVertices("component == 0").filterEdges("rel_type != \"4\"").dropIsolatedVertices()
+      onlyConnected_g = g_cc.filterVertices("component == 0").dropIsolatedVertices() //.filterEdges("rel_type != \"4\"").dropIsolatedVertices()
     } else if (lang == "java") {
       onlyConnected_g = g_cc.filterVertices("component == 0").dropIsolatedVertices()
     }
