@@ -16,12 +16,14 @@ for dir in $(ls $ENVS_DIR); do
     cd $ENVS_DIR/$dir
     echo "Found package $dir"
     if [ -f $dir.srctrldb ]; then
-      sqlite3 $dir.srctrldb < $SQL_Q
+#      sqlite3 $dir.srctrldb < $SQL_Q
       cd $RUN_DIR
-      python verify_files.py $ENVS_DIR/$dir
-      python ../sourcetrail/sourcetrail-node-name-merge.py $ENVS_DIR/$dir/nodes.csv
-      python parse_bodies.py $ENVS_DIR/$dir
-      python get_ast_edges.py $ENVS_DIR/$dir
+#      python verify_files.py $ENVS_DIR/$dir
+#      python ../sourcetrail/sourcetrail-node-name-merge.py $ENVS_DIR/$dir/nodes.csv
+#      python ../code_processing/call_seq_extractor.py $ENVS_DIR/$dir
+#      python ../code_processing/extract_variable_names.py py $ENVS_DIR/$dir
+#      python parse_bodies.py $ENVS_DIR/$dir
+#      python get_ast_edges.py $ENVS_DIR/$dir
     else
       echo "Package not indexed"
     fi
@@ -52,9 +54,13 @@ for dir in $(ls $ENVS_DIR); do
 
       python map_id_columns.py $ENVS_DIR/common_nodes.csv $ENVS_DIR/$dir/normalized_sourcetrail_nodes.csv $ENVS_DIR/$dir/edges.csv $ENVS_DIR/common_edges.csv target_node_id source_node_id
       python map_id_columns.py $ENVS_DIR/common_nodes.csv $ENVS_DIR/$dir/normalized_sourcetrail_nodes.csv $ENVS_DIR/$dir/source-graph-bodies.csv $ENVS_DIR/common_bodies.csv id
+      python map_id_columns.py $ENVS_DIR/common_nodes.csv $ENVS_DIR/$dir/normalized_sourcetrail_nodes.csv $ENVS_DIR/$dir/source-graph-function-variable-pairs.csv $ENVS_DIR/common-function-variable-pairs.csv src
+      python map_id_columns.py $ENVS_DIR/common_nodes.csv $ENVS_DIR/$dir/normalized_sourcetrail_nodes.csv $ENVS_DIR/$dir/call_seq.csv $ENVS_DIR/common-call-seq.csv src dst
 
       python map_id_columns.py $ENVS_DIR/common_nodes_with_ast.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/edges_with_ast.csv $ENVS_DIR/common_edges_with_ast.csv target_node_id source_node_id
       python map_id_columns.py $ENVS_DIR/common_nodes_with_ast.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/source-graph-bodies.csv $ENVS_DIR/common_bodies_with_ast.csv id
+      python map_id_columns.py $ENVS_DIR/common_nodes_with_ast.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/source-graph-function-variable-pairs.csv $ENVS_DIR/common-function-variable-pairs_with_ast.csv src
+      python map_id_columns.py $ENVS_DIR/common_nodes_with_ast.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/call_seq.csv $ENVS_DIR/common-call-seq_with_ast.csv src dst
 
 #      python map_ids.py $ENVS_DIR/common_nodes.csv $ENVS_DIR/$dir/normalized_sourcetrail_nodes.csv $ENVS_DIR/$dir/edges.csv $ENVS_DIR/$dir/source-graph-bodies.csv edges_global.csv bodies_global.csv
 #      python map_ids.py $ENVS_DIR/common_nodes_with_ast.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/edges_with_ast.csv $ENVS_DIR/$dir/source-graph-bodies.csv edges_with_ast_global.csv bodies_with_ast_global.csv
