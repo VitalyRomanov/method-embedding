@@ -1,5 +1,6 @@
 import sys, os
 import pandas as pd
+pd.options.mode.chained_assignment = None
 
 working_directory = sys.argv[1]
 # # base_folder = "/Volumes/External/datasets/Code/source-graphs/python-source-graph/"
@@ -197,4 +198,4 @@ with open(os.path.join(working_directory, "call_seq.csv"), "w") as sink:
 
                 # print("\n\n\n")
         print(f"\r{occ_ind}/{len(occurrence_group)}", end="")
-    print()
+    print(" " * 30, end="\r")

@@ -1,6 +1,8 @@
 import os, sys, ast, pandas, javac_parser
 from collections import Counter
 
+pandas.options.mode.chained_assignment = None
+
 lang = sys.argv[1]
 working_directory = sys.argv[2]
 
