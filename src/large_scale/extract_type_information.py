@@ -32,22 +32,27 @@ def ensure_connectedness(nodes: pd.DataFrame, edges: pd.DataFrame):
 
 annotations = edges.query("type == -3 or type == -2")
 
+no_annotations = edges.query("type != -3 and type != -2")
+
+annotations.to_csv(sys.argv[2].replace(".csv", "_annotations.csv"), index=False)
+no_annotations.to_csv(sys.argv[2].replace(".csv", "_no_annotations.csv"), index=False)
+
 #%%
 
-edges["annotates"] = False
-
-def find_and_mark(edges, path, csource, index):
-    path.append(csource)
-    edges.loc[index, "annotates"] = True
-
-    next_sources = edges.query(f"target_node_id == {csource}")
-    assert len(next_sources) <= 1, "Node participates in several paths"
-
-    for ind, row in next_sources.iterrows():
-        find_and_mark(edges, path, row.source_node_id, ind)
-
-
-
-for ind, row in annotations.iterrows():
-    path = []
-    find_and_mark(edges, path, row.source_node_id, ind)
+# edges["annotates"] = False
+#
+# def find_and_mark(edges, path, csource, index):
+#     path.append(csource)
+#     edges.loc[index, "annotates"] = True
+#
+#     next_sources = edges.query(f"target_node_id == {csource}")
+#     assert len(next_sources) <= 1, "Node participates in several paths"
+#
+#     for ind, row in next_sources.iterrows():
+#         find_and_mark(edges, path, row.source_node_id, ind)
+#
+#
+#
+# for ind, row in annotations.iterrows():
+#     path = []
+#     find_and_mark(edges, path, row.source_node_id, ind)
