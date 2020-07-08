@@ -24,6 +24,8 @@ prop2pid = dict(zip(uniq, range(-len(uniq), 0)))
 
 common_edges['type'] = common_edges['type'].apply(lambda x: prop2pid.get(x, x))
 
+common_edges = common_edges.astype({"type": "int64"})
+
 common_edges.to_csv(os.path.join(os.path.dirname(sys.argv[1]), "common_edges_with_types_with_ast.csv"), index=False, quoting=QUOTE_NONNUMERIC)
 
 with open(os.path.join(os.path.dirname(sys.argv[1]), "common_type_maps_with_ast.csv"), "w") as sink:
