@@ -124,9 +124,28 @@ class AstGraphGenerator(object):
 
         return edges, node_name
 
+    def parse_type_node(self, node):
+        # node.lineno, node.col_offset, node.end_lineno, node.end_col_offset
+        if node.lineno == node.end_lineno:
+            type_str = self.source[node.lineno][node.col_offset - 1: node.end_col_offset]
+            print(type_str)
+        else:
+            type_str = ""
+            for ln in range(node.lineno - 1, node.end_lineno):
+                if ln == node.lineno - 1:
+                    type_str += self.source[ln][node.col_offset - 1:].strip()
+                elif ln == node.end_lineno - 1:
+                    type_str += self.source[ln][:node.end_col_offset].strip()
+                else:
+                    type_str += self.source[ln].strip()
+        return type_str
+
     def parse_FunctionDef(self, node):
         # returns stores return type annotation
         edges, f_name = self.generic_parse(node, ["name", "args", "returns", "decorator_list"])
+
+        # if node.returns:
+        #     print(self.source[node.lineno -1]) # can get definition string here
 
         self.parse_in_context(f_name, "defined_in", edges, node.body)
 
@@ -186,6 +205,9 @@ class AstGraphGenerator(object):
 
     def parse_arg(self, node):
         # node.annotation stores type annotation
+        # if node.annotation:
+        #     print(self.source[node.lineno-1]) # can get definition string here
+        #     print(node.arg)
         return self.generic_parse(node, ["arg", "annotation"])
 
     def parse_AnnAssign(self, node):
@@ -195,6 +217,9 @@ class AstGraphGenerator(object):
         # AnnAssign(target=Name(id='paths', ctx=Store()), annotation=Subscript(value=Name(id='List', ctx=Load()),
         #           slice=Index(value=Name(id='Path', ctx=Load())),
         #           ctx=Load()), value=List(elts=[], ctx=Load()), simple=1)
+
+        # if node.annotation:
+        #     print(self.source[node.lineno-1]) # can get definition string here
         return self.generic_parse(node, ["target", "annotation"])
 
     def parse_Subscript(self, node):
