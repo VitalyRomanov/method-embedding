@@ -46,6 +46,9 @@ for dir in $(ls $ENVS_DIR); do
     echo "Process $dir"
     if [ -f $ENVS_DIR/$dir/normalized_sourcetrail_nodes.csv ]; then
       python map_id_columns_only_annotations.py $ENVS_DIR/common_nodes_with_ast.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/edges_with_ast.csv $ENVS_DIR/common_edges_with_ast.csv target_node_id source_node_id
+      python map_id_columns.py $ENVS_DIR/common_nodes_with_ast.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/source-graph-bodies.csv $ENVS_DIR/common_bodies_with_ast.csv id
+      python map_id_columns.py $ENVS_DIR/common_nodes_with_ast.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/source-graph-function-variable-pairs.csv $ENVS_DIR/common-function-variable-pairs_with_ast.csv src
+      python map_id_columns.py $ENVS_DIR/common_nodes_with_ast.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/call_seq.csv $ENVS_DIR/common-call-seq_with_ast.csv src dst
     fi
   fi
 done
