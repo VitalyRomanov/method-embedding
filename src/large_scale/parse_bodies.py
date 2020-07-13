@@ -1,15 +1,15 @@
-# from python_ast import AstGraphGenerator
-import sys, os
-import pandas as pd
-# import numpy as np
-import ast
 from csv import QUOTE_NONNUMERIC
+import pandas as pd
+import sys, os
+import ast
 from numba import jit
-
-
 
 from typing import Tuple, List
 from pprint import pprint
+
+DEFINITION_TYPE = 1
+UNRESOLVED_SYMBOL = 1
+
 # from node_name_serializer import serialize_node_name
 # from nltk import RegexpTokenizer
 #
@@ -20,6 +20,10 @@ from pprint import pprint
 pd.options.mode.chained_assignment = None  # default='warn'
 
 working_directory = sys.argv[1]
+try:
+    lang = sys.argv[2]
+except:
+    lang = "python"
 
 source_location_path = os.path.join(working_directory, "source_location.csv")
 occurrence_path = os.path.join(working_directory, "occurrence.csv")
@@ -27,32 +31,25 @@ node_path = os.path.join(working_directory, "normalized_sourcetrail_nodes.csv")
 edge_path = os.path.join(working_directory, "edges.csv")
 filecontent_path = os.path.join(working_directory, "filecontent.csv")
 
-# try:
 source_location = pd.read_csv(source_location_path, sep=",", dtype={'id': int, 'file_node_id': int, 'start_line': int, 'start_column': int, 'end_line': int, 'end_column': int, 'type': int})
 occurrence = pd.read_csv(occurrence_path, sep=",", dtype={'element_id': int, 'source_location_id': int})
 node = pd.read_csv(node_path, sep=",", dtype={"id": int, "type": int, "serialized_name": str})
 edge = pd.read_csv(edge_path, sep=",", dtype={'id': int, 'type': int, 'source_node_id': int, 'target_node_id': int})
 filecontent = pd.read_csv(filecontent_path, sep=",", dtype={'id': int, 'content': str})
-# except pd.errors.EmptyDataError:
-#     with open(os.path.join(working_directory, "source-graph-bodies.csv"), "w") as sink:
-#         sink.write("id,body,docstring,normalized_body\n")
-#     sys.exit()
 
+# merge nodes and edges, some references in code point to edges, not to nodes
 node_edge = pd.concat([node, edge], sort=False).astype({"target_node_id": "Int32", "source_node_id": "Int32"})
-
 assert len(node_edge["id"].unique()) == len(node_edge), f"{len(node_edge['id'].unique())} != {len(node_edge)}"
 
+# rename columns
 source_location.rename(columns={'id':'source_location_id', 'type':'occ_type'}, inplace=True)
 node_edge.rename(columns={'id':'element_id'}, inplace=True)
 
+# join tables
 occurrences = occurrence.merge(source_location, on='source_location_id',)
-
 nodes = node_edge.merge(occurrences, on='element_id')
-
 occurrence_group = nodes.groupby("file_node_id")
 
-DEFINITION_TYPE = 1
-UNRESOLVED_SYMBOL = 1
 
 def overlap(range: Tuple[int, int], ranges: List[Tuple[int, int]]) -> bool:
     for r in ranges:
@@ -60,21 +57,28 @@ def overlap(range: Tuple[int, int], ranges: List[Tuple[int, int]]) -> bool:
             return True
     return False
 
-@jit()
-def extend_range(start: str, end: int, line: int) -> Tuple[int, int]:
+
+# @jit()
+def extend_range(start: int, end: int, line: str) -> Tuple[int, int]:
     # assume only the following symbols are possible in names: A-Z a-z 0-9 . _
-    if start - 1 > 0 and ( \
-            line[start - 1] >= "A" and line[start - 1] <= "Z" or \
-            line[start - 1] >= "a" and line[start - 1] <= "z" or \
-            line[start - 1] == "." or \
-            line[start - 1] == "_" or \
+    if start - 1 > 0 and (
+            line[start - 1] >= "A" and line[start - 1] <= "Z" or
+            line[start - 1] >= "a" and line[start - 1] <= "z" or
+            line[start - 1] == "." or
+            line[start - 1] == "_" or
             line[start - 1] >= "0" and line[start - 1] <= "9"):
         return extend_range(start - 1, end, line)
     else:
-        if start - 1 > 0 and line[start] == "." and ( line[start - 1] in [')', ']', '}', '"', '\''] or \
+        if start - 1 > 0 and line[start] == "." and ( line[start - 1] in [')', ']', '}', '"', '\''] or
                 line[0: start].isspace()):
             return start + 1, end
         return start, end
+
+
+# @jit()
+def do_replacement(string_: str, start: int, end: int, substitution: str):
+    return string_[:start] + substitution + \
+                             string_[end:]
 
 def get_docstring_ast(body):
     try:
@@ -85,53 +89,41 @@ def get_docstring_ast(body):
     except:
         return ""
 
+
 bodies = []
 
-for occ_ind, (group_id, group) in enumerate(occurrence_group):
 
+for occ_ind, (group_id, group) in enumerate(occurrence_group):
 
     definitions = group.query(f"occ_type == {DEFINITION_TYPE} and (type == 4096 or type == 8192)")
 
     if len(definitions):
-        # print("\n\n\n")
-        # print(definitions)
         for ind, row in definitions.iterrows():
-            elements = group.query(f"start_line >= {row.start_line} and end_line <= {row.end_line} and occ_type != {DEFINITION_TYPE} and start_line == end_line")
+            f_start = row.start_line
+            f_end = row.end_line
 
-            sources = filecontent.query(f"id == {group_id}").iloc[0]['content'].split("\n")
+            elements: pd.DataFrame = group.query(f"start_line >= {f_start} and end_line <= {f_end} and occ_type != {DEFINITION_TYPE} and start_line == end_line")
 
-            # TODO:
-            # check row.end_line is a correct index (alternative is row.end_line - 1)
-            body = "\n".join(sources[row.start_line - 1: row.end_line])
+            # move to zero-index
+            f_start -= 1
+            if lang != "java":
+                f_end -= 1
+
+            # list of lines of code
+            sources: List[str] = filecontent.query(f"id == {group_id}").iloc[0]['content'].split("\n")
+
+            if lang == "python":
+                # assert that f_end is indeed the end of function
+                assert len(sources[f_end - 1]) - len(sources[f_end - 1].lstrip()) != \
+                       len(sources[f_end]) - len(sources[f_end].lstrip())
+
+            body: str = "\n".join(sources[f_start: f_end])
             bodies.append({"id": row.element_id, "body": body, "docstring": get_docstring_ast(body)})
-            # print(body)
 
             elements.sort_values(by=["start_line", "end_column"], inplace=True, ascending=[True, False])
 
-            # print(elements)
-
-            # for start_line_g, sl_grp in elements.groupby("start_line"):
-
-                # valid_elements = sl_grp.query("start_line == end_line")
-                # valid_elements.sort_values(by="end_column", inplace=True, ascending=False)
-
-                # TODO:
-                #  sorting does not help with java!!! see hack below
-                #          element_id  type                                    serialized_name  source_node_id  ...  start_column  end_line  end_column  occ_type
-                # 169736           34  8192  edu.stanford.nlp.coref.hybrid.ChineseCorefBenc...             NaN  ...             3        33          75         4
-                # 2516264         152     2                                                NaN            34.0  ...            67        33          75         0
-                # 2516263         150     2                                                NaN            34.0  ...            38        33          44         0
-                # 169734           34  8192  edu.stanford.nlp.coref.hybrid.ChineseCorefBenc...             NaN  ...            25        33          36         0
-                # 2516257         149     2                                                NaN            34.0  ...            18        33          23         0
-                #
-                # [5 rows x 12 columns]
-                #   private static String runCorefTest(boolean deleteOnExit) throws Exception {
-
-                # elements.sort_values(by="start_line", inplace=True)
-                # print(valid_elements)
-
             prev_line = 0
-            curr_line = 1
+            replaced_ranges = []
 
             for ind, row_elem in elements.iterrows():
                 if row_elem.start_line == row_elem.end_line:
@@ -146,8 +138,10 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
                     end_c = row_elem.end_column
 
                     # this is a hack for java, some annotations in java have a large span
-                    if " " in sources[curr_line - 1][start_c: end_c]:
-                        continue
+                    # e.g. some annotations cover the entire signature declaration
+                    if lang == 'java':
+                        if " " in sources[curr_line - 1][start_c: end_c]:
+                            continue
 
                     if not overlap((start_c, end_c), replaced_ranges):
                         e_start, e_end = extend_range(start_c, end_c, line)
@@ -167,9 +161,7 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
                         if node_info.iloc[0].type == UNRESOLVED_SYMBOL:
                             # this is an unresolved symbol, avoid
                             replaced_ranges.pop(-1)
-
                         else:
-
                             name = f"srstrlnd_{st_id}" # sourcetrailnode
 
                             # this is a hack for java
@@ -183,11 +175,12 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
                             # name = name.replace("@", "__stat__")
                             # name = name.replace('.', '____')
 
-                            sources[curr_line - 1] = sources[curr_line - 1][:e_start] + name + \
-                                                     sources[curr_line - 1][e_end:]
+                            sources[curr_line - 1] = do_replacement(sources[curr_line - 1], e_start, e_end, name)
+                            # sources[curr_line - 1] = sources[curr_line - 1][:e_start] + name + \
+                            #                          sources[curr_line - 1][e_end:]
                     prev_line = curr_line
 
-            norm_body = "\n".join(sources[row.start_line - 1: row.end_line])
+            norm_body = "\n".join(sources[f_start: f_end])
             bodies[-1]["normalized_body"] = norm_body
 
             try:
