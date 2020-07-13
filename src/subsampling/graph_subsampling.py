@@ -1,42 +1,84 @@
-#%%
+from python_ast import AstGraphGenerator
 import sys, os
 import pandas as pd
+from csv import QUOTE_NONNUMERIC
+# from node_name_serializer import deserialize_node_name
 
-# nodes = pd.read_csv(sys.argv[1])
-# edges = pd.read_csv(sys.argv[2])
-nodes = pd.read_csv("/Volumes/External/datasets/Code/source-graphs/python-source-graph/v2_with_ast/00_sourcetrail_export/common_nodes_with_ast.csv")
-edges = pd.read_csv("/Volumes/External/datasets/Code/source-graphs/python-source-graph/v2_with_ast/00_sourcetrail_export/common_edges_with_types_with_ast.csv")
-edges['id'] = edges['target_node_id']
+node_path = sys.argv[1]
+edge_path = sys.argv[2]
+bodies_path = sys.argv[3]
 
-i = edges.query("type == -59").index
-t = edges.loc[i, 'target_node_id']
-s = edges.loc[i, 'source_node_id']
+node = pd.read_csv(node_path, sep=",", dtype={"id": int, "type": int, "serialized_name": str})
+edge = pd.read_csv(edge_path, sep=",", dtype={'id': int, 'type': int, 'source_node_id': int, 'target_node_id': int})
+bodies = pd.read_csv(bodies_path, sep=",", dtype={"id": int,"body": str,"docstring": str,"normalized_body": str})
 
-edges.loc[i, 'target_node_id'] = s
-edges.loc[i, 'source_node_id'] = t
+valid_new_type = 260 # fits about 250 new type
+type_maps = {}
+new_types = []
 
+valid_new_node = node['id'].max() + 1
+ast_node_type = 3
+node_maps = {}
+new_nodes = []
 
+def resolve_edge_type(edge_type):
+    global valid_new_type, type_maps, new_types
 
-#%%
-nodes = nodes.dropna(axis=0)
-nodes['package'] = nodes['serialized_name'].apply(lambda x: x.split(".")[0])
+    # if edge_type not in type_maps:
+    #     type_maps[edge_type] = valid_new_type
+    #     new_types.append({"type_id": valid_new_type, "type_desc": edge_type})
+    #     valid_new_type += 1
+    #     if valid_new_type == 512: raise Exception("Type overlap!")
+    return edge_type #type_maps[edge_type]
 
-sources_with_names = edges.merge(nodes, on="id")
+def resolve_node_names(name):
+    global valid_new_node, ast_node_type, node_maps, new_nodes
 
-annotation_edges = edges.query("type == -2 or type == -3")
+    if name.startswith("srstrlnd_"):
+        try:
+            node_id = int(name.split("_")[1])
+        except:
+            print(name)
+            raise Exception()
+        return node_id
+    else:
+        if name not in node_maps:
+            node_maps[name] = valid_new_node
+            new_nodes.append({"id": valid_new_node, "type": ast_node_type, "serialized_name": name})
+            valid_new_node += 1
+        return node_maps[name]
 
-#%%
+# for ind, c in enumerate(bodies['normalized_body']):
+for ind, (idx, row) in enumerate(bodies.iterrows()):
+    c = row.normalized_body
+    try:
+        try:
+            c.strip()
+        except:
+            # print(c)
+            continue
+        g = AstGraphGenerator(c.strip())
+        edges = g.get_edges()
 
-def inspect_children(edges, source_id):
-    branches = edges.query(f"source_node_id == {source_id}")
-    # print(branches['serialized_name'])
-    for ind, row in branches.iterrows():
-        if len(row['serialized_name'].split(".")) > 1:
-            # print(row)
-            return row['package']
-    for ind, row in branches.iterrows():
-        return inspect_children(edges, row['target_node_id'])
+        try:
+            edges['type'] = edges['type'].apply(resolve_edge_type)
+            edges['source_node_id'] = edges['src'].apply(resolve_node_names)
+            edges['target_node_id'] = edges['dst'].apply(resolve_node_names)
+            edges['id'] = 0
+        except KeyError:
+            if len(edges) == 0:
+                continue
+            else:
+                print(edges)
+                raise Exception()
+        except:
+            print(c)
+            raise Exception()
 
-for ind, row in annotation_edges.iterrows():
-    package_name = inspect_children(sources_with_names, row['target_node_id'])
-    print(package_name)
+        ann = edges.query("type == 'annotation' or type == 'returns'")
+        if len(ann) > 0:
+            print(node.query(f"id == {row.id}").iloc[0]['serialized_name'])
+
+    except SyntaxError:
+        # print(c.strip())
+        pass
