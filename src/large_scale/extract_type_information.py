@@ -6,6 +6,8 @@ import sys, os
 # edges = pd.read_csv(sys.argv[2])
 nodes = pd.read_csv("/home/ltv/data/local_run/method-embedding/src/large_scale/envs/common_nodes.csv")
 edges = pd.read_csv("/home/ltv/data/local_run/method-embedding/src/large_scale/envs/common_edges_with_types_with_ast.csv")
+annotation_type = -3
+returns_type = -2
 
 def ensure_connectedness(nodes: pd.DataFrame, edges: pd.DataFrame):
     """
@@ -30,9 +32,9 @@ def ensure_connectedness(nodes: pd.DataFrame, edges: pd.DataFrame):
 
 #%%
 
-annotations = edges.query("type == -3 or type == -2")
+annotations = edges.query(f"type == {annotation_type} or type == {returns_type}")
 
-no_annotations = edges.query("type != -3 and type != -2")
+no_annotations = edges.query(f"type != {annotation_type} and type != {returns_type}")
 
 annotations.to_csv(sys.argv[2].replace(".csv", "_annotations.csv"), index=False)
 no_annotations.to_csv(sys.argv[2].replace(".csv", "_no_annotations.csv"), index=False)
