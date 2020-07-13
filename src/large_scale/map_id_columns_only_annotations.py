@@ -12,7 +12,7 @@ columns = sys.argv[5:]
 
 input_table = pd.read_csv(input_path)
 
-if len(input_path.query("type == 'annotation' or type == 'returns'")) > 0:
+if len(input_table.query("type == 'annotation' or type == 'returns'")) > 0:
 
     rev_id_map = dict(zip(all_nodes['serialized_name'].tolist(), all_nodes['id'].tolist()))
     id_map = dict(zip(orig_nodes["id"].tolist(), map(lambda x: rev_id_map[x], orig_nodes["serialized_name"].tolist())))
