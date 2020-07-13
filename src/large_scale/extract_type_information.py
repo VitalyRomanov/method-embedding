@@ -2,12 +2,14 @@
 import pandas as pd
 import sys, os
 
-# nodes = pd.read_csv(sys.argv[1])
-# edges = pd.read_csv(sys.argv[2])
-nodes = pd.read_csv("/home/ltv/data/local_run/method-embedding/src/large_scale/envs/common_nodes.csv")
-edges = pd.read_csv("/home/ltv/data/local_run/method-embedding/src/large_scale/envs/common_edges_with_types_with_ast.csv")
-annotation_type = -3
-returns_type = -2
+nodes = pd.read_csv(sys.argv[1], escapechar='\\')
+edges = pd.read_csv(sys.argv[2])
+annotation_type = int(sys.argv[3])
+returns_type = int(sys.argv[4])
+# nodes = pd.read_csv("/home/ltv/data/local_run/method-embedding/src/large_scale/envs/common_nodes.csv")
+# edges = pd.read_csv("/home/ltv/data/local_run/method-embedding/src/large_scale/envs/common_edges_with_types_with_ast.csv")
+# annotation_type = -3
+# returns_type = -2
 
 def ensure_connectedness(nodes: pd.DataFrame, edges: pd.DataFrame):
     """
