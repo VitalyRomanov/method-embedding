@@ -175,7 +175,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Process some integers.')
     parser.add_argument('--training_mode', dest='training_mode', default=None,
-                        help='Selects one of training procedures [node_classifier|vector_sim|vector_sim_classifier|predict_next_function]')
+                        help='Selects one of training procedures [node_classifier|vector_sim|vector_sim_classifier|predict_next_function|multitask]')
     parser.add_argument('--call_seq_file', dest='call_seq_file', default=None,
                         help='Path to the file with edges that represent API call sequence. Used only with training mode \'predict_next_function\'')
     parser.add_argument('--node_path', dest='node_path', default=None,
