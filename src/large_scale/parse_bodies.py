@@ -101,13 +101,16 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
 
             elements: pd.DataFrame = group.query(f"start_line >= {f_start} and end_line <= {f_end} and occ_type != {DEFINITION_TYPE} and start_line == end_line")
 
-            # move to zero-index
-            f_start -= 1
-            # if lang != "java":
-            #     f_end -= 1
-
             # list of lines of code
             sources: List[str] = filecontent.query(f"id == {group_id}").iloc[0]['content'].split("\n")
+
+            # move to zero-index
+            f_start -= 1
+            if lang != "java":
+                f_end -= 1
+                if len(sources[f_end - 1]) - len(sources[f_end - 1].lstrip()) == \
+                        len(sources[f_end]) - len(sources[f_end].lstrip()):
+                    f_end += 1
 
             # if lang == "python":
             #     # assert that f_end is indeed the end of function
@@ -183,9 +186,9 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
             try:
                 ast.parse(norm_body.strip())
             except Exception as e:
-                print(bodies[-1]['body'])
-                print(bodies[-1]['normalized_body'])
-                print(e)
+                # print(bodies[-1]['body'])
+                # print(bodies[-1]['normalized_body'])
+                # print(e)
                 pass
 
             # for line in sources[row.start_line - 1: row.end_line - 1]:
