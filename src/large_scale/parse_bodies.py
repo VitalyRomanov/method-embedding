@@ -4,6 +4,11 @@ import pandas as pd
 # import numpy as np
 import ast
 from csv import QUOTE_NONNUMERIC
+from numba import jit
+
+
+
+from typing import Tuple, List
 from pprint import pprint
 # from node_name_serializer import serialize_node_name
 # from nltk import RegexpTokenizer
@@ -47,14 +52,16 @@ nodes = node_edge.merge(occurrences, on='element_id')
 occurrence_group = nodes.groupby("file_node_id")
 
 DEFINITION_TYPE = 1
+UNRESOLVED_SYMBOL = 1
 
-def overlap(range, ranges):
+def overlap(range: Tuple[int, int], ranges: List[Tuple[int, int]]) -> bool:
     for r in ranges:
         if (r[0] - range[0]) * (r[1] - range[1]) <= 0:
             return True
     return False
 
-def extend_range(start, end, line):
+@jit()
+def extend_range(start: str, end: int, line: int) -> Tuple[int, int]:
     # assume only the following symbols are possible in names: A-Z a-z 0-9 . _
     if start - 1 > 0 and ( \
             line[start - 1] >= "A" and line[start - 1] <= "Z" or \
@@ -64,6 +71,9 @@ def extend_range(start, end, line):
             line[start - 1] >= "0" and line[start - 1] <= "9"):
         return extend_range(start - 1, end, line)
     else:
+        if start - 1 > 0 and line[start] == "." and ( line[start - 1] in [')', ']', '}', '"', '\''] or \
+                line[0: start].isspace()):
+            return start + 1, end
         return start, end
 
 def get_docstring_ast(body):
@@ -151,25 +161,42 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
                             # if not isinstance(name, str):
                             #     name = "empty_name"
 
-                        name = f"srstrlnd_{st_id}" # sourcetrailnode
+                        node_info = node.query(f"id == {st_id}")
+                        assert len(node_info) == 1
 
-                        # this is a hack for java
-                        # remove special symbols so that code can later be parsed by ast parser
-                        # name = name.replace("___", "__stspace__")
-                        # name = name.replace(")", "__strrbr__")
-                        # name = name.replace("(", "__stlrbr__")
-                        # name = name.replace(">", "__strtbr__")
-                        # name = name.replace("<", "__stltbr__")
-                        # name = name.replace("?", "__qmark__")
-                        # name = name.replace("@", "__stat__")
-                        # name = name.replace('.', '____')
+                        if node_info.iloc[0].type == UNRESOLVED_SYMBOL:
+                            # this is an unresolved symbol, avoid
+                            replaced_ranges.pop(-1)
 
-                        sources[curr_line - 1] = sources[curr_line - 1][:e_start] + name + \
-                                                 sources[curr_line - 1][e_end:]
+                        else:
+
+                            name = f"srstrlnd_{st_id}" # sourcetrailnode
+
+                            # this is a hack for java
+                            # remove special symbols so that code can later be parsed by ast parser
+                            # name = name.replace("___", "__stspace__")
+                            # name = name.replace(")", "__strrbr__")
+                            # name = name.replace("(", "__stlrbr__")
+                            # name = name.replace(">", "__strtbr__")
+                            # name = name.replace("<", "__stltbr__")
+                            # name = name.replace("?", "__qmark__")
+                            # name = name.replace("@", "__stat__")
+                            # name = name.replace('.', '____')
+
+                            sources[curr_line - 1] = sources[curr_line - 1][:e_start] + name + \
+                                                     sources[curr_line - 1][e_end:]
                     prev_line = curr_line
 
             norm_body = "\n".join(sources[row.start_line - 1: row.end_line])
             bodies[-1]["normalized_body"] = norm_body
+
+            try:
+                ast.parse(norm_body.strip())
+            except Exception as e:
+                print(bodies[-1]['body'])
+                print(bodies[-1]['normalized_body'])
+                print(e)
+                pass
 
             # for line in sources[row.start_line - 1: row.end_line - 1]:
             #     for token in tokenizer.tokenize(line):
