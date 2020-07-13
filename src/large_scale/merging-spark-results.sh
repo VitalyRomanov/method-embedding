@@ -37,4 +37,6 @@ for file in *.csv; do
     bzip2 $file;
 done
 
-for file in *.bz2; do; mv $file $(echo "$file" | awk -F"." '{print $1}').bz2; done
+for file in *.bz2; do
+  mv $file $(echo "$file" | awk -F"." '{print $1}').bz2;
+done
