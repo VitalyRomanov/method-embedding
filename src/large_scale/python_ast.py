@@ -142,7 +142,11 @@ class AstGraphGenerator(object):
 
     def parse_FunctionDef(self, node):
         # returns stores return type annotation
-        edges, f_name = self.generic_parse(node, ["name", "args", "returns", "decorator_list"])
+        # edges, f_name = self.generic_parse(node, ["name", "args", "returns", "decorator_list"])
+        edges, f_name = self.generic_parse(node, ["args", "returns", "decorator_list"])
+
+        assert isinstance(node.name, str)
+        edges.append({"src": f_name, "dst": node.name, "type": "fname"})
 
         # if node.returns:
         #     print(self.source[node.lineno -1]) # can get definition string here
@@ -394,7 +398,8 @@ class AstGraphGenerator(object):
         return str(node.n)
 
     def parse_Str(self, node):
-        return node.s
+        return self.generic_parse(node, [])
+        # return node.s
 
     def parse_Bytes(self, node):
         return repr(node.s)
@@ -566,6 +571,7 @@ class AstGraphGenerator(object):
 if __name__ == "__main__":
     import sys
     f_bodies = pd.read_csv(sys.argv[1])
+    failed = 0
     for ind, c in enumerate(f_bodies['normalized_body']):
         try:
             try:
@@ -574,6 +580,7 @@ if __name__ == "__main__":
                 print(c)
                 continue
             g = AstGraphGenerator(c.strip())
+            failed += 1
             edges = g.get_edges()
             edges.to_csv(os.path.join(os.path.dirname(sys.argv[1]), "body_edges.csv"), mode="a", index=False, header=(ind==0))
             print("\r%d/%d" % (ind, len(f_bodies['normalized_body'])), end = "")
@@ -581,3 +588,4 @@ if __name__ == "__main__":
             print(c.strip())
 
     print(" " * 30, end="\r")
+    print(failed, len(f_bodies['normalized_body']))
