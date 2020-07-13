@@ -5,7 +5,7 @@ import pickle
 
 
 def load_data(node_path, edge_path):
-    nodes = pandas.read_csv(node_path, dtype={'id': int, 'type': int, 'serialized_name': str})
+    nodes = pandas.read_csv(node_path, dtype={'id': int, 'type': int, 'serialized_name': str}, escapechar='\\')
     edges = pandas.read_csv(edge_path, dtype={'id': int, 'type': int, 'source_node_id': int, 'target_node_id': int})
 
     nodes_ = nodes.rename(mapper={
