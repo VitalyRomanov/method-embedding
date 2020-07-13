@@ -30,15 +30,15 @@ ENVS_DIR=$1
 #  fi
 #done
 
-rm $ENVS_DIR/common*
-
-for dir in $(ls $ENVS_DIR); do
-  if [ -d $ENVS_DIR/$dir ]; then
-    if [ -f $ENVS_DIR/$dir/normalized_sourcetrail_nodes.csv ]; then
-      python ../sourcetrail/merge_graphs.py $ENVS_DIR/common_nodes_with_ast.csv $ENVS_DIR/$dir/nodes_with_ast.csv
-    fi
-  fi
-done
+#rm $ENVS_DIR/common*
+#
+#for dir in $(ls $ENVS_DIR); do
+#  if [ -d $ENVS_DIR/$dir ]; then
+#    if [ -f $ENVS_DIR/$dir/normalized_sourcetrail_nodes.csv ]; then
+#      python ../sourcetrail/merge_graphs.py $ENVS_DIR/common_nodes_with_ast.csv $ENVS_DIR/$dir/nodes_with_ast.csv
+#    fi
+#  fi
+#done
 
 
 for dir in $(ls $ENVS_DIR); do
