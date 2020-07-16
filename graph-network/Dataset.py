@@ -10,12 +10,12 @@ def load_data(node_path, edge_path):
 
     nodes_ = nodes.rename(mapper={
         'serialized_name': 'name'
-    }, axis=1)
+    }, axis=1).astype({"name":str, "id": int, "type": int})
 
     edges_ = edges.rename(mapper={
         'source_node_id': 'src',
         'target_node_id': 'dst'
-    }, axis=1)
+    }, axis=1).astype({'id': int, 'type': int, 'src': int, 'dst': int})
 
     nodes_['libname'] = nodes_['name'].apply(lambda name: name.split(".")[0])
 
