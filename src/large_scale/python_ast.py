@@ -15,7 +15,7 @@ class AstGraphGenerator(object):
         self.contition_status = []
 
     def get_name(self, node):
-        return node.__class__.__name__ + str(hex(int(time_ns())))
+        return node.__class__.__name__ + "_" + str(hex(int(time_ns())))
 
     def get_edges(self):
         """Called if no explicit visitor function exists for a node."""
@@ -26,6 +26,8 @@ class AstGraphGenerator(object):
         return pd.DataFrame(edges)
 
     def parse(self, node):
+        if hasattr(node,'lineno'):
+            self.cline = node.lineno - 1
         n_type = type(node)
         method_name = "parse_" + n_type.__name__
         if hasattr(self, method_name):
@@ -121,6 +123,8 @@ class AstGraphGenerator(object):
                             self.parse_and_add_operand(node_name, oper_, operand, edges)
                     else:
                         self.parse_and_add_operand(node_name, operand_, operand, edges)
+                        
+        edges.append({"src": node.__class__.__name__, "dst": node_name, "type": "node_type"})
 
         return edges, node_name
 
@@ -143,7 +147,15 @@ class AstGraphGenerator(object):
     def parse_FunctionDef(self, node):
         # returns stores return type annotation
         # edges, f_name = self.generic_parse(node, ["name", "args", "returns", "decorator_list"])
-        edges, f_name = self.generic_parse(node, ["args", "returns", "decorator_list"])
+        # edges, f_name = self.generic_parse(node, ["args", "returns", "decorator_list"])
+        edges, f_name = self.generic_parse(node, ["args", "decorator_list"])
+
+        if node.returns is not None:
+            # can contain quotes
+            # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
+            # https://www.python.org/dev/peps/pep-0484/#forward-references
+            annotation = self.source[self.cline][node.returns.col_offset: node.returns.end_col_offset]
+            edges.append({"src": annotation, "dst": f_name, "type": 'returns', "line": self.cline, "col_offset": node.returns.col_offset, "end_col_offset": node.returns.end_col_offset})
 
         assert isinstance(node.name, str)
         edges.append({"src": f_name, "dst": node.name, "type": "fname"})
@@ -212,7 +224,15 @@ class AstGraphGenerator(object):
         # if node.annotation:
         #     print(self.source[node.lineno-1]) # can get definition string here
         #     print(node.arg)
-        return self.generic_parse(node, ["arg", "annotation"])
+        edges, name = self.generic_parse(node, ["arg"])
+        if node.annotation is not None:
+            # can contain quotes
+            # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
+            # https://www.python.org/dev/peps/pep-0484/#forward-references
+            annotation = self.source[self.cline][node.annotation.col_offset: node.annotation.end_col_offset]
+            edges.append({"src": annotation, "dst": name, "type": 'annotation', "line": self.cline, "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset, "var_col_offset": node.col_offset, "var_end_col_offset": node.end_col_offset})
+        return edges, name
+        # return self.generic_parse(node, ["arg", "annotation"])
 
     def parse_AnnAssign(self, node):
         # stores annotation information for variables
@@ -224,7 +244,15 @@ class AstGraphGenerator(object):
 
         # if node.annotation:
         #     print(self.source[node.lineno-1]) # can get definition string here
-        return self.generic_parse(node, ["target", "annotation"])
+
+        # can contain quotes
+        # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
+        # https://www.python.org/dev/peps/pep-0484/#forward-references
+        annotation = self.source[self.cline][node.annotation.col_offset: node.annotation.end_col_offset]
+        edges, name = self.generic_parse(node, ["target"])
+        edges.append({"src": annotation, "dst": name, "type": 'annotation', "line": self.cline, "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset, "var_col_offset": node.col_offset, "var_end_col_offset": node.end_col_offset})
+        return edges, name
+        # return self.generic_parse(node, ["target", "annotation"])
 
     def parse_Subscript(self, node):
         return self.generic_parse(node, ["value", "slice"])
@@ -300,6 +328,14 @@ class AstGraphGenerator(object):
 
     def parse_NameConstant(self, node):
         return self.parse_name(node)
+
+    def parse_Constant(self, node):
+        # TODO
+        # decide whether this name should be unique or not
+        name = "Constant_"
+        if node.kind is not None:
+            name += ""
+        return name
 
     def parse_op_name(self, node):
         return node.__class__.__name__
@@ -584,8 +620,20 @@ if __name__ == "__main__":
             edges = g.get_edges()
             edges.to_csv(os.path.join(os.path.dirname(sys.argv[1]), "body_edges.csv"), mode="a", index=False, header=(ind==0))
             print("\r%d/%d" % (ind, len(f_bodies['normalized_body'])), end = "")
-        except SyntaxError:
+        except SyntaxError as e:
             print(c.strip())
+            # raise e
 
+    # class sio:
+    #     def __init__(self, s):
+    #         self.s = s.split("\n")
+    #         self.c = 0
+    #     def __call__(self):
+    #         if self.c >= len(self.s): raise StopIteration()
+    #         r = self.s[self.c]
+    #         self.c +=1
+    #         return r.encode('utf8')
+    # import tokenize
+    # tokenize.tokenize
     print(" " * 30, end="\r")
     print(failed, len(f_bodies['normalized_body']))

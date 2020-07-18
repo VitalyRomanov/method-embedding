@@ -124,6 +124,7 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
 
             prev_line = 0
             replaced_ranges = []
+            list_of_replacements = []
 
             for ind, row_elem in elements.iterrows():
                 if row_elem.start_line == row_elem.end_line:
@@ -175,6 +176,10 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
                             # name = name.replace("@", "__stat__")
                             # name = name.replace('.', '____')
 
+                            list_of_replacements.append((
+                                e_start, e_end, name
+                            ))
+
                             sources[curr_line - 1] = do_replacement(sources[curr_line - 1], e_start, e_end, name)
                             # sources[curr_line - 1] = sources[curr_line - 1][:e_start] + name + \
                             #                          sources[curr_line - 1][e_end:]
@@ -182,6 +187,7 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
 
             norm_body = "\n".join(sources[f_start: f_end])
             bodies[-1]["normalized_body"] = norm_body
+            bodies[-1]["replacement_list"] = repr(list_of_replacements)
 
             try:
                 ast.parse(norm_body.strip())
