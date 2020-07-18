@@ -2,7 +2,6 @@ from csv import QUOTE_NONNUMERIC
 import pandas as pd
 import sys, os
 import ast
-from numba import jit
 
 from typing import Tuple, List
 from pprint import pprint
@@ -58,24 +57,26 @@ def overlap(range: Tuple[int, int], ranges: List[Tuple[int, int]]) -> bool:
     return False
 
 
-# @jit()
+def isnamechar(char: str) -> bool:
+    return char >= "A" and char <= "Z" or \
+        char >= "a" and char <= "z" or \
+        char == "." or \
+        char == "_" or \
+        char >= "0" and char <= "9"
+
+
 def extend_range(start: int, end: int, line: str) -> Tuple[int, int]:
     # assume only the following symbols are possible in names: A-Z a-z 0-9 . _
-    if start - 1 > 0 and (
-            line[start - 1] >= "A" and line[start - 1] <= "Z" or
-            line[start - 1] >= "a" and line[start - 1] <= "z" or
-            line[start - 1] == "." or
-            line[start - 1] == "_" or
-            line[start - 1] >= "0" and line[start - 1] <= "9"):
+    if start - 1 > 0 and isnamechar(line[start-1]):
         return extend_range(start - 1, end, line)
     else:
-        if start - 1 > 0 and line[start] == "." and ( line[start - 1] in [')', ']', '}', '"', '\''] or
-                line[0: start].isspace()):
+        if start - 1 > 0 and line[start] == "." and not isnamechar(line[start - 1]):
+        # if start - 1 > 0 and line[start] == "." and ( line[start - 1] in [')', ']', '}', '"', '\''] or
+        #         line[0: start].isspace()):
             return start + 1, end
         return start, end
 
 
-# @jit()
 def do_replacement(string_: str, start: int, end: int, substitution: str):
     return string_[:start] + substitution + \
                              string_[end:]
@@ -104,18 +105,18 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
 
             elements: pd.DataFrame = group.query(f"start_line >= {f_start} and end_line <= {f_end} and occ_type != {DEFINITION_TYPE} and start_line == end_line")
 
+            # list of lines of code
+            sources: List[str] = filecontent.query(f"id == {group_id}").iloc[0]['content'].split("\n")
+
             # move to zero-index
             f_start -= 1
             if lang != "java":
                 f_end -= 1
 
-            # list of lines of code
-            sources: List[str] = filecontent.query(f"id == {group_id}").iloc[0]['content'].split("\n")
-
-            if lang == "python":
-                # assert that f_end is indeed the end of function
-                assert len(sources[f_end - 1]) - len(sources[f_end - 1].lstrip()) != \
-                       len(sources[f_end]) - len(sources[f_end].lstrip())
+            # if lang == "python":
+            #     # assert that f_end is indeed the end of function
+            #     assert len(sources[f_end - 1]) - len(sources[f_end - 1].lstrip()) != \
+            #            len(sources[f_end]) - len(sources[f_end].lstrip())
 
             body: str = "\n".join(sources[f_start: f_end])
             bodies.append({"id": row.element_id, "body": body, "docstring": get_docstring_ast(body)})
@@ -192,9 +193,10 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
             try:
                 ast.parse(norm_body.strip())
             except Exception as e:
-                print(bodies[-1]['body'])
-                print(bodies[-1]['normalized_body'])
-                print(e)
+                # print(bodies[-1]['body'])
+                # print(bodies[-1]['normalized_body'])
+                # print(e)
+                # print(row.start_line, row.end_line)
                 pass
 
             # for line in sources[row.start_line - 1: row.end_line - 1]:

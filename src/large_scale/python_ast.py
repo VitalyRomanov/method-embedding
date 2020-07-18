@@ -189,7 +189,15 @@ class AstGraphGenerator(object):
         return edges, class_name
 
     def parse_ImportFrom(self, node):
-        return self.generic_parse(node, ["module", "names"])
+        # similar issues as with parsing alias, module name is parsed as a long chunk
+        # print(ast.dump(node))
+        edges, name = self.generic_parse(node, ["names"])
+        if node.module:
+            name_from, edges_from = self.parse_operand(ast.parse(node.module).body[0].value)
+            edges.extend(edges_from)
+            edges.append({"src": name_from, "dst": name, "type": "module"})
+        return edges, name
+        # return self.generic_parse(node, ["module", "names"])
 
     def parse_Import(self, node):
         return self.generic_parse(node, ["names"])
@@ -217,7 +225,15 @@ class AstGraphGenerator(object):
         return self.generic_parse(node, ['context_expr', 'optional_vars'])
 
     def parse_alias(self, node):
-        return self.generic_parse(node, ["name", "asname"])
+        # TODO
+        # aliases should be handled by sourcetrail. here i am trying to assign alias to a
+        # local mention of the module. maybe i should simply ignore aliases altogether
+        # print(ast.dump(node))
+        name, edges = self.parse_operand(ast.parse(node.name).body[0].value)
+        if node.asname:
+            edges.append({"src": name, "dst": node.asname, "type": "alias"})
+        return edges, name
+        # return self.generic_parse(node, ["name", "asname"])
 
     def parse_arg(self, node):
         # node.annotation stores type annotation

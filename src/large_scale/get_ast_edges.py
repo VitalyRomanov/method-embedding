@@ -63,6 +63,7 @@ for ind, c in enumerate(bodies['normalized_body']):
         g = AstGraphGenerator(c.strip())
         edges = g.get_edges()
 
+        # assert srstrlnd_2703[compressor].srstrlnd_4109 == srstrlnd_2697.frame.LZ4FrameFile
         try:
             edges['type'] = edges['type'].apply(resolve_edge_type)
             edges['source_node_id'] = edges['src'].apply(resolve_node_names)
@@ -72,11 +73,14 @@ for ind, c in enumerate(bodies['normalized_body']):
             if len(edges) == 0:
                 continue
             else:
-                print(edges)
-                raise Exception()
+                # print(edges)
+                # raise Exception()
+                continue
         except:
-            print(c)
-            raise Exception()
+            # print(c)
+            # print(edges)
+            # raise Exception()
+            continue
 
         edges[['id','type','source_node_id','target_node_id']].to_csv(edges_with_ast_name, mode="a", index=False, header=False)
         print("\r%d/%d" % (ind, len(bodies['normalized_body'])), end="")

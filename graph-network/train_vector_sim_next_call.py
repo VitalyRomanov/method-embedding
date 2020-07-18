@@ -171,7 +171,9 @@ def train_no_classes(model, elem_embeder, link_predictor, splits, epochs):
         # since indexes are sampled randomly, it is a little bit hard to make sure we cover all data
         # instead, we sample nodes the same number of times that there are different nodes in the dataset,
         # hoping to cover all the data
-        num_batches = len(elem_embeder) // batch_size
+        num_batches = len(elem_embeder) // batch_size + 1 # +1 when len(elem_embeder) < batch_size
+        if len(elem_embeder) < batch_size:
+            batch_size = len(elem_embeder)
 
         for batch_ind in range(num_batches):
             node_embeddings = model()
@@ -238,11 +240,18 @@ def training_procedure(dataset, model, params, EPOCHS, call_seq_file, restore_st
     # get data for models with large number of classes, possibly several labels for
     # a single input id
 
+
     element_data = pd.read_csv(call_seq_file)
+    orig_shape = len(element_data)
     function2nodeid = dict(zip(dataset.nodes['id'].values, dataset.nodes['global_graph_id'].values))
-    element_data['id'] = element_data['src'].apply(lambda x: function2nodeid[x])
-    element_data['dst'] = element_data['dst'].apply(lambda x: function2nodeid[x])
+    # some nodes can disappear after preliminary filtering
+    # use NA to mark such nides and filter them from the training data
+    element_data['id'] = element_data['src'].apply(lambda x: function2nodeid.get(x, pd.NA))
+    element_data['dst'] = element_data['dst'].apply(lambda x: function2nodeid.get(x, pd.NA))
+    element_data.dropna(axis=0, inplace=True)
     element_data.drop_duplicates(['id', 'dst'], inplace=True, ignore_index=True)
+
+    print("Droppped {} after preprocessing target edges".format(orig_shape - len(element_data)))
 
     # element_data.to_csv("id2graphid.csv", index=False)
     # import sys; sys.exit()
