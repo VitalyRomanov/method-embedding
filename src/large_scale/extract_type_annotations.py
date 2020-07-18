@@ -1,0 +1,154 @@
+import pandas as pd
+import ast, astor
+import sys, os
+import json
+
+def inspect_fdef(node):
+    if node.returns is not None:
+        return [{"name": "returns", "line": node.returns.lineno, "col_offset": node.returns.col_offset, "end_col_offset": node.returns.end_col_offset}]
+    else:
+        return []
+
+def inspect_arg(node):
+    if node.annotation is not None:
+        return [{"name": "annotation", "line": node.annotation.lineno, "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset, "var_col_offset": node.col_offset, "var_end_col_offset": node.end_col_offset}]
+    else:
+        return []
+
+def inspect_ann(node):
+    if node.annotation is not None:
+        return [{"name": "annotation", "line": node.annotation.lineno, "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset, "var_col_offset": node.col_offset, "var_end_col_offset": node.end_col_offset}]
+    else:
+        return []
+
+def get_cum_lens(body):
+    body_lines = body.split("\n")
+    cum_lens = [0]
+    for ind, line in enumerate(body_lines):
+        cum_lens.append(len(line) + cum_lens[-1] + 1)
+    return cum_lens
+
+
+def get_initial_labels(body_):
+    root = ast.parse(body_)
+
+    positions = []
+    for node in ast.walk(root):
+        if isinstance(node, ast.FunctionDef):
+            positions.extend(inspect_fdef(node))
+        elif isinstance(node, ast.arg):
+            positions.extend(inspect_arg(node))
+        elif isinstance(node, ast.AnnAssign):
+            positions.extend(inspect_ann(node))
+
+    if positions:
+        df = pd.DataFrame(positions)
+        df.sort_values(by=['line', 'end_col_offset'], ascending=[True, False], inplace=True)
+        return df
+    else:
+        return None
+
+def strip_docstring(body):
+    root = ast.parse(body)
+    main_doc = None
+    for node in ast.walk(root):
+        try:
+            docstring = ast.get_docstring(node)
+        except:
+            continue
+        else:
+            if docstring is not None:
+                if main_doc is None:
+                    main_doc = docstring
+                node.body = node.body[1:]
+
+    return astor.to_source(root), main_doc
+
+def process_body(body, remove_docstring=True):
+    body_ = body.strip()
+
+    initial_labels = get_initial_labels(body_)
+
+    if initial_labels is not None:
+
+        body_lines = body_.split("\n")
+
+        entry = {"ents": [], "cats": []}
+
+        for ind, row in initial_labels.iterrows():
+            line = row.line - 1
+
+            annotation = body_lines[line][row.col_offset: row.end_col_offset]
+            tail = body_lines[line][row.end_col_offset:]
+            head = body_lines[line][:row.col_offset].rstrip()
+            before_contraction = len(body_lines[line])
+
+            if row['name'] == "returns":
+                assert head.endswith("->")
+                head = head[:-2]
+                if line == 0: # only use labels for the main and not nested functions
+                    entry["cats"].append({"returns": annotation})
+
+            elif row['name'] == "annotation":
+
+                assert head.endswith(':')
+                head = head[:-1]
+                contraction = before_contraction - len(head) - len(tail)
+
+                for i in range(len(entry["ents"])):
+                    tline, start, end, ann = entry["ents"][i]
+                    if tline == line:
+                        entry["ents"][i] = (tline, start - contraction, end - contraction, ann)
+                entry["ents"].append((line, int(row.var_col_offset), len(head), annotation))
+            else:
+                raise Exception("wtf")
+
+            new_line = head + tail
+            body_lines[line] = new_line
+
+        entry['text'] = "\n".join(body_lines)
+
+        cum_lens = get_cum_lens(entry['text'])
+
+        entry["ents"] = [(cum_lens[line] + start, cum_lens[line] + end, annotation) for
+                         ind, (line, start, end, annotation) in enumerate(entry["ents"])]
+
+        if remove_docstring:
+            only_body, doc = strip_docstring(entry['text'])
+            entry['text'] = only_body
+            entry['docstring'] = doc
+
+        return entry
+    else:
+        return None
+
+
+def main(args):
+    bodies_path = args[1]
+    bodies = pd.read_csv(bodies_path)
+
+    body_field = bodies.columns[1]
+
+    data = []
+
+    for ind, body in enumerate(bodies[body_field]):
+        entry = process_body(body)
+        if entry is not None:
+            data.append(entry)
+
+    format = "jsonl"
+    if format == "jsonl":
+        with open(args[2], "a") as sink:
+            for entry in data:
+                sink.write(f"{json.dumps(entry)}\n")
+    elif format == "csv":
+        if os.path.isfile(args[2]):
+            header = False
+        else:
+            header = True
+        pd.DataFrame(data).to_csv(args[2], index=False, header=header)
+
+
+
+if __name__ == "__main__":
+    main(sys.argv)
