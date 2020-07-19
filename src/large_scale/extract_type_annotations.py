@@ -30,7 +30,10 @@ def get_cum_lens(body):
 
 
 def get_initial_labels(body_):
-    root = ast.parse(body_)
+    try:
+        root = ast.parse(body_)
+    except:
+        return None
 
     positions = []
     for node in ast.walk(root):
@@ -49,8 +52,11 @@ def get_initial_labels(body_):
         return None
 
 def strip_docstring(body):
+    # TODO
+    # this does not seem to be working well
     root = ast.parse(body)
     main_doc = None
+    ranges = []
     for node in ast.walk(root):
         try:
             docstring = ast.get_docstring(node)
@@ -58,11 +64,38 @@ def strip_docstring(body):
             continue
         else:
             if docstring is not None:
-                if main_doc is None:
-                    main_doc = docstring
-                node.body = node.body[1:]
+                ranges.append((node.body[0].lineno-1, node.body[0].end_lineno))
+                # if main_doc is None:
+                #     main_doc = docstring
+                # node.body = node.body[1:]
 
-    return astor.to_source(root), main_doc
+    ranges = sorted(ranges, key=lambda x: x[0], reverse=True)
+
+    body_lines = body.split("\n")
+
+    new_body = []
+    new_doc = []
+
+    block = False
+    for line in body_lines:
+        if not block and line.lstrip().startswith('"""') or line.lstrip().startswith("'''"):
+            block = True
+            continue
+
+        if block:
+            new_doc.append(line)
+        else:
+            new_body.append(line)
+
+        if block and line.rstrip().endswith('"""') or line.rstrip().endswith("'''"):
+            block = False
+            continue
+
+    new_body = "\n".join(new_body)
+    new_doc = "\n".join(new_doc)
+
+    return new_body, new_doc
+    # return astor.to_source(root), main_doc
 
 def process_body(body, remove_docstring=True):
     body_ = body.strip()
@@ -138,9 +171,9 @@ def main(args):
     data = []
 
     for ind, body in enumerate(bodies[body_field]):
-        b = """def cosine(w: float, A: float = 1, phi: float = 0, offset: float = 0) -> \"partial[Callable[[], None]]\":\n    ''' Return a driver function that can advance a sequence of cosine values.\n\n    .. code-block:: none\n\n        value = A * cos(w*i + phi) + offset\n\n    Args:\n        w (float) : a frequency for the cosine driver\n        A (float) : an amplitude for the cosine driver\n        phi (float) : a phase offset to start the cosine driver with\n        offset (float) : a global offset to add to the driver values\n\n    '''\n    from math import cos\n    def f(i: float) -> float:\n        return A * cos(w*i + phi) + offset\n    return partial(force, sequence=_advance(f))"""
-        entry = process_body(b)
-        # entry = process_body(body)
+        # b = """def cosine(w: float, A: float = 1, phi: float = 0, offset: float = 0) -> \"partial[Callable[[], None]]\":\n    ''' Return a driver function that can advance a sequence of cosine values.\n\n    .. code-block:: none\n\n        value = A * cos(w*i + phi) + offset\n\n    Args:\n        w (float) : a frequency for the cosine driver\n        A (float) : an amplitude for the cosine driver\n        phi (float) : a phase offset to start the cosine driver with\n        offset (float) : a global offset to add to the driver values\n\n    '''\n    from math import cos\n    def f(i: float) -> float:\n        return A * cos(w*i + phi) + offset\n    return partial(force, sequence=_advance(f))"""
+        # entry = process_body(b)
+        entry = process_body(body)
         if entry is not None:
             data.append(entry)
 
