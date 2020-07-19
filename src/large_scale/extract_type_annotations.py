@@ -67,13 +67,22 @@ def strip_docstring(body):
 def process_body(body, remove_docstring=True):
     body_ = body.strip()
 
+    entry = {"ents": [], "cats": []}
+
+    if remove_docstring:
+        only_body, doc = strip_docstring(body_)
+        entry['text'] = only_body
+        entry['docstring'] = doc
+
+    body_ = only_body
+
     initial_labels = get_initial_labels(body_)
 
     if initial_labels is not None:
 
         body_lines = body_.split("\n")
 
-        entry = {"ents": [], "cats": []}
+
 
         for ind, row in initial_labels.iterrows():
             line = row.line - 1
@@ -113,10 +122,7 @@ def process_body(body, remove_docstring=True):
         entry["ents"] = [(cum_lens[line] + start, cum_lens[line] + end, annotation) for
                          ind, (line, start, end, annotation) in enumerate(entry["ents"])]
 
-        if remove_docstring:
-            only_body, doc = strip_docstring(entry['text'])
-            entry['text'] = only_body
-            entry['docstring'] = doc
+        entry['original'] = body
 
         return entry
     else:
@@ -132,7 +138,9 @@ def main(args):
     data = []
 
     for ind, body in enumerate(bodies[body_field]):
-        entry = process_body(body)
+        b = """def cosine(w: float, A: float = 1, phi: float = 0, offset: float = 0) -> \"partial[Callable[[], None]]\":\n    ''' Return a driver function that can advance a sequence of cosine values.\n\n    .. code-block:: none\n\n        value = A * cos(w*i + phi) + offset\n\n    Args:\n        w (float) : a frequency for the cosine driver\n        A (float) : an amplitude for the cosine driver\n        phi (float) : a phase offset to start the cosine driver with\n        offset (float) : a global offset to add to the driver values\n\n    '''\n    from math import cos\n    def f(i: float) -> float:\n        return A * cos(w*i + phi) + offset\n    return partial(force, sequence=_advance(f))"""
+        entry = process_body(b)
+        # entry = process_body(body)
         if entry is not None:
             data.append(entry)
 
