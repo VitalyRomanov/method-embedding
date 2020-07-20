@@ -23,7 +23,7 @@ nlp = spacy.blank("en")
 nlp.tokenizer = custom_tokenizer(nlp)
 tokenizer = nlp.Defaults.create_tokenizer(nlp)
 
-allowed = {['str','bool','Optional','None','int','Any','Union','List','Dict','Callable','ndarray','FrameOrSeries','bytes','DataFrame','Matcher','float','Tuple','bool_t','Description','Type']}
+allowed = {'str','bool','Optional','None','int','Any','Union','List','Dict','Callable','ndarray','FrameOrSeries','bytes','DataFrame','Matcher','float','Tuple','bool_t','Description','Type'}
 
 def preprocess(ent):
     return ent.strip("\"").split("[")[0].split(".")[-1]
@@ -136,7 +136,13 @@ def process_body(body, remove_docstring=True):
     entry = {"ents": [], "cats": []}
 
     if remove_docstring:
-        only_body, doc = strip_docstring(body_)
+        try:
+            only_body, doc = strip_docstring(body_)
+        except UnicodeDecodeError:
+            return None
+        except SyntaxError:
+            return None
+
         entry['text'] = only_body
         entry['docstring'] = doc
 
@@ -165,14 +171,20 @@ def process_body(body, remove_docstring=True):
             before_contraction = len(body_lines[line])
 
             if row['name'] == "returns":
-                assert head.endswith("->")
+                try:
+                    assert head.endswith("->")
+                except AssertionError:
+                    return None
                 head = head[:-2]
                 if line == 0: # only use labels for the main and not nested functions
                     entry["cats"].append({"returns": annotation})
 
             elif row['name'] == "annotation":
 
-                assert head.endswith(':')
+                try:
+                    assert head.endswith(':')
+                except AssertionError:
+                    return None
                 head = head[:-1]
                 contraction = before_contraction - len(head) - len(tail)
 

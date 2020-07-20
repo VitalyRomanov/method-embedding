@@ -1,4 +1,4 @@
-conda activate scidoc
+conda activate spacy
 
 ENVS_DIR=$1
 

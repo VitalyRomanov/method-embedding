@@ -1,13 +1,22 @@
 from __future__ import unicode_literals, print_function
 import spacy
 import sys, json
-import pickle 
+import pickle
+from custom_tokenizer import custom_tokenizer
+from spacy.gold import biluo_tags_from_offsets
 
 model_path = sys.argv[1]
 data_path = sys.argv[2]
 output_dir = "model-final-ner"
 n_iter = 30
 
+def isvalid(nlp, text, ents):
+    doc = nlp(text)
+    tags = biluo_tags_from_offsets(doc, ents)
+    if "-" in tags:
+        return False
+    else:
+        return True
 
 
 import random
@@ -21,6 +30,7 @@ with open(data_path, "r") as data:
         entry = json.loads(line)
         TRAIN_DATA.append([entry['text'], {'entities': entry['ents']}])
         TRAIN_DATA[-1][1]['entities'] = [(int(e[0]), int(e[1])-1, e[2]) for e in TRAIN_DATA[-1][1]['entities']]
+
 
 ent_types = []
 for _,e in TRAIN_DATA:
@@ -36,6 +46,15 @@ def main(model=None, output_dir=None, n_iter=100):
     else:
         nlp = spacy.blank("en")  # create blank Language class
         print("Created blank 'en' model")
+
+    nlp.tokenizer = custom_tokenizer(nlp)
+
+    for t, e in TRAIN_DATA:
+        doc = nlp(t)
+        tags = biluo_tags_from_offsets(doc, e)
+        if "-" in tags:
+            for t in doc:
+                print(t, tags[t.i])
 
     # create the built-in pipeline components and add them to the pipeline
     # nlp.create_pipe works for built-ins that are registered with spaCy
