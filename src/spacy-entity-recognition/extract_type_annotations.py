@@ -178,6 +178,9 @@ def process_body(body, remove_docstring=True):
                     tline, start, end, ann = entry["ents"][i]
                     if tline == line:
                         entry["ents"][i] = (tline, start - contraction, end - contraction, ann)
+
+                assert int(row.var_col_offset) != len(head)
+
                 entry["ents"].append((line, int(row.var_col_offset), len(head), annotation))
             else:
                 raise Exception("wtf")
@@ -189,8 +192,16 @@ def process_body(body, remove_docstring=True):
 
         cum_lens = get_cum_lens(entry['text'])
 
+        ents_before =  [body_lines[line][start: end] for
+                         ind, (line, start, end, annotation) in enumerate(entry["ents"])]
+
         entry["ents"] = [(cum_lens[line] + start, cum_lens[line] + end, annotation) for
                          ind, (line, start, end, annotation) in enumerate(entry["ents"])]
+
+        ents_after = [entry['text'][start: end] for
+                       ind, (start, end, annotation) in enumerate(entry["ents"])]
+
+        assert ents_before == ents_after
 
         entry['original'] = body
 
