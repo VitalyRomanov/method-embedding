@@ -4,24 +4,11 @@ import sys, os
 import json
 import spacy
 import re
+from custom_tokenizer import inject_tokenizer
 
 from spacy.gold import biluo_tags_from_offsets
-from spacy.tokenizer import Tokenizer
 
-
-def custom_tokenizer(nlp):
-    prefix_re = re.compile(r'''[\[*]''')
-    suffix_re = re.compile(r'''[\]]''')
-    infix_re = re.compile(r'''[\[\]\(\),=*]''')
-    return Tokenizer(nlp.vocab,
-                                prefix_search=prefix_re.search,
-                                suffix_search=suffix_re.search,
-                                infix_finditer=infix_re.finditer,
-                                )
-
-nlp = spacy.blank("en")
-nlp.tokenizer = custom_tokenizer(nlp)
-tokenizer = nlp.Defaults.create_tokenizer(nlp)
+nlp = inject_tokenizer(spacy.blank("en"))
 
 allowed = {'str','bool','Optional','None','int','Any','Union','List','Dict','Callable','ndarray','FrameOrSeries','bytes','DataFrame','Matcher','float','Tuple','bool_t','Description','Type'}
 
@@ -72,6 +59,7 @@ def get_initial_labels(body_):
     if positions:
         df = pd.DataFrame(positions)
         df.sort_values(by=['line', 'end_col_offset'], ascending=[True, False], inplace=True)
+
         return df
     else:
         return None
@@ -208,7 +196,11 @@ def process_body(body, remove_docstring=True):
 
         entry['original'] = body
 
+        if not entry["ents"]: # and not entry["cats"]:
+            return None # in case all entities were filtered
+
         if isvalid(entry['text'], entry["ents"]):
+
             return entry
         else:
             return None

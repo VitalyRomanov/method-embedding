@@ -10,3 +10,7 @@ def custom_tokenizer(nlp):
                                 suffix_search=suffix_re.search,
                                 infix_finditer=infix_re.finditer,
                                 )
+
+def inject_tokenizer(nlp):
+    nlp.tokenizer = custom_tokenizer(nlp)
+    return nlp
