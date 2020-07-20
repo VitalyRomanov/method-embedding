@@ -49,12 +49,16 @@ def main(model=None, output_dir=None, n_iter=100):
 
     nlp.tokenizer = custom_tokenizer(nlp)
 
-    for t, e in TRAIN_DATA:
-        doc = nlp(t)
-        tags = biluo_tags_from_offsets(doc, e)
+    for text, ent in TRAIN_DATA:
+        doc = nlp(text)
+        entities = ent['entities']
+        tags = biluo_tags_from_offsets(doc, entities)
         if "-" in tags:
             for t in doc:
+                if t.is_space: continue
                 print(t, tags[t.i])
+                if t.text == '.':
+                    print()
 
     # create the built-in pipeline components and add them to the pipeline
     # nlp.create_pipe works for built-ins that are registered with spaCy
