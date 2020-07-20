@@ -2,6 +2,31 @@ import pandas as pd
 import ast, astor
 import sys, os
 import json
+import spacy
+import re
+
+from spacy.gold import biluo_tags_from_offsets
+from spacy.tokenizer import Tokenizer
+
+
+def custom_tokenizer(nlp):
+    prefix_re = re.compile(r'''[\[*]''')
+    suffix_re = re.compile(r'''[\]]''')
+    infix_re = re.compile(r'''[\[\]\(\),=*]''')
+    return Tokenizer(nlp.vocab,
+                                prefix_search=prefix_re.search,
+                                suffix_search=suffix_re.search,
+                                infix_finditer=infix_re.finditer,
+                                )
+
+nlp = spacy.blank("en")
+nlp.tokenizer = custom_tokenizer(nlp)
+tokenizer = nlp.Defaults.create_tokenizer(nlp)
+
+allowed = {['str','bool','Optional','None','int','Any','Union','List','Dict','Callable','ndarray','FrameOrSeries','bytes','DataFrame','Matcher','float','Tuple','bool_t','Description','Type']}
+
+def preprocess(ent):
+    return ent.strip("\"").split("[")[0].split(".")[-1]
 
 def inspect_fdef(node):
     if node.returns is not None:
@@ -97,6 +122,14 @@ def strip_docstring(body):
     return new_body, new_doc
     # return astor.to_source(root), main_doc
 
+def isvalid(text, ents):
+    doc = nlp(text)
+    tags = biluo_tags_from_offsets(doc, ents)
+    if "-" in tags:
+        return False
+    else:
+        return True
+
 def process_body(body, remove_docstring=True):
     body_ = body.strip()
 
@@ -120,7 +153,13 @@ def process_body(body, remove_docstring=True):
         for ind, row in initial_labels.iterrows():
             line = row.line - 1
 
+            # TODO
+            # multiline annotations are not parsed correctly
+
             annotation = body_lines[line][row.col_offset: row.end_col_offset]
+            annotation = preprocess(annotation)
+            if annotation not in allowed:
+                continue
             tail = body_lines[line][row.end_col_offset:]
             head = body_lines[line][:row.col_offset].rstrip()
             before_contraction = len(body_lines[line])
@@ -157,7 +196,10 @@ def process_body(body, remove_docstring=True):
 
         entry['original'] = body
 
-        return entry
+        if isvalid(entry['text'], entry["ents"]):
+            return entry
+        else:
+            return None
     else:
         return None
 
