@@ -205,8 +205,8 @@ def process_body(body, remove_docstring=True):
 
         entry['original'] = body
 
-        entry["ents"] = list(filter(lambda x: x[2] in allowed, entry["ents"]))
-        entry["cats"] = list(filter(lambda x: x["returns"] in allowed, entry['cats']))
+        entry["ents"] = list(map(lambda x: x[2] if x[2] in allowed else "Other", entry["ents"]))
+        entry["cats"] = list(filter(lambda x: x["returns"] if x["returns"] in allowed else "Other", entry['cats']))
 
         if not entry["ents"]: # and not entry["cats"]:
             return None # in case all entities were filtered
