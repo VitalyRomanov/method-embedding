@@ -1,5 +1,5 @@
 import pandas as p
-import sys
+import sys, os
 
 nodes = p.read_csv(sys.argv[1])
 
@@ -17,4 +17,4 @@ def map_name(node_id):
 edges['source_node_id'] = edges['source_node_id'].apply(map_name)
 edges['target_node_id'] = edges['target_node_id'].apply(map_name)
 
-edges.to_csv('normalized_sourcetrail_edges.csv', index=False)
+edges.to_csv(os.path.join(os.path.dirname(sys.argv[2]), 'normalized_sourcetrail_edges.csv'), index=False)
