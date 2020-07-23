@@ -1,0 +1,36 @@
+attrs==19.3.0
+blis @ file:///opt/concourse/worker/volumes/live/f9b87811-6932-46c2-6826-5aef90cfc1ba/volume/cython-blis_1594246874825/work
+brotlipy==0.7.0
+catalogue==1.0.0
+certifi==2020.6.20
+cffi==1.14.0
+chardet==3.0.4
+cryptography==2.9.2
+cymem==2.0.3
+en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-2.3.1/en_core_web_sm-2.3.1.tar.gz
+idna @ file:///tmp/build/80754af9/idna_1593446292537/work
+importlib-metadata @ file:///opt/concourse/worker/volumes/live/290b74d5-e5f3-47ff-7257-17b3c9ccecab/volume/importlib-metadata_1593446478206/work
+jsonschema @ file:///opt/concourse/worker/volumes/live/eb4c8c81-7935-47c9-5666-5999d5c44d03/volume/jsonschema_1594303899222/work
+mkl-fft==1.1.0
+mkl-random==1.1.1
+mkl-service==2.3.0
+murmurhash==1.0.2
+numpy==1.18.5
+pandas @ file:///opt/concourse/worker/volumes/live/5ef6147e-ea92-446e-4065-0c8c7435293f/volume/pandas_1592841676717/work
+plac @ file:///opt/concourse/worker/volumes/live/b396e4ca-d114-4800-41a2-71d753ee926d/volume/plac_1594261971168/work
+preshed==3.0.2
+pycparser @ file:///tmp/build/80754af9/pycparser_1594388511720/work
+pyOpenSSL @ file:///tmp/build/80754af9/pyopenssl_1594392929924/work
+pyrsistent==0.16.0
+PySocks @ file:///opt/concourse/worker/volumes/live/85a5b906-0e08-41d9-6f59-084cee4e9492/volume/pysocks_1594394636991/work
+python-dateutil==2.8.1
+pytz==2020.1
+requests @ file:///tmp/build/80754af9/requests_1592841827918/work
+six==1.15.0
+spacy @ file:///opt/concourse/worker/volumes/live/33d1523e-bc3e-429e-64d8-f4ee2e047dc8/volume/spacy_1594305077182/work
+srsly==1.0.2
+thinc @ file:///opt/concourse/worker/volumes/live/d0d401d5-f84a-4764-440e-d67893479983/volume/thinc_1594251950205/work
+tqdm @ file:///tmp/build/80754af9/tqdm_1593446365756/work
+urllib3==1.25.9
+wasabi==0.6.0
+zipp==3.1.0
