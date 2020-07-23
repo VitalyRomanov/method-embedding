@@ -8,3 +8,4 @@ import numpy as np
 
 from gat import GAT
 from rgcn_hetero import RGCN
+from NodeSampler import GCNSampling
