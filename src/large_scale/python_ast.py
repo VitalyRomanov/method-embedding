@@ -49,9 +49,13 @@ class AstGraphGenerator(object):
             if isinstance(s, tuple):
                 # some parsers return edeges and names. at this level, names are not needed
                 edges.extend(s[0])
+                last_node = s[1]
+
                 if last_node:
                     edges.append({"dst": s[1], "src": last_node, "type": "next"})
-                last_node = s[1]
+
+                for cond_name, cons_stat in zip(self.current_contition, self.contition_status):
+                    edges.append({"src": last_node, "dst": cond_name, "type": "depends_on_" + cons_stat})
             else:
                 edges.extend(s)
         return edges
@@ -174,8 +178,8 @@ class AstGraphGenerator(object):
 
         edges, assign_name = self.generic_parse(node, ["value", "targets"])
 
-        for cond_name, cons_stat in zip(self.current_contition, self.contition_status):
-            edges.append({"src": assign_name, "dst": cond_name, "type": "depends_on_" + cons_stat})
+        # for cond_name, cons_stat in zip(self.current_contition, self.contition_status):
+        #     edges.append({"src": assign_name, "dst": cond_name, "type": "depends_on_" + cons_stat})
 
         return edges, assign_name
 
@@ -517,8 +521,8 @@ class AstGraphGenerator(object):
         expr_name, ext_edges = self.parse_operand(node.value)
         edges.extend(ext_edges)
         
-        for cond_name, cons_stat in zip(self.current_contition, self.contition_status):
-            edges.append({"src": expr_name, "dst": cond_name, "type": "depends_on_" + cons_stat})
+        # for cond_name, cons_stat in zip(self.current_contition, self.contition_status):
+        #     edges.append({"src": expr_name, "dst": cond_name, "type": "depends_on_" + cons_stat})
         return edges
 
     def parse_control_flow(self, node):
@@ -526,8 +530,8 @@ class AstGraphGenerator(object):
         call_name = "call" + str(int(time_ns()))
         edges.append({"src": node.__class__.__name__, "dst": call_name, "type": "control_flow"})
 
-        for cond_name, cons_stat in zip(self.current_contition, self.contition_status):
-            edges.append({"src": call_name, "dst": cond_name, "type": "depends_on_" + cons_stat})
+        # for cond_name, cons_stat in zip(self.current_contition, self.contition_status):
+        #     edges.append({"src": call_name, "dst": cond_name, "type": "depends_on_" + cons_stat})
         return edges, call_name
 
     def parse_Continue(self, node):

@@ -220,4 +220,4 @@ if len(bodies) != 0:
     pd.DataFrame(bodies).to_csv(source_graph_docstring_path, index=False, quoting=QUOTE_NONNUMERIC)
 else:
     with open(source_graph_docstring_path, "w") as sink:
-        sink.write("id,body,docstring,normalized_body\n")
+        sink.write("id,body,docstring,normalized_body,replacement_list\n")
