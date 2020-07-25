@@ -43,7 +43,7 @@ object GraphAnalysis {
     val nodes = spark.read.format("csv").option("header",true).load(nodes_path)
     val edges = spark.read.format("csv").option("header",true).load(edges_path).withColumnRenamed("source_node_id", "src").withColumnRenamed("target_node_id", "dst").withColumnRenamed("id", "rel_id").withColumnRenamed("type", "rel_type")
 
-    val g = GraphFrame(nodes, edges)
+    val g = GraphFrame(nodes, edges).dropIsolatedVertices()
 
     sc.setCheckpointDir("temp")
     val cc_result = g.connectedComponents.run()
