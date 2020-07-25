@@ -118,6 +118,7 @@ def train(g, model, g_labels, splits, epochs):
             p = nn.functional.softmax(logits, 1)
             batch_labels = labels[batch_nids]
             loss = nn.functional.nll_loss(logp, batch_labels)
+            # loss = nn.functional.nll_loss(logp, batch_labels)
 
             train_labels.append(batch_labels)
             train_logits.append(p.argmax(dim=1))

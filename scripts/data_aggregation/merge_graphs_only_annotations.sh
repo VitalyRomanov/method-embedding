@@ -1,4 +1,4 @@
-conda activate python38
+conda activate SourceCodeTools
 
 ENVS_DIR=$1
 #RUN_DIR=$(pwd)
@@ -45,10 +45,10 @@ for dir in $(ls $ENVS_DIR); do
   if [ -d $ENVS_DIR/$dir ]; then
     echo "Process $dir"
     if [ -f $ENVS_DIR/$dir/normalized_sourcetrail_nodes.csv ]; then
-      python sourcetrail-map-id-columns-only-annotations.py $ENVS_DIR/common_nodes_with_ast.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/edges_with_ast.csv $ENVS_DIR/common_edges_with_ast.csv target_node_id source_node_id
-      python sourcetrail-map-id-columns.py $ENVS_DIR/common_nodes_with_ast.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/source-graph-bodies.csv $ENVS_DIR/common_bodies_with_ast.csv id
-      python sourcetrail-map-id-columns.py $ENVS_DIR/common_nodes_with_ast.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/source-graph-function-variable-pairs.csv $ENVS_DIR/common-function-variable-pairs_with_ast.csv src
-      python sourcetrail-map-id-columns.py $ENVS_DIR/common_nodes_with_ast.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/call_seq.csv $ENVS_DIR/common-call-seq_with_ast.csv src dst
+      sourcetrail-map-id-columns-only-annotations.py $ENVS_DIR/common_nodes_with_ast.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/edges_with_ast.csv $ENVS_DIR/common_edges_with_ast.csv target_node_id source_node_id
+      sourcetrail-map-id-columns.py $ENVS_DIR/common_nodes_with_ast.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/source-graph-bodies.csv $ENVS_DIR/common_bodies_with_ast.csv id
+      sourcetrail-map-id-columns.py $ENVS_DIR/common_nodes_with_ast.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/source-graph-function-variable-pairs.csv $ENVS_DIR/common-function-variable-pairs_with_ast.csv src
+      sourcetrail-map-id-columns.py $ENVS_DIR/common_nodes_with_ast.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/call_seq.csv $ENVS_DIR/common-call-seq_with_ast.csv src dst
     fi
   fi
 done
