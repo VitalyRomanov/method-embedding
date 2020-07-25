@@ -186,7 +186,7 @@ if __name__ == "__main__":
 
     data_paths = pandas.read_csv("data_paths.tsv", sep="\t")
     MODELS_PATH = "models"
-    EPOCHS = 10
+    EPOCHS = 1000
 
     if not isdir(MODELS_PATH):
         mkdir(MODELS_PATH)

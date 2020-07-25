@@ -68,17 +68,17 @@ def train(g, model, g_labels, splits, epochs):
     """
 
     train_idx, test_idx, val_idx = splits #get_train_test_val_indices(g_labels)
-    labels = torch.tensor(g_labels)
+    labels = torch.tensor(g_labels)#.cuda()
 
     heldout_idx = test_idx.tolist() + val_idx.tolist()
 
-    optimizer = torch.optim.Adagrad(model.parameters(), lr=0.01)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
     best_val_acc = torch.tensor(0)
     best_test_acc = torch.tensor(0)
 
     batch_size = 128
-    num_neighbors = 10
+    num_neighbors = 80
     L = len(model.layers)
 
     train_sampler = dgl.contrib.sampling.NeighborSampler(g, batch_size,
@@ -118,6 +118,7 @@ def train(g, model, g_labels, splits, epochs):
             p = nn.functional.softmax(logits, 1)
             batch_labels = labels[batch_nids]
             loss = nn.functional.nll_loss(logp, batch_labels)
+            # loss = nn.functional.nll_loss(logp, batch_labels)
 
             train_labels.append(batch_labels)
             train_logits.append(p.argmax(dim=1))
@@ -181,14 +182,14 @@ def train(g, model, g_labels, splits, epochs):
 
 def training_procedure(dataset, model, params, EPOCHS, restore_state):
 
-    dataset.g.ndata['features'] = nn.Parameter(torch.Tensor(dataset.g.number_of_nodes(), params['in_feats']))
+    dataset.g.ndata['features'] = nn.Parameter(torch.Tensor(dataset.g.number_of_nodes(), params['in_feats']))#.cuda()
     nn.init.kaiming_uniform_(dataset.g.ndata['features'])
     params.pop('n_classes')
 
     dataset.g.readonly(readonly_state=True)
 
     m = model(dataset.g, n_classes=dataset.num_classes,
-              **params)
+              **params)#.cuda()
 
     if restore_state:
         checkpoint = torch.load("saved_state.pt")
@@ -203,6 +204,8 @@ def training_procedure(dataset, model, params, EPOCHS, restore_state):
         print("Training interrupted")
     finally:
         m.eval()
+        m = m#.cpu()
+        dataset.g.ndata['features'] = dataset.g.ndata['features']#.cpu()
         scores = final_evaluation(m, dataset.labels, dataset.splits)
 
     return m, scores

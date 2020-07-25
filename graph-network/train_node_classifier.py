@@ -101,7 +101,7 @@ def train(model, g_labels, splits, epochs):
 def training_procedure(dataset, model, params, EPOCHS, restore_state):
     m = model(dataset.g,
               num_classes=dataset.num_classes,
-              produce_logits=True,
+              # produce_logits=True,
               **params)
 
     if restore_state:
