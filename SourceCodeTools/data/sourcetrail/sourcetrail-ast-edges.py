@@ -53,22 +53,31 @@ def resolve_node_names(name_orig):
             print("Unknown type")
         if name.startswith("srstrlnd_"):
             node_id = name.split("_")[1]
-            replacements[name] = nodeid2name[int(node_id)]
+            replacements[name] = {
+                "name": nodeid2name[int(node_id)],
+                "id": node_id
+            }
+            if nodeid2name[int(node_id)]=="bokeh.io.output.output_file":
+                pass
 
-    for r, v in replacements.items():
-        name_ = name_.replace(r, v)
+    if len(replacements) == 1:
+        # this is an existing node
+        for r, v in replacements.items():
+            name_ = name_.replace(r, v["id"])
+        node_id = int(name_)
+        return node_id
+    else:
+        # this is a new node, has either 0 or >=2 replacements
+        for r, v in replacements.items():
+            name_ = name_.replace(r, v["name"])
 
-    try:
-        node_id - int(name_)
-    except:
         name = name_
         if name not in node_maps:
             node_maps[name] = valid_new_node
             new_nodes.append({"id": valid_new_node, "type": ast_node_type, "serialized_name": name})
             valid_new_node += 1
         return node_maps[name]
-    else:
-        return node_id
+
 
 edges_with_ast_name = os.path.join(working_directory, "edges_with_ast.csv")
 edge.to_csv(edges_with_ast_name, index=False, quoting=QUOTE_NONNUMERIC)
