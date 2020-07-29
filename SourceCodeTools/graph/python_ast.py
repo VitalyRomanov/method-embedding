@@ -158,7 +158,7 @@ class AstGraphGenerator(object):
             # can contain quotes
             # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
             # https://www.python.org/dev/peps/pep-0484/#forward-references
-            annotation = self.source[self.cline][node.returns.col_offset: node.returns.end_col_offset]
+            annotation = self.source[node.returns.lineno - 1][node.returns.col_offset: node.returns.end_col_offset]
             edges.append({"src": annotation, "dst": f_name, "type": 'returns', "line": self.cline, "col_offset": node.returns.col_offset, "end_col_offset": node.returns.end_col_offset})
 
         assert isinstance(node.name, str)
@@ -249,7 +249,7 @@ class AstGraphGenerator(object):
             # can contain quotes
             # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
             # https://www.python.org/dev/peps/pep-0484/#forward-references
-            annotation = self.source[self.cline][node.annotation.col_offset: node.annotation.end_col_offset]
+            annotation = self.source[node.annotation.lineno - 1][node.annotation.col_offset: node.annotation.end_col_offset]
             edges.append({"src": annotation, "dst": name, "type": 'annotation', "line": self.cline, "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset, "var_col_offset": node.col_offset, "var_end_col_offset": node.end_col_offset})
         return edges, name
         # return self.generic_parse(node, ["arg", "annotation"])

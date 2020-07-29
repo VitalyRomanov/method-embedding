@@ -4,6 +4,8 @@ import pandas as pd
 from csv import QUOTE_NONNUMERIC
 import re
 from copy import copy
+import ast
+
 # from node_name_serializer import deserialize_node_name
 
 working_directory = sys.argv[1]
@@ -57,65 +59,91 @@ def resolve_node_names(name_orig):
                 "name": nodeid2name[int(node_id)],
                 "id": node_id
             }
-            if nodeid2name[int(node_id)]=="bokeh.io.output.output_file":
-                pass
+            # if nodeid2name[int(node_id)]=="bokeh.io.output.output_file":
+            #     pass
 
-    if len(replacements) == 1:
-        # this is an existing node
-        for r, v in replacements.items():
-            name_ = name_.replace(r, v["id"])
+    # try to replace into node id
+    for r, v in replacements.items():
+        name_ = name_.replace(r, v["id"])
+
+    try:
         node_id = int(name_)
         return node_id
-    else:
-        # this is a new node, has either 0 or >=2 replacements
-        for r, v in replacements.items():
-            name_ = name_.replace(r, v["name"])
+    except:
+        pass
 
-        name = name_
-        if name not in node_maps:
-            node_maps[name] = valid_new_node
-            new_nodes.append({"id": valid_new_node, "type": ast_node_type, "serialized_name": name})
-            valid_new_node += 1
-        return node_maps[name]
+    # failed to convert into id, create new node
+    name_ = copy(name_orig)
+    for r, v in replacements.items():
+        name_ = name_.replace(r, v["name"])
+
+    name = name_
+    if name not in node_maps:
+        node_maps[name] = valid_new_node
+        new_nodes.append({"id": valid_new_node, "type": ast_node_type, "serialized_name": name})
+        valid_new_node += 1
+    return node_maps[name]
+
+    # if len(replacements) == 1:
+    #     # this is an existing node
+    #     for r, v in replacements.items():
+    #         name_ = name_.replace(r, v["id"])
+    #     node_id = int(name_)
+    #     return node_id
+    # else:
+    #     # this is a new node, has either 0 or >=2 replacements
+    #     for r, v in replacements.items():
+    #         name_ = name_.replace(r, v["name"])
+    #
+    #     name = name_
+    #     if name not in node_maps:
+    #         node_maps[name] = valid_new_node
+    #         new_nodes.append({"id": valid_new_node, "type": ast_node_type, "serialized_name": name})
+    #         valid_new_node += 1
+    #     return node_maps[name]
 
 
 edges_with_ast_name = os.path.join(working_directory, "edges_with_ast.csv")
 edge.to_csv(edges_with_ast_name, index=False, quoting=QUOTE_NONNUMERIC)
 
 for ind, c in enumerate(bodies['normalized_body']):
+#     c = """def _zip_axes_from_type(
+#     typ: Type[FrameOrSeries], new_axes: Sequence[int]
+# ) -> Dict[str, int]:
+#     axes = {name: new_axes[i] for i, name in typ._AXIS_NAMES.items()}
+#     return axes"""
+#     assert isinstance(c, str)
+    if not isinstance(c, str): continue
+
+    c = c.strip()
     try:
-        try:
-            c.strip()
-        except:
-            # print(c)
-            continue
-        g = AstGraphGenerator(c.strip())
-        edges = g.get_edges()
-
-        # assert srstrlnd_2703[compressor].srstrlnd_4109 == srstrlnd_2697.frame.LZ4FrameFile
-        try:
-            edges['type'] = edges['type'].apply(resolve_edge_type)
-            edges['source_node_id'] = edges['src'].apply(resolve_node_names)
-            edges['target_node_id'] = edges['dst'].apply(resolve_node_names)
-            edges['id'] = 0
-        except KeyError:
-            if len(edges) == 0:
-                continue
-            else:
-                # print(edges)
-                # raise Exception()
-                continue
-        except:
-            # print(c)
-            # print(edges)
-            # raise Exception()
-            continue
-
-        edges[['id','type','source_node_id','target_node_id']].to_csv(edges_with_ast_name, mode="a", index=False, header=False)
-        print("\r%d/%d" % (ind, len(bodies['normalized_body'])), end="")
+        ast.parse(c)
     except SyntaxError:
-        # print(c.strip())
-        pass
+        continue
+
+    g = AstGraphGenerator(c.strip())
+
+    edges = g.get_edges()
+
+    if len(edges) == 0:
+        continue
+
+    # assert srstrlnd_2703[compressor].srstrlnd_4109 == srstrlnd_2697.frame.LZ4FrameFile
+    # try:
+    edges['type'] = edges['type'].apply(resolve_edge_type)
+    edges['source_node_id'] = edges['src'].apply(resolve_node_names)
+    edges['target_node_id'] = edges['dst'].apply(resolve_node_names)
+    edges['id'] = 0
+
+    # except:
+    #     print(c)
+    #     print(edges)
+    #     raise Exception()
+        # continue
+
+    edges[['id','type','source_node_id','target_node_id']].to_csv(edges_with_ast_name, mode="a", index=False, header=False)
+    print("\r%d/%d" % (ind, len(bodies['normalized_body'])), end="")
+
 print(" " * 30 , end = "\r")
 # pd.DataFrame(type_maps).to_csv("new_types.csv", index=False)
 
