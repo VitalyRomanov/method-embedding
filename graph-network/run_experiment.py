@@ -36,10 +36,12 @@ args = parser.parse_args()
 # BASE_PATH = "models/RGCN-2020-05-06-19-53-15-933048-nextcall-edgetypes" # trained on next call
 # BASE_PATH = "models/RGCN-2020-05-11-10-14-50-783337-multitask"
 BASE_PATH = "models/RGCN-2020-05-11-20-34-49-002750-multitask-5layers"
+BASE_PATH = "models/GAT-2020-07-30-21-58-49-462221"
 
 # data files
 API_SEQ = "data_files/python_flat_calls.csv.bz2"
 VAR_USE = "data_files/python_node_to_var.csv.bz2"
+TYPE_ANN = "/Users/LTV/Documents/subsample/common/return_types_decoded.csv"
 
 e = Experiments(base_path=BASE_PATH,
                 api_seq_path=API_SEQ,
@@ -47,6 +49,7 @@ e = Experiments(base_path=BASE_PATH,
                 node_type_path=None, #not needed
                 variable_use_path=VAR_USE, #not needed
                 function_name_path=None,
+                type_ann=TYPE_ANN,
                 gnn_layer=-1
                 )
 
@@ -68,7 +71,7 @@ def run_experiment(EXPERIMENT_NAME, random=False):
 
     if EXPERIMENT_NAME in {'link', 'apicall', 'typeuse'}:
         clf = NNClassifier(experiment.embed_size)
-    elif EXPERIMENT_NAME in {'varuse', 'fname'}:
+    elif EXPERIMENT_NAME in {'varuse', 'fname', "typeann"}:
         clf = ElementPredictor(experiment.embed_size, experiment.unique_elements, 100)
     elif EXPERIMENT_NAME in {'nodetype'}:
         clf = NodeClassifier(experiment.embed_size, experiment.unique_elements)
@@ -148,7 +151,7 @@ def run_experiment(EXPERIMENT_NAME, random=False):
 
     return ma_train, max(tests)
 
-for experiment_name in ['apicall','link','typeuse','varuse','fname','nodetype']:
+for experiment_name in ['typeann']:#, 'apicall','link','typeuse','varuse','fname','nodetype']:
     print(f"\n{experiment_name}:")
     train_acc, test_acc = run_experiment(experiment_name, random=args.random)
     print("Train Accuracy: {:.4f}, Test Accuracy: {:.4f}".format(train_acc, test_acc))

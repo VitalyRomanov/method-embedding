@@ -260,6 +260,10 @@ def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apical
     train_idx_varuse, test_idx_varuse, val_idx_varuse = create_idx_pools(splits, pool_varuse)
     train_idx_apicall, test_idx_apicall, val_idx_apicall = create_idx_pools(splits, pool_apicall)
 
+    print(train_idx_fname.size, test_idx_fname.size, val_idx_fname.size)
+    print(train_idx_varuse.size, test_idx_varuse.size, val_idx_varuse.size)
+    print(train_idx_apicall.size, test_idx_apicall.size, val_idx_apicall.size)
+
     # this is heldout because it was not used during training
     # heldout_idx = test_idx.tolist() + val_idx.tolist()
 
@@ -427,7 +431,7 @@ def training_procedure(dataset, model, params, EPOCHS, api_seq_file, fname_file,
         function2nodeid = dict(zip(nodes['id'].values, nodes['global_graph_id'].values))
         element_data['id'] = element_data['src'].apply(lambda x: function2nodeid.get(x, None))
         if not compact_dst: # creating api call embedder
-            element_data['dst'] = element_data['dst'].apply(lambda x: function2nodeid[x])
+            element_data['dst'] = element_data['dst'].apply(lambda x: function2nodeid.get(x, None))
             element_data.drop_duplicates(['id', 'dst'], inplace=True, ignore_index=True)
         element_data = element_data.dropna(axis=0)
         ee = ElementEmbedder(element_data, emb_size, compact_dst=compact_dst)

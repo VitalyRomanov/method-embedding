@@ -18,6 +18,12 @@ def keep_from_set(table, pool):
     table['dst'] = table['dst'].apply(lambda nid: nid if nid in pool else None)
     return table.dropna(axis=0)
 
+def get_nodes_with_split_ids(embedder, split_ids):
+    return np.fromiter((embedder.inv[s] for s in split_ids), dtype=np.int32)
+    # return nodes[
+    #     nodes['global_graph_id'].apply(lambda x: x in split_ids)
+    # ]['id'].to_numpy()
+
 
 class Experiments:
     """
@@ -35,6 +41,7 @@ class Experiments:
                  node_type_path=None,
                  variable_use_path=None,
                  function_name_path=None,
+                 type_ann=None,
                  gnn_layer=-1):
         """
 
@@ -52,7 +59,8 @@ class Experiments:
             'apicall': api_seq_path,
             'typeuse': type_use_path,
             'varuse': variable_use_path,
-            'fname': function_name_path
+            'fname': function_name_path,
+            'typeann': type_ann
         }
 
         self.base_path = base_path
@@ -128,7 +136,8 @@ class Experiments:
             #     api_seq['dst'].apply(lambda nid: nid in unique_nodes)
             # ]
 
-            node_pool = set(self.splits[2])
+            # node_pool = set(self.splits[2])
+            node_pool = set(get_nodes_with_split_ids(self.embed, self.splits[2]))
             api_seq = keep_from_set(api_seq, node_pool)
 
             return Experiment(self.embed, nodes, edges, api_seq, split_on="nodes", neg_sampling_strategy="word2vec", compact_dst=False)
@@ -143,11 +152,28 @@ class Experiments:
 
             return Experiment(self.embed, nodes, edges, held, split_on="nodes", neg_sampling_strategy="word2vec", compact_dst=False)
 
+        elif type == "typeann":
+            type_ann = pandas.read_csv(self.experiments['typeann']).astype({"src": "int32", "dst": "str"})
+
+            # node_pool = set(self.splits[2]).union(self.splits[1]).union(self.splits[0])
+            # node_pool = set(nodes['id'].values.tolist())
+            # node_pool = set(get_nodes_with_split_ids(nodes, set(self.splits[2]).union(self.splits[1]).union(self.splits[0])))
+            node_pool = set(get_nodes_with_split_ids(self.embed, set(self.splits[2]).union(self.splits[1]).union(self.splits[0])))
+
+            type_ann = type_ann[
+                type_ann['src'].apply(lambda nid: nid in node_pool)
+            ]
+
+            return Experiment2(self.embed, nodes, edges, type_ann, split_on="nodes", neg_sampling_strategy="word2vec")
+
+
         elif type == "varuse":
             var_use = pandas.read_csv(self.experiments['varuse'])
 
             # unique_nodes = set(nodes['id'].values.tolist())
-            node_pool = set(self.splits[2])
+            # node_pool = set(self.splits[2])
+            # node_pool = set(get_nodes_with_split_ids(nodes, set(self.splits[2])))
+            node_pool = set(get_nodes_with_split_ids(self.embed, self.splits[2]))
 
             var_use = var_use[
                 var_use['src'].apply(lambda nid: nid in node_pool)
@@ -165,7 +191,9 @@ class Experiments:
             functions['dst'] = functions['fname']
 
             # unique_nodes = set(nodes['id'].values.tolist())
-            node_pool = set(self.splits[2])
+            # node_pool = set(self.splits[2])
+            # node_pool = set(get_nodes_with_split_ids(nodes, set(self.splits[2])))
+            node_pool = set(get_nodes_with_split_ids(self.embed, self.splits[2]))
 
             functions = functions[
                 functions['src'].apply(lambda nid: nid in node_pool)
