@@ -110,6 +110,9 @@ class SourceGraphDataset:
         # # 1 contain *
         # self.edges = self.edges.query("type != 512")
         # print("Edges after filtering", self.edges.shape[0])
+        if filter is not None:
+            for e_type in filter:
+                self.edges = self.edges.query(f"type != {e_type}")
 
         self.nodes_have_types = node_types
         self.edges_have_types = edge_types
