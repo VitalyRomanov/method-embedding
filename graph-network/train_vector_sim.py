@@ -3,6 +3,7 @@ import torch.nn as nn
 import dgl.function as fn
 from dgl.nn.pytorch import edge_softmax, GATConv
 import numpy as np
+from utils import get_num_batches
 
 
 def evaluate_no_classes(logits, labels):
@@ -139,13 +140,16 @@ def train_no_classes(model, elem_embeder, splits, epochs):
     batch_size = 4096
     K = 3  # negative oversampling factor
 
+    num_batches, batch_size = get_num_batches(len(elem_embeder), batch_size)
+
     for epoch in range(epochs):
 
         # since we train in batches, we need to iterate over the nodes
         # since indexes are sampled randomly, it is a little bit hard to make sure we cover all data
         # instead, we sample nodes the same number of times that there are different nodes in the dataset,
         # hoping to cover all the data
-        num_batches = len(elem_embeder) // batch_size
+        # num_batches = get_num_batches(len(elem_embeder), batch_size)
+        # num_batches = len(elem_embeder) // batch_size
         for batch_ind in range(num_batches):
 
             node_embeddings = model()
