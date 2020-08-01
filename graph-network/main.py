@@ -10,10 +10,9 @@ from os import mkdir
 from os.path import isdir, join
 import torch
 from Dataset import SourceGraphDataset
+from utils import get_name
 
 
-def get_name(model, timestamp):
-    return "{} {}".format(model.__name__, timestamp).replace(":", "-").replace(" ", "-").replace(".", "-")
 
 
 def main(nodes_path, edges_path, models, desc, args):
@@ -39,14 +38,15 @@ def main(nodes_path, edges_path, models, desc, args):
 
             if model.__name__ == "GAT":
                 dataset = SourceGraphDataset(nodes_path, edges_path, label_from=LABELS_FROM,
-                                             restore_state=args.restore_state)
+                                             restore_state=args.restore_state, filter=args.filter_edges)
             elif model.__name__ == "RGCN":
                 dataset = SourceGraphDataset(nodes_path,
                                              edges_path,
                                              label_from=LABELS_FROM,
                                              node_types=args.use_node_types,
                                              edge_types=True,
-                                             restore_state=args.restore_state
+                                             restore_state=args.restore_state,
+                                             filter=args.filter_edges
                                              )
             else:
                 raise Exception("Unknown model: {}".format(model.__name__))
@@ -146,7 +146,9 @@ def main(nodes_path, edges_path, models, desc, args):
                 "datafile": args.data_file,
                 "call_seq": args.call_seq_file,
                 "fname_file": args.fname_file,
-                "varuse_file": args.varuse_file
+                "varuse_file": args.varuse_file,
+                "note": args.note,
+                "epochs": EPOCHS
             }
 
             pickle.dump(m.get_embeddings(dataset.global_id_map), open(join(metadata['base'], metadata['layers']), "wb"))
@@ -188,10 +190,21 @@ if __name__ == "__main__":
                         help='Path to the file with edges that show variable names')
     parser.add_argument('--data_file', dest='data_file', default=None,
                         help='Path to the file with edges that are used for training')
+    parser.add_argument('--filter_edges', dest='filter_edges', default=None,
+                        help='Edges filtered before training')
+    parser.add_argument('--epochs', dest='epochs', default=100, type=int,
+                        help='Edges filtered before training')
+    parser.add_argument('--note', dest='note', default="",
+                        help='Note, added to metadata')
     parser.add_argument('--use_node_types', action='store_true')
     parser.add_argument('--restore_state', action='store_true')
 
     args = parser.parse_args()
+
+
+    if args.filter_edges is not None:
+        args.filter_edges = [int(e_type) for e_type in args.filter_edges.split(",")]
+
 
     models_ = {
         GAT: gat_params,
@@ -200,27 +213,9 @@ if __name__ == "__main__":
 
     data_paths = pandas.read_csv("data_paths.tsv", sep="\t")
     MODELS_PATH = "models"
-    EPOCHS = 200
+    EPOCHS = args.epochs
 
     if not isdir(MODELS_PATH):
         mkdir(MODELS_PATH)
 
     main(args.node_path, args.edge_path, models_, "full", args)
-
-    # for ind, row in data_paths.iterrows():
-    #
-    #     if ind == 1: break
-    #     node_path = row.nodes
-    #     edge_path = row.edges_train
-    #     desc_ = row.desc
-    #     # node_path = "/Volumes/External/dev/method-embeddings/res/python/normalized_sourcetrail_nodes.csv"
-    #     # edge_path = "/Volumes/External/dev/method-embeddings/res/python/edges.csv"
-    #     # node_path = "/home/ltv/data/datasets/source_code/python-source-graph/02_largest_component/nodes_component_0.csv.bz2"
-    #     # edge_path = "/home/ltv/data/datasets/source_code/python-source-graph/02_largest_component/edges_component_0.csv.bz2"
-    #     # node_path = "/home/ltv/data/datasets/source_code/sample-python/normalized_sourcetrail_nodes.csv"
-    #     # edge_path = "/home/ltv/data/datasets/source_code/sample-python/edges.csv"
-    #
-    #     # nodes_, edges_ = load_data(node_path, edge_path)
-    #
-    #     main(args.node_path, args.edge_path, models_, desc_, args)
-    #     break
