@@ -21,27 +21,36 @@ apicall creates an experiment where we try to predict the exstense of "next call
 # parser.add_argument('experiment', default=None,
 #                     help='Select experiment [apicall|link|typeuse|varuse|fname|nodetype]')
 parser.add_argument("--base_path", default=None, help="path to the trained GNN model")
+parser.add_argument("--api_seq", default=None, help="path to the trained GNN model")
+parser.add_argument("--var_use", default=None, help="path to the trained GNN model")
+parser.add_argument("--type_ann", default=None, help="path to the trained GNN model")
 parser.add_argument('--random', action='store_true')
+parser.add_argument('--test_embedder', action='store_true')
 args = parser.parse_args()
 
-# GAT
-# BASE_PATH = "models/GAT-2020-05-05-17-23-39-269036-fname" # trained on function names
-# BASE_PATH = "models/GAT-2020-05-05-01-25-38-208819-varnames" # trained on variable names
-# BASE_PATH = "models/GAT-2020-05-04-01-25-52-792623-nextcall" # trained on next call
-# BASE_PATH = "models/GAT-2020-05-10-23-27-05-982293-multitask"
+# # GAT
+# # BASE_PATH = "models/GAT-2020-05-05-17-23-39-269036-fname" # trained on function names
+# # BASE_PATH = "models/GAT-2020-05-05-01-25-38-208819-varnames" # trained on variable names
+# # BASE_PATH = "models/GAT-2020-05-04-01-25-52-792623-nextcall" # trained on next call
+# # BASE_PATH = "models/GAT-2020-05-10-23-27-05-982293-multitask"
+#
+# # RGCN
+# # BASE_PATH = "models/RGCN-2020-05-09-16-43-46-984454-fname-edgetype" # trained on function names
+# # BASE_PATH = "models/RGCN-2020-05-08-21-35-13-542497-varname-edgetype" # trained on variable names
+# # BASE_PATH = "models/RGCN-2020-05-06-19-53-15-933048-nextcall-edgetypes" # trained on next call
+# # BASE_PATH = "models/RGCN-2020-05-11-10-14-50-783337-multitask"
+# BASE_PATH = "models/RGCN-2020-05-11-20-34-49-002750-multitask-5layers"
+# BASE_PATH = "models/GAT-2020-07-30-21-58-49-462221"
+#
+# # data files
+# API_SEQ = "data_files/python_flat_calls.csv.bz2"
+# VAR_USE = "data_files/python_node_to_var.csv.bz2"
+# TYPE_ANN = "/Users/LTV/Documents/subsample/common/return_types_decoded.csv"
 
-# RGCN
-# BASE_PATH = "models/RGCN-2020-05-09-16-43-46-984454-fname-edgetype" # trained on function names
-# BASE_PATH = "models/RGCN-2020-05-08-21-35-13-542497-varname-edgetype" # trained on variable names
-# BASE_PATH = "models/RGCN-2020-05-06-19-53-15-933048-nextcall-edgetypes" # trained on next call
-# BASE_PATH = "models/RGCN-2020-05-11-10-14-50-783337-multitask"
-BASE_PATH = "models/RGCN-2020-05-11-20-34-49-002750-multitask-5layers"
-BASE_PATH = "models/GAT-2020-07-30-21-58-49-462221"
-
-# data files
-API_SEQ = "data_files/python_flat_calls.csv.bz2"
-VAR_USE = "data_files/python_node_to_var.csv.bz2"
-TYPE_ANN = "/Users/LTV/Documents/subsample/common/return_types_decoded.csv"
+BASE_PATH = args.base_path
+API_SEQ = args.api_seq
+VAR_USE = args.var_use
+TYPE_ANN = args.type_ann
 
 e = Experiments(base_path=BASE_PATH,
                 api_seq_path=API_SEQ,
@@ -50,7 +59,7 @@ e = Experiments(base_path=BASE_PATH,
                 variable_use_path=VAR_USE, #not needed
                 function_name_path=None,
                 type_ann=TYPE_ANN,
-                gnn_layer=-1
+                gnn_layer=-1,
                 )
 
 # if args.random:
@@ -58,7 +67,7 @@ e = Experiments(base_path=BASE_PATH,
 
 # EXPERIMENT_NAME = args.experiment
 
-def run_experiment(EXPERIMENT_NAME, random=False):
+def run_experiment(EXPERIMENT_NAME, random=False, test_embedder=False):
     experiment = e[EXPERIMENT_NAME]
 
     ma_train = 0.
@@ -66,8 +75,17 @@ def run_experiment(EXPERIMENT_NAME, random=False):
     ma_alpha = 2 / (10 + 1)
 
     if random:
-        experiment.embed.e = deepcopy(experiment.embed.e)
+        experiment.embed.e = deepcopy(experiment.embed.e) # ????
         experiment.embed.e = np.random.randn(experiment.embed.e.shape[0], experiment.embed.e.shape[1])
+
+    if test_embedder:
+        # this does not really show anything new compared with random initialization. needto compare
+        # against Node2Vec or KG embeddings
+        experiment.embed.e = tf.Variable(
+            initial_value=np.random.randn(experiment.embed.e.shape[0], experiment.embed.e.shape[1]),
+            trainable=True
+        )
+
 
     if EXPERIMENT_NAME in {'link', 'apicall', 'typeuse'}:
         clf = NNClassifier(experiment.embed_size)
@@ -153,7 +171,7 @@ def run_experiment(EXPERIMENT_NAME, random=False):
 
 for experiment_name in ['typeann']:#, 'apicall','link','typeuse','varuse','fname','nodetype']:
     print(f"\n{experiment_name}:")
-    train_acc, test_acc = run_experiment(experiment_name, random=args.random)
+    train_acc, test_acc = run_experiment(experiment_name, random=args.random, test_embedder=args.test_embedder)
     print("Train Accuracy: {:.4f}, Test Accuracy: {:.4f}".format(train_acc, test_acc))
     # train_acc, test_acc = run_experiment(experiment_name, random=True)
     # print("Random Train Accuracy: {:.4f}, Test Accuracy: {:.4f}".format(train_acc, test_acc))
