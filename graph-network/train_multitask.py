@@ -267,7 +267,7 @@ def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apical
 
     # this is heldout because it was not used during training
     # heldout_idx = test_idx.tolist() + val_idx.tolist()
-    optimizer = torch.optim.SGD(
+    optimizer = torch.optim.Adam(
         [
             {'params': model.parameters()},
             {'params': ee_fname.parameters()},
@@ -276,7 +276,7 @@ def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apical
             {'params': lp_fname.parameters()},
             {'params': lp_varuse.parameters()},
             {'params': lp_apicall.parameters()},
-        ], lr=0.1
+        ], lr=0.01
     )
     # optimizer = torch.optim.Adagrad(
     #     [
