@@ -306,7 +306,7 @@ def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apical
     best_val_acc_apicall = torch.tensor(0)
     best_test_acc_apicall = torch.tensor(0)
 
-    batch_size = 256
+    batch_size = 2000
     K = 3  # negative oversampling factor
 
     num_batches, batch_size = get_num_batches(len(ee_fname), batch_size)
@@ -363,8 +363,8 @@ def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apical
             optimizer.step()
 
             if batch_ind % 1 == 0:
-                print("\r%d/%d batches complete, fname acc: %.4f, varuse acc: %.4f, apicall acc: %.4f" % (
-                batch_ind, num_batches, train_acc_fname.item(), train_acc_varuse.item(), train_acc_apicall.item()),
+                print("\r%d/%d batches complete, loss: %.4f, fname acc: %.4f, varuse acc: %.4f, apicall acc: %.4f" % (
+                batch_ind, num_batches, loss.item(), train_acc_fname.item(), train_acc_varuse.item(), train_acc_apicall.item()),
                       end="\n")
 
         test_logits_fname, test_labels_fname = prepare_batch_with_embeder(node_embeddings,
