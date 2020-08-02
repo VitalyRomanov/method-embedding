@@ -276,7 +276,7 @@ def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apical
             {'params': lp_fname.parameters()},
             {'params': lp_varuse.parameters()},
             {'params': lp_apicall.parameters()},
-        ], lr=0.005
+        ], lr=0.01
     )
     # optimizer = torch.optim.Adagrad(
     #     [
@@ -306,7 +306,7 @@ def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apical
     best_val_acc_apicall = torch.tensor(0)
     best_test_acc_apicall = torch.tensor(0)
 
-    batch_size = 4096
+    batch_size = 1024
     K = 3  # negative oversampling factor
 
     num_batches, batch_size = get_num_batches(len(ee_fname), batch_size)
