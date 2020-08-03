@@ -311,6 +311,9 @@ def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apical
 
     num_batches, batch_size = get_num_batches(len(ee_fname), batch_size)
 
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, 0.1, epochs=epochs, steps_per_epoch=num_batches,
+                                        pct_start=0.3, div_factor=1000., final_div_factor=1.)
+
     for epoch in range(epochs):
 
         # since we train in batches, we need to iterate over the nodes
@@ -361,11 +364,12 @@ def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apical
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            scheduler.step()
 
             if batch_ind % 1 == 0:
                 print("\r%d/%d batches complete, loss: %.4f, fname acc: %.4f, varuse acc: %.4f, apicall acc: %.4f" % (
-                batch_ind, num_batches, loss.item(), train_acc_fname.item(), train_acc_varuse.item(), train_acc_apicall.item()),
-                      end="\n")
+                batch_ind, num_batches, loss.item(), train_acc_fname.item(),
+                train_acc_varuse.item(), train_acc_apicall.item()), end="\n")
 
         test_logits_fname, test_labels_fname = prepare_batch_with_embeder(node_embeddings,
                                                                         ee_fname,
