@@ -306,13 +306,13 @@ def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apical
     best_val_acc_apicall = torch.tensor(0)
     best_test_acc_apicall = torch.tensor(0)
 
-    batch_size = 2000
+    batch_size = 4096
     K = 3  # negative oversampling factor
 
     num_batches, batch_size = get_num_batches(len(ee_fname), batch_size)
 
     scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, 0.1, epochs=epochs, steps_per_epoch=num_batches,
-                                        pct_start=0.3, div_factor=1000., final_div_factor=1.)
+                                        pct_start=0.3, div_factor=100., final_div_factor=1.)
 
     for epoch in range(epochs):
 

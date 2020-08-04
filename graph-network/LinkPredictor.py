@@ -8,7 +8,7 @@ class LinkPredictor(nn.Module):
         super(LinkPredictor, self).__init__()
 
         self.l1 = nn.Linear(input_dimensionality, 20)
-        self.l1_a = nn.ReLU()
+        self.l1_a = nn.Sigmoid()
 
         self.logits = nn.Linear(20, 2)
 
