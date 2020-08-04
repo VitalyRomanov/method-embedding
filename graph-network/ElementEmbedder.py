@@ -61,7 +61,8 @@ class ElementEmbedder(ElementEmbedderBase, nn.Module):
     #     return len(self.element_lookup)
 
     def forward(self, input, **kwargs):
-        return self.norm(self.embed(input))
+        return self.embed(input)
+        # return self.norm(self.embed(input))
 
 if __name__ == '__main__':
     import pandas as pd

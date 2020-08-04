@@ -276,7 +276,7 @@ def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apical
             {'params': lp_fname.parameters()},
             {'params': lp_varuse.parameters()},
             {'params': lp_apicall.parameters()},
-        ], lr=0.0001
+        ], lr=0.01
     )
     # optimizer = torch.optim.Adagrad(
     #     [
@@ -311,7 +311,7 @@ def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apical
 
     num_batches, batch_size = get_num_batches(len(ee_fname), batch_size)
 
-    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, 0.1, epochs=epochs, steps_per_epoch=num_batches,
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, 0.01, epochs=epochs, steps_per_epoch=num_batches,
                                         pct_start=0.3, div_factor=100., final_div_factor=1.)
 
     for epoch in range(epochs):
