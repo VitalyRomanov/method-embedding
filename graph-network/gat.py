@@ -54,7 +54,7 @@ class GAT(nn.Module):
             num_hidden * heads[-2], num_classes, heads[-1],
             feat_drop, attn_drop, negative_slope, residual, None))
 
-        self.norm = nn.BatchNorm1d(num_classes)
+        # self.norm = nn.BatchNorm1d(num_classes)
 
         self.emb_size = num_classes
 
@@ -64,7 +64,7 @@ class GAT(nn.Module):
             h = self.gat_layers[l](self.g, h).flatten(1)
         # output projection
         logits = self.gat_layers[-1](self.g, h).mean(1)
-        return self.norm(logits)
+        return logits
 
     def get_layers(self):
         """
