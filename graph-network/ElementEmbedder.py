@@ -32,6 +32,7 @@ class ElementEmbedder(ElementEmbedderBase, nn.Module):
         self.emb_size = emb_size
         n_elems = self.elements['emb_id'].unique().size
         self.embed = nn.Embedding(n_elems, emb_size)
+        self.norm = nn.BatchNorm1d(emb_size)
 
     # def init_neg_sample(self):
     #     WORD2VEC_SAMPLING_POWER = 3 / 4
@@ -60,7 +61,7 @@ class ElementEmbedder(ElementEmbedderBase, nn.Module):
     #     return len(self.element_lookup)
 
     def forward(self, input, **kwargs):
-        return self.embed(input)
+        return self.norm(self.embed(input))
 
 if __name__ == '__main__':
     import pandas as pd
