@@ -276,7 +276,7 @@ def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apical
             {'params': lp_fname.parameters()},
             {'params': lp_varuse.parameters()},
             {'params': lp_apicall.parameters()},
-        ], lr=0.01
+        ], lr=0.001
     )
     # optimizer = torch.optim.Adagrad(
     #     [
