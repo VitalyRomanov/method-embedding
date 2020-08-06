@@ -311,8 +311,8 @@ def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apical
 
     num_batches, batch_size = get_num_batches(len(ee_fname), batch_size)
 
-    # scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, 0.01, epochs=epochs, steps_per_epoch=num_batches,
-    #                                     pct_start=0.3, div_factor=100., final_div_factor=1./100.)
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, 0.005, epochs=epochs, steps_per_epoch=num_batches,
+                                        pct_start=0.3, div_factor=100., final_div_factor=100.)
 
     for epoch in range(epochs):
 
@@ -364,7 +364,7 @@ def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apical
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            # scheduler.step()
+            scheduler.step()
 
             if batch_ind % 1 == 0:
                 print("\r%d/%d batches complete, loss: %.4f, fname acc: %.4f, varuse acc: %.4f, apicall acc: %.4f" % (
