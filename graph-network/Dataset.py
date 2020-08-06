@@ -53,7 +53,7 @@ def get_train_test_val_indices(labels):
 class SourceGraphDataset:
     def __init__(self, nodes_path, edges_path,
                  label_from, node_types=False,
-                 edge_types=False, filter=None, holdout_frac=0.001, restore_state=False):
+                 edge_types=False, filter=None, holdout_frac=0.001, restore_state=False, self_loop=False):
         """
         Prepares the data for training GNN model. The graph is prepared in the following way:
             1. Edges are split into the train set and holdout set. Holdout set is used in the future experiments.
@@ -91,6 +91,9 @@ class SourceGraphDataset:
         self.holdout_frac = holdout_frac
 
         self.nodes, self.edges = load_data(nodes_path, edges_path)
+
+        if self_loop:
+            self.nodes, self.edges = SourceGraphDataset.assess_need_for_self_loops(self.nodes, self.edges)
 
         if restore_state:
             self.nodes, self.edges, self.held = pickle.load(open("tmp_edgesplits.pkl", "rb"))

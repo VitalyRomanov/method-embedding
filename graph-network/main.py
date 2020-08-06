@@ -38,7 +38,7 @@ def main(nodes_path, edges_path, models, desc, args):
 
             if model.__name__ == "GAT":
                 dataset = SourceGraphDataset(nodes_path, edges_path, label_from=LABELS_FROM,
-                                             restore_state=args.restore_state, filter=args.filter_edges)
+                                             restore_state=args.restore_state, filter=args.filter_edges, self_loop=args.self_loop)
             elif model.__name__ == "RGCN":
                 dataset = SourceGraphDataset(nodes_path,
                                              edges_path,
@@ -46,7 +46,8 @@ def main(nodes_path, edges_path, models, desc, args):
                                              node_types=args.use_node_types,
                                              edge_types=True,
                                              restore_state=args.restore_state,
-                                             filter=args.filter_edges
+                                             filter=args.filter_edges,
+                                             self_loop = args.self_loop
                                              )
             else:
                 raise Exception("Unknown model: {}".format(model.__name__))
@@ -198,6 +199,7 @@ if __name__ == "__main__":
                         help='Note, added to metadata')
     parser.add_argument('--use_node_types', action='store_true')
     parser.add_argument('--restore_state', action='store_true')
+    parser.add_argument('--self_loop', action='store_true')
 
     args = parser.parse_args()
 

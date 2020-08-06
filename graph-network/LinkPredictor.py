@@ -15,6 +15,6 @@ class LinkPredictor(nn.Module):
         self.logits = nn.Linear(20, 2)
 
     def forward(self, x, **kwargs):
-        # x = self.norm(x)
+        x = self.norm(x)
         x = F.relu(self.l1(x))
         return self.logits(x)
