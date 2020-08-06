@@ -267,27 +267,27 @@ def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apical
 
     # this is heldout because it was not used during training
     # heldout_idx = test_idx.tolist() + val_idx.tolist()
-    optimizer = torch.optim.Adam(
-        [
-            {'params': model.parameters()},
-            {'params': ee_fname.parameters()},
-            {'params': ee_varuse.parameters()},
-            {'params': ee_apicall.parameters()},
-            {'params': lp_fname.parameters()},
-            {'params': lp_varuse.parameters()},
-            {'params': lp_apicall.parameters()},
-        ], lr=0.001
-    )
-    # optimizer = torch.optim.Adagrad(
+    # optimizer = torch.optim.Adam(
     #     [
-    #         {'params': model.parameters(), 'lr': 1e-1},
-    #         {'params': ee_fname.parameters(), 'lr': 1e-1},
-    #         {'params': ee_varuse.parameters(), 'lr': 1e-1},
-    #         {'params': ee_apicall.parameters(), 'lr': 1e-1},
-    #         {'params': lp_fname.parameters(), 'lr': 1e-2},
-    #         {'params': lp_varuse.parameters(), 'lr': 1e-2},
-    #         {'params': lp_apicall.parameters(), 'lr': 1e-2},
-    #     ], lr=0.01)
+    #         {'params': model.parameters()},
+    #         {'params': ee_fname.parameters()},
+    #         {'params': ee_varuse.parameters()},
+    #         {'params': ee_apicall.parameters()},
+    #         {'params': lp_fname.parameters()},
+    #         {'params': lp_varuse.parameters()},
+    #         {'params': lp_apicall.parameters()},
+    #     ], lr=0.001
+    # )
+    optimizer = torch.optim.Adagrad(
+        [
+            {'params': model.parameters(), 'lr': 1e-1},
+            {'params': ee_fname.parameters(), 'lr': 1e-1},
+            {'params': ee_varuse.parameters(), 'lr': 1e-1},
+            {'params': ee_apicall.parameters(), 'lr': 1e-1},
+            {'params': lp_fname.parameters(), 'lr': 1e-2},
+            {'params': lp_varuse.parameters(), 'lr': 1e-2},
+            {'params': lp_apicall.parameters(), 'lr': 1e-2},
+        ], lr=0.01)
     # optimizer = RAdam(
     #     [
     #         {'params': model.parameters(),},
@@ -311,8 +311,8 @@ def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apical
 
     num_batches, batch_size = get_num_batches(len(ee_fname), batch_size)
 
-    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, 0.005, epochs=epochs, steps_per_epoch=num_batches,
-                                        pct_start=0.3, div_factor=100., final_div_factor=100.)
+    # scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, 0.005, epochs=epochs, steps_per_epoch=num_batches,
+    #                                     pct_start=0.3, div_factor=100., final_div_factor=100.)
 
     for epoch in range(epochs):
 
@@ -364,7 +364,7 @@ def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apical
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            scheduler.step()
+            # scheduler.step()
 
             if batch_ind % 1 == 0:
                 print("\r%d/%d batches complete, loss: %.4f, fname acc: %.4f, varuse acc: %.4f, apicall acc: %.4f" % (
