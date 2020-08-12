@@ -86,7 +86,7 @@ rgcn_grids = [
     {
         'h_dim': [100],
         'num_bases': [-1],
-        'num_hidden_layers': [1],
+        'num_hidden_layers': [2],
         'dropout': [0.3],
         'use_self_loop': [False],
         'activation': [torch.nn.functional.hardtanh] #torch.nn.functional.leaky_relu
@@ -96,13 +96,27 @@ rgcn_grids = [
 
 gcnsampling_grids = [
     {
-        "in_feats": [100],
+        "in_dim": [100],
         "n_hidden": [100],
-        "n_classes": [100],
+        "num_classes": [100],
         "n_layers": [2],
         'dropout': [0.3],
         'activation': [torch.nn.functional.hardtanh] #torch.nn.functional.leaky_relu
     }
+]
+
+gatsampling_grids = [
+    {
+        'num_layers': [1],
+        'in_dim': [100],
+        'num_hidden': [50],
+        'heads': [[2, 2]],
+        'feat_drop': [0.3],
+        'attn_drop': [0.3],
+        'negative_slope': [0.2],
+        'residual': [False],
+        'activation': [torch.nn.functional.leaky_relu]  # torch.nn.functional.leaky_relu
+    },
 ]
 
 gat_params = list(
@@ -120,6 +134,12 @@ rgcn_params = list(
 gcnsampling_params = list(
     itertools.chain.from_iterable(
         [ParameterGrid(p) for p in gcnsampling_grids]
+    )
+)
+
+gatsampling_params = list(
+    itertools.chain.from_iterable(
+        [ParameterGrid(p) for p in gatsampling_grids]
     )
 )
 
