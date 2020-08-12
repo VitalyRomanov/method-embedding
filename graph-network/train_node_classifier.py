@@ -203,6 +203,6 @@ def training_procedure(dataset, model, params, EPOCHS, args):
         print("Training interrupted")
     finally:
         m.eval()
-        scores = final_evaluation(m, dataset.labels, dataset.splits)
+        scores = final_evaluation(m, labels, dataset.splits)
 
     return m, scores
