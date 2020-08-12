@@ -105,10 +105,10 @@ class Experiments:
         :return: Experiment object
         """
         nodes = pandas.read_csv(join(self.base_path, "nodes.csv"))
-        edges = pandas.read_csv(join(self.base_path, "held.csv"))
+        edges = pandas.read_csv(join(self.base_path, "held.csv")).astype({"src":"int32", "dst":"int32"})
         if type == "link":
             # nodes = pandas.read_csv(join(self.base_path, "nodes.csv"))
-            held = pandas.read_csv(join(self.base_path, "held.csv"))
+            held = pandas.read_csv(join(self.base_path, "held.csv")).astype({"src":"int32", "dst":"int32"})
 
             held = held.query('type == 8')[['src', 'dst']]
 
@@ -118,7 +118,7 @@ class Experiments:
             return Experiment(self.embed, nodes, edges, held, split_on="nodes", neg_sampling_strategy="word2vec", compact_dst=False)
 
         elif type == "apicall":
-            api_seq = pandas.read_csv(self.experiments['apicall'])
+            api_seq = pandas.read_csv(self.experiments['apicall']).astype({"src":"int32", "dst":"int32"})
 
             # unique_nodes = set(nodes['id'].values.tolist())
 
@@ -143,7 +143,7 @@ class Experiments:
             return Experiment(self.embed, nodes, edges, api_seq, split_on="nodes", neg_sampling_strategy="word2vec", compact_dst=False)
 
         elif type == "typeuse":
-            held = pandas.read_csv(join(self.base_path, "held.csv"))
+            held = pandas.read_csv(join(self.base_path, "held.csv")).astype({"src":"int32", "dst":"int32"})
 
             held = held.query('type == 2')[['src', 'dst']]
 
@@ -164,11 +164,14 @@ class Experiments:
                 type_ann['src'].apply(lambda nid: nid in node_pool)
             ]
 
-            return Experiment2(self.embed, nodes, edges, type_ann, split_on="nodes", neg_sampling_strategy="word2vec")
+            # return Experiment2(self.embed, nodes, edges, type_ann, split_on="nodes", neg_sampling_strategy="word2vec")
+
+            return Experiment3(self.embed, nodes, edges, type_ann, split_on="edges",
+                               neg_sampling_strategy="word2vec", compact_dst=True)
 
 
         elif type == "varuse":
-            var_use = pandas.read_csv(self.experiments['varuse'])
+            var_use = pandas.read_csv(self.experiments['varuse']).astype({"src":"int32", "dst":"str"})
 
             # unique_nodes = set(nodes['id'].values.tolist())
             # node_pool = set(self.splits[2])
@@ -539,7 +542,7 @@ class Experiment2(Experiment):
         self.dst_orig = target['dst']
         target['dst'] = target['dst'].apply(lambda name: self.name_map[name])
 
-        print(f"Doing experiment with {len(self.name_map)} distinct target elements")
+        print(f"Doing experiment with {len(self.name_map)} distinct target targets")
 
         self.unique_src = self.target['src'].unique()
         self.unique_dst = self.target['dst'].unique()

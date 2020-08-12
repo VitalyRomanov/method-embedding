@@ -67,7 +67,7 @@ e = Experiments(base_path=BASE_PATH,
 
 # EXPERIMENT_NAME = args.experiment
 
-def run_experiment(EXPERIMENT_NAME, random=False, test_embedder=False):
+def run_experiment(e, EXPERIMENT_NAME, random=False, test_embedder=False):
     experiment = e[EXPERIMENT_NAME]
 
     ma_train = 0.
@@ -89,9 +89,9 @@ def run_experiment(EXPERIMENT_NAME, random=False, test_embedder=False):
 
     if EXPERIMENT_NAME in {'link', 'apicall', 'typeuse'}:
         clf = NNClassifier(experiment.embed_size)
-    elif EXPERIMENT_NAME in {'varuse', 'fname', "typeann"}:
+    elif EXPERIMENT_NAME in {'varuse', 'fname'}:
         clf = ElementPredictor(experiment.embed_size, experiment.unique_elements, 100)
-    elif EXPERIMENT_NAME in {'nodetype'}:
+    elif EXPERIMENT_NAME in {'nodetype', "typeann"}:
         clf = NodeClassifier(experiment.embed_size, experiment.unique_elements)
     else:
         raise ValueError(f"Unknown experiment: {type}. The following experiments are available: [apicall|link|typeuse|varuse|fname|nodetype].")
@@ -171,8 +171,11 @@ def run_experiment(EXPERIMENT_NAME, random=False, test_embedder=False):
 
 for experiment_name in ['typeann']:#, 'apicall','link','typeuse','varuse','fname','nodetype']:
     print(f"\n{experiment_name}:")
-    train_acc, test_acc = run_experiment(experiment_name, random=args.random, test_embedder=args.test_embedder)
-    print("Train Accuracy: {:.4f}, Test Accuracy: {:.4f}".format(train_acc, test_acc))
+    try:
+        train_acc, test_acc = run_experiment(e, experiment_name, random=args.random, test_embedder=args.test_embedder)
+        print("Train Accuracy: {:.4f}, Test Accuracy: {:.4f}".format(train_acc, test_acc))
+    except ValueError as err:
+        print(err)
     # train_acc, test_acc = run_experiment(experiment_name, random=True)
     # print("Random Train Accuracy: {:.4f}, Test Accuracy: {:.4f}".format(train_acc, test_acc))
     print("\n")
