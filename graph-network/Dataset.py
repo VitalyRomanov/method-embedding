@@ -36,14 +36,14 @@ def compact_property(values):
     return prop2pid
 
 
-def get_train_test_val_indices(labels):
+def get_train_test_val_indices(labels, train_frac=0.6):
     # numpy.random.seed(42)
 
     indices = numpy.arange(start=0, stop=labels.size)
     numpy.random.shuffle(indices)
 
-    train = int(indices.size * 0.6)
-    test = int(indices.size * 0.8)
+    train = int(indices.size * train_frac)
+    test = int(indices.size * (train_frac + (1 - train_frac)/2))
 
     print("Splitting into train {}, test {}, and validation {} sets".format(train, test - train, indices.size - test))
 
@@ -53,7 +53,8 @@ def get_train_test_val_indices(labels):
 class SourceGraphDataset:
     def __init__(self, nodes_path, edges_path,
                  label_from, node_types=False,
-                 edge_types=False, filter=None, holdout_frac=0.001, restore_state=False, self_loop=False):
+                 edge_types=False, filter=None, holdout_frac=0.001, restore_state=False, self_loop=False,
+                 holdout=None, train_frac=0.6):
         """
         Prepares the data for training GNN model. The graph is prepared in the following way:
             1. Edges are split into the train set and holdout set. Holdout set is used in the future experiments.
@@ -100,7 +101,11 @@ class SourceGraphDataset:
             print("Restored graph from saved state")
         else:
             # the next line will delete isolated nodes
-            self.nodes, self.edges, self.held = SourceGraphDataset.holdout(self.nodes, self.edges, self.holdout_frac)
+            if holdout is None:
+                self.nodes, self.edges, self.held = SourceGraphDataset.holdout(self.nodes, self.edges, self.holdout_frac)
+            else:
+                self.held = pandas.read_csv(holdout)
+
             pickle.dump((self.nodes, self.edges, self.held), open("tmp_edgesplits.pkl", "wb"))
 
         # # ablation
@@ -148,7 +153,7 @@ class SourceGraphDataset:
             self.splits = pickle.load(open("tmp_splits.pkl", "rb"))
             print("Restored node splits from saved state")
         else:
-            self.splits = get_train_test_val_indices(self.labels)
+            self.splits = get_train_test_val_indices(self.labels, train_frac=train_frac)
             pickle.dump(self.splits, open("tmp_splits.pkl", "wb"))
 
 

@@ -5,7 +5,7 @@ from dgl.nn.pytorch import edge_softmax, GATConv
 import numpy as np
 import pandas as pd
 from RAdam import RAdam
-from utils import get_num_batches
+from utils import get_num_batches, create_idx_pools
 
 from ElementEmbedder import ElementEmbedder
 from LinkPredictor import LinkPredictor
@@ -198,18 +198,23 @@ def final_evaluation_no_classes(model, ee_fname, ee_varuse, ee_apicall, lp_fname
                                                                       val_idx_apicall.size,
                                                                       1)
 
-    train_acc_fname, train_acc_varuse, train_acc_apicall, \
-    test_acc_fname, test_acc_varuse, test_acc_apicall, \
-    val_acc_fname, val_acc_varuse, val_acc_apicall = \
-        evaluate_no_classes(train_logits_fname, train_labels_fname), \
+    train_acc_fname, train_acc_varuse, train_acc_apicall = evaluate_no_classes(train_logits_fname, train_labels_fname), \
         evaluate_no_classes(train_logits_varuse, train_labels_varuse), \
         evaluate_no_classes(train_logits_apicall, train_labels_apicall), \
-        evaluate_no_classes(test_logits_fname, test_labels_fname), \
-        evaluate_no_classes(test_logits_varuse, test_labels_varuse), \
-        evaluate_no_classes(test_logits_apicall, test_labels_apicall), \
-        evaluate_no_classes(val_logits_fname, val_labels_fname), \
-        evaluate_no_classes(val_logits_varuse, val_labels_varuse), \
-        evaluate_no_classes(val_logits_apicall, val_labels_apicall)
+
+    if len(test_logits_fname) > 0:
+        test_acc_fname, test_acc_varuse, test_acc_apicall = evaluate_no_classes(test_logits_fname, test_labels_fname), \
+            evaluate_no_classes(test_logits_varuse, test_labels_varuse), \
+            evaluate_no_classes(test_logits_apicall, test_labels_apicall)
+    else:
+        test_acc_fname, test_acc_varuse, test_acc_apicall = torch.tensor(0), torch.tensor(0), torch.tensor(0)
+
+    if len(val_logits_fname) > 0:
+        val_acc_fname, val_acc_varuse, val_acc_apicall = evaluate_no_classes(val_logits_fname, val_labels_fname), \
+            evaluate_no_classes(val_logits_varuse, val_labels_varuse), \
+            evaluate_no_classes(val_logits_apicall, val_labels_apicall)
+    else:
+        val_acc_fname, val_acc_varuse, val_acc_apicall = torch.tensor(0), torch.tensor(0), torch.tensor(0)
 
     # logp = nn.functional.log_softmax(train_logits, 1)
     # loss = nn.functional.nll_loss(logp, train_labels)
@@ -244,12 +249,7 @@ def final_evaluation_no_classes(model, ee_fname, ee_varuse, ee_apicall, lp_fname
     return scores
 
 
-def create_idx_pools(splits, pool):
-    train_idx, test_idx, val_idx = splits
-    train_idx = np.fromiter(pool.intersection(train_idx), dtype=np.int64)
-    test_idx = np.fromiter(pool.intersection(test_idx), dtype=np.int64)
-    val_idx = np.fromiter(pool.intersection(val_idx), dtype=np.int64)
-    return train_idx, test_idx, val_idx
+
 
 
 def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, splits, epochs):
@@ -409,13 +409,33 @@ def train(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apical
                                                                           val_idx_apicall.size,
                                                                           1)
 
-        test_acc_fname, test_acc_varuse, test_acc_apicall, val_acc_fname, val_acc_varuse, val_acc_apicall = \
-            evaluate_no_classes(test_logits_fname, test_labels_fname), \
+        if len(test_logits_fname) > 0:
+            test_acc_fname, test_acc_varuse, test_acc_apicall = evaluate_no_classes(test_logits_fname, test_labels_fname), \
             evaluate_no_classes(test_logits_varuse, test_labels_varuse), \
-            evaluate_no_classes(test_logits_apicall, test_labels_apicall), \
-            evaluate_no_classes(val_logits_fname, val_labels_fname), \
+            evaluate_no_classes(test_logits_apicall, test_labels_apicall)
+        else:
+            test_acc_fname, test_acc_varuse, test_acc_apicall = best_test_acc_fname, \
+                                                                best_test_acc_varuse, \
+                                                                best_test_acc_apicall
+
+
+        if len(val_logits_fname) > 0:
+            val_acc_fname, val_acc_varuse, val_acc_apicall = evaluate_no_classes(val_logits_fname, val_labels_fname), \
             evaluate_no_classes(val_logits_varuse, val_labels_varuse), \
             evaluate_no_classes(val_logits_apicall, val_labels_apicall)
+        else:
+            val_acc_fname, val_acc_varuse, val_acc_apicall = best_val_acc_fname, \
+                                                                best_val_acc_varuse, \
+                                                                best_val_acc_apicall
+
+
+        # test_acc_fname, test_acc_varuse, test_acc_apicall, val_acc_fname, val_acc_varuse, val_acc_apicall = \
+        #     evaluate_no_classes(test_logits_fname, test_labels_fname), \
+        #     evaluate_no_classes(test_logits_varuse, test_labels_varuse), \
+        #     evaluate_no_classes(test_logits_apicall, test_labels_apicall), \
+        #     evaluate_no_classes(val_logits_fname, val_labels_fname), \
+        #     evaluate_no_classes(val_logits_varuse, val_labels_varuse), \
+        #     evaluate_no_classes(val_logits_apicall, val_labels_apicall)
 
         track_best(epoch, loss, train_acc_fname, val_acc_fname, test_acc_fname,
                    train_acc_varuse, val_acc_varuse, test_acc_varuse,

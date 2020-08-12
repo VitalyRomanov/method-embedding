@@ -38,7 +38,8 @@ def main(nodes_path, edges_path, models, desc, args):
 
             if model.__name__ == "GAT":
                 dataset = SourceGraphDataset(nodes_path, edges_path, label_from=LABELS_FROM,
-                                             restore_state=args.restore_state, filter=args.filter_edges, self_loop=args.self_loop)
+                                             restore_state=args.restore_state, filter=args.filter_edges, self_loop=args.self_loop,
+                                             holdout=args.holdout, train_frac=args.train_frac)
             elif model.__name__ == "RGCN":
                 dataset = SourceGraphDataset(nodes_path,
                                              edges_path,
@@ -47,7 +48,9 @@ def main(nodes_path, edges_path, models, desc, args):
                                              edge_types=True,
                                              restore_state=args.restore_state,
                                              filter=args.filter_edges,
-                                             self_loop = args.self_loop
+                                             self_loop = args.self_loop,
+                                             holdout=args.holdout,
+                                             train_frac=args.train_frac
                                              )
             else:
                 raise Exception("Unknown model: {}".format(model.__name__))
@@ -63,7 +66,7 @@ def main(nodes_path, edges_path, models, desc, args):
 
                 from train_node_classifier import training_procedure
 
-                m, scores = training_procedure(dataset, model, params, EPOCHS, args.restore_state)
+                m, scores = training_procedure(dataset, model, params, EPOCHS, args)
 
             elif args.training_mode == "vector_sim":
 
@@ -179,12 +182,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Process some integers.')
     parser.add_argument('--training_mode', dest='training_mode', default=None,
                         help='Selects one of training procedures [node_classifier|vector_sim|vector_sim_classifier|predict_next_function|multitask]')
-    parser.add_argument('--call_seq_file', dest='call_seq_file', default=None,
-                        help='Path to the file with edges that represent API call sequence. Used only with training mode \'predict_next_function\'')
     parser.add_argument('--node_path', dest='node_path', default=None,
                         help='Path to the file with nodes')
     parser.add_argument('--edge_path', dest='edge_path', default=None,
                         help='Path to the file with edges')
+    parser.add_argument('--holdout', dest='holdout', default=None,
+                        help='Pre-generated holdout set')
+    parser.add_argument('--train_frac', dest='train_frac', default=0.6, type=float,
+                        help='Pre-generated holdout set')
+    parser.add_argument('--call_seq_file', dest='call_seq_file', default=None,
+                        help='Path to the file with edges that represent API call sequence. Used only with training mode \'predict_next_function\'')
     parser.add_argument('--fname_file', dest='fname_file', default=None,
                         help='Path to the file with edges that show function names')
     parser.add_argument('--varuse_file', dest='varuse_file', default=None,
@@ -200,6 +207,7 @@ if __name__ == "__main__":
     parser.add_argument('--use_node_types', action='store_true')
     parser.add_argument('--restore_state', action='store_true')
     parser.add_argument('--self_loop', action='store_true')
+    parser.add_argument('--override_labels', action='store_true')
 
     args = parser.parse_args()
 
@@ -209,8 +217,8 @@ if __name__ == "__main__":
 
 
     models_ = {
-        GAT: gat_params,
-        # RGCN: rgcn_params
+        # GAT: gat_params,
+        RGCN: rgcn_params
     }
 
     data_paths = pandas.read_csv("data_paths.tsv", sep="\t")

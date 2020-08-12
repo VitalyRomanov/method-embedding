@@ -1,8 +1,8 @@
-from models import GCNSampling
+from models import GCNSampling, GATSampler
 from main import get_name
 import sys
 from datetime import datetime
-from params import gcnsampling_params
+from params import gcnsampling_params, gatsampling_params
 import pandas
 import pickle
 import json
@@ -24,7 +24,7 @@ def main(nodes_path, edges_path, models, desc, args):
             print(dateTime)
             print("Model: {}, Params: {}, Desc: {}".format(model.__name__, params, desc))
 
-            if model.__name__ == "GCNSampling":
+            if model.__name__ == "GCNSampling" or model.__name__ == "GATSampler":
                 dataset = SourceGraphDataset(nodes_path, edges_path, label_from=LABELS_FROM,
                                              restore_state=args.restore_state)
             # elif model.__name__ == "RGCN":
@@ -181,7 +181,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     models_ = {
-        GCNSampling: gcnsampling_params
+        # GCNSampling: gcnsampling_params,
+        GATSampler: gatsampling_params
     }
 
     data_paths = pandas.read_csv("data_paths.tsv", sep="\t")

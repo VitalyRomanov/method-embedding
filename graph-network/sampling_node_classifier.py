@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import dgl.function as fn
 from dgl.nn.pytorch import edge_softmax, GATConv
+from dgl.contrib.sampling import NeighborSampler
 import dgl
 import numpy as np
 
@@ -57,7 +58,7 @@ def final_evaluation(model, g_labels, splits):
     return scores
 
 
-def train(g, model, g_labels, splits, epochs):
+def train(dataset, g, model, g_labels, splits, epochs):
     """
     Training procedure for the model with node classifier.
     :param model:
@@ -78,54 +79,58 @@ def train(g, model, g_labels, splits, epochs):
     best_test_acc = torch.tensor(0)
 
     batch_size = 128
-    num_neighbors = 80
+    num_neighbors = 200
     L = len(model.layers)
 
-    train_sampler = dgl.contrib.sampling.NeighborSampler(g, batch_size,
-                                                       num_neighbors,
-                                                       neighbor_type='in',
-                                                       shuffle=True,
-                                                       num_hops=L,
-                                                       seed_nodes=train_idx)
+    train_sampler = NeighborSampler(g, batch_size,
+                                       num_neighbors,
+                                       neighbor_type='in',
+                                       shuffle=True,
+                                       num_hops=L,
+                                       seed_nodes=train_idx)
 
-    test_sampler = dgl.contrib.sampling.NeighborSampler(g, batch_size,
-                                                         num_neighbors,
-                                                         neighbor_type='in',
-                                                         shuffle=True,
-                                                         num_hops=L,
-                                                         seed_nodes=test_idx)
+    test_sampler = NeighborSampler(g, batch_size,
+                                     num_neighbors,
+                                     neighbor_type='in',
+                                     shuffle=True,
+                                     num_hops=L,
+                                     seed_nodes=test_idx)
 
-    val_sampler = dgl.contrib.sampling.NeighborSampler(g, batch_size,
-                                                         num_neighbors,
-                                                         neighbor_type='in',
-                                                         shuffle=True,
-                                                         num_hops=L,
-                                                         seed_nodes=val_idx)
+    val_sampler = NeighborSampler(g, batch_size,
+                                     num_neighbors,
+                                     neighbor_type='in',
+                                     shuffle=True,
+                                     num_hops=L,
+                                     seed_nodes=val_idx)
 
     for epoch in range(epochs):
         train_logits = []; train_labels = []
         test_logits = []; test_labels = []
         val_logits = []; val_labels = []
 
-        for nf in train_sampler:
+        for batch_ind, nf in enumerate(train_sampler):
             # print(g.ndata['features'][0,:])
             nf.copy_from_parent()
-
-            logits = model(nf)
             batch_nids = torch.LongTensor(nf.layer_parent_nid(-1))
 
+            logits = model(nf)
+
             logp = nn.functional.log_softmax(logits, 1)
-            p = nn.functional.softmax(logits, 1)
             batch_labels = labels[batch_nids]
             loss = nn.functional.nll_loss(logp, batch_labels)
-            # loss = nn.functional.nll_loss(logp, batch_labels)
-
-            train_labels.append(batch_labels)
-            train_logits.append(p.argmax(dim=1))
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+
+            # p = nn.functional.softmax(logits, 1)
+
+            train_labels.append(batch_labels)
+            train_logits.append(logp.argmax(dim=1))
+
+            # if batch_ind % 50 == 0:
+            #     print("\r%d/%d batches complete, loss: %.4f" % (
+            #     batch_ind, 0, loss.item(),), end="\n")
 
             # nf.copy_to_parent()
 
@@ -182,13 +187,18 @@ def train(g, model, g_labels, splits, epochs):
 
 def training_procedure(dataset, model, params, EPOCHS, restore_state):
 
-    dataset.g.ndata['features'] = nn.Parameter(torch.Tensor(dataset.g.number_of_nodes(), params['in_feats']))#.cuda()
+    dataset.g.ndata['features'] = nn.Parameter(
+        torch.Tensor(
+            dataset.g.number_of_nodes(), params['in_dim']
+        )
+    )#.cuda()
+
     nn.init.kaiming_uniform_(dataset.g.ndata['features'])
-    params.pop('n_classes')
+    if 'num_classes' in params: params.pop('num_classes') # do I need this?
 
     dataset.g.readonly(readonly_state=True)
 
-    m = model(dataset.g, n_classes=dataset.num_classes,
+    m = model(dataset.g, num_classes=dataset.num_classes,
               **params)#.cuda()
 
     if restore_state:
@@ -199,9 +209,11 @@ def training_procedure(dataset, model, params, EPOCHS, restore_state):
         checkpoint = None
 
     try:
-        train(dataset.g, m, dataset.labels, dataset.splits, EPOCHS)
+        train(dataset, dataset.g, m, dataset.labels, dataset.splits, EPOCHS)
     except KeyboardInterrupt:
         print("Training interrupted")
+    except:
+        raise Exception()
     finally:
         m.eval()
         m = m#.cpu()

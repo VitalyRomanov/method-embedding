@@ -26,3 +26,23 @@ class Embedder:
             #     raise TypeError("Problem with embedder internal type:", type(self.e))
         else:
             raise TypeError("Unknown type:", type(key))
+
+    # @staticmethod
+    # def load_word2vec(path):
+    #     vecs = []
+    #     id_map = dict()
+    #
+    #     with open(path) as vectors:
+    #         n_vectors, n_dims = map(int, vectors.readline().strip().split())
+    #
+    #
+    #         for ind in range(n_vectors):
+    #             elements = vectors.readline().strip().split()
+    #             id_ = int(elements[0])
+    #             vec = list(map(float, elements[1:]))
+    #             assert len(vec) == n_dims
+    #             id_map[id_] = ind
+    #             vecs.append(vec)
+    #
+    #     embs = np.array(vecs)
+    #     return Embedder(id_map, embs)
