@@ -98,10 +98,11 @@ rgcn_grids = [
 ggnn_grids = [
     {
         'n_steps': [8],
-        'in_dim': [100],
-        'num_hidden': [100],
+        'in_dim': [300],
+        'num_hidden': [300],
         # 'num_classes': [100]
-        'lr': [0.001]
+        'lr': [0.0001],
+        'activation': [None]
     }
 ]
 
