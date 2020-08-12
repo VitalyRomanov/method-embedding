@@ -102,7 +102,7 @@ ggnn_grids = [
         'num_hidden': [300],
         # 'num_classes': [100]
         'lr': [0.0001],
-        'activation': [None]
+        'activation': [torch.nn.functional.hardtanh]
     }
 ]
 
