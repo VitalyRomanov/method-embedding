@@ -197,12 +197,12 @@ def training_procedure(dataset, model, params, EPOCHS, args):
         print(f"Restored from epoch {checkpoint['epoch']}")
         checkpoint = None
 
-    try:
-        train(m, labels, dataset.splits, EPOCHS)
-    except KeyboardInterrupt:
-        print("Training interrupted")
-    finally:
-        m.eval()
-        scores = final_evaluation(m, labels, dataset.splits)
-
-    return m, scores
+    # try:
+    train(m, labels, dataset.splits, EPOCHS)
+    # except KeyboardInterrupt:
+    #     print("Training interrupted")
+    # finally:
+    #     m.eval()
+    #     scores = final_evaluation(m, labels, dataset.splits)
+    #
+    # return m, scores

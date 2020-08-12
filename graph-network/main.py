@@ -1,8 +1,8 @@
 # %%
 import sys
-from models import GAT, RGCN
+from models import GAT, RGCN, GGNN
 from datetime import datetime
-from params import gat_params, rgcn_params
+from params import gat_params, rgcn_params, ggnn_params
 import pandas
 import pickle
 import json
@@ -36,7 +36,7 @@ def main(nodes_path, edges_path, models, desc, args):
             print(dateTime)
             print("Model: {}, Params: {}, Desc: {}".format(model.__name__, params, desc))
 
-            if model.__name__ == "GAT":
+            if model.__name__ == "GAT" or model.__name__ == "GGNN":
                 dataset = SourceGraphDataset(nodes_path, edges_path, label_from=LABELS_FROM,
                                              restore_state=args.restore_state, filter=args.filter_edges, self_loop=args.self_loop,
                                              holdout=args.holdout, train_frac=args.train_frac)
@@ -218,7 +218,8 @@ if __name__ == "__main__":
 
     models_ = {
         # GAT: gat_params,
-        RGCN: rgcn_params
+        # RGCN: rgcn_params,
+        GGNN: ggnn_params
     }
 
     data_paths = pandas.read_csv("data_paths.tsv", sep="\t")

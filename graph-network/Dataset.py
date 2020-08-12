@@ -378,9 +378,14 @@ class SourceGraphDataset:
         # graph_src = edges['src'].apply(id2new).values.tolist()
         # graph_dst = edges['dst'].apply(id2new).values.tolist()
 
+        type2id = compact_property(self.edges['type'])
+        edge_types = self.edges['type'].apply(lambda x: type2id[x]).values
+
         g = dgl.DGLGraph()
         g.add_nodes(self.nodes.shape[0])
         g.add_edges(self.edges['src_type_graph_id'].values.tolist(), self.edges['dst_type_graph_id'].values.tolist())
+
+        g.edata['etypes'] = edge_types
 
         self.g = g
 
