@@ -93,6 +93,15 @@ rgcn_grids = [
     }
 ]
 
+ggnn_grids = [
+    {
+        'n_steps': [5],
+        'in_dim': [100],
+        'num_hidden': [100],
+        # 'num_classes': [100]
+    }
+]
+
 
 gcnsampling_grids = [
     {
@@ -128,6 +137,12 @@ gat_params = list(
 rgcn_params = list(
     itertools.chain.from_iterable(
         [ParameterGrid(p) for p in rgcn_grids]
+    )
+)
+
+ggnn_params = list(
+    itertools.chain.from_iterable(
+        [ParameterGrid(p) for p in ggnn_grids]
     )
 )
 
