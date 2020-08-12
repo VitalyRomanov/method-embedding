@@ -81,7 +81,7 @@ def get_split_lables(idx, lbls, train_idx, test_idx, val_idx):
 
     return lbls[train_idx], lbls[test_idx], lbls[val_idx]
 
-def train(model, g_labels, splits, epochs):
+def train(model, g_labels, splits, epochs, lr):
     """
     Training procedure for the model with node classifier.
     :param model:
@@ -116,7 +116,7 @@ def train(model, g_labels, splits, epochs):
 
     heldout_idx = test_idx.tolist() + val_idx.tolist()
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     best_val_acc = torch.tensor(0)
     best_test_acc = torch.tensor(0)
@@ -168,6 +168,8 @@ def train(model, g_labels, splits, epochs):
 
 def training_procedure(dataset, model, params, EPOCHS, args):
 
+    lr = params.pop('lr')
+
     if args.override_labels:
         import pandas as pd
         from Dataset import compact_property
@@ -197,12 +199,12 @@ def training_procedure(dataset, model, params, EPOCHS, args):
         print(f"Restored from epoch {checkpoint['epoch']}")
         checkpoint = None
 
-    # try:
-    train(m, labels, dataset.splits, EPOCHS)
-    # except KeyboardInterrupt:
-    #     print("Training interrupted")
-    # finally:
-    #     m.eval()
-    #     scores = final_evaluation(m, labels, dataset.splits)
-    #
-    # return m, scores
+    try:
+        train(m, labels, dataset.splits, EPOCHS, lr)
+    except KeyboardInterrupt:
+        print("Training interrupted")
+    finally:
+        m.eval()
+        scores = final_evaluation(m, labels, dataset.splits)
+
+    return m, scores

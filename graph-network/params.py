@@ -16,7 +16,8 @@ gat_grids = [
         'attn_drop': [0.3],
         'negative_slope': [0.2],
         'residual': [False],
-        'activation': [torch.nn.functional.leaky_relu] #torch.nn.functional.leaky_relu
+        'activation': [torch.nn.functional.leaky_relu], #torch.nn.functional.leaky_relu
+        'lr': [0.01]
     },
     # {
     #     'num_layers': [1],
@@ -89,16 +90,18 @@ rgcn_grids = [
         'num_hidden_layers': [2],
         'dropout': [0.3],
         'use_self_loop': [False],
-        'activation': [torch.nn.functional.hardtanh] #torch.nn.functional.leaky_relu
+        'activation': [torch.nn.functional.hardtanh], #torch.nn.functional.leaky_relu
+        'lr': [0.001]
     }
 ]
 
 ggnn_grids = [
     {
-        'n_steps': [5],
+        'n_steps': [8],
         'in_dim': [100],
         'num_hidden': [100],
         # 'num_classes': [100]
+        'lr': [0.001]
     }
 ]
 
