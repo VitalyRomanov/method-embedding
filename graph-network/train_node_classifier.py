@@ -15,15 +15,42 @@ def evaluate(logits, labels, train_idx, test_idx, val_idx):
     return train_acc, val_acc, test_acc
 
 def final_evaluation(model, g_labels, splits):
-    train_idx, test_idx, val_idx = splits #get_train_test_val_indices(g_labels)
-    labels = torch.tensor(g_labels)
+    # train_idx, test_idx, val_idx = splits #get_train_test_val_indices(g_labels)
+    # labels = torch.tensor(g_labels)
+
+    if isinstance(g_labels, tuple):
+        sparse_labels = True
+    else:
+        sparse_labels = False
+
+    if sparse_labels:
+        idx, lbls = g_labels
+
+        pool_fname = set(idx)
+        train_idx, test_idx, val_idx = create_idx_pools(splits, pool_fname)
+
+        train_lbls, test_lbls, val_lbls = get_split_lables(idx, lbls, train_idx, test_idx, val_idx)
+
+        train_lbls = torch.LongTensor(train_lbls)
+        test_lbls = torch.LongTensor(test_lbls)
+        val_lbls = torch.LongTensor(val_lbls)
+    else:
+        train_idx, test_idx, val_idx = splits #get_train_test_val_indices(g_labels)
+        labels = torch.LongTensor(g_labels)
+        train_lbls = labels[train_idx]
+        test_lbls = labels[test_idx]
+        val_lbls = labels[val_idx]
 
     logits = model()
-    evaluate(logits, labels, train_idx, test_idx, val_idx)
+    # evaluate(logits, labels, train_idx, test_idx, val_idx)
     logp = nn.functional.log_softmax(logits, 1)
-    loss = nn.functional.nll_loss(logp[train_idx], labels[train_idx])
+    # loss = nn.functional.nll_loss(logp[train_idx], labels[train_idx])
+    loss = nn.functional.nll_loss(logp[train_idx], train_lbls)
 
-    train_acc, val_acc, test_acc = evaluate(logits, labels, train_idx, test_idx, val_idx)
+    # train_acc, val_acc, test_acc = evaluate(logits, labels, train_idx, test_idx, val_idx)
+    train_acc = evaluate_no_classes(logits[train_idx], train_lbls)
+    val_acc = evaluate_no_classes(logits[val_idx], val_lbls)
+    test_acc = evaluate_no_classes(logits[test_idx], test_lbls)
 
     scores = {
         "loss": loss.item(),
