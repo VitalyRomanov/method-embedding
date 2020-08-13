@@ -1,51 +1,109 @@
 import torch
 import torch.nn as nn
-import dgl.function as fn
-from dgl.nn.pytorch import edge_softmax, GATConv
-from dgl.contrib.sampling import NeighborSampler
 import dgl
-import numpy as np
 
-def evaluate(logits, labels, train_idx, test_idx, val_idx):
 
-    pred = logits.argmax(1)
-    train_acc = (pred[train_idx] == labels[train_idx]).float().mean()
-    val_acc = (pred[val_idx] == labels[val_idx]).float().mean()
-    test_acc = (pred[test_idx] == labels[test_idx]).float().mean()
+def extract_embed(node_embed, input_nodes):
+    emb = {}
+    for ntype, nid in input_nodes.items():
+        nid = input_nodes[ntype]
+        emb[ntype] = node_embed[ntype][nid]
+    return emb
 
-    return train_acc, val_acc, test_acc
 
-def evaluate_batch(logits, labels):
-    return torch.sum(logits == labels).item() / len(labels)
+def logits_batch(model, input_nodes, blocks, use_types, ntypes):
+    cumm_logits = []
 
-def evaluate_with_batches(train_batches, test_batches, val_batches):
-    train_log, train_lab = train_batches
-    train_acc = evaluate_batch(torch.cat(train_log), torch.cat(train_lab))
+    if use_types:
+        emb = extract_embed(model.node_embed(), input_nodes)
+    else:
+        if ntypes is not None:
+            # single node type
+            key = next(iter(ntypes))
+            input_nodes = {key: input_nodes}
+            emb = extract_embed(model.node_embed(), input_nodes)
+        else:
+            emb = model.node_embed()[input_nodes]
 
-    test_log, test_lab = test_batches
-    test_acc = evaluate_batch(torch.cat(test_log), torch.cat(test_lab))
+    logits = model(emb, blocks)
 
-    val_log, val_lab = val_batches
-    val_acc = evaluate_batch(torch.cat(val_log), torch.cat(val_lab))
+    if use_types:
+        for ntype in ntypes:
 
-    return train_acc, val_acc, test_acc
+            logits_ = logits.get(ntype, None)
+            if logits_ is None: continue
 
-def final_evaluation(model, g_labels, splits):
-    train_idx, test_idx, val_idx = splits #get_train_test_val_indices(g_labels)
-    labels = torch.tensor(g_labels)
+            cumm_logits.append(logits_)
+    else:
+        if ntypes is not None:
+            # single node type
+            key = next(iter(ntypes))
+            logits_ = logits[key]
+        else:
+            logits_ = logits
 
-    logits = model()
-    evaluate(logits, labels, train_idx, test_idx, val_idx)
-    logp = nn.functional.log_softmax(logits, 1)
-    loss = nn.functional.nll_loss(logp[train_idx], labels[train_idx])
+        cumm_logits.append(logits_)
 
-    train_acc, val_acc, test_acc = evaluate(logits, labels, train_idx, test_idx, val_idx)
+    return torch.cat(cumm_logits)
+
+
+def labels_batch(seeds, labels, use_types, ntypes):
+    cumm_labels = []
+
+    if use_types:
+        for ntype in ntypes:
+            cumm_labels.append(labels[ntype][seeds[ntype]])
+    else:
+        cumm_labels.append(labels[seeds])
+
+    return torch.cat(cumm_labels)
+
+
+def evaluate(model, loader, labels, use_types, device, ntypes=None):
+    # model.eval()
+    total_loss = 0
+    total_acc = 0
+    count = 0
+
+    for input_nodes, seeds, blocks in loader:
+        blocks = [blk.to(device) for blk in blocks]
+
+        logits = logits_batch(model, input_nodes, blocks, use_types, ntypes)
+        lbls = labels_batch(seeds, labels, use_types, ntypes)
+
+        loss = nn.functional.cross_entropy(logits, lbls)
+        acc = torch.sum(logits.argmax(dim=1) == lbls).item() / len(lbls)
+
+        total_loss += loss.item()
+        total_acc += acc
+        count += 1
+    return total_loss / count, total_acc / count
+
+
+def final_evaluation(g, model, gpu):
+    device = 'cpu'
+    use_cuda = gpu >= 0 and torch.cuda.is_available()
+    if use_cuda:
+        torch.cuda.set_device(gpu)
+        device = 'cuda:%d' % gpu
+
+    batch_size = 4096
+    num_per_neigh = 4
+    L = len(model.layers)
+
+    train_idx, test_idx, val_idx, labels, use_types, ntypes = get_training_targets(g)
+
+    loader, test_loader, val_loader = get_loaders(g, train_idx, test_idx, val_idx, num_per_neigh, L, batch_size)
+
+    loss, train_acc = evaluate(model, loader, labels, use_types, device, ntypes)
+    _, val_acc = evaluate(model, val_loader, labels, use_types, device, ntypes)
+    _, test_acc = evaluate(model, test_loader, labels, use_types, device, ntypes)
 
     scores = {
-        "loss": loss.item(),
-        "train_acc": train_acc.item(),
-        "val_acc": val_acc.item(),
-        "test_acc": test_acc.item(),
+        "loss": loss,
+        "train_acc": train_acc,
+        "val_acc": val_acc,
+        "test_acc": test_acc,
     }
 
     print('Final Eval Loss %.4f, Train Acc %.4f, Val Acc %.4f, Test Acc %.4f' % (
@@ -58,7 +116,50 @@ def final_evaluation(model, g_labels, splits):
     return scores
 
 
-def train(dataset, g, model, g_labels, splits, epochs):
+def get_training_targets(g):
+    if hasattr(g, 'ntypes'):
+        ntypes = g.ntypes
+        labels = {ntype: g.nodes[ntype].data['labels'] for ntype in g.ntypes}
+        use_types = True
+        if len(g.ntypes) == 1:
+            key = next(iter(labels.keys()))
+            labels = labels[key]
+            use_types = False
+        train_idx = {ntype: torch.nonzero(g.nodes[ntype].data['train_mask']).squeeze() for ntype in g.ntypes}
+        test_idx = {ntype: torch.nonzero(g.nodes[ntype].data['test_mask']).squeeze() for ntype in g.ntypes}
+        val_idx = {ntype: torch.nonzero(g.nodes[ntype].data['val_mask']).squeeze() for ntype in g.ntypes}
+    else:
+        ntypes = None
+        labels = g.ndata['labels']
+        train_idx = g.ndata['train_mask']
+        test_idx = g.ndata['test_mask']
+        val_idx = g.ndata['val_mask']
+        use_types = False
+
+    return train_idx, test_idx, val_idx, labels, use_types, ntypes
+
+
+def get_loaders(g, train_idx, test_idx, val_idx, num_per_neigh, layers, batch_size):
+    # train sampler
+    sampler = dgl.dataloading.MultiLayerNeighborSampler([num_per_neigh] * layers)
+    loader = dgl.dataloading.NodeDataLoader(
+        g, train_idx, sampler, batch_size=batch_size, shuffle=True, num_workers=0)
+
+    # validation sampler
+    # we do not use full neighbor to save computation resources
+    val_sampler = dgl.dataloading.MultiLayerNeighborSampler([num_per_neigh] * layers)
+    val_loader = dgl.dataloading.NodeDataLoader(
+        g, val_idx, val_sampler, batch_size=batch_size, shuffle=True, num_workers=0)
+
+    # we do not use full neighbor to save computation resources
+    test_sampler = dgl.dataloading.MultiLayerNeighborSampler([num_per_neigh] * layers)
+    test_loader = dgl.dataloading.NodeDataLoader(
+        g, test_idx, test_sampler, batch_size=batch_size, shuffle=True, num_workers=0)
+
+    return loader, test_loader, val_loader
+
+
+def train(g, model, epochs, gpu, lr):
     """
     Training procedure for the model with node classifier.
     :param model:
@@ -68,140 +169,70 @@ def train(dataset, g, model, g_labels, splits, epochs):
     :return:
     """
 
-    train_idx, test_idx, val_idx = splits #get_train_test_val_indices(g_labels)
-    labels = torch.tensor(g_labels)#.cuda()
+    device = 'cpu'
+    use_cuda = gpu >= 0 and torch.cuda.is_available()
+    if use_cuda:
+        torch.cuda.set_device(gpu)
+        device = 'cuda:%d' % gpu
 
-    heldout_idx = test_idx.tolist() + val_idx.tolist()
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     best_val_acc = torch.tensor(0)
     best_test_acc = torch.tensor(0)
 
-    batch_size = 128
-    num_neighbors = 200
+    batch_size = 4096
+    num_per_neigh = 4
     L = len(model.layers)
 
-    train_sampler = NeighborSampler(g, batch_size,
-                                       num_neighbors,
-                                       neighbor_type='in',
-                                       shuffle=True,
-                                       num_hops=L,
-                                       seed_nodes=train_idx)
+    train_idx, test_idx, val_idx, labels, use_types, ntypes = get_training_targets(g)
 
-    test_sampler = NeighborSampler(g, batch_size,
-                                     num_neighbors,
-                                     neighbor_type='in',
-                                     shuffle=True,
-                                     num_hops=L,
-                                     seed_nodes=test_idx)
-
-    val_sampler = NeighborSampler(g, batch_size,
-                                     num_neighbors,
-                                     neighbor_type='in',
-                                     shuffle=True,
-                                     num_hops=L,
-                                     seed_nodes=val_idx)
+    loader, test_loader, val_loader = get_loaders(g, train_idx, test_idx, val_idx, num_per_neigh, L, batch_size)
 
     for epoch in range(epochs):
-        train_logits = []; train_labels = []
-        test_logits = []; test_labels = []
-        val_logits = []; val_labels = []
+        for i, (input_nodes, seeds, blocks) in enumerate(loader):
+            logits = logits_batch(model, input_nodes, blocks, use_types, ntypes)
+            lbls = labels_batch(seeds, labels, use_types, ntypes)
 
-        for batch_ind, nf in enumerate(train_sampler):
-            # print(g.ndata['features'][0,:])
-            nf.copy_from_parent()
-            batch_nids = torch.LongTensor(nf.layer_parent_nid(-1))
-
-            logits = model(nf)
-
-            logp = nn.functional.log_softmax(logits, 1)
-            batch_labels = labels[batch_nids]
-            loss = nn.functional.nll_loss(logp, batch_labels)
+            loss = nn.functional.cross_entropy(logits, lbls)
+            train_acc = torch.sum(logits.argmax(dim=1) == lbls).item() / len(lbls)
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            # p = nn.functional.softmax(logits, 1)
-
-            train_labels.append(batch_labels)
-            train_logits.append(logp.argmax(dim=1))
-
-            # if batch_ind % 50 == 0:
-            #     print("\r%d/%d batches complete, loss: %.4f" % (
-            #     batch_ind, 0, loss.item(),), end="\n")
-
-            # nf.copy_to_parent()
-
-        for nf in test_sampler:
-            nf.copy_from_parent()
-
-            logits = model(nf)
-            batch_nids = torch.LongTensor(nf.layer_parent_nid(-1))
-
-            p = nn.functional.softmax(logits, 1)
-            batch_labels = labels[batch_nids]
-
-            test_labels.append(batch_labels)
-            test_logits.append(p.argmax(dim=1))
-
-        for nf in val_sampler:
-            nf.copy_from_parent()
-
-            logits = model(nf)
-            batch_nids = torch.LongTensor(nf.layer_parent_nid(-1))
-
-            p = nn.functional.softmax(logits, 1)
-            batch_labels = labels[batch_nids]
-
-            val_labels.append(batch_labels)
-            val_logits.append(p.argmax(dim=1))
-
-
-        train_acc, val_acc, test_acc = evaluate_with_batches((train_logits, train_labels),
-                                                             (test_logits, test_labels),
-                                                             (val_logits, val_labels))
+        _, val_acc = evaluate(model, loader, labels, use_types, device, ntypes)
+        _, test_acc = evaluate(model, loader, labels, use_types, device, ntypes)
 
         if best_val_acc < val_acc:
             best_val_acc = val_acc
             best_test_acc = test_acc
 
         print('Epoch %d, Loss %.4f, Train Acc %.4f, Val Acc %.4f (Best %.4f), Test Acc %.4f (Best %.4f)' % (
-            epoch,
-            loss.item(),
-            train_acc,
-            val_acc,
-            best_val_acc,
-            test_acc,
-            best_test_acc,
+            epoch, loss.item(), train_acc,
+            val_acc, best_val_acc,
+            test_acc, best_test_acc,
         ))
 
         torch.save({
             'm': model.state_dict(),
-            'feat': g.ndata['features'],
             "epoch": epoch
         }, "saved_state.pt")
 
-    return heldout_idx
+    return {
+        "loss": loss.item(),
+        "train_acc": train_acc,
+        "val_acc": val_acc,
+        "test_acc": test_acc,
+    }
 
-def training_procedure(dataset, model, params, EPOCHS, restore_state):
 
-    dataset.g.ndata['features'] = nn.Parameter(
-        torch.Tensor(
-            dataset.g.number_of_nodes(), params['in_dim']
-        )
-    )#.cuda()
-
-    nn.init.kaiming_uniform_(dataset.g.ndata['features'])
-    if 'num_classes' in params: params.pop('num_classes') # do I need this?
-
-    dataset.g.readonly(readonly_state=True)
+def training_procedure(dataset, model, params, EPOCHS, args):
+    lr = params.pop('lr')
 
     m = model(dataset.g, num_classes=dataset.num_classes,
-              **params)#.cuda()
+              **params)  # .cuda()
 
-    if restore_state:
+    if args.restore_state:
         checkpoint = torch.load("saved_state.pt")
         m.load_state_dict(checkpoint['m'])
         dataset.g.ndata['features'] = checkpoint['features']
@@ -209,15 +240,13 @@ def training_procedure(dataset, model, params, EPOCHS, restore_state):
         checkpoint = None
 
     try:
-        train(dataset, dataset.g, m, dataset.labels, dataset.splits, EPOCHS)
+        train(dataset.g, m, EPOCHS, args.gpu, lr)
     except KeyboardInterrupt:
         print("Training interrupted")
     except:
         raise Exception()
     finally:
         m.eval()
-        m = m#.cpu()
-        dataset.g.ndata['features'] = dataset.g.ndata['features']#.cpu()
-        scores = final_evaluation(m, dataset.labels, dataset.splits)
+        scores = final_evaluation(dataset.g, m, args.gpu)
 
     return m, scores
