@@ -67,7 +67,7 @@ class Experiments:
 
         # TODO
         # load splits for state dict and use them for training
-        self.splits = torch.load(os.path.join(self.base_path, "state_dict.pt"))["splits"]
+        # self.splits = torch.load(os.path.join(self.base_path, "state_dict.pt"))["splits"]
 
         if base_path is not None:
             self.embed = pickle.load(open(join(self.base_path, "embeddings.pkl"), "rb"))[gnn_layer]
@@ -106,6 +106,13 @@ class Experiments:
         """
         nodes = pandas.read_csv(join(self.base_path, "nodes.csv"))
         edges = pandas.read_csv(join(self.base_path, "held.csv")).astype({"src":"int32", "dst":"int32"})
+
+        global_ids = nodes['global_graph_id'].values
+        self.splits = (
+            global_ids[nodes['train_mask'].values],
+            global_ids[nodes['val_mask'].values],
+            global_ids[nodes['test_mask'].values],
+        )
         if type == "link":
             # nodes = pandas.read_csv(join(self.base_path, "nodes.csv"))
             held = pandas.read_csv(join(self.base_path, "held.csv")).astype({"src":"int32", "dst":"int32"})
