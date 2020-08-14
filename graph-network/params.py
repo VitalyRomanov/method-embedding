@@ -98,10 +98,10 @@ rgcn_grids = [
 ggnn_grids = [
     {
         'n_steps': [8],
-        'in_dim': [300],
-        'num_hidden': [300],
+        'in_dim': [200],
+        'num_hidden': [200],
         # 'num_classes': [100]
-        'lr': [0.0001],
+        'lr': [0.005],
         'activation': [torch.nn.functional.hardtanh]
     }
 ]
