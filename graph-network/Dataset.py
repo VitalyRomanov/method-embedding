@@ -2,7 +2,7 @@ import pandas
 import dgl
 import numpy
 import pickle
-
+import torch
 
 def load_data(node_path, edge_path):
     nodes = pandas.read_csv(node_path, dtype={'id': int, 'type': int, 'serialized_name': str}, escapechar='\\')
@@ -20,6 +20,12 @@ def load_data(node_path, edge_path):
     nodes_['libname'] = nodes_['name'].apply(lambda name: name.split(".")[0])
 
     return nodes_, edges_
+
+
+def create_mask(size, idx):
+    mask = numpy.full((size,), False, dtype=numpy.bool)
+    mask[idx] = True
+    return mask
 
 
 # def compact_prop(df, prop):
@@ -53,7 +59,7 @@ def get_train_test_val_indices(labels, train_frac=0.6):
 class SourceGraphDataset:
     def __init__(self, nodes_path, edges_path,
                  label_from, node_types=False,
-                 edge_types=False, filter=None, holdout_frac=0.001, restore_state=False, self_loop=False,
+                 edge_types=False, filter=None, holdout_frac=0.001, restore_state=False, self_loops=False,
                  holdout=None, train_frac=0.6):
         """
         Prepares the data for training GNN model. The graph is prepared in the following way:
@@ -93,7 +99,7 @@ class SourceGraphDataset:
 
         self.nodes, self.edges = load_data(nodes_path, edges_path)
 
-        if self_loop:
+        if self_loops:
             self.nodes, self.edges = SourceGraphDataset.assess_need_for_self_loops(self.nodes, self.edges)
 
         if restore_state:
@@ -135,6 +141,7 @@ class SourceGraphDataset:
 
         assert any(pandas.isna(self.nodes['label'])) == False
 
+        self.nodes['type_backup'] = self.nodes['type']
         if not self.nodes_have_types:
             self.nodes['type'] = 0
 
@@ -143,19 +150,35 @@ class SourceGraphDataset:
         self.nodes, self.typed_id_map = self.add_typed_ids()
         self.edges = self.add_compact_edges()
 
+        if restore_state:
+            self.splits = pickle.load(open("tmp_splits.pkl", "rb"))
+            print("Restored node splits from saved state")
+        else:
+            self.splits = get_train_test_val_indices(self.nodes.index, train_frac=train_frac)
+            pickle.dump(self.splits, open("tmp_splits.pkl", "wb"))
+        self.add_splits()
+
         self.create_graph()
 
         self.update_global_id()
 
         self.nodes.sort_values('global_graph_id', inplace=True)
 
-        if restore_state:
-            self.splits = pickle.load(open("tmp_splits.pkl", "rb"))
-            print("Restored node splits from saved state")
-        else:
-            self.splits = get_train_test_val_indices(self.labels, train_frac=train_frac)
-            pickle.dump(self.splits, open("tmp_splits.pkl", "wb"))
+        v = self.nodes['global_graph_id'].values
 
+        self.splits = (
+            v[self.nodes['train_mask'].values],
+            v[self.nodes['test_mask'].values],
+            v[self.nodes['val_mask'].values]
+        )
+
+    def add_splits(self):
+        self.nodes['train_mask'] = False
+        self.nodes.loc[self.nodes.index[self.splits[0]], 'train_mask'] = True
+        self.nodes['test_mask'] = False
+        self.nodes.loc[self.nodes.index[self.splits[1]], 'test_mask'] = True
+        self.nodes['val_mask'] = False
+        self.nodes.loc[self.nodes.index[self.splits[2]], 'val_mask'] = True
 
     def add_graph_ids(self):
 
@@ -385,7 +408,13 @@ class SourceGraphDataset:
         g.add_nodes(self.nodes.shape[0])
         g.add_edges(self.edges['src_type_graph_id'].values.tolist(), self.edges['dst_type_graph_id'].values.tolist())
 
-        g.edata['etypes'] = edge_types
+        g.ndata['labels'] = torch.tensor(self.nodes['compact_label'].values, dtype=torch.int64)
+        g.edata['etypes'] = torch.tensor(edge_types, dtype=torch.int64)
+
+        masks = self.nodes[['typed_id', 'train_mask', 'test_mask', 'val_mask']].sort_values('typed_id')
+        self.g.ndata['train_mask'] = torch.tensor(masks['train_mask'].values, dtype=bool)
+        self.g.ndata['test_mask'] = torch.tensor(masks['test_mask'].values, dtype=bool)
+        self.g.ndata['val_mask'] = torch.tensor(masks['val_mask'].values, dtype=bool)
 
         self.g = g
 
@@ -445,6 +474,18 @@ class SourceGraphDataset:
             )
 
         self.g = dgl.heterograph(typed_subgraphs, self.typed_node_counts)
+
+        # self_loop_signatures = edges[['type', 'dst_type']].drop_duplicates(['type', 'dst_type'])
+        # for ind, row in self_loop_signatures.iterrows():
+        #     subgraph_signature = (str(row.dst_type), str(row.type), str(row.dst_type))
+        #     self.g = dgl.add_self_loop(self.g, etype=subgraph_signature)
+
+        for ntype in self.g.ntypes:
+            masks = self.nodes.query(f"type == {ntype}")[['typed_id', 'train_mask', 'test_mask', 'val_mask', 'compact_label']].sort_values('typed_id')
+            self.g.nodes[ntype].data['train_mask'] = torch.tensor(masks['train_mask'].values, dtype=bool)
+            self.g.nodes[ntype].data['test_mask'] = torch.tensor(masks['test_mask'].values, dtype=bool)
+            self.g.nodes[ntype].data['val_mask'] = torch.tensor(masks['val_mask'].values, dtype=bool)
+            self.g.nodes[ntype].data['labels'] = torch.tensor(masks['compact_label'].values, dtype=torch.int64)
 
         # self.typed_labels_ = typed_labels
         # self.typed_id_maps_ = typed_id_maps

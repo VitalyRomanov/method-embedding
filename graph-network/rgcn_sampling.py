@@ -5,8 +5,9 @@ import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 import dgl
-import dgl.nn.pytorch as dglnn
-import tqdm
+import dgl.nn as dglnn
+# import tqdm
+from Embedder import Embedder
 
 class RelGraphConvLayer(nn.Module):
     r"""Relational graph convolution layer.
@@ -53,7 +54,7 @@ class RelGraphConvLayer(nn.Module):
         self.self_loop = self_loop
 
         self.conv = dglnn.HeteroGraphConv({
-                rel : dglnn.GraphConv(in_feat, out_feat, norm='right', weight=False, bias=False)
+                rel : dglnn.GraphConv(in_feat, out_feat, norm='right', weight=False, bias=False, allow_zero_in_degree=True)
                 for rel in rel_names
             })
 
@@ -101,14 +102,14 @@ class RelGraphConvLayer(nn.Module):
                      for i, w in enumerate(th.split(weight, 1, dim=0))}
         else:
             wdict = {}
-        hs = self.conv(g, inputs, mod_kwargs=wdict)
 
-        if isinstance(inputs, tuple):
-            # minibatch training
-            inputs_dst = inputs[1]
+        if g.is_block:
+            inputs_src = inputs
+            inputs_dst = {k: v[:g.number_of_dst_nodes(k)] for k, v in inputs.items()}
         else:
-            # full graph training
-            inputs_dst = inputs
+            inputs_src = inputs_dst = inputs
+
+        hs = self.conv(g, inputs, mod_kwargs=wdict)
 
         def _apply(ntype, h):
             if self.self_loop:
@@ -159,18 +160,21 @@ class RelGraphEmbed(nn.Module):
         """
         return self.embeds
 
-class EntityClassify(nn.Module):
+class RGCNSampling(nn.Module):
     def __init__(self,
                  g,
-                 h_dim, out_dim,
+                 h_dim, num_classes,
                  num_bases,
                  num_hidden_layers=1,
                  dropout=0,
-                 use_self_loop=False):
-        super(EntityClassify, self).__init__()
+                 use_self_loop=False,
+                 activation=F.relu):
+        super(RGCNSampling, self).__init__()
         self.g = g
         self.h_dim = h_dim
-        self.out_dim = out_dim
+        self.out_dim = num_classes
+        self.activation = activation
+
         self.rel_names = list(set(g.etypes))
         self.rel_names.sort()
         if num_bases < 0 or num_bases > len(self.rel_names):
@@ -186,19 +190,24 @@ class EntityClassify(nn.Module):
         # i2h
         self.layers.append(RelGraphConvLayer(
             self.h_dim, self.h_dim, self.rel_names,
-            self.num_bases, activation=F.relu, self_loop=self.use_self_loop,
+            self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
             dropout=self.dropout, weight=False))
         # h2h
         for i in range(self.num_hidden_layers):
             self.layers.append(RelGraphConvLayer(
                 self.h_dim, self.h_dim, self.rel_names,
-                self.num_bases, activation=F.relu, self_loop=self.use_self_loop,
+                self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
                 dropout=self.dropout))
         # h2o
         self.layers.append(RelGraphConvLayer(
             self.h_dim, self.out_dim, self.rel_names,
             self.num_bases, activation=None,
             self_loop=self.use_self_loop))
+
+        self.emb_size = num_classes
+
+    def node_embed(self):
+        return self.embed_layer()
 
     def forward(self, h=None, blocks=None):
         if h is None:
@@ -211,8 +220,7 @@ class EntityClassify(nn.Module):
         else:
             # minibatch training
             for layer, block in zip(self.layers, blocks):
-                h_dst = {k: v[:block.number_of_dst_nodes(k)] for k, v in h.items()}
-                h = layer(block, (h, h_dst))
+                h = layer(block, h)
         return h
 
     def inference(self, g, batch_size, device, num_workers, x=None):
@@ -233,8 +241,8 @@ class EntityClassify(nn.Module):
                     self.h_dim if l != len(self.layers) - 1 else self.out_dim)
                 for k in g.ntypes}
 
-            sampler = dgl.sampling.MultiLayerNeighborSampler([None])
-            dataloader = dgl.sampling.NodeDataLoader(
+            sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
+            dataloader = dgl.dataloading.NodeDataLoader(
                 g,
                 {k: th.arange(g.number_of_nodes(k)) for k in g.ntypes},
                 sampler,
@@ -243,15 +251,38 @@ class EntityClassify(nn.Module):
                 drop_last=False,
                 num_workers=num_workers)
 
-            for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
-                block = blocks[0]
+            for input_nodes, output_nodes, blocks in dataloader:#tqdm.tqdm(dataloader):
+                block = blocks[0].to(device)
+
+                if not isinstance(input_nodes, dict):
+                    key = next(iter(g.ntypes))
+                    input_nodes = {key: input_nodes}
+                    output_nodes = {key: output_nodes}
 
                 h = {k: x[k][input_nodes[k]].to(device) for k in input_nodes.keys()}
-                h_dst = {k: v[:block.number_of_dst_nodes(k)] for k, v in h.items()}
-                h = layer(block, (h, h_dst))
+                h = layer(block, h)
 
                 for k in h.keys():
                     y[k][output_nodes[k]] = h[k].cpu()
 
             x = y
         return y
+
+    def get_layers(self):
+        """
+        Retrieve tensor values on the layers for further use as node embeddings.
+        :return:
+        """
+        # h = self.embed_layer()
+        # l_out = [th.cat([h[ntype] for ntype in self.g.ntypes], dim=0).detach().numpy()]
+        # for layer in self.layers:
+        #     h = layer(self.g, h)
+        #     l_out.append(th.cat([h[ntype] for ntype in self.g.ntypes], dim=0).detach().numpy())
+
+        h = self.inference(g=self.g, batch_size=2048, device='cpu', num_workers=0)
+        l_out = [th.cat([h[ntype] for ntype in self.g.ntypes], dim=0).detach().numpy()]
+
+        return l_out
+
+    def get_embeddings(self, id_maps):
+        return [Embedder(id_maps, e) for e in self.get_layers()]
