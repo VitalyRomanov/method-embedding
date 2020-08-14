@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import dgl
 import dgl.nn as dglnn
-import tqdm
+# import tqdm
 from Embedder import Embedder
 
 class RelGraphConvLayer(nn.Module):
@@ -251,7 +251,7 @@ class RGCNSampling(nn.Module):
                 drop_last=False,
                 num_workers=num_workers)
 
-            for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
+            for input_nodes, output_nodes, blocks in dataloader:#tqdm.tqdm(dataloader):
                 block = blocks[0].to(device)
 
                 if not isinstance(input_nodes, dict):

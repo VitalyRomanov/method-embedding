@@ -38,7 +38,7 @@ def main(nodes_path, edges_path, models, desc, args):
 
             if model.__name__ == "GAT" or model.__name__ == "GGNN":
                 dataset = SourceGraphDataset(nodes_path, edges_path, label_from=LABELS_FROM,
-                                             restore_state=args.restore_state, filter=args.filter_edges, self_loop=args.self_loop,
+                                             restore_state=args.restore_state, filter=args.filter_edges, self_loops=args.self_loops,
                                              holdout=args.holdout, train_frac=args.train_frac)
             elif model.__name__ == "RGCN":
                 dataset = SourceGraphDataset(nodes_path,
@@ -48,7 +48,7 @@ def main(nodes_path, edges_path, models, desc, args):
                                              edge_types=True,
                                              restore_state=args.restore_state,
                                              filter=args.filter_edges,
-                                             self_loop = args.self_loop,
+                                             self_loops = args.self_loops,
                                              holdout=args.holdout,
                                              train_frac=args.train_frac
                                              )
@@ -206,7 +206,7 @@ if __name__ == "__main__":
                         help='Note, added to metadata')
     parser.add_argument('--use_node_types', action='store_true')
     parser.add_argument('--restore_state', action='store_true')
-    parser.add_argument('--self_loop', action='store_true')
+    parser.add_argument('--self_loops', action='store_true')
     parser.add_argument('--override_labels', action='store_true')
 
     args = parser.parse_args()
@@ -218,8 +218,8 @@ if __name__ == "__main__":
 
     models_ = {
         # GAT: gat_params,
-        # RGCN: rgcn_params,
-        GGNN: ggnn_params
+        RGCN: rgcn_params,
+        # GGNN: ggnn_params
     }
 
     data_paths = pandas.read_csv("data_paths.tsv", sep="\t")

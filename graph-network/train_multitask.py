@@ -460,6 +460,8 @@ def training_procedure(dataset, model, params, EPOCHS, api_seq_file, fname_file,
     NODE_EMB_SIZE = 100
     ELEM_EMB_SIZE = 100
 
+    lr = params.pop('lr')
+
     m = model(dataset.g,
               num_classes=NODE_EMB_SIZE,
               **params)
