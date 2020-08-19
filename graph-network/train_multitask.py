@@ -5,7 +5,7 @@ from dgl.nn.pytorch import edge_softmax, GATConv
 import numpy as np
 import pandas as pd
 from RAdam import RAdam
-from utils import get_num_batches, create_idx_pools
+from utils import get_num_batches, create_idx_pools, create_elem_embedder
 
 from ElementEmbedder import ElementEmbedder
 from LinkPredictor import LinkPredictor
@@ -466,16 +466,16 @@ def training_procedure(dataset, model, params, EPOCHS, api_seq_file, fname_file,
               num_classes=NODE_EMB_SIZE,
               **params)
 
-    def create_elem_embedder(file_path, nodes, emb_size, compact_dst):
-        element_data = pd.read_csv(file_path)
-        function2nodeid = dict(zip(nodes['id'].values, nodes['global_graph_id'].values))
-        element_data['id'] = element_data['src'].apply(lambda x: function2nodeid.get(x, None))
-        if not compact_dst: # creating api call embedder
-            element_data['dst'] = element_data['dst'].apply(lambda x: function2nodeid.get(x, None))
-            element_data.drop_duplicates(['id', 'dst'], inplace=True, ignore_index=True)
-        element_data = element_data.dropna(axis=0)
-        ee = ElementEmbedder(element_data, emb_size, compact_dst=compact_dst)
-        return ee
+    # def create_elem_embedder(file_path, nodes, emb_size, compact_dst):
+    #     element_data = pd.read_csv(file_path)
+    #     function2nodeid = dict(zip(nodes['id'].values, nodes['global_graph_id'].values))
+    #     element_data['id'] = element_data['src'].apply(lambda x: function2nodeid.get(x, None))
+    #     if not compact_dst: # creating api call embedder
+    #         element_data['dst'] = element_data['dst'].apply(lambda x: function2nodeid.get(x, None))
+    #         element_data.drop_duplicates(['id', 'dst'], inplace=True, ignore_index=True)
+    #     element_data = element_data.dropna(axis=0)
+    #     ee = ElementEmbedder(element_data, emb_size, compact_dst=compact_dst)
+    #     return ee
 
     from ElementEmbedder import ElementEmbedder
     ee_fname = create_elem_embedder(fname_file, dataset.nodes, ELEM_EMB_SIZE, True)
