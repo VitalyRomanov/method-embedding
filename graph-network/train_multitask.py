@@ -23,6 +23,8 @@ def track_best(epoch, loss,
                best_val_acc_fname, best_test_acc_fname,
                best_val_acc_varuse, best_test_acc_varuse,
                best_val_acc_apicall, best_test_acc_apicall):
+    # TODO
+    # does not really track now
     if best_val_acc_fname < val_acc_fname:
         best_val_acc_fname = val_acc_fname
         best_test_acc_fname = test_acc_fname
