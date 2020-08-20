@@ -98,25 +98,24 @@ def main(nodes_path, edges_path, models, desc, args):
             #         },
             #         join(MODEL_BASE, "vector_sim_next_call.pt")
             #     )
-            # elif args.training_mode == "multitask":
-            #
-            #     from train_multitask import training_procedure
-            #
-            #     m, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, scores = \
-            #         training_procedure(dataset, model, params, EPOCHS, args.call_seq_file, args.fname_file,
-            #                            args.varuse_file, args.restore_state)
-            #
-            #     torch.save(
-            #         {
-            #             'elem_embeder_fname': ee_fname.state_dict(),
-            #             'elem_embeder_varuse': ee_varuse.state_dict(),
-            #             'elem_embeder_apicall': ee_apicall.state_dict(),
-            #             'link_predictor_fname': lp_fname.state_dict(),
-            #             'link_predictor_varuse': lp_varuse.state_dict(),
-            #             'link_predictor_apicall': lp_apicall.state_dict(),
-            #         },
-            #         join(MODEL_BASE, "multitask.pt")
-            #     )
+            elif args.training_mode == "multitask":
+
+                from sampling_multitask import training_procedure
+
+                m, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, scores = \
+                    training_procedure(dataset, model, params, EPOCHS, args)
+
+                torch.save(
+                    {
+                        'elem_embeder_fname': ee_fname.state_dict(),
+                        'elem_embeder_varuse': ee_varuse.state_dict(),
+                        'elem_embeder_apicall': ee_apicall.state_dict(),
+                        'link_predictor_fname': lp_fname.state_dict(),
+                        'link_predictor_varuse': lp_varuse.state_dict(),
+                        'link_predictor_apicall': lp_apicall.state_dict(),
+                    },
+                    join(MODEL_BASE, "multitask.pt")
+                )
             else:
                 raise ValueError("Unknown training mode:", args.training_mode)
 
