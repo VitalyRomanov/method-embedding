@@ -200,8 +200,8 @@ def train(g, model, epochs, gpu, lr):
             loss.backward()
             optimizer.step()
 
-        _, val_acc = evaluate(model, loader, labels, use_types, device, ntypes)
-        _, test_acc = evaluate(model, loader, labels, use_types, device, ntypes)
+        _, val_acc = evaluate(model, val_loader, labels, use_types, device, ntypes)
+        _, test_acc = evaluate(model, test_loader, labels, use_types, device, ntypes)
 
         if best_val_acc < val_acc:
             best_val_acc = val_acc
