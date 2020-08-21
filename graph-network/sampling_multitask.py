@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import dgl
+from math import ceil
+from time import time
 
 from utils import create_elem_embedder, track_best_multitask, create_idx_pools
 from ElementEmbedder import ElementEmbedder
@@ -51,63 +53,79 @@ def logits_batch(model, input_nodes, blocks, use_types, ntypes):
     return torch.cat(cumm_logits)
 
 
-def logits_embedder(node_embeddings, elem_embeder, link_predictor, seeds, negative_factor=1):
+def logits_embedder(node_embeddings, elem_embeder, link_predictor, seeds, negative_factor=1, device='cpu'):
     K = negative_factor
     indices = seeds
     batch_size = len(seeds)
 
     node_embeddings_batch = node_embeddings
-    element_embeddings = elem_embeder(elem_embeder[indices])
+    element_embeddings = elem_embeder(elem_embeder[indices.tolist()].to(device))
 
     positive_batch = torch.cat([node_embeddings_batch, element_embeddings], 1)
     labels_pos = torch.ones(batch_size, dtype=torch.long)
 
     node_embeddings_neg_batch = node_embeddings_batch.repeat(K, 1)
-    negative_indices = torch.LongTensor(elem_embeder.sample_negative(batch_size * K))
+    negative_indices = torch.LongTensor(elem_embeder.sample_negative(batch_size * K)).to(device)
     negative_random = elem_embeder(negative_indices)
     negative_batch = torch.cat([node_embeddings_neg_batch, negative_random], 1)
     labels_neg = torch.zeros(batch_size * K, dtype=torch.long)
 
     batch = torch.cat([positive_batch, negative_batch], 0)
-    labels = torch.cat([labels_pos, labels_neg], 0)
+    labels = torch.cat([labels_pos, labels_neg], 0).to(device)
 
     logits = link_predictor(batch)
 
     return logits, labels
 
+def handle_non_unique(non_unique_ids):
+    id_list = non_unique_ids.tolist()
+    unique_ids = list(set(id_list))
+    new_position = dict(zip(unique_ids, range(len(unique_ids))))
+    slice_map = torch.tensor(list(map(lambda x: new_position[x], id_list)), dtype=torch.long)
+    return torch.tensor(unique_ids, dtype=torch.long), slice_map
 
 def logits_nodes(model, node_embeddings,
                  elem_embeder, link_predictor, create_dataloader,
-                 src_seeds, use_types, ntypes, negative_factor=1):
+                 src_seeds, use_types, ntypes, negative_factor=1, device='cpu'):
     K = negative_factor
     indices = src_seeds
     batch_size = len(src_seeds)
 
     node_embeddings_batch = node_embeddings
-    next_call_indices = elem_embeder[indices]
+    next_call_indices = elem_embeder[indices.tolist()] # this assumes indices is torch tensor
 
-    dataloader = create_dataloader(next_call_indices)
+    # dst targets are not unique
+    unique_dst, slice_map = handle_non_unique(next_call_indices)
+    assert all(unique_dst[slice_map] == next_call_indices)
+
+    dataloader = create_dataloader(unique_dst)
     input_nodes, dst_seeds, blocks = next(iter(dataloader))
-    assert dst_seeds.shape == next_call_indices.shape
-    assert dst_seeds == next_call_indices
-    next_call_embeddings = logits_batch(model, input_nodes, blocks, use_types, ntypes)
+    blocks = [blk.to(device) for blk in blocks]
+    assert dst_seeds.shape == unique_dst.shape
+    assert all(dst_seeds == unique_dst)
+    unique_dst_embeddings = logits_batch(model, input_nodes, blocks, use_types, ntypes)
+    next_call_embeddings = unique_dst_embeddings[slice_map.to(device)]
     positive_batch = torch.cat([node_embeddings_batch, next_call_embeddings], 1)
     labels_pos = torch.ones(batch_size, dtype=torch.long)
 
     node_embeddings_neg_batch = node_embeddings_batch.repeat(K, 1)
-    negative_indices = elem_embeder.sample_negative(
-        batch_size * K)  # embeddings are sampled from 3/4 unigram distribution
+    negative_indices = torch.tensor(elem_embeder.sample_negative(
+        batch_size * K), dtype=torch.long)  # embeddings are sampled from 3/4 unigram distribution
+    unique_negative, slice_map = handle_non_unique(negative_indices)
+    assert all(unique_negative[slice_map] == negative_indices)
 
-    dataloader = create_dataloader(negative_indices)
+    dataloader = create_dataloader(unique_negative)
     input_nodes, dst_seeds, blocks = next(iter(dataloader))
-    assert dst_seeds.shape == negative_indices.shape
-    assert dst_seeds == negative_indices
-    negative_random = logits_batch(model, input_nodes, blocks, use_types, ntypes)
+    blocks = [blk.to(device) for blk in blocks]
+    assert dst_seeds.shape == unique_negative.shape
+    assert all(dst_seeds == unique_negative)
+    unique_negative_random = logits_batch(model, input_nodes, blocks, use_types, ntypes)
+    negative_random = unique_negative_random[slice_map.to(device)]
     negative_batch = torch.cat([node_embeddings_neg_batch, negative_random], 1)
     labels_neg = torch.zeros(batch_size * K, dtype=torch.long)
 
     batch = torch.cat([positive_batch, negative_batch], 0)
-    labels = torch.cat([labels_pos, labels_neg], 0)
+    labels = torch.cat([labels_pos, labels_neg], 0).to(device)
 
     logits = link_predictor(batch)
 
@@ -140,11 +158,11 @@ def evaluate(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_api
         blocks = [blk.to(device) for blk in blocks]
 
         src_embs = logits_batch(model, input_nodes, blocks, use_types, ntypes)
-        logits_fname, labels_fname = logits_embedder(src_embs, ee_fname, lp_fname, seeds, neg_samplig_factor)
-        logits_varuse, labels_varuse = logits_embedder(src_embs, ee_varuse, lp_varuse, seeds, neg_samplig_factor)
+        logits_fname, labels_fname = logits_embedder(src_embs, ee_fname, lp_fname, seeds, neg_samplig_factor, device=device)
+        logits_varuse, labels_varuse = logits_embedder(src_embs, ee_varuse, lp_varuse, seeds, neg_samplig_factor, device=device)
         logits_apicall, labels_apicall = logits_nodes(model, src_embs,
                                                       ee_apicall, lp_apicall, create_apicall_loader,
-                                                      seeds, use_types, ntypes, neg_samplig_factor)
+                                                      seeds, use_types, ntypes, neg_samplig_factor, device=device)
 
         acc_fname = torch.sum(logits_fname.argmax(dim=1) == labels_fname).item() / len(labels_fname)
         acc_varuse = torch.sum(logits_varuse.argmax(dim=1) == labels_varuse).item() / len(labels_varuse)
@@ -165,12 +183,56 @@ def evaluate(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_api
     return total_loss / count, total_acc_fname / count, total_acc_varuse / count, total_acc_apicall / count
 
 
-def final_evaluation(g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, gpu):
-    device = 'cpu'
-    use_cuda = gpu >= 0 and torch.cuda.is_available()
-    if use_cuda:
-        torch.cuda.set_device(gpu)
-        device = 'cuda:%d' % gpu
+def evaluate_embedder(model, ee, lp, loader,
+             use_types, ntypes=None, device='cpu', neg_samplig_factor=1):
+
+    total_loss = 0
+    total_acc = 0
+    count = 0
+
+    for input_nodes, seeds, blocks in loader:
+        blocks = [blk.to(device) for blk in blocks]
+
+        src_embs = logits_batch(model, input_nodes, blocks, use_types, ntypes)
+        logits, labels = logits_embedder(src_embs, ee, lp, seeds, neg_samplig_factor, device=device)
+
+        logp = nn.functional.log_softmax(logits, 1)
+        loss = nn.functional.cross_entropy(logp, labels)
+        acc = torch.sum(logp.argmax(dim=1) == labels).item() / len(labels)
+
+        total_loss += loss.item()
+        total_acc += acc
+        count += 1
+    return total_loss / count, total_acc / count
+
+
+def evaluate_nodes(model, ee, lp,
+             create_apicall_loader, loader,
+             use_types, ntypes=None, device='cpu', neg_samplig_factor=1):
+
+    total_loss = 0
+    total_acc = 0
+    count = 0
+
+    for input_nodes, seeds, blocks in loader:
+        blocks = [blk.to(device) for blk in blocks]
+
+        src_embs = logits_batch(model, input_nodes, blocks, use_types, ntypes)
+        logits, labels = logits_nodes(model, src_embs,
+                                          ee, lp, create_apicall_loader,
+                                          seeds, use_types, ntypes, neg_samplig_factor, device=device)
+
+        logp = nn.functional.log_softmax(logits, 1)
+        loss = nn.functional.cross_entropy(logp, labels)
+        acc = torch.sum(logp.argmax(dim=1) == labels).item() / len(labels)
+
+        total_loss += loss.item()
+        total_acc += acc
+        count += 1
+    return total_loss / count, total_acc / count
+
+
+def final_evaluation(g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, device):
 
     batch_size = 4096
     num_per_neigh = 4
@@ -179,19 +241,56 @@ def final_evaluation(g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_var
 
     train_idx, test_idx, val_idx, labels, use_types, ntypes = get_training_targets(g)
 
-    loader, test_loader, val_loader = get_loaders(g, train_idx, test_idx, val_idx, num_per_neigh, L, batch_size)
+    train_idx_fname, test_idx_fname, val_idx_fname = ee_fname.create_idx_pools(train_idx, test_idx, val_idx)
+    train_idx_varuse, test_idx_varuse, val_idx_varuse = ee_varuse.create_idx_pools(train_idx, test_idx, val_idx)
+    train_idx_apicall, test_idx_apicall, val_idx_apicall = ee_apicall.create_idx_pools(train_idx, test_idx, val_idx)
+
+    loader_fname, test_loader_fname, val_loader_fname = get_loaders(g, train_idx_fname, test_idx_fname, val_idx_fname,
+                                                                    num_per_neigh, L,
+                                                                    batch_size)
+    loader_varuse, test_loader_varuse, val_loader_varuse = get_loaders(g, train_idx_varuse, test_idx_varuse,
+                                                                       val_idx_varuse, num_per_neigh, L,
+                                                                       batch_size)
+    loader_apicall, test_loader_apicall, val_loader_apicall = get_loaders(g, train_idx_apicall, test_idx_apicall,
+                                                                          val_idx_apicall, num_per_neigh, L,
+                                                                          batch_size)
 
     sampler = dgl.dataloading.MultiLayerNeighborSampler([num_per_neigh] * L)
     create_apicall_loader = lambda indices: dgl.dataloading.NodeDataLoader(
         g, indices, sampler, batch_size=len(indices), num_workers=4)
 
-    loss, train_acc_fname, train_acc_varuse, train_acc_apicall = evaluate(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall,
-                               create_apicall_loader, loader, use_types, ntypes=ntypes, device=device, neg_samplig_factor=neg_sampling_factor)
-    _, val_acc_fname, val_acc_varuse, val_acc_apicall = evaluate(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall,
-                          create_apicall_loader, val_loader, use_types, ntypes=ntypes, device=device, neg_samplig_factor=neg_sampling_factor)
-    _, test_acc_fname, test_acc_varuse, test_acc_apicall = evaluate(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall,
-                           create_apicall_loader, test_loader, use_types, ntypes=ntypes, device=device, neg_samplig_factor=neg_sampling_factor)
+    loss, train_acc_fname = evaluate_embedder(model, ee_fname, lp_fname, loader_fname,
+                                         use_types, ntypes=ntypes, device=device,
+                                         neg_samplig_factor=1)
+    _, train_acc_varuse = evaluate_embedder(model, ee_varuse, lp_varuse, loader_varuse,
+                                          use_types, ntypes=ntypes, device=device,
+                                          neg_samplig_factor=1)
+    _, train_acc_apicall = evaluate_nodes(model, ee_apicall, lp_apicall,
+                                           create_apicall_loader, loader_apicall,
+                                           use_types, ntypes=ntypes, device=device,
+                                           neg_samplig_factor=1)
 
+    _, val_acc_fname = evaluate_embedder(model, ee_fname, lp_fname, val_loader_fname,
+                                         use_types, ntypes=ntypes, device=device,
+                                         neg_samplig_factor=1)
+    _, val_acc_varuse = evaluate_embedder(model, ee_varuse, lp_varuse, val_loader_varuse,
+                                          use_types, ntypes=ntypes, device=device,
+                                          neg_samplig_factor=1)
+    _, val_acc_apicall = evaluate_nodes(model, ee_apicall, lp_apicall,
+                                           create_apicall_loader, val_loader_apicall,
+                                           use_types, ntypes=ntypes, device=device,
+                                           neg_samplig_factor=1)
+
+    _, test_acc_fname = evaluate_embedder(model, ee_fname, lp_fname, test_loader_fname,
+                                          use_types, ntypes=ntypes, device=device,
+                                          neg_samplig_factor=1)
+    _, test_acc_varuse = evaluate_embedder(model, ee_varuse, lp_varuse, test_loader_varuse,
+                                           use_types, ntypes=ntypes, device=device,
+                                           neg_samplig_factor=1)
+    _, test_acc_apicall = evaluate_nodes(model, ee_apicall, lp_apicall,
+                                            create_apicall_loader, test_loader_apicall,
+                                            use_types, ntypes=ntypes, device=device,
+                                            neg_samplig_factor=1)
     scores = {
         # "loss": loss.item(),
         "train_acc_fname": train_acc_fname,
@@ -249,23 +348,31 @@ def get_loaders(g, train_idx, test_idx, val_idx, num_per_neigh, layers, batch_si
     # train sampler
     sampler = dgl.dataloading.MultiLayerNeighborSampler([num_per_neigh] * layers)
     loader = dgl.dataloading.NodeDataLoader(
-        g, train_idx, sampler, batch_size=batch_size, shuffle=True, num_workers=0)
+        g, train_idx, sampler, batch_size=batch_size, shuffle=False, num_workers=0)
 
     # validation sampler
     # we do not use full neighbor to save computation resources
     val_sampler = dgl.dataloading.MultiLayerNeighborSampler([num_per_neigh] * layers)
     val_loader = dgl.dataloading.NodeDataLoader(
-        g, val_idx, val_sampler, batch_size=batch_size, shuffle=True, num_workers=0)
+        g, val_idx, val_sampler, batch_size=batch_size, shuffle=False, num_workers=0)
 
     # we do not use full neighbor to save computation resources
     test_sampler = dgl.dataloading.MultiLayerNeighborSampler([num_per_neigh] * layers)
     test_loader = dgl.dataloading.NodeDataLoader(
-        g, test_idx, test_sampler, batch_size=batch_size, shuffle=True, num_workers=0)
+        g, test_idx, test_sampler, batch_size=batch_size, shuffle=False, num_workers=0)
 
     return loader, test_loader, val_loader
 
+def idx_len(idx):
+    if isinstance(idx, dict):
+        length = 0
+        for key in idx:
+            length += len(idx[key])
+    else:
+        length = len(idx)
+    return length
 
-def train(g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, epochs, gpu, lr):
+def train(g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, epochs, device, lr):
     """
     Training procedure for the model with node classifier.
     :param model:
@@ -274,17 +381,19 @@ def train(g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_api
     :param epochs:
     :return:
     """
-    pool_fname = set(ee_fname.elements['id'].to_list())
-    pool_varuse = set(ee_varuse.elements['id'].to_list())
-    pool_apicall = set(ee_apicall.elements['id'].to_list())
 
-    device = 'cpu'
-    # use_cuda = gpu >= 0 and torch.cuda.is_available()
-    # if use_cuda:
-    #     torch.cuda.set_device(gpu)
-    #     device = 'cuda:%d' % gpu
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    # optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = torch.optim.Adam(
+        [
+            {'params': model.parameters()},
+            {'params': ee_fname.parameters()},
+            {'params': ee_varuse.parameters()},
+            {'params': ee_apicall.parameters()},
+            {'params': lp_fname.parameters()},
+            {'params': lp_varuse.parameters()},
+            {'params': lp_apicall.parameters()},
+        ], lr=lr
+    )
 
     best_val_acc_fname = 0.
     best_test_acc_fname = 0.
@@ -293,42 +402,62 @@ def train(g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_api
     best_val_acc_apicall = 0.
     best_test_acc_apicall = 0.
 
-    batch_size = 4096
-    num_per_neigh = 4
+    ref_batch_size = 1024
+    num_per_neigh = 10
     neg_samplig_factor = 3
     L = len(model.layers)
 
     train_idx, test_idx, val_idx, _, use_types, ntypes = get_training_targets(g)
 
-    train_idx_fname, test_idx_fname, val_idx_fname = create_idx_pools((train_idx, test_idx, val_idx), pool_fname)
-    train_idx_varuse, test_idx_varuse, val_idx_varuse = create_idx_pools((train_idx, test_idx, val_idx), pool_varuse)
-    train_idx_apicall, test_idx_apicall, val_idx_apicall = create_idx_pools((train_idx, test_idx, val_idx), pool_apicall)
+    train_idx_fname, test_idx_fname, val_idx_fname = ee_fname.create_idx_pools(train_idx, test_idx, val_idx)
+    train_idx_varuse, test_idx_varuse, val_idx_varuse = ee_varuse.create_idx_pools(train_idx, test_idx, val_idx)
+    train_idx_apicall, test_idx_apicall, val_idx_apicall = ee_apicall.create_idx_pools(train_idx, test_idx, val_idx)
 
-    print(f"Pool sizes : train {len(train_idx_fname)}, test {len(test_idx_fname)}, val {len(val_idx_fname)}")
-    print(f"Pool sizes : train {len(train_idx_varuse)}, test {len(test_idx_varuse)}, val {len(val_idx_varuse)}")
-    print(f"Pool sizes : train {len(train_idx_apicall)}, test {len(test_idx_apicall)}, val {len(val_idx_apicall)}")
+    print(f"Pool sizes : train {idx_len(train_idx_fname)}, test {idx_len(test_idx_fname)}, val {idx_len(val_idx_fname)}")
+    print(f"Pool sizes : train {idx_len(train_idx_varuse)}, test {idx_len(test_idx_varuse)}, val {idx_len(val_idx_varuse)}")
+    print(f"Pool sizes : train {idx_len(train_idx_apicall)}, test {idx_len(test_idx_apicall)}, val {idx_len(val_idx_apicall)}")
+
+    batch_size_fname = ref_batch_size
+    batch_size_varuse = ceil(idx_len(train_idx_varuse) / ceil(idx_len(train_idx_fname) / batch_size_fname))
+    batch_size_apicall = ceil(idx_len(train_idx_apicall) / ceil(idx_len(train_idx_fname) / batch_size_fname))
 
     loader_fname, test_loader_fname, val_loader_fname = get_loaders(g, train_idx_fname, test_idx_fname, val_idx_fname, num_per_neigh, L,
-                                                                    batch_size)
+                                                                    batch_size_fname)
     loader_varuse, test_loader_varuse, val_loader_varuse = get_loaders(g, train_idx_varuse, test_idx_varuse, val_idx_varuse, num_per_neigh, L,
-                                                                    batch_size)
+                                                                    batch_size_varuse)
     loader_apicall, test_loader_apicall, val_loader_apicall = get_loaders(g, train_idx_apicall, test_idx_apicall, val_idx_apicall, num_per_neigh, L,
-                                                                    batch_size)
+                                                                    batch_size_apicall)
 
     sampler = dgl.dataloading.MultiLayerNeighborSampler([num_per_neigh] * L)
     create_apicall_loader = lambda indices: dgl.dataloading.NodeDataLoader(
-        g, indices, sampler, batch_size=len(indices), num_workers=4)
+        g, indices, sampler, batch_size=len(indices), num_workers=0)
 
     for epoch in range(epochs):
-        for i, (input_nodes, seeds, blocks) in enumerate(loader):
-            src_embs = logits_batch(model, input_nodes, blocks, use_types, ntypes)
 
-            logits_fname, labels_fname = logits_embedder(src_embs, ee_fname, lp_fname, seeds, neg_samplig_factor)
-            logits_varuse, labels_varuse = logits_embedder(src_embs, ee_varuse, lp_varuse, seeds, neg_samplig_factor)
-            logits_apicall, labels_apicall = logits_nodes(model, src_embs,
+        start = time()
+
+        for i, ((input_nodes_fname, seeds_fname, blocks_fname),
+                (input_nodes_varuse, seeds_varuse, blocks_varuse),
+                (input_nodes_apicall, seeds_apicall, blocks_apicall)) in \
+                enumerate(zip(loader_fname, loader_varuse, loader_apicall)):
+
+            blocks_fname = [blk.to(device) for blk in blocks_fname]
+            blocks_varuse = [blk.to(device) for blk in blocks_varuse]
+            blocks_apicall = [blk.to(device) for blk in blocks_apicall]
+
+            src_embs_fname = logits_batch(model, input_nodes_fname, blocks_fname, use_types, ntypes)
+            logits_fname, labels_fname = logits_embedder(src_embs_fname, ee_fname, lp_fname, seeds_fname, neg_samplig_factor, device=device)
+
+            src_embs_varuse = logits_batch(model, input_nodes_varuse, blocks_varuse, use_types, ntypes)
+            logits_varuse, labels_varuse = logits_embedder(src_embs_varuse, ee_varuse, lp_varuse, seeds_varuse, neg_samplig_factor, device=device)
+
+            src_embs_apicall = logits_batch(model, input_nodes_apicall, blocks_apicall, use_types, ntypes)
+            logits_apicall, labels_apicall = logits_nodes(model, src_embs_apicall,
                                                           ee_apicall, lp_apicall, create_apicall_loader,
-                                                          seeds, use_types, ntypes, neg_samplig_factor)
+                                                          seeds_apicall, use_types, ntypes, neg_samplig_factor, device=device)
 
+            # TODO
+            # some issues are possible because of the lack of softmax
             train_acc_fname = torch.sum(logits_fname.argmax(dim=1) == labels_fname).item() / len(labels_fname)
             train_acc_varuse = torch.sum(logits_varuse.argmax(dim=1) == labels_varuse).item() / len(labels_varuse)
             train_acc_apicall = torch.sum(logits_apicall.argmax(dim=1) == labels_apicall).item() / len(labels_apicall)
@@ -343,18 +472,35 @@ def train(g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_api
             loss.backward()
             optimizer.step()
 
-        _, val_acc_fname, val_acc_varuse, val_acc_apicall = \
-            evaluate(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall,
-                     create_apicall_loader, val_loader, use_types, ntypes=ntypes, device=device, neg_samplig_factor=neg_samplig_factor)
-        _, test_acc_fname, test_acc_varuse, test_acc_apicall = evaluate(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall,
-                     create_apicall_loader, test_loader, use_types, ntypes=ntypes, device=device, neg_samplig_factor=neg_samplig_factor)
+        _, val_acc_fname = evaluate_embedder(model, ee_fname, lp_fname, val_loader_fname,
+                                             use_types, ntypes=ntypes, device=device,
+                                             neg_samplig_factor=neg_samplig_factor)
+        _, val_acc_varuse = evaluate_embedder(model, ee_varuse, lp_varuse, val_loader_varuse,
+                                             use_types, ntypes=ntypes, device=device,
+                                             neg_samplig_factor=neg_samplig_factor)
+        _, val_acc_apicall = evaluate_nodes(model, ee_apicall, lp_apicall,
+                                               create_apicall_loader, val_loader_apicall,
+                                               use_types, ntypes=ntypes, device=device, neg_samplig_factor=neg_samplig_factor)
+
+        _, test_acc_fname = evaluate_embedder(model, ee_fname, lp_fname, test_loader_fname,
+                                             use_types, ntypes=ntypes, device=device,
+                                             neg_samplig_factor=neg_samplig_factor)
+        _, test_acc_varuse = evaluate_embedder(model, ee_varuse, lp_varuse, test_loader_varuse,
+                                              use_types, ntypes=ntypes, device=device,
+                                              neg_samplig_factor=neg_samplig_factor)
+        _, test_acc_apicall = evaluate_nodes(model, ee_apicall, lp_apicall,
+                                               create_apicall_loader, test_loader_apicall,
+                                               use_types, ntypes=ntypes, device=device,
+                                               neg_samplig_factor=neg_samplig_factor)
+        end = time()
 
         track_best_multitask(epoch, loss.item(), train_acc_fname, val_acc_fname, test_acc_fname,
                              train_acc_varuse, val_acc_varuse, test_acc_varuse,
                              train_acc_apicall, val_acc_apicall, test_acc_apicall,
                              best_val_acc_fname, best_test_acc_fname,
                              best_val_acc_varuse, best_test_acc_varuse,
-                             best_val_acc_apicall, best_test_acc_apicall)
+                             best_val_acc_apicall, best_test_acc_apicall,
+                             time=end-start)
 
         torch.save({
             'm': model.state_dict(),
@@ -379,18 +525,26 @@ def training_procedure(dataset, model, params, EPOCHS, args):
     NODE_EMB_SIZE = 100
     ELEM_EMB_SIZE = 100
 
+    device = 'cpu'
+    use_cuda = args.gpu >= 0 and torch.cuda.is_available()
+    if use_cuda:
+        torch.cuda.set_device(args.gpu)
+        device = 'cuda:%d' % args.gpu
+
+    g = dataset.g#.to(device)
+
     lr = params.pop('lr')
 
-    m = model(dataset.g, num_classes=NODE_EMB_SIZE,
-              **params)  # .cuda()
+    m = model(g, num_classes=NODE_EMB_SIZE,
+              **params).to(device)
 
-    ee_fname = create_elem_embedder(args.fname_file, dataset.nodes, ELEM_EMB_SIZE, True)
-    ee_varuse = create_elem_embedder(args.varuse_file, dataset.nodes, ELEM_EMB_SIZE, True)
-    ee_apicall = create_elem_embedder(args.call_seq_file, dataset.nodes, ELEM_EMB_SIZE, False)
+    ee_fname = create_elem_embedder(args.fname_file, dataset.nodes, ELEM_EMB_SIZE, True).to(device)
+    ee_varuse = create_elem_embedder(args.varuse_file, dataset.nodes, ELEM_EMB_SIZE, True).to(device)
+    ee_apicall = create_elem_embedder(args.call_seq_file, dataset.nodes, ELEM_EMB_SIZE, False).to(device)
 
-    lp_fname = LinkPredictor(ee_fname.emb_size + m.emb_size)
-    lp_varuse = LinkPredictor(ee_varuse.emb_size + m.emb_size)
-    lp_apicall = LinkPredictor(m.emb_size + m.emb_size)
+    lp_fname = LinkPredictor(ee_fname.emb_size + m.emb_size).to(device)
+    lp_varuse = LinkPredictor(ee_varuse.emb_size + m.emb_size).to(device)
+    lp_apicall = LinkPredictor(m.emb_size + m.emb_size).to(device)
 
     if args.restore_state:
         checkpoint = torch.load("saved_state.pt")
@@ -405,19 +559,20 @@ def training_procedure(dataset, model, params, EPOCHS, args):
         checkpoint = None
 
     try:
-        train(dataset.g, m, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, EPOCHS, args.gpu, lr)
+        train(g, m, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, EPOCHS, device, lr)
     except KeyboardInterrupt:
         print("Training interrupted")
     except:
         raise Exception()
-    finally:
-        m.eval()
-        ee_fname.eval()
-        ee_varuse.eval()
-        ee_apicall.eval()
-        lp_fname.eval()
-        lp_varuse.eval()
-        lp_apicall.eval()
-        scores = final_evaluation(dataset.g, m, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, args.gpu)
 
-    return m, scores
+    m.eval()
+    ee_fname.eval()
+    ee_varuse.eval()
+    ee_apicall.eval()
+    lp_fname.eval()
+    lp_varuse.eval()
+    lp_apicall.eval()
+    scores = final_evaluation(dataset.g, m, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, device)
+
+    return m.to('cpu'), ee_fname.to('cpu'), ee_varuse.to('cpu'), ee_apicall.to('cpu'), \
+           lp_fname.to('cpu'), lp_varuse.to('cpu'), lp_apicall.to('cpu'), scores
