@@ -13,7 +13,8 @@ nlp = inject_tokenizer(spacy.blank("en"))
 allowed = {'str','bool','Optional','None','int','Any','Union','List','Dict','Callable','ndarray','FrameOrSeries','bytes','DataFrame','Matcher','float','Tuple','bool_t','Description','Type'}
 
 def preprocess(ent):
-    return ent.strip("\"").split("[")[0].split(".")[-1]
+    return ent
+    # return ent.strip("\"").split("[")[0].split(".")[-1]
 
 def inspect_fdef(node):
     if node.returns is not None:
@@ -118,7 +119,7 @@ def isvalid(text, ents):
     else:
         return True
 
-def process_body(body, remove_docstring=True):
+def process_body(body, repalcements, remove_docstring=True):
     body_ = body.strip()
 
     entry = {"ents": [], "cats": []}
@@ -205,8 +206,8 @@ def process_body(body, remove_docstring=True):
 
         entry['original'] = body
 
-        entry["ents"] = list(map(lambda x: x[2] if x[2] in allowed else "Other", entry["ents"]))
-        entry["cats"] = list(filter(lambda x: x["returns"] if x["returns"] in allowed else "Other", entry['cats']))
+        # entry["ents"] = list(map(lambda x: x if x[2] in allowed else (x[0], x[1], "Other"), entry["ents"]))
+        # entry["cats"] = list(filter(lambda x: x["returns"] if x["returns"] in allowed else "Other", entry['cats']))
 
         if not entry["ents"]: # and not entry["cats"]:
             return None # in case all entities were filtered
@@ -222,17 +223,20 @@ def process_body(body, remove_docstring=True):
 def main(args):
     bodies_path = args[1]
     bodies = pd.read_csv(bodies_path)
+    id2global = pd.read_csv(args[3])
 
     body_field = bodies.columns[1]
 
     data = []
 
-    for ind, body in enumerate(bodies[body_field]):
+    for ind, (_, row) in enumerate(bodies.iterrows()):
         # b = """def cosine(w: float, A: float = 1, phi: float = 0, offset: float = 0) -> \"partial[Callable[[], None]]\":\n    ''' Return a driver function that can advance a sequence of cosine values.\n\n    .. code-block:: none\n\n        value = A * cos(w*i + phi) + offset\n\n    Args:\n        w (float) : a frequency for the cosine driver\n        A (float) : an amplitude for the cosine driver\n        phi (float) : a phase offset to start the cosine driver with\n        offset (float) : a global offset to add to the driver values\n\n    '''\n    from math import cos\n    def f(i: float) -> float:\n        return A * cos(w*i + phi) + offset\n    return partial(force, sequence=_advance(f))"""
         # b = "def _detect(executable) :\n    return shutil.which(executable)"
         # b = "def _bundle_extensions(objs, resources: Resources) :\n    names = set()\n    bundles = []\n\n    extensions = [\".min.js\", \".js\"] if resources.minified else [\".js\"]\n\n    for obj in _all_objs(objs) if objs is not None else Model.model_class_reverse_map.values():\n        if hasattr(obj, \"__implementation__\"):\n            continue\n        name = obj.__view_module__.split(\".\")[0]\n        if name == \"bokeh\":\n            continue\n        if name in names:\n            continue\n        names.add(name)\n        module = __import__(name)\n        this_file = abspath(module.__file__)\n        base_dir = dirname(this_file)\n        dist_dir = join(base_dir, \"dist\")\n\n        ext_path = join(base_dir, \"bokeh.ext.json\")\n        if not exists(ext_path):\n            continue\n\n        server_prefix = f\"{resources.root_url}static/extensions\"\n        package_path = join(base_dir, \"package.json\")\n\n        pkg = None\n\n        if exists(package_path):\n            with open(package_path) as io:\n                try:\n                    pkg = json.load(io)\n                except json.decoder.JSONDecodeError:\n                    pass\n\n        artifact_path\n        server_url\n        cdn_url = None\n\n        if pkg is not None:\n            pkg_name = pkg[\"name\"]\n            pkg_version = pkg.get(\"version\", \"latest\")\n            pkg_main = pkg.get(\"module\", pkg.get(\"main\", None))\n            if pkg_main is not None:\n                cdn_url = f\"{_default_cdn_host}/{pkg_name}@^{pkg_version}/{pkg_main}\"\n            else:\n                pkg_main = join(dist_dir, f\"{name}.js\")\n            artifact_path = join(base_dir, normpath(pkg_main))\n            artifacts_dir = dirname(artifact_path)\n            artifact_name = basename(artifact_path)\n            server_path = f\"{name}/{artifact_name}\"\n        else:\n            for ext in extensions:\n                artifact_path = join(dist_dir, f\"{name}{ext}\")\n                artifacts_dir = dist_dir\n                server_path = f\"{name}/{name}{ext}\"\n                if exists(artifact_path):\n                    break\n            else:\n                raise ValueError(f\"can't resolve artifact path for '{name}' extension\")\n\n        extension_dirs[name] = artifacts_dir\n        server_url = f\"{server_prefix}/{server_path}\"\n        embed = ExtensionEmbed(artifact_path, server_url, cdn_url)\n        bundles.append(embed)\n\n    return bundles"
         # entry = process_body(b)
-        entry = process_body(body)
+        body = row[body_field]
+        replacements = row['replacement_list']
+        entry = process_body(body, replacements)
         if entry is not None:
             data.append(entry)
 
