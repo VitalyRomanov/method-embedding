@@ -31,7 +31,7 @@ def create_elem_embedder(file_path, nodes, emb_size, compact_dst):
     element_data = pd.read_csv(file_path)
     function2nodeid = dict(zip(nodes['id'].values, nodes['global_graph_id'].values))
     element_data['id'] = element_data['src'].apply(lambda x: function2nodeid.get(x, None))
-    element_data = element_data.astype({'id': 'int32'})
+    # element_data = element_data.astype({'id': 'int32'})
     if compact_dst is False: # creating api call embedder
         element_data['dst'] = element_data['dst'].apply(lambda x: function2nodeid.get(x, None))
         element_data.drop_duplicates(['id', 'dst'], inplace=True, ignore_index=True)
