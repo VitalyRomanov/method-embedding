@@ -11,7 +11,7 @@ else:
     column_names = ["id", "type", "serialized_name"]
     common_nodes = pd.DataFrame(columns=column_names)
 
-existing_names = set(common_nodes['serialized_name'].values)
+existing_names = set(common_nodes['serialized_name'].tolist())
 # print(existing_names)
 
 records = common_nodes.to_dict(orient="records")
@@ -21,6 +21,10 @@ batch_nodes = pd.read_csv(batch_nodes_path)
 for ind, row in batch_nodes.iterrows():
     # print(row.serialized_name)
     if row.serialized_name in existing_names: continue
+
+    # TODO
+    # sometimes there are duplicate nodes from sourcetrail and ast analysis.
+    # something does not work right when checking uniqueness of a name
 
     records.append({
         "id": len(records),

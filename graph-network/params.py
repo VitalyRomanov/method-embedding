@@ -126,7 +126,7 @@ rgcnsampling_grids = [
         'dropout': [0.3],
         'use_self_loop': [False],
         'activation': [torch.nn.functional.hardtanh], #torch.nn.functional.leaky_relu
-        'lr': [0.001]
+        'lr': [0.01]
     }
 ]
 

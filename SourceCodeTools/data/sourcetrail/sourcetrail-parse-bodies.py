@@ -178,7 +178,7 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
                             # name = name.replace('.', '____')
 
                             list_of_replacements.append((
-                                e_start, e_end, name
+                                curr_line - 1, e_start, e_end, name
                             ))
 
                             sources[curr_line - 1] = do_replacement(sources[curr_line - 1], e_start, e_end, name)

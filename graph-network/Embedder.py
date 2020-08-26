@@ -1,5 +1,4 @@
 import numpy as np
-import tensorflow as tf
 
 class Embedder:
     def __init__(self, id_map, embeddings):
@@ -19,7 +18,8 @@ class Embedder:
             if isinstance(self.e, np.ndarray):
                 return self.e[np.array([self.ind[k] for k in key], dtype=np.int32), :]
             # elif isinstance(self.e, tf.ResourceVariable):
-            else: # this is assumed to be tensorflow Variable, neet to work out how to do type checking
+            else: # this is assumed to be tensorflow Variable, need to work out how to do type checking
+                import tensorflow as tf # is this a good practice?
                 slices = np.array([self.ind[k] for k in key], dtype=np.int32)
                 return tf.gather(self.e, slices, axis=0)
             # else:

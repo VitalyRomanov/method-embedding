@@ -231,42 +231,44 @@ class RGCNSampling(nn.Module):
         label.  Therefore, only that type's final representation is meaningful.
         """
 
-        if x is None:
-            x = self.embed_layer()
+        with th.set_grad_enabled(False):
 
-        for l, layer in enumerate(self.layers):
-            y = {
-                k: th.zeros(
-                    g.number_of_nodes(k),
-                    self.h_dim if l != len(self.layers) - 1 else self.out_dim)
-                for k in g.ntypes}
+            if x is None:
+                x = self.embed_layer()
 
-            sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
-            dataloader = dgl.dataloading.NodeDataLoader(
-                g,
-                {k: th.arange(g.number_of_nodes(k)) for k in g.ntypes},
-                sampler,
-                batch_size=batch_size,
-                shuffle=True,
-                drop_last=False,
-                num_workers=num_workers)
+            for l, layer in enumerate(self.layers):
+                y = {
+                    k: th.zeros(
+                        g.number_of_nodes(k),
+                        self.h_dim if l != len(self.layers) - 1 else self.out_dim)
+                    for k in g.ntypes}
 
-            for input_nodes, output_nodes, blocks in dataloader:#tqdm.tqdm(dataloader):
-                block = blocks[0].to(device)
+                sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
+                dataloader = dgl.dataloading.NodeDataLoader(
+                    g,
+                    {k: th.arange(g.number_of_nodes(k)) for k in g.ntypes},
+                    sampler,
+                    batch_size=batch_size,
+                    shuffle=True,
+                    drop_last=False,
+                    num_workers=num_workers)
 
-                if not isinstance(input_nodes, dict):
-                    key = next(iter(g.ntypes))
-                    input_nodes = {key: input_nodes}
-                    output_nodes = {key: output_nodes}
+                for input_nodes, output_nodes, blocks in dataloader:#tqdm.tqdm(dataloader):
+                    block = blocks[0].to(device)
 
-                h = {k: x[k][input_nodes[k]].to(device) for k in input_nodes.keys()}
-                h = layer(block, h)
+                    if not isinstance(input_nodes, dict):
+                        key = next(iter(g.ntypes))
+                        input_nodes = {key: input_nodes}
+                        output_nodes = {key: output_nodes}
 
-                for k in h.keys():
-                    y[k][output_nodes[k]] = h[k].cpu()
+                    h = {k: x[k][input_nodes[k]].to(device) for k in input_nodes.keys()}
+                    h = layer(block, h)
 
-            x = y
-        return y
+                    for k in h.keys():
+                        y[k][output_nodes[k]] = h[k].cpu()
+
+                x = y
+            return y
 
     def get_layers(self):
         """
@@ -279,7 +281,7 @@ class RGCNSampling(nn.Module):
         #     h = layer(self.g, h)
         #     l_out.append(th.cat([h[ntype] for ntype in self.g.ntypes], dim=0).detach().numpy())
 
-        h = self.inference(g=self.g, batch_size=2048, device='cpu', num_workers=0)
+        h = self.inference(g=self.g, batch_size=256, device='cpu', num_workers=0)
         l_out = [th.cat([h[ntype] for ntype in self.g.ntypes], dim=0).detach().numpy()]
 
         return l_out
