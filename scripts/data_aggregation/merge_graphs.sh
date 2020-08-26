@@ -52,6 +52,9 @@ for dir in $(ls $ENVS_DIR); do
     if [ -f $ENVS_DIR/$dir/normalized_sourcetrail_nodes.csv ]; then
 #      python map_ids.py $ENVS_DIR/common_nodes.csv $ENVS_DIR/$dir
 
+      sourcetrail-node-local2global.py $ENVS_DIR/common_nodes.csv $ENVS_DIR/$dir/normalized_sourcetrail_nodes.csv $ENVS_DIR/$dir/local2global.csv
+      sourcetrail-node-local2global.py $ENVS_DIR/common_nodes_with_ast.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/local2global_with_ast.csv
+
       sourcetrail-map-id-columns.py $ENVS_DIR/common_nodes.csv $ENVS_DIR/$dir/normalized_sourcetrail_nodes.csv $ENVS_DIR/$dir/edges.csv $ENVS_DIR/common_edges.csv target_node_id source_node_id
       sourcetrail-map-id-columns.py $ENVS_DIR/common_nodes.csv $ENVS_DIR/$dir/normalized_sourcetrail_nodes.csv $ENVS_DIR/$dir/source-graph-bodies.csv $ENVS_DIR/common_bodies.csv id
       sourcetrail-map-id-columns.py $ENVS_DIR/common_nodes.csv $ENVS_DIR/$dir/normalized_sourcetrail_nodes.csv $ENVS_DIR/$dir/source-graph-function-variable-pairs.csv $ENVS_DIR/common-function-variable-pairs.csv src
