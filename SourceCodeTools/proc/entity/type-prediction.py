@@ -92,10 +92,13 @@ if __name__ == "__main__":
     output_dir = "model-final-ner"
     n_iter = 90
 
+    allowed = {'str', 'bool', 'Optional', 'None', 'int', 'Any', 'Union', 'List', 'Dict', 'Callable', 'ndarray',
+               'FrameOrSeries', 'bytes', 'DataFrame', 'Matcher', 'float', 'Tuple', 'bool_t', 'Description', 'Type'}
+
     # ent_types = []
     # for _, e in TRAIN_DATA:
     #     ee = [ent[2] for ent in e['entities']]
     #     ent_types += ee
 
-    TRAIN_DATA, TEST_DATA = read_data(data_path, normalize=True)
+    TRAIN_DATA, TEST_DATA = read_data(data_path, normalize=True, allowed=allowed)
     main(TRAIN_DATA, TEST_DATA, model=model_path,output_dir=output_dir, n_iter=n_iter)

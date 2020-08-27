@@ -41,8 +41,14 @@ def resolve_repeats(entities):
 
     return ents
 
+def filter_allowed(ents, allowed=None):
+    if allowed is None:
+        return ents
+    else:
+        return [e for e in ents if e[2] in allowed]
 
-def read_data(data_path, normalize=False, include_replacements=False):
+
+def read_data(data_path, normalize=False, include_replacements=False, allowed=None):
     import random
 
     TRAIN_DATA = []
@@ -51,7 +57,7 @@ def read_data(data_path, normalize=False, include_replacements=False):
     with open(data_path, "r") as data:
         for line in data:
             entry = json.loads(line)
-            TRAIN_DATA.append([entry['text'], {'entities': entry['ents']}])
+            TRAIN_DATA.append([entry['text'], {'entities': filter_allowed(entry['ents'], allowed=allowed)}])
             if include_replacements:
                 if "replacements" in entry:
                     TRAIN_DATA[-1][1]['replacements'] = resolve_repeats(entry['replacements'])
