@@ -234,7 +234,7 @@ def evaluate_nodes(model, ee, lp,
 
 def final_evaluation(g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, device):
 
-    batch_size = 128
+    batch_size = 512
     num_per_neigh = 10
     neg_sampling_factor = 1
     L = len(model.layers)
@@ -402,7 +402,7 @@ def train(g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_api
     best_val_acc_apicall = 0.
     best_test_acc_apicall = 0.
 
-    ref_batch_size = 128
+    ref_batch_size = 512
     num_per_neigh = 10
     neg_samplig_factor = 3
     L = len(model.layers)
