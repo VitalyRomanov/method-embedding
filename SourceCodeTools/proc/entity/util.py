@@ -58,6 +58,11 @@ def read_data(data_path, normalize=False, include_replacements=False, allowed=No
         for line in data:
             entry = json.loads(line)
             TRAIN_DATA.append([entry['text'], {'entities': filter_allowed(entry['ents'], allowed=allowed)}])
+
+            if len(TRAIN_DATA[-1][1]['entities']) == 0:
+                TRAIN_DATA.pop(-1)
+                continue
+
             if include_replacements:
                 if "replacements" in entry:
                     TRAIN_DATA[-1][1]['replacements'] = resolve_repeats(entry['replacements'])
@@ -82,10 +87,13 @@ def read_data(data_path, normalize=False, include_replacements=False, allowed=No
 
         tr[1]['entities'] = [e for ind, e in enumerate(tr[1]['entities']) if ind not in evict]
 
-        assert len(tr[1]['entities']) > 0
-
         for e in tr[1]['entities']:
             entities_in_test.add(e[2])
+
+    test = [sent for sent in test if len(sent[1]['entities']) > 0]
+
+    for tr in test:
+        assert len(tr[1]['entities']) > 0
 
     assert len(entities_in_test - entities_in_train) == 0
 
