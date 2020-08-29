@@ -45,7 +45,8 @@ def filter_allowed(ents, allowed=None):
     if allowed is None:
         return ents
     else:
-        return [e for e in ents if e[2] in allowed]
+        # replace entitties not in the allowed list with "Other"
+        return [e if e[2] in allowed else (e[0], e[1], "Other") for e in ents]
 
 
 def read_data(data_path, normalize=False, include_replacements=False, allowed=None):
