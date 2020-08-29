@@ -232,9 +232,9 @@ def evaluate_nodes(model, ee, lp,
     return total_loss / count, total_acc / count
 
 
-def final_evaluation(g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, device):
+def final_evaluation(g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, device, batch_size):
 
-    batch_size = 128
+    # batch_size = 128
     num_per_neigh = 10
     neg_sampling_factor = 1
     L = len(model.layers)
@@ -372,7 +372,7 @@ def idx_len(idx):
         length = len(idx)
     return length
 
-def train(g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, epochs, device, lr):
+def train(g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, epochs, device, lr, ref_batch_size):
     """
     Training procedure for the model with node classifier.
     :param model:
@@ -402,7 +402,7 @@ def train(g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_api
     best_val_acc_apicall = 0.
     best_test_acc_apicall = 0.
 
-    ref_batch_size = 128
+    # ref_batch_size = 128
     num_per_neigh = 10
     neg_samplig_factor = 3
     L = len(model.layers)
@@ -559,7 +559,7 @@ def training_procedure(dataset, model, params, EPOCHS, args):
         checkpoint = None
 
     try:
-        train(g, m, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, EPOCHS, device, lr)
+        train(g, m, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, EPOCHS, device, lr, args.batch_size)
     except KeyboardInterrupt:
         print("Training interrupted")
     except:
@@ -572,7 +572,7 @@ def training_procedure(dataset, model, params, EPOCHS, args):
     lp_fname.eval()
     lp_varuse.eval()
     lp_apicall.eval()
-    scores = final_evaluation(dataset.g, m, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, device)
+    scores = final_evaluation(dataset.g, m, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, device, args.batch_size)
 
     return m.to('cpu'), ee_fname.to('cpu'), ee_varuse.to('cpu'), ee_apicall.to('cpu'), \
            lp_fname.to('cpu'), lp_varuse.to('cpu'), lp_apicall.to('cpu'), scores
