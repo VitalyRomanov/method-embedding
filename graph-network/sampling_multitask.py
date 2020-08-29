@@ -234,7 +234,7 @@ def evaluate_nodes(model, ee, lp,
 
 def final_evaluation(g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, device):
 
-    batch_size = 512
+    batch_size = 128
     num_per_neigh = 10
     neg_sampling_factor = 1
     L = len(model.layers)
@@ -257,7 +257,7 @@ def final_evaluation(g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_var
 
     sampler = dgl.dataloading.MultiLayerNeighborSampler([num_per_neigh] * L)
     create_apicall_loader = lambda indices: dgl.dataloading.NodeDataLoader(
-        g, indices, sampler, batch_size=len(indices), num_workers=4)
+        g, indices, sampler, batch_size=len(indices), num_workers=0)
 
     loss, train_acc_fname = evaluate_embedder(model, ee_fname, lp_fname, loader_fname,
                                          use_types, ntypes=ntypes, device=device,
@@ -402,7 +402,7 @@ def train(g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_api
     best_val_acc_apicall = 0.
     best_test_acc_apicall = 0.
 
-    ref_batch_size = 512
+    ref_batch_size = 128
     num_per_neigh = 10
     neg_samplig_factor = 3
     L = len(model.layers)
