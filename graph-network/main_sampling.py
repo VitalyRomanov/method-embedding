@@ -137,7 +137,9 @@ def main(nodes_path, edges_path, models, desc, args):
                 "datafile": None, #args.data_file,
                 "call_seq": args.call_seq_file,
                 "fname_file": args.fname_file,
-                "varuse_file": args.varuse_file
+                "varuse_file": args.varuse_file,
+                "note": args.note,
+                "batch_size": args.batch_size
             }
 
             pickle.dump(m.get_embeddings(dataset.global_id_map), open(join(metadata['base'], metadata['layers']), "wb"))
@@ -186,7 +188,9 @@ if __name__ == "__main__":
     parser.add_argument('--filter_edges', dest='filter_edges', default=None,
                         help='Edges filtered before training')
     parser.add_argument('--epochs', dest='epochs', default=100, type=int,
-                        help='Edges filtered before training')
+                        help='Number of epochs')
+    parser.add_argument('--batch_size', dest='batch_size', default=128, type=int,
+                        help='Batch size')
     parser.add_argument('--note', dest='note', default="",
                         help='Note, added to metadata')
     parser.add_argument('--use_node_types', action='store_true')
