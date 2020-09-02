@@ -496,7 +496,7 @@ def training_procedure(dataset, model, params, EPOCHS, api_seq_file, fname_file,
         ee_varuse.load_state_dict(checkpoint['ee_varuse'])
         ee_apicall.load_state_dict(checkpoint['ee_apicall'])
         lp_fname.load_state_dict(checkpoint['lp_fname'])
-        lp_varuse.load_state_dict(checkpoint['lp_fname'])
+        lp_varuse.load_state_dict(checkpoint['lp_varuse'])
         lp_apicall.load_state_dict(checkpoint['lp_apicall'])
         print(f"Restored from epoch {checkpoint['epoch']}")
         checkpoint = None
