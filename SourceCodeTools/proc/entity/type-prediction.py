@@ -17,6 +17,8 @@ import numpy as np
 from Embedder import Embedder
 # from tf_model import create_batches
 
+from tf_model import estimate_crf_transitions, TypePredictor, train
+
 max_len = 400
 
 
@@ -201,7 +203,7 @@ def create_batches(batch_size, seq_len, sents, repl, tags, graphmap, wordmap, ta
 
         # print(int_sent[0:min(int_sent.size, seq_len)].shape)
 
-        b_lens.append(len(s))
+        b_lens.append(len(s) if len(s) < seq_len else seq_len)
         b_sents.append(blank_s)
         b_repls.append(blank_r)
         b_tags.append(blank_t)
@@ -224,7 +226,7 @@ def create_batches(batch_size, seq_len, sents, repl, tags, graphmap, wordmap, ta
 
 def main_tf(TRAIN_DATA, TEST_DATA,
             tokenizer_path=None, graph_emb_path=None, word_emb_path=None,
-            output_dir=None, n_iter=100,):
+            output_dir=None, n_iter=100, max_len=400):
 
     train_s, train_e, train_r = prepare_data(TRAIN_DATA, tokenizer_path)
     test_s, test_e, test_r = prepare_data(TEST_DATA, tokenizer_path)
@@ -235,7 +237,18 @@ def main_tf(TRAIN_DATA, TEST_DATA,
     word_emb = load_pkl_emb(word_emb_path)
 
     batches = create_batches(128, max_len, train_s, train_r, train_e, graph_emb.ind, word_emb.ind, t_map)
-    test_batch = create_batches(len(test_s), max_len, test_s, test_r, test_e, graph_emb.ind, word_emb.ind, t_map)[0]
+    test_batch = create_batches(len(test_s), max_len, test_s, test_r, test_e, graph_emb.ind, word_emb.ind, t_map)
+
+    transitions = estimate_crf_transitions(batches, len(t_map))
+
+    model = TypePredictor(word_emb, graph_emb, train_embeddings=False,
+                 h_sizes=[500], dense_size=100, num_classes=len(t_map),
+                 seq_len=max_len, pos_emb_size=30, cnn_win_size=3,
+                 crf_transitions=transitions)
+
+    train(model, batches, test_batch, 150)
+
+
 
     print()
 
