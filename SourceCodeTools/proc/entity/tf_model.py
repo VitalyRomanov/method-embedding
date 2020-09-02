@@ -14,6 +14,8 @@ from tensorflow.keras.layers import Dense, Flatten, Conv2D, Input, Embedding, co
 from tensorflow.keras import Model
 from tensorflow.keras import regularizers
 
+from spacy.gold import offsets_from_biluo_tags
+
 # alternative models
 # https://github.com/flairNLP/flair/tree/master/flair/models
 # https://github.com/dhiraa/tener/tree/master/src/tener/models
@@ -70,7 +72,7 @@ class TextCnnLayer(Model):
         # padded = tf.pad(input, tf.constant([[0, 0], [1, 1], [0, 0]]))
         # emb_sent_exp = tf.expand_dims(input, axis=3)
         convolve = self.textConv(x)
-        return tf.reshape(convolve, shape=(-1, convolve.shape[1], self.out_dim))
+        return tf.squeeze(convolve, axis=-2)
 
 
 class TextCnn(Model):
@@ -177,7 +179,7 @@ class TypePredictor(Model):
 
         # self.accuracy = tf.keras.metrics.Accuracy()
 
-        self.transition_params = []
+        self.crf_transition_params = None
 
     # def compute_mask(self, inputs, mask=None):
     #     mask should come from ids
@@ -200,21 +202,25 @@ class TypePredictor(Model):
 
 
     def loss(self, logits, labels, lengths):
-        # log_likelihood, transition_params = tfa.text.crf_log_likelihood(logits, labels, lengths, transition_params=self.transition_params)
-        log_likelihood, transition_params = tfa.text.crf_log_likelihood(logits, labels, lengths)
+        log_likelihood, transition_params = tfa.text.crf_log_likelihood(logits, labels, lengths, transition_params=self.crf_transition_params)
+        # log_likelihood, transition_params = tfa.text.crf_log_likelihood(logits, labels, lengths)
         loss = tf.reduce_mean(-log_likelihood)
 
-        self.transition_params.append(transition_params.numpy())
+        self.crf_transition_params = transition_params
 
         return loss
 
-    def accuracy(self, logits, labels, lengths):
+    def score(self, logits, labels, lengths, scorer=None):
         mask = tf.sequence_mask(lengths, self.seq_len)
         true_labels = tf.boolean_mask(labels, mask)
         argmax = tf.math.argmax(logits, axis=-1)
         estimated_labels = tf.cast(tf.boolean_mask(argmax, mask), tf.int32)
 
-        return tf.reduce_sum(tf.cast(true_labels == estimated_labels, tf.int32)) / len(true_labels)
+        p, r, f1 = scorer(estimated_labels.numpy(), true_labels.numpy())
+
+        return p, r, f1
+
+        # return tf.reduce_sum(tf.cast(true_labels == estimated_labels, tf.int32)) / len(true_labels)
         # self.accuracy.update_state(true_labels, estimated_labels)
         # acc = self.accuracy.result().numpy()
         # self.accuracy.reset_states()
@@ -231,46 +237,48 @@ def estimate_crf_transitions(batches, n_tags):
 
     return np.stack(transitions, axis=0).mean(axis=0)
 
-def train_step(model, optimizer, token_ids, graph_ids, labels, lengths):
-    acc = None
-    loss = None
-
+def train_step(model, optimizer, token_ids, graph_ids, labels, lengths, scorer=None):
     with tf.GradientTape() as tape:
         logits = model(token_ids, graph_ids)
         loss = model.loss(logits, labels, lengths)
-        acc = model.accuracy(logits, labels, lengths)
+        p, r, f1 = model.score(logits, labels, lengths, scorer=scorer)
         gradients = tape.gradient(loss, model.trainable_variables)
         optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 
-    return loss, acc
+    return loss, p, r, f1
 
-def test_step(model, token_ids, graph_ids, labels, lengths):
+def test_step(model, token_ids, graph_ids, labels, lengths, scorer=None):
     logits = model(token_ids, graph_ids)
     loss = model.loss(logits, labels, lengths)
-    acc = model.accuracy(logits, labels, lengths)
+    p, r, f1 = model.score(logits, labels, lengths, scorer=scorer)
 
-    return loss, acc
+    return loss, p, r, f1
 
 
-def train(model, train_batches, test_batches, epochs, report_every=10):
+def train(model, train_batches, test_batches, epochs, report_every=10, scorer=None):
 
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=0.01)
 
     for e in range(epochs):
         losses = []
-        accs = []
+        ps = []
+        rs = []
+        f1s = []
 
         for ind, b in enumerate(train_batches):
             token_ids, graph_ids, labels, lengths = b
-            loss, acc = train_step(model, optimizer, token_ids, graph_ids, labels, lengths)
+            loss, p, r, f1 = train_step(model, optimizer, token_ids, graph_ids, labels, lengths, scorer=scorer)
             losses.append(loss.numpy())
-            accs.append(acc)
+            ps.append(p)
+            rs.append(r)
+            f1s.append(f1)
 
         for ind, b in enumerate(test_batches):
             token_ids, graph_ids, labels, lengths = b
-            test_loss, test_acc = test_step(model, token_ids, graph_ids, labels, lengths)
+            test_loss, test_p, test_r, test_f1 = test_step(model, token_ids, graph_ids, labels, lengths, scorer=scorer)
 
-        print(f"Train Loss: {sum(losses) / len(losses)}, Train Acc: {sum(accs) / len(accs)}, Test loss: {test_loss}, Test acc: {test_acc}")
+        print(f"Train Loss: {sum(losses) / len(losses)}, Train P: {sum(ps) / len(ps)}, Train R: {sum(rs) / len(rs)}, Train F1: {sum(f1s) / len(f1s)}, "
+              f"Test loss: {test_loss}, Test P: {test_p}, Test R: {test_r}, Test F1: {test_f1}")
 
 
 

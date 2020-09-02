@@ -3,7 +3,7 @@ import spacy
 import sys, json, os
 import pickle
 from SourceCodeTools.proc.entity.util import inject_tokenizer, read_data, deal_with_incorrect_offsets
-from spacy.gold import biluo_tags_from_offsets
+from spacy.gold import biluo_tags_from_offsets, offsets_from_biluo_tags
 
 from spacy.gold import GoldParse
 from spacy.scorer import Scorer
@@ -175,7 +175,11 @@ def create_tag_map(sents):
         tags.update(set(s))
 
     tagmap = dict(zip(tags, range(len(tags))))
-    return tagmap
+
+    aid, iid = zip(*tagmap.items())
+    inv_tagmap = dict(zip(iid, aid))
+
+    return tagmap, inv_tagmap
 
 
 def create_batches(batch_size, seq_len, sents, repl, tags, graphmap, wordmap, tagmap):
@@ -223,15 +227,80 @@ def create_batches(batch_size, seq_len, sents, repl, tags, graphmap, wordmap, ta
     return batch
 
 
+def parse_biluo(biluo):
+    spans = []
+
+    expected = {"B", "U", "0"}
+    expected_tag = None
+
+    c_start = 0
+
+    for ind, t in enumerate(biluo):
+        if t[0] not in expected:
+            expected = {"B", "U", "0"}
+            continue
+
+        if t[0] == "U":
+            c_start = ind
+            c_end = ind + 1
+            c_type = t.split("-")[1]
+            spans.append((c_start, c_end, c_type))
+            expected = {"B", "U", "0"}
+            expected_tag = None
+        elif t[0] == "B":
+            c_start = ind
+            expected = {"I", "L"}
+            expected_tag = t.split("-")[1]
+        elif t[0] == "I":
+            if t.split("-")[1] != expected_tag:
+                expected = {"B", "U", "0"}
+                expected_tag = None
+                continue
+        elif t[0] == "L":
+            if t.split("-")[1] != expected_tag:
+                expected = {"B", "U", "0"}
+                expected_tag = None
+                continue
+            c_end = ind + 1
+            c_type = expected_tag
+            spans.append((c_start, c_end, c_type))
+            expected = {"B", "U", "0"}
+            expected_tag = None
+        elif t[0] == "0":
+            expected = {"B", "U", "0"}
+            expected_tag = None
+
+    return spans
+
+
+
+def accuracy_scorer(pred, labels, inverse_tag_map, eps=1e-8):
+    pred_biluo = [inverse_tag_map[p] for p in pred]
+    labels_biluo = [inverse_tag_map[p] for p in labels]
+
+    pred_spans = set(parse_biluo(pred_biluo))
+    true_spans = set(parse_biluo(labels_biluo))
+
+    tp = len(pred_spans.intersection(true_spans))
+    fp = len(pred_spans - true_spans)
+    fn = len(true_spans - pred_spans)
+
+    precision = tp / (tp + fp + eps)
+    recall = tp / (tp + fn + eps)
+    f1 = 2 * precision * recall / (precision + recall + eps)
+
+    return precision, recall, f1
+
+
 
 def main_tf(TRAIN_DATA, TEST_DATA,
             tokenizer_path=None, graph_emb_path=None, word_emb_path=None,
-            output_dir=None, n_iter=100, max_len=150):
+            output_dir=None, n_iter=100, max_len=50):
 
     train_s, train_e, train_r = prepare_data(TRAIN_DATA, tokenizer_path)
     test_s, test_e, test_r = prepare_data(TEST_DATA, tokenizer_path)
 
-    t_map = create_tag_map(train_e)
+    t_map, inv_t_map = create_tag_map(train_e)
 
     graph_emb = load_pkl_emb(graph_emb_path)
     word_emb = load_pkl_emb(word_emb_path)
@@ -246,7 +315,7 @@ def main_tf(TRAIN_DATA, TEST_DATA,
                  seq_len=max_len, pos_emb_size=30, cnn_win_size=3,
                  crf_transitions=transitions)
 
-    train(model, batches, test_batch, 150)
+    train(model, batches, test_batch, 150, scorer=lambda pred, true: accuracy_scorer(pred, true, inv_t_map))
 
 
 
