@@ -175,7 +175,7 @@ class TypePredictor(Model):
                                 num_classes=num_classes, activation=tf.nn.relu,
                                 dense_activation=tf.nn.tanh)
 
-        self.accuracy = tf.keras.metrics.Accuracy()
+        # self.accuracy = tf.keras.metrics.Accuracy()
 
         self.transition_params = []
 
@@ -200,7 +200,8 @@ class TypePredictor(Model):
 
 
     def loss(self, logits, labels, lengths):
-        log_likelihood, transition_params = tfa.text.crf_log_likelihood(logits, labels, lengths, transition_params=self.transition_params)
+        # log_likelihood, transition_params = tfa.text.crf_log_likelihood(logits, labels, lengths, transition_params=self.transition_params)
+        log_likelihood, transition_params = tfa.text.crf_log_likelihood(logits, labels, lengths)
         loss = tf.reduce_mean(-log_likelihood)
 
         self.transition_params.append(transition_params.numpy())
@@ -212,12 +213,12 @@ class TypePredictor(Model):
         true_labels = tf.boolean_mask(labels, mask)
         argmax = tf.math.argmax(logits, axis=-1)
         estimated_labels = tf.cast(tf.boolean_mask(argmax, mask), tf.int32)
-        self.accuracy.update_state(true_labels, estimated_labels)
 
-        acc = self.accuracy.result().numpy()
-        self.accuracy.reset_states()
-
-        return acc
+        return tf.reduce_sum(tf.cast(true_labels == estimated_labels, tf.int32)) / len(true_labels)
+        # self.accuracy.update_state(true_labels, estimated_labels)
+        # acc = self.accuracy.result().numpy()
+        # self.accuracy.reset_states()
+        # return acc
 
     # def reset_states(self):
     #     self.accuracy.reset_states()

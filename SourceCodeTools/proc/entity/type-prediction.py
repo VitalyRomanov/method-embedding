@@ -226,7 +226,7 @@ def create_batches(batch_size, seq_len, sents, repl, tags, graphmap, wordmap, ta
 
 def main_tf(TRAIN_DATA, TEST_DATA,
             tokenizer_path=None, graph_emb_path=None, word_emb_path=None,
-            output_dir=None, n_iter=100, max_len=400):
+            output_dir=None, n_iter=100, max_len=150):
 
     train_s, train_e, train_r = prepare_data(TRAIN_DATA, tokenizer_path)
     test_s, test_e, test_r = prepare_data(TEST_DATA, tokenizer_path)
