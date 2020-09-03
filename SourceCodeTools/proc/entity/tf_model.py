@@ -212,9 +212,12 @@ class TypePredictor(Model):
         return logits
 
 
-    def loss(self, logits, labels, lengths):
+    def loss(self, logits, labels, lengths, class_weights=None):
         losses = tf.nn.softmax_cross_entropy_with_logits(tf.one_hot(labels, depth=logits.shape[-1]), logits, axis=-1)
-        loss = tf.reduce_mean(tf.boolean_mask(losses, tf.sequence_mask(lengths, self.seq_len)))
+        if class_weights is None:
+            loss = tf.reduce_mean(tf.boolean_mask(losses, tf.sequence_mask(lengths, self.seq_len)))
+        else:
+            loss = tf.reduce_mean(tf.boolean_mask(losses * class_weights, tf.sequence_mask(lengths, self.seq_len)))
 
         # log_likelihood, transition_params = tfa.text.crf_log_likelihood(logits, labels, lengths, transition_params=self.crf_transition_params)
         # # log_likelihood, transition_params = tfa.text.crf_log_likelihood(logits, labels, lengths)
@@ -252,10 +255,10 @@ def estimate_crf_transitions(batches, n_tags):
     return np.stack(transitions, axis=0).mean(axis=0)
 
 # @tf.function
-def train_step(model, optimizer, token_ids, graph_ids, labels, lengths, scorer=None):
+def train_step(model, optimizer, token_ids, graph_ids, labels, class_weights, lengths, scorer=None):
     with tf.GradientTape() as tape:
         logits = model(token_ids, graph_ids)
-        loss = model.loss(logits, labels, lengths)
+        loss = model.loss(logits, labels, lengths, class_weights=class_weights)
         p, r, f1 = model.score(logits, labels, lengths, scorer=scorer)
         gradients = tape.gradient(loss, model.trainable_variables)
         optimizer.apply_gradients(zip(gradients, model.trainable_variables))
@@ -263,9 +266,9 @@ def train_step(model, optimizer, token_ids, graph_ids, labels, lengths, scorer=N
     return loss, p, r, f1
 
 # @tf.function
-def test_step(model, token_ids, graph_ids, labels, lengths, scorer=None):
+def test_step(model, token_ids, graph_ids, labels, class_weights, lengths, scorer=None):
     logits = model(token_ids, graph_ids)
-    loss = model.loss(logits, labels, lengths)
+    loss = model.loss(logits, labels, lengths, class_weights=class_weights)
     p, r, f1 = model.score(logits, labels, lengths, scorer=scorer)
 
     return loss, p, r, f1
@@ -282,16 +285,16 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
         f1s = []
 
         for ind, b in enumerate(train_batches):
-            token_ids, graph_ids, labels, lengths = b
-            loss, p, r, f1 = train_step(model, optimizer, token_ids, graph_ids, labels, lengths, scorer=scorer)
+            token_ids, graph_ids, labels, class_weights, lengths = b
+            loss, p, r, f1 = train_step(model, optimizer, token_ids, graph_ids, labels, class_weights, lengths, scorer=scorer)
             losses.append(loss.numpy())
             ps.append(p)
             rs.append(r)
             f1s.append(f1)
 
         for ind, b in enumerate(test_batches):
-            token_ids, graph_ids, labels, lengths = b
-            test_loss, test_p, test_r, test_f1 = test_step(model, token_ids, graph_ids, labels, lengths, scorer=scorer)
+            token_ids, graph_ids, labels, class_weights, lengths = b
+            test_loss, test_p, test_r, test_f1 = test_step(model, token_ids, graph_ids, labels, class_weights, lengths, scorer=scorer)
 
         print(f"Train Loss: {sum(losses) / len(losses)}, Train P: {sum(ps) / len(ps)}, Train R: {sum(rs) / len(rs)}, Train F1: {sum(f1s) / len(f1s)}, "
               f"Test loss: {test_loss}, Test P: {test_p}, Test R: {test_r}, Test F1: {test_f1}")

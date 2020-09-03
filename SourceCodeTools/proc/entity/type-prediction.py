@@ -13,6 +13,7 @@ from pathlib import Path
 import spacy
 from spacy.util import minibatch, compounding
 import numpy as np
+from copy import copy
 
 from Embedder import Embedder
 # from tf_model import create_batches
@@ -20,6 +21,24 @@ from Embedder import Embedder
 from tf_model import estimate_crf_transitions, TypePredictor, train
 
 max_len = 400
+
+
+class ClassWeightNormalizer:
+    def __init__(self):
+        self.class_counter = None
+
+    def init(self, classes):
+        import itertools
+        from collections import Counter
+        self.class_counter = Counter(c for c in itertools.chain.from_iterable(classes))
+        total_count = sum(self.class_counter.values())
+        self.class_weights = {key: total_count / val for key, val in self.class_counter.items()}
+
+    def __getitem__(self, item):
+        return self.class_weights[item]
+
+    def get(self, item, default):
+        return self.class_weights.get(item, default)
 
 
 def evaluate(ner_model, examples):
@@ -182,7 +201,7 @@ def create_tag_map(sents):
     return tagmap, inv_tagmap
 
 
-def create_batches(batch_size, seq_len, sents, repl, tags, graphmap, wordmap, tagmap):
+def create_batches(batch_size, seq_len, sents, repl, tags, graphmap, wordmap, tagmap, class_weights):
     pad_id = len(wordmap)
     rpad_id = len(graphmap)
     n_sents = len(sents)
@@ -190,20 +209,24 @@ def create_batches(batch_size, seq_len, sents, repl, tags, graphmap, wordmap, ta
     b_sents = []
     b_repls = []
     b_tags = []
+    b_cw = []
     b_lens = []
 
     for ind, (s, rr, tt)  in enumerate(zip(sents, repl, tags)):
         blank_s = np.ones((seq_len,), dtype=np.int32) * pad_id
         blank_r = np.ones((seq_len,), dtype=np.int32) * rpad_id
         blank_t = np.zeros((seq_len,), dtype=np.int32)
+        blank_cw = np.ones((seq_len,), dtype=np.int32)
 
         int_sent = np.array([wordmap.get(w, pad_id) for w in s], dtype=np.int32)
         int_repl = np.array([graphmap.get(r, rpad_id) for r in rr], dtype=np.int32)
         int_tags = np.array([tagmap.get(t, 0) for t in tt], dtype=np.int32)
+        int_cw = np.array([class_weights.get(t, 1.0) for t in tt], dtype=np.int32)
 
         blank_s[0:min(int_sent.size, seq_len)] = int_sent[0:min(int_sent.size, seq_len)]
         blank_r[0:min(int_sent.size, seq_len)] = int_repl[0:min(int_sent.size, seq_len)]
         blank_t[0:min(int_sent.size, seq_len)] = int_tags[0:min(int_sent.size, seq_len)]
+        blank_cw[0:min(int_sent.size, seq_len)] = int_cw[0:min(int_sent.size, seq_len)]
 
         # print(int_sent[0:min(int_sent.size, seq_len)].shape)
 
@@ -211,17 +234,20 @@ def create_batches(batch_size, seq_len, sents, repl, tags, graphmap, wordmap, ta
         b_sents.append(blank_s)
         b_repls.append(blank_r)
         b_tags.append(blank_t)
+        b_cw.append(blank_cw)
 
     lens = np.array(b_lens, dtype=np.int32)
     sentences = np.stack(b_sents)
     replacements = np.stack(b_repls)
     pos_tags = np.stack(b_tags)
+    cw = np.stack(b_cw)
 
     batch = []
     for i in range(n_sents // batch_size):
         batch.append((sentences[i * batch_size: i * batch_size + batch_size, :],
                       replacements[i * batch_size: i * batch_size + batch_size, :],
                       pos_tags[i * batch_size: i * batch_size + batch_size, :],
+                      cw[i * batch_size: i * batch_size + batch_size, :],
                       lens[i * batch_size: i * batch_size + batch_size]))
 
     return batch
@@ -300,20 +326,22 @@ def main_tf(TRAIN_DATA, TEST_DATA,
     train_s, train_e, train_r = prepare_data(TRAIN_DATA, tokenizer_path)
     test_s, test_e, test_r = prepare_data(TEST_DATA, tokenizer_path)
 
+    cw = ClassWeightNormalizer()
+    cw.init(train_e)
+
     t_map, inv_t_map = create_tag_map(train_e)
 
     graph_emb = load_pkl_emb(graph_emb_path)
     word_emb = load_pkl_emb(word_emb_path)
 
-    batches = create_batches(32, max_len, train_s, train_r, train_e, graph_emb.ind, word_emb.ind, t_map)
-    test_batch = create_batches(len(test_s), max_len, test_s, test_r, test_e, graph_emb.ind, word_emb.ind, t_map)
+    batches = create_batches(32, max_len, train_s, train_r, train_e, graph_emb.ind, word_emb.ind, t_map, cw)
+    test_batch = create_batches(len(test_s), max_len, test_s, test_r, test_e, graph_emb.ind, word_emb.ind, t_map, cw)
 
-    transitions = estimate_crf_transitions(batches, len(t_map))
+    # transitions = estimate_crf_transitions(batches, len(t_map))
 
     model = TypePredictor(word_emb, graph_emb, train_embeddings=False,
                  h_sizes=[250], dense_size=100, num_classes=len(t_map),
-                 seq_len=max_len, pos_emb_size=30, cnn_win_size=3,
-                 crf_transitions=transitions)
+                 seq_len=max_len, pos_emb_size=30, cnn_win_size=3)
 
     train(model=model, train_batches=batches, test_batches=test_batch, epochs=n_iter,
           scorer=lambda pred, true: scorer(pred, true, inv_t_map))
