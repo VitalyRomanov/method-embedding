@@ -31,12 +31,16 @@ class DefaultEmbedding(Model):
         super(DefaultEmbedding, self).__init__()
 
         self.embs = tf.Variable(init_vectors, dtype=tf.float32,
-                           trainable=trainable)
-        self.pad = tf.zeros(shape=(1, init_vectors.shape[1]), name="pad")
-        self.emb_matr = tf.concat([self.embs, self.pad], axis=0)
+                           trainable=trainable, name="default_embedder_var")
+        # self.pad = tf.zeros(shape=(1, init_vectors.shape[1]), name="default_embedder_pad")
+        # self.pad = tf.random.uniform(shape=(1, init_vectors.shape[1]), name="default_embedder_pad")
+        self.pad = tf.Variable(tf.random.uniform(shape=(1, init_vectors.shape[1]), dtype=tf.float32),
+                               name="default_embedder_pad")
+
 
     def __call__(self, ids):
-        return tf.nn.embedding_lookup(params=self.emb_matr, ids=ids)
+        emb_matr = tf.concat([self.embs, self.pad], axis=0)
+        return tf.nn.embedding_lookup(params=emb_matr, ids=ids)
         # return tf.expand_dims(tf.nn.embedding_lookup(params=self.emb_matr, ids=ids), axis=3)
 
 
@@ -50,7 +54,9 @@ class PositionalEncoding(Model):
         self.position_encoding = tf.constant(toeplitz(position_splt, positions[seq_len:]),
                                         dtype=tf.int32,
                                         name="position_encoding")
-        self.position_embedding = tf.random.uniform(name="position_embedding", shape=(seq_len * 2, pos_emb_size), dtype=tf.float32)
+        # self.position_embedding = tf.random.uniform(name="position_embedding", shape=(seq_len * 2, pos_emb_size), dtype=tf.float32)
+        self.position_embedding = tf.Variable(tf.random.uniform(shape=(seq_len * 2, pos_emb_size), dtype=tf.float32),
+                               name="position_embedding")
         # self.position_embedding = tf.Variable(name="position_embedding", shape=(seq_len * 2, pos_emb_size), dtype=tf.float32)
 
     def __call__(self):
@@ -68,10 +74,14 @@ class TextCnnLayer(Model):
         self.textConv = Conv2D(filters=out_dim, kernel_size=kernel_shape,
                                   activation=activation, data_format='channels_last')
 
+        padding_size = (self.kernel_shape[0] - 1) // 2
+        assert padding_size * 2 + 1 == self.kernel_shape[0]
+        self.pad_constant = tf.constant([[0, 0], [padding_size, padding_size], [0, 0], [0, 0]])
+
     def __call__(self, x):
-        # padded = tf.pad(input, tf.constant([[0, 0], [1, 1], [0, 0]]))
+        padded = tf.pad(x, self.pad_constant)
         # emb_sent_exp = tf.expand_dims(input, axis=3)
-        convolve = self.textConv(x)
+        convolve = self.textConv(padded)
         return tf.squeeze(convolve, axis=-2)
 
 
@@ -97,7 +107,7 @@ class TextCnn(Model):
         self.layers_pos = [TextCnnLayer(out_dim=h_size, kernel_shape=(cnn_win_size, pos_emb_size), activation=activation)
                        for h_size, _ in zip(h_sizes, kernel_sizes)]
 
-        self.positional = PositionalEncoding(seq_len=seq_len, pos_emb_size=pos_emb_size)
+        # self.positional = PositionalEncoding(seq_len=seq_len, pos_emb_size=pos_emb_size)
 
         if dense_activation is None:
             dense_activation = activation
@@ -112,21 +122,22 @@ class TextCnn(Model):
         for l in self.layers_tok:
             temp_cnn_emb = l(tf.expand_dims(temp_cnn_emb, axis=3))
 
-        pos_cnn = self.positional()
-        for l in self.layers_pos:
-            pos_cnn = l(tf.expand_dims(pos_cnn, axis=3))
-
-        cnn_pool_feat = []
-        for i in range(self.seq_len):
-            # slice tensor for the line that corresponds to the current position in the sentence
-            position_features = tf.expand_dims(pos_cnn[i, ...], axis=0, name="exp_dim_%d" % i)
-            # convolution without activation can be combined later, hence: temp_cnn_emb + position_features
-            cnn_pool_feat.append(
-                tf.expand_dims(tf.nn.tanh(tf.reduce_max(temp_cnn_emb + position_features, axis=1)), axis=1))
-            # cnn_pool_feat.append(
-            #     tf.expand_dims(tf.nn.tanh(tf.reduce_max(tf.concat([temp_cnn_emb, position_features], axis=-1), axis=1)), axis=1))
-
-        cnn_pool_features = tf.concat(cnn_pool_feat, axis=1)
+        # pos_cnn = self.positional()
+        # for l in self.layers_pos:
+        #     pos_cnn = l(tf.expand_dims(pos_cnn, axis=3))
+        #
+        # cnn_pool_feat = []
+        # for i in range(self.seq_len):
+        #     # slice tensor for the line that corresponds to the current position in the sentence
+        #     position_features = tf.expand_dims(pos_cnn[i, ...], axis=0, name="exp_dim_%d" % i)
+        #     # convolution without activation can be combined later, hence: temp_cnn_emb + position_features
+        #     cnn_pool_feat.append(
+        #         tf.expand_dims(tf.nn.tanh(tf.reduce_max(temp_cnn_emb + position_features, axis=1)), axis=1))
+        #     # cnn_pool_feat.append(
+        #     #     tf.expand_dims(tf.nn.tanh(tf.reduce_max(tf.concat([temp_cnn_emb, position_features], axis=-1), axis=1)), axis=1))
+        #
+        # cnn_pool_features = tf.concat(cnn_pool_feat, axis=1)
+        cnn_pool_features = temp_cnn_emb
 
         token_features = tf.reshape(cnn_pool_features, shape=(-1, self.h_sizes[-1]))
 
@@ -202,11 +213,14 @@ class TypePredictor(Model):
 
 
     def loss(self, logits, labels, lengths):
-        log_likelihood, transition_params = tfa.text.crf_log_likelihood(logits, labels, lengths, transition_params=self.crf_transition_params)
-        # log_likelihood, transition_params = tfa.text.crf_log_likelihood(logits, labels, lengths)
-        loss = tf.reduce_mean(-log_likelihood)
+        losses = tf.nn.softmax_cross_entropy_with_logits(tf.one_hot(labels, depth=logits.shape[-1]), logits, axis=-1)
+        loss = tf.reduce_mean(tf.boolean_mask(losses, tf.sequence_mask(lengths, self.seq_len)))
 
-        self.crf_transition_params = transition_params
+        # log_likelihood, transition_params = tfa.text.crf_log_likelihood(logits, labels, lengths, transition_params=self.crf_transition_params)
+        # # log_likelihood, transition_params = tfa.text.crf_log_likelihood(logits, labels, lengths)
+        # loss = tf.reduce_mean(-log_likelihood)
+
+        # self.crf_transition_params = transition_params
 
         return loss
 
@@ -237,6 +251,7 @@ def estimate_crf_transitions(batches, n_tags):
 
     return np.stack(transitions, axis=0).mean(axis=0)
 
+# @tf.function
 def train_step(model, optimizer, token_ids, graph_ids, labels, lengths, scorer=None):
     with tf.GradientTape() as tape:
         logits = model(token_ids, graph_ids)
@@ -247,6 +262,7 @@ def train_step(model, optimizer, token_ids, graph_ids, labels, lengths, scorer=N
 
     return loss, p, r, f1
 
+# @tf.function
 def test_step(model, token_ids, graph_ids, labels, lengths, scorer=None):
     logits = model(token_ids, graph_ids)
     loss = model.loss(logits, labels, lengths)

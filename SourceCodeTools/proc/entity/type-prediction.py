@@ -274,7 +274,7 @@ def parse_biluo(biluo):
 
 
 
-def accuracy_scorer(pred, labels, inverse_tag_map, eps=1e-8):
+def scorer(pred, labels, inverse_tag_map, eps=1e-8):
     pred_biluo = [inverse_tag_map[p] for p in pred]
     labels_biluo = [inverse_tag_map[p] for p in labels]
 
@@ -295,7 +295,7 @@ def accuracy_scorer(pred, labels, inverse_tag_map, eps=1e-8):
 
 def main_tf(TRAIN_DATA, TEST_DATA,
             tokenizer_path=None, graph_emb_path=None, word_emb_path=None,
-            output_dir=None, n_iter=100, max_len=50):
+            output_dir=None, n_iter=100, max_len=100):
 
     train_s, train_e, train_r = prepare_data(TRAIN_DATA, tokenizer_path)
     test_s, test_e, test_r = prepare_data(TEST_DATA, tokenizer_path)
@@ -305,17 +305,18 @@ def main_tf(TRAIN_DATA, TEST_DATA,
     graph_emb = load_pkl_emb(graph_emb_path)
     word_emb = load_pkl_emb(word_emb_path)
 
-    batches = create_batches(128, max_len, train_s, train_r, train_e, graph_emb.ind, word_emb.ind, t_map)
+    batches = create_batches(32, max_len, train_s, train_r, train_e, graph_emb.ind, word_emb.ind, t_map)
     test_batch = create_batches(len(test_s), max_len, test_s, test_r, test_e, graph_emb.ind, word_emb.ind, t_map)
 
     transitions = estimate_crf_transitions(batches, len(t_map))
 
     model = TypePredictor(word_emb, graph_emb, train_embeddings=False,
-                 h_sizes=[500], dense_size=100, num_classes=len(t_map),
+                 h_sizes=[250], dense_size=100, num_classes=len(t_map),
                  seq_len=max_len, pos_emb_size=30, cnn_win_size=3,
                  crf_transitions=transitions)
 
-    train(model, batches, test_batch, 150, scorer=lambda pred, true: accuracy_scorer(pred, true, inv_t_map))
+    train(model=model, train_batches=batches, test_batches=test_batch, epochs=n_iter,
+          scorer=lambda pred, true: scorer(pred, true, inv_t_map))
 
 
 
