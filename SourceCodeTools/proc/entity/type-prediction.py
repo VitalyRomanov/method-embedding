@@ -321,7 +321,7 @@ def scorer(pred, labels, inverse_tag_map, eps=1e-8):
 
 def main_tf(TRAIN_DATA, TEST_DATA,
             tokenizer_path=None, graph_emb_path=None, word_emb_path=None,
-            output_dir=None, n_iter=100, max_len=100):
+            output_dir=None, n_iter=30, max_len=100):
 
     train_s, train_e, train_r = prepare_data(TRAIN_DATA, tokenizer_path)
     test_s, test_e, test_r = prepare_data(TEST_DATA, tokenizer_path)
@@ -369,7 +369,7 @@ if __name__ == "__main__":
     model_path = sys.argv[1]
     data_path = sys.argv[2]
     output_dir = "model-final-ner"
-    n_iter = 90
+    n_iter = 500
 
     allowed = {'str', 'bool', 'Optional', 'None', 'int', 'Any', 'Union', 'List', 'Dict', 'Callable', 'ndarray',
                'FrameOrSeries', 'bytes', 'DataFrame', 'Matcher', 'float', 'Tuple', 'bool_t', 'Description', 'Type'}

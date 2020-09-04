@@ -276,7 +276,7 @@ def test_step(model, token_ids, graph_ids, labels, class_weights, lengths, score
 
 def train(model, train_batches, test_batches, epochs, report_every=10, scorer=None):
 
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.01)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
 
     for e in range(epochs):
         losses = []
