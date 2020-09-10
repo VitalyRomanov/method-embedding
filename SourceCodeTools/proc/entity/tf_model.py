@@ -283,9 +283,10 @@ def test_step(model, token_ids, prefix, suffix, graph_ids, labels, class_weights
     return loss, p, r, f1
 
 
-def train(model, train_batches, test_batches, epochs, report_every=10, scorer=None, learning_rate=0.01):
+def train(model, train_batches, test_batches, epochs, report_every=10, scorer=None, learning_rate=0.01, learning_rate_decay=1.):
 
-    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+    lr = tf.constant(learning_rate)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
 
     for e in range(epochs):
         losses = []
@@ -313,8 +314,10 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
                                         labels=batch['tags'], class_weights=batch['class_weights'],
                                         lengths=batch['lens'], scorer=scorer)
 
-        print(f"Train Loss: {sum(losses) / len(losses)}, Train P: {sum(ps) / len(ps)}, Train R: {sum(rs) / len(rs)}, Train F1: {sum(f1s) / len(f1s)}, "
+        print(f"Epoch: {e}, Train Loss: {sum(losses) / len(losses)}, Train P: {sum(ps) / len(ps)}, Train R: {sum(rs) / len(rs)}, Train F1: {sum(f1s) / len(f1s)}, "
               f"Test loss: {test_loss}, Test P: {test_p}, Test R: {test_r}, Test F1: {test_f1}")
+
+        lr = lr * learning_rate_decay
 
 
 

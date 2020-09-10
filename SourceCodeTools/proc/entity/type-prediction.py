@@ -338,7 +338,9 @@ def scorer(pred, labels, inverse_tag_map, eps=1e-8):
 
 def main_tf(TRAIN_DATA, TEST_DATA,
             tokenizer_path=None, graph_emb_path=None, word_emb_path=None,
-            output_dir=None, n_iter=30, max_len=100, suffix_prefix_dims=50, suffix_prefix_buckets=1000, learning_rate=0.01):
+            output_dir=None, n_iter=30, max_len=100,
+            suffix_prefix_dims=50, suffix_prefix_buckets=1000,
+            learning_rate=0.01, learning_rate_decay=1.0):
 
     train_s, train_e, train_r = prepare_data(TRAIN_DATA, tokenizer_path)
     test_s, test_e, test_r = prepare_data(TEST_DATA, tokenizer_path)
@@ -362,7 +364,7 @@ def main_tf(TRAIN_DATA, TEST_DATA,
                  suffix_prefix_dims=suffix_prefix_dims, suffix_prefix_buckets=suffix_prefix_buckets)
 
     train(model=model, train_batches=batches, test_batches=test_batch, epochs=n_iter, learning_rate=learning_rate,
-          scorer=lambda pred, true: scorer(pred, true, inv_t_map))
+          scorer=lambda pred, true: scorer(pred, true, inv_t_map), learning_rate_decay=learning_rate_decay)
 
 
 
@@ -383,6 +385,8 @@ if __name__ == "__main__":
                         help='Path to the file with edges')
     parser.add_argument('--learning_rate', dest='learning_rate', default=0.01, type=float,
                         help='')
+    parser.add_argument('--learning_rate_decay', dest='learning_rate_decay', default=1.0, type=float,
+                        help='')
 
     args = parser.parse_args()
 
@@ -400,7 +404,11 @@ if __name__ == "__main__":
     #     ent_types += ee
 
     TRAIN_DATA, TEST_DATA = read_data(args.data_path, normalize=True, allowed=allowed, include_replacements=True)
-    main_tf(TRAIN_DATA, TEST_DATA, args.tokenizer, graph_emb_path=args.graph_emb_path,
+    main_tf(TRAIN_DATA, TEST_DATA, args.tokenizer,
+            graph_emb_path=args.graph_emb_path,
             word_emb_path=args.word_emb_path,
-            output_dir=output_dir, n_iter=n_iter, learning_rate=args.learning_rate)
+            output_dir=output_dir,
+            n_iter=n_iter,
+            learning_rate=args.learning_rate,
+            learning_rate_decay=args.learning_rate_decay)
     # main_spacy(TRAIN_DATA, TEST_DATA, model=model_path,output_dir=output_dir, n_iter=n_iter)
