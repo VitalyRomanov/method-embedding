@@ -46,6 +46,7 @@ for dir in $(ls $ENVS_DIR); do
   if [ -d $ENVS_DIR/$dir ]; then
     if [ -f $ENVS_DIR/$dir/normalized_sourcetrail_nodes.csv ]; then
       sourcetrail-merge-graphs.py $ENVS_DIR/common_nodes_with_ast.csv $ENVS_DIR/$dir/nodes_with_ast.csv
+      sourcetrail-node-local2global.py $ENVS_DIR/common_nodes_with_ast.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/local2global_with_ast.csv
     fi
   fi
 done
