@@ -27,14 +27,19 @@ class DefaultEmbedding(Model):
     """
     Creates an embedder that provides the default value for the index -1. The default value is a zero-vector
     """
-    def __init__(self, init_vectors, trainable):
+    def __init__(self, init_vectors=None, shape=None, trainable=True):
         super(DefaultEmbedding, self).__init__()
 
-        self.embs = tf.Variable(init_vectors, dtype=tf.float32,
+        if init_vectors is not None:
+            self.embs = tf.Variable(init_vectors, dtype=tf.float32,
                            trainable=trainable, name="default_embedder_var")
+            shape = init_vectors.shape
+        else:
+            self.embs = tf.Variable(tf.random.uniform(shape=(shape[0], shape[1]), dtype=tf.float32),
+                               name="default_embedder_pad")
         # self.pad = tf.zeros(shape=(1, init_vectors.shape[1]), name="default_embedder_pad")
         # self.pad = tf.random.uniform(shape=(1, init_vectors.shape[1]), name="default_embedder_pad")
-        self.pad = tf.Variable(tf.random.uniform(shape=(1, init_vectors.shape[1]), dtype=tf.float32),
+        self.pad = tf.Variable(tf.random.uniform(shape=(1, shape[1]), dtype=tf.float32),
                                name="default_embedder_pad")
 
 
@@ -161,15 +166,17 @@ class TypePredictor(Model):
     def __init__(self, tok_embedder, graph_embedder, train_embeddings=False,
                  h_sizes=[500], dense_size=100, num_classes=None,
                  seq_len=100, pos_emb_size=30, cnn_win_size=3,
-                 crf_transitions=None):
+                 crf_transitions=None, suffix_prefix_dims=50, suffix_prefix_buckets=1000):
         super(TypePredictor, self).__init__()
         assert num_classes is not None, "set num_classes"
 
         self.seq_len = seq_len
         self.transition_params = crf_transitions
 
-        self.tok_emb = DefaultEmbedding(tok_embedder.e, train_embeddings)
-        self.graph_emb = DefaultEmbedding(graph_embedder.e, train_embeddings)
+        self.tok_emb = DefaultEmbedding(init_vectors=tok_embedder.e, trainable=train_embeddings)
+        self.graph_emb = DefaultEmbedding(init_vectors=graph_embedder.e, trainable=train_embeddings)
+        self.prefix_emb = DefaultEmbedding(shape=(suffix_prefix_buckets, suffix_prefix_dims), trainable=train_embeddings)
+        self.suffix_emb = DefaultEmbedding(shape=(suffix_prefix_buckets, suffix_prefix_dims), trainable=train_embeddings)
 
         # self.tok_emb = Embedding(input_dim=tok_embedder.e.shape[0],
         #                          output_dim=tok_embedder.e.shape[1],
@@ -181,7 +188,7 @@ class TypePredictor(Model):
         #                          weights=graph_embedder.e, trainable=train_embeddings,
         #                          mask_zero=True)
 
-        input_dim = tok_embedder.e.shape[1] + graph_embedder.e.shape[1]
+        input_dim = tok_embedder.e.shape[1] + graph_embedder.e.shape[1] + suffix_prefix_dims * 2
         self.text_cnn = TextCnn(input_size=input_dim, h_sizes=h_sizes,
                                 seq_len=seq_len, pos_emb_size=pos_emb_size,
                                 cnn_win_size=cnn_win_size, dense_size=dense_size,
@@ -200,12 +207,14 @@ class TypePredictor(Model):
     #     return mask
 
 
-    def __call__(self, token_ids, graph_ids):
+    def __call__(self, token_ids, prefix_ids, suffix_ids, graph_ids):
 
         tok_emb = self.tok_emb(token_ids)
         graph_emb = self.graph_emb(graph_ids)
+        prefix_emb = self.prefix_emb(prefix_ids)
+        suffix_emb = self.suffix_emb(suffix_ids)
 
-        embs = tf.concat([tok_emb, graph_emb], axis=-1)
+        embs = tf.concat([tok_emb, graph_emb, prefix_emb, suffix_emb], axis=-1)
 
         logits = self.text_cnn(embs)
 
@@ -255,9 +264,9 @@ def estimate_crf_transitions(batches, n_tags):
     return np.stack(transitions, axis=0).mean(axis=0)
 
 # @tf.function
-def train_step(model, optimizer, token_ids, graph_ids, labels, class_weights, lengths, scorer=None):
+def train_step(model, optimizer, token_ids, prefix, suffix, graph_ids, labels, class_weights, lengths, scorer=None):
     with tf.GradientTape() as tape:
-        logits = model(token_ids, graph_ids)
+        logits = model(token_ids, prefix, suffix, graph_ids)
         loss = model.loss(logits, labels, lengths, class_weights=class_weights)
         p, r, f1 = model.score(logits, labels, lengths, scorer=scorer)
         gradients = tape.gradient(loss, model.trainable_variables)
@@ -266,17 +275,17 @@ def train_step(model, optimizer, token_ids, graph_ids, labels, class_weights, le
     return loss, p, r, f1
 
 # @tf.function
-def test_step(model, token_ids, graph_ids, labels, class_weights, lengths, scorer=None):
-    logits = model(token_ids, graph_ids)
+def test_step(model, token_ids, prefix, suffix, graph_ids, labels, class_weights, lengths, scorer=None):
+    logits = model(token_ids, prefix, suffix, graph_ids)
     loss = model.loss(logits, labels, lengths, class_weights=class_weights)
     p, r, f1 = model.score(logits, labels, lengths, scorer=scorer)
 
     return loss, p, r, f1
 
 
-def train(model, train_batches, test_batches, epochs, report_every=10, scorer=None):
+def train(model, train_batches, test_batches, epochs, report_every=10, scorer=None, learning_rate=0.01):
 
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 
     for e in range(epochs):
         losses = []
@@ -284,17 +293,25 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
         rs = []
         f1s = []
 
-        for ind, b in enumerate(train_batches):
-            token_ids, graph_ids, labels, class_weights, lengths = b
-            loss, p, r, f1 = train_step(model, optimizer, token_ids, graph_ids, labels, class_weights, lengths, scorer=scorer)
+        for ind, batch in enumerate(train_batches):
+            # token_ids, graph_ids, labels, class_weights, lengths = b
+            loss, p, r, f1 = train_step(model=model, optimizer=optimizer, token_ids=batch['tok_ids'],
+                                        prefix=batch['prefix'], suffix=batch['suffix'],
+                                        graph_ids=batch['graph_ids'],
+                                        labels=batch['tags'], class_weights=batch['class_weights'],
+                                        lengths=batch['lens'], scorer=scorer)
             losses.append(loss.numpy())
             ps.append(p)
             rs.append(r)
             f1s.append(f1)
 
-        for ind, b in enumerate(test_batches):
-            token_ids, graph_ids, labels, class_weights, lengths = b
-            test_loss, test_p, test_r, test_f1 = test_step(model, token_ids, graph_ids, labels, class_weights, lengths, scorer=scorer)
+        for ind, batch in enumerate(test_batches):
+            # token_ids, graph_ids, labels, class_weights, lengths = b
+            test_loss, test_p, test_r, test_f1 = test_step(model=model, token_ids=batch['tok_ids'],
+                                        prefix=batch['prefix'], suffix=batch['suffix'],
+                                        graph_ids=batch['graph_ids'],
+                                        labels=batch['tags'], class_weights=batch['class_weights'],
+                                        lengths=batch['lens'], scorer=scorer)
 
         print(f"Train Loss: {sum(losses) / len(losses)}, Train P: {sum(ps) / len(ps)}, Train R: {sum(rs) / len(rs)}, Train F1: {sum(f1s) / len(f1s)}, "
               f"Test loss: {test_loss}, Test P: {test_p}, Test R: {test_r}, Test F1: {test_f1}")

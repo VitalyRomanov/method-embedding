@@ -2,7 +2,7 @@ from __future__ import unicode_literals, print_function
 import spacy
 import sys, json, os
 import pickle
-from SourceCodeTools.proc.entity.util import inject_tokenizer, read_data, deal_with_incorrect_offsets
+from SourceCodeTools.proc.entity.util import inject_tokenizer, read_data, deal_with_incorrect_offsets, el_hash
 from spacy.gold import biluo_tags_from_offsets, offsets_from_biluo_tags
 
 from spacy.gold import GoldParse
@@ -201,7 +201,7 @@ def create_tag_map(sents):
     return tagmap, inv_tagmap
 
 
-def create_batches(batch_size, seq_len, sents, repl, tags, graphmap, wordmap, tagmap, class_weights):
+def create_batches(batch_size, seq_len, sents, repl, tags, graphmap, wordmap, tagmap, class_weights, element_hash_size=1000):
     pad_id = len(wordmap)
     rpad_id = len(graphmap)
     n_sents = len(sents)
@@ -211,22 +211,33 @@ def create_batches(batch_size, seq_len, sents, repl, tags, graphmap, wordmap, ta
     b_tags = []
     b_cw = []
     b_lens = []
+    b_pref = []
+    b_suff = []
+
 
     for ind, (s, rr, tt)  in enumerate(zip(sents, repl, tags)):
         blank_s = np.ones((seq_len,), dtype=np.int32) * pad_id
         blank_r = np.ones((seq_len,), dtype=np.int32) * rpad_id
         blank_t = np.zeros((seq_len,), dtype=np.int32)
         blank_cw = np.ones((seq_len,), dtype=np.int32)
+        blank_pref = np.ones((seq_len,), dtype=np.int32) * element_hash_size
+        blank_suff = np.ones((seq_len,), dtype=np.int32) * element_hash_size
+
 
         int_sent = np.array([wordmap.get(w, pad_id) for w in s], dtype=np.int32)
         int_repl = np.array([graphmap.get(r, rpad_id) for r in rr], dtype=np.int32)
         int_tags = np.array([tagmap.get(t, 0) for t in tt], dtype=np.int32)
         int_cw = np.array([class_weights.get(t, 1.0) for t in tt], dtype=np.int32)
+        int_pref = np.array([el_hash(w[:3], element_hash_size-1) for w in s], dtype=np.int32)
+        int_suff = np.array([el_hash(w[-3:], element_hash_size-1) for w in s], dtype=np.int32)
+
 
         blank_s[0:min(int_sent.size, seq_len)] = int_sent[0:min(int_sent.size, seq_len)]
         blank_r[0:min(int_sent.size, seq_len)] = int_repl[0:min(int_sent.size, seq_len)]
         blank_t[0:min(int_sent.size, seq_len)] = int_tags[0:min(int_sent.size, seq_len)]
         blank_cw[0:min(int_sent.size, seq_len)] = int_cw[0:min(int_sent.size, seq_len)]
+        blank_pref[0:min(int_sent.size, seq_len)] = int_pref[0:min(int_sent.size, seq_len)]
+        blank_suff[0:min(int_sent.size, seq_len)] = int_suff[0:min(int_sent.size, seq_len)]
 
         # print(int_sent[0:min(int_sent.size, seq_len)].shape)
 
@@ -235,20 +246,26 @@ def create_batches(batch_size, seq_len, sents, repl, tags, graphmap, wordmap, ta
         b_repls.append(blank_r)
         b_tags.append(blank_t)
         b_cw.append(blank_cw)
+        b_pref.append(blank_pref)
+        b_suff.append(blank_suff)
 
     lens = np.array(b_lens, dtype=np.int32)
     sentences = np.stack(b_sents)
     replacements = np.stack(b_repls)
     pos_tags = np.stack(b_tags)
     cw = np.stack(b_cw)
+    prefixes = np.stack(b_pref)
+    suffixes = np.stack(b_suff)
 
     batch = []
     for i in range(n_sents // batch_size):
-        batch.append((sentences[i * batch_size: i * batch_size + batch_size, :],
-                      replacements[i * batch_size: i * batch_size + batch_size, :],
-                      pos_tags[i * batch_size: i * batch_size + batch_size, :],
-                      cw[i * batch_size: i * batch_size + batch_size, :],
-                      lens[i * batch_size: i * batch_size + batch_size]))
+        batch.append({"tok_ids": sentences[i * batch_size: i * batch_size + batch_size, :],
+                      "graph_ids": replacements[i * batch_size: i * batch_size + batch_size, :],
+                      "prefix": prefixes[i * batch_size: i * batch_size + batch_size, :],
+                      "suffix": suffixes[i * batch_size: i * batch_size + batch_size, :],
+                      "tags": pos_tags[i * batch_size: i * batch_size + batch_size, :],
+                      "class_weights": cw[i * batch_size: i * batch_size + batch_size, :],
+                      "lens": lens[i * batch_size: i * batch_size + batch_size]})
 
     return batch
 
@@ -321,7 +338,7 @@ def scorer(pred, labels, inverse_tag_map, eps=1e-8):
 
 def main_tf(TRAIN_DATA, TEST_DATA,
             tokenizer_path=None, graph_emb_path=None, word_emb_path=None,
-            output_dir=None, n_iter=30, max_len=100):
+            output_dir=None, n_iter=30, max_len=100, suffix_prefix_dims=50, suffix_prefix_buckets=1000, learning_rate=0.01):
 
     train_s, train_e, train_r = prepare_data(TRAIN_DATA, tokenizer_path)
     test_s, test_e, test_r = prepare_data(TEST_DATA, tokenizer_path)
@@ -334,16 +351,17 @@ def main_tf(TRAIN_DATA, TEST_DATA,
     graph_emb = load_pkl_emb(graph_emb_path)
     word_emb = load_pkl_emb(word_emb_path)
 
-    batches = create_batches(32, max_len, train_s, train_r, train_e, graph_emb.ind, word_emb.ind, t_map, cw)
-    test_batch = create_batches(len(test_s), max_len, test_s, test_r, test_e, graph_emb.ind, word_emb.ind, t_map, cw)
+    batches = create_batches(32, max_len, train_s, train_r, train_e, graph_emb.ind, word_emb.ind, t_map, cw, element_hash_size=suffix_prefix_buckets)
+    test_batch = create_batches(len(test_s), max_len, test_s, test_r, test_e, graph_emb.ind, word_emb.ind, t_map, cw, element_hash_size=suffix_prefix_buckets)
 
     # transitions = estimate_crf_transitions(batches, len(t_map))
 
     model = TypePredictor(word_emb, graph_emb, train_embeddings=False,
                  h_sizes=[250], dense_size=100, num_classes=len(t_map),
-                 seq_len=max_len, pos_emb_size=30, cnn_win_size=3)
+                 seq_len=max_len, pos_emb_size=30, cnn_win_size=3,
+                 suffix_prefix_dims=suffix_prefix_dims, suffix_prefix_buckets=suffix_prefix_buckets)
 
-    train(model=model, train_batches=batches, test_batches=test_batch, epochs=n_iter,
+    train(model=model, train_batches=batches, test_batches=test_batch, epochs=n_iter, learning_rate=learning_rate,
           scorer=lambda pred, true: scorer(pred, true, inv_t_map))
 
 
@@ -363,6 +381,8 @@ if __name__ == "__main__":
                         help='Path to the file with edges')
     parser.add_argument('--word_emb_path', dest='word_emb_path', default=None,
                         help='Path to the file with edges')
+    parser.add_argument('--learning_rate', dest='learning_rate', default=0.01, type=float,
+                        help='')
 
     args = parser.parse_args()
 
@@ -382,5 +402,5 @@ if __name__ == "__main__":
     TRAIN_DATA, TEST_DATA = read_data(args.data_path, normalize=True, allowed=allowed, include_replacements=True)
     main_tf(TRAIN_DATA, TEST_DATA, args.tokenizer, graph_emb_path=args.graph_emb_path,
             word_emb_path=args.word_emb_path,
-            output_dir=output_dir, n_iter=n_iter)
+            output_dir=output_dir, n_iter=n_iter, learning_rate=args.learning_rate)
     # main_spacy(TRAIN_DATA, TEST_DATA, model=model_path,output_dir=output_dir, n_iter=n_iter)
