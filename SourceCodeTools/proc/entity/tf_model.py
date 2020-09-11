@@ -188,7 +188,9 @@ class TypePredictor(Model):
         #                          weights=graph_embedder.e, trainable=train_embeddings,
         #                          mask_zero=True)
 
-        input_dim = tok_embedder.e.shape[1] + graph_embedder.e.shape[1] + suffix_prefix_dims * 2
+        input_dim = tok_embedder.e.shape[1] + suffix_prefix_dims * 2
+                     # graph_embedder.e.shape[1] + \
+
         self.text_cnn = TextCnn(input_size=input_dim, h_sizes=h_sizes,
                                 seq_len=seq_len, pos_emb_size=pos_emb_size,
                                 cnn_win_size=cnn_win_size, dense_size=dense_size,
