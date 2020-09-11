@@ -93,7 +93,7 @@ class TextCnnLayer(Model):
 class TextCnn(Model):
     def __init__(self, input_size, h_sizes, seq_len,
                  pos_emb_size, cnn_win_size, dense_size, num_classes,
-                 activation=None, dense_activation=None):
+                 activation=None, dense_activation=None, drop_rate=0.2):
         super(TextCnn, self).__init__()
 
         self.seq_len = seq_len
@@ -118,9 +118,11 @@ class TextCnn(Model):
             dense_activation = activation
 
         self.dense_1 = Dense(dense_size, activation=dense_activation)
+        self.dropout_1 = tf.layers.Dropout(rate=drop_rate)
         self.dense_2 = Dense(num_classes, activation=None) # logits
+        self.dropout_2 = tf.layers.Dropout(rate=drop_rate)
 
-    def __call__(self, embs):
+    def __call__(self, embs, training=True):
 
         temp_cnn_emb = embs
 
@@ -144,9 +146,13 @@ class TextCnn(Model):
         # cnn_pool_features = tf.concat(cnn_pool_feat, axis=1)
         cnn_pool_features = temp_cnn_emb
 
-        token_features = tf.reshape(cnn_pool_features, shape=(-1, self.h_sizes[-1]))
+        token_features = self.dropout_1(
+            tf.reshape(cnn_pool_features, shape=(-1, self.h_sizes[-1]))
+            , training=training)
 
-        local_h2 = self.dense_1(token_features)
+        local_h2 = self.dropout_2(
+            self.dense_1(token_features)
+            , training=training)
         tag_logits = self.dense_2(local_h2)
 
         return tf.reshape(tag_logits, (-1, self.seq_len, self.num_classes))
@@ -210,7 +216,7 @@ class TypePredictor(Model):
     #     return mask
 
 
-    def __call__(self, token_ids, prefix_ids, suffix_ids, graph_ids):
+    def __call__(self, token_ids, prefix_ids, suffix_ids, graph_ids, training=True):
 
         tok_emb = self.tok_emb(token_ids)
         # graph_emb = self.graph_emb(graph_ids)
@@ -222,7 +228,7 @@ class TypePredictor(Model):
                           prefix_emb,
                           suffix_emb], axis=-1)
 
-        logits = self.text_cnn(embs)
+        logits = self.text_cnn(embs, training=training)
 
         return logits
 
@@ -272,7 +278,7 @@ def estimate_crf_transitions(batches, n_tags):
 # @tf.function
 def train_step(model, optimizer, token_ids, prefix, suffix, graph_ids, labels, lengths, class_weights=None, scorer=None):
     with tf.GradientTape() as tape:
-        logits = model(token_ids, prefix, suffix, graph_ids)
+        logits = model(token_ids, prefix, suffix, graph_ids, training=True)
         loss = model.loss(logits, labels, lengths, class_weights=class_weights)
         p, r, f1 = model.score(logits, labels, lengths, scorer=scorer)
         gradients = tape.gradient(loss, model.trainable_variables)
@@ -282,7 +288,7 @@ def train_step(model, optimizer, token_ids, prefix, suffix, graph_ids, labels, l
 
 # @tf.function
 def test_step(model, token_ids, prefix, suffix, graph_ids, labels, lengths, class_weights=None, scorer=None):
-    logits = model(token_ids, prefix, suffix, graph_ids)
+    logits = model(token_ids, prefix, suffix, graph_ids, training=False)
     loss = model.loss(logits, labels, lengths, class_weights=class_weights)
     p, r, f1 = model.score(logits, labels, lengths, scorer=scorer)
 
