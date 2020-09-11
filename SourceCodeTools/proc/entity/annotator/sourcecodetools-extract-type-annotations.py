@@ -131,8 +131,8 @@ def strip_docstring(body): # remove first docstring (docstring of the main funct
 def isvalid(text, ents):
     doc = nlp(text)
     tags = biluo_tags_from_offsets(doc, ents)
-    for t, tag in zip(doc, tags):
-        print(tag, t.text, sep="\t")
+    # for t, tag in zip(doc, tags):
+    #     print(tag, t.text, sep="\t")
     if "-" in tags:
         return False
     else:
