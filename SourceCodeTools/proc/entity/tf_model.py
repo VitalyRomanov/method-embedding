@@ -173,10 +173,11 @@ class TypePredictor(Model):
         self.seq_len = seq_len
         self.transition_params = crf_transitions
 
-        self.tok_emb = DefaultEmbedding(init_vectors=tok_embedder.e, trainable=train_embeddings)
-        # self.graph_emb = DefaultEmbedding(init_vectors=graph_embedder.e, trainable=train_embeddings)
-        self.prefix_emb = DefaultEmbedding(shape=(suffix_prefix_buckets, suffix_prefix_dims), trainable=train_embeddings)
-        self.suffix_emb = DefaultEmbedding(shape=(suffix_prefix_buckets, suffix_prefix_dims), trainable=train_embeddings)
+        with tf.device('/CPU:0'):
+            self.tok_emb = DefaultEmbedding(init_vectors=tok_embedder.e, trainable=train_embeddings)
+            # self.graph_emb = DefaultEmbedding(init_vectors=graph_embedder.e, trainable=train_embeddings)
+            self.prefix_emb = DefaultEmbedding(shape=(suffix_prefix_buckets, suffix_prefix_dims), trainable=train_embeddings)
+            self.suffix_emb = DefaultEmbedding(shape=(suffix_prefix_buckets, suffix_prefix_dims), trainable=train_embeddings)
 
         # self.tok_emb = Embedding(input_dim=tok_embedder.e.shape[0],
         #                          output_dim=tok_embedder.e.shape[1],
