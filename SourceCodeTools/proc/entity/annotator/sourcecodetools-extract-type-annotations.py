@@ -97,22 +97,28 @@ def strip_docstring(body): # remove first docstring (docstring of the main funct
     docstring_starts = 0
     doc_len_lines = 0
 
+    block_symbol = ""
+
     for ind, line in enumerate(body_lines):
         if not block and line.lstrip().startswith('"""') or line.lstrip().startswith("'''"):
             block = True
-            continue
+            block_symbol = line.lstrip()[:3]
+            # continue
 
         if block is False or no_removals is True:
             new_body.append(line)
         else:
             new_doc.append(line)
             docstring_starts = ind
-            doc_len_lines = 1
+            # doc_len_lines = 1
 
-        if block and line.rstrip().endswith('"""') or line.rstrip().endswith("'''"):
-            block = False
-            no_removals = True
-            continue
+        if block and line.rstrip().endswith(block_symbol) or line.rstrip().endswith(block_symbol):
+            if len(new_doc) == 1 and len(line.strip()) >= 6 or \
+                len(new_doc) > 1:
+                block = False
+                no_removals = True
+                block_symbol = ""
+                # continue
 
     doc_len_lines += len(new_doc)
 
@@ -125,6 +131,8 @@ def strip_docstring(body): # remove first docstring (docstring of the main funct
 def isvalid(text, ents):
     doc = nlp(text)
     tags = biluo_tags_from_offsets(doc, ents)
+    for t, tag in zip(doc, tags):
+        print(tag, t.text, sep="\t")
     if "-" in tags:
         return False
     else:
@@ -180,6 +188,20 @@ def prepare_replacements(replacements):
         [{"line": r[0], "col_offset": r[1], "end_col_offset": r[2], "ann": r[3]} for r in replacements]).sort_values(
         by=['line', 'end_col_offset'], ascending=[True, False])
 
+
+def adjust_contraction(entry, line, head, contraction):
+    for i in range(len(entry["ents"])):
+        tline, start, end, ann = entry["ents"][i]
+        if tline == line:
+            entry["ents"][i] = (tline, start - contraction, end - contraction, ann)
+
+    for i in range(len(entry['replacements'])):
+        tline, start, end, ann = entry["replacements"][i]
+        if tline == line:
+            if start >= len(head):
+                entry["replacements"][i] = (tline, start - contraction, end - contraction, ann)
+
+    return entry
 
 def process_body(body, replacements, remove_docstring=True):
     body_ = body.strip()
@@ -240,6 +262,21 @@ def process_body(body, replacements, remove_docstring=True):
                 if line == 0: # only use labels for the main and not nested functions
                     entry["cats"].append({"returns": annotation})
 
+                contraction = before_contraction - len(head) - len(tail)
+
+                entry = adjust_contraction(entry, line, head, contraction)
+
+                # for i in range(len(entry["ents"])):
+                #     tline, start, end, ann = entry["ents"][i]
+                #     if tline == line:
+                #         entry["ents"][i] = (tline, start - contraction, end - contraction, ann)
+                #
+                # for i in range(len(entry['replacements'])):
+                #     tline, start, end, ann = entry["replacements"][i]
+                #     if tline == line:
+                #         if start >= len(head):
+                #             entry["replacements"][i] = (tline, start - contraction, end - contraction, ann)
+
             elif row['name'] == "annotation":
 
                 try:
@@ -249,16 +286,18 @@ def process_body(body, replacements, remove_docstring=True):
                 head = head[:-1]
                 contraction = before_contraction - len(head) - len(tail)
 
-                for i in range(len(entry["ents"])):
-                    tline, start, end, ann = entry["ents"][i]
-                    if tline == line:
-                        entry["ents"][i] = (tline, start - contraction, end - contraction, ann)
+                entry = adjust_contraction(entry, line, head, contraction)
 
-                for i in range(len(entry['replacements'])):
-                    tline, start, end, ann = entry["replacements"][i]
-                    if tline == line:
-                        if start >= len(head):
-                            entry["replacements"][i] = (tline, start - contraction, end - contraction, ann)
+                # for i in range(len(entry["ents"])):
+                #     tline, start, end, ann = entry["ents"][i]
+                #     if tline == line:
+                #         entry["ents"][i] = (tline, start - contraction, end - contraction, ann)
+                #
+                # for i in range(len(entry['replacements'])):
+                #     tline, start, end, ann = entry["replacements"][i]
+                #     if tline == line:
+                #         if start >= len(head):
+                #             entry["replacements"][i] = (tline, start - contraction, end - contraction, ann)
 
 
                 assert int(row.var_col_offset) != len(head)
@@ -297,7 +336,7 @@ def process_body(body, replacements, remove_docstring=True):
             return None # in case all entities were filtered
 
         # assert isvalid(entry['text'], entry["ents"])
-        # assert isvalid(entry['text'], entry["replacements"])
+        assert isvalid(entry['text'], entry["replacements"])
         return entry
 
         # if isvalid(entry['text'], entry["ents"]):
@@ -313,7 +352,7 @@ def to_global_ids(entry, id_map, local_names, global_names):
     for r in entry['replacements']:
         id_ = int(r[2].split("_")[-1])
         assert local_names[id_] == global_names[id_map[id_]], f"{local_names[id_]} != {global_names[id_map[id_]]}"
-        assert local_names[id_][0].lower() == local_names[id_][0], f"{local_names[id_]}"
+        # assert local_names[id_][0].lower() == local_names[id_][0], f"{local_names[id_]}"
         replacements.append((r[0], r[1], str(id_map[id_])))
 
     entry['replacements'] = replacements
