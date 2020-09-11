@@ -118,9 +118,9 @@ class TextCnn(Model):
             dense_activation = activation
 
         self.dense_1 = Dense(dense_size, activation=dense_activation)
-        self.dropout_1 = tf.layers.Dropout(rate=drop_rate)
+        self.dropout_1 = tf.keras.layers.Dropout(rate=drop_rate)
         self.dense_2 = Dense(num_classes, activation=None) # logits
-        self.dropout_2 = tf.layers.Dropout(rate=drop_rate)
+        self.dropout_2 = tf.keras.layers.Dropout(rate=drop_rate)
 
     def __call__(self, embs, training=True):
 
