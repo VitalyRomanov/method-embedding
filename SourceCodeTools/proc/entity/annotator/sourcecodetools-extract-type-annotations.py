@@ -307,10 +307,13 @@ def process_body(body, replacements, remove_docstring=True):
     else:
         return None
 
-def to_global_ids(entry, id_map):
+def to_global_ids(entry, id_map, local_names, global_names):
+
     replacements = []
     for r in entry['replacements']:
         id_ = int(r[2].split("_")[-1])
+        assert local_names[id_] == global_names[id_map[id_]]
+        assert local_names[id_][0].lower() == local_names[id_][0]
         replacements.append((r[0], r[1], str(id_map[id_])))
 
     entry['replacements'] = replacements
@@ -321,6 +324,11 @@ def main(args):
     bodies = pd.read_csv(bodies_path)
     id2global = pd.read_csv(args[3])
     id_maps = dict(zip(id2global['id'], id2global['global_id']))
+
+    global_names = pd.read_csv(args[4])
+    local_names = pd.read_csv(args[5])
+    global_names = dict(zip(global_names['id'].tolist(), global_names['serialized_name'].tolist()))
+    local_names = dict(zip(local_names['id'].tolist(), local_names['serialized_name'].tolist()))
 
     # body_field = bodies.columns[1]
 
@@ -335,7 +343,7 @@ def main(args):
         replacements = literal_eval(row['replacement_list'])
         entry = process_body(body, replacements)
         if entry is not None:
-            entry = to_global_ids(entry, id_maps)
+            entry = to_global_ids(entry, id_maps, local_names, global_names)
             data.append(entry)
 
     format = "jsonl"
