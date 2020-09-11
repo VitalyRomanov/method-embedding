@@ -146,13 +146,15 @@ class TextCnn(Model):
         # cnn_pool_features = tf.concat(cnn_pool_feat, axis=1)
         cnn_pool_features = temp_cnn_emb
 
-        token_features = self.dropout_1(
-            tf.reshape(cnn_pool_features, shape=(-1, self.h_sizes[-1]))
-            , training=training)
+        # token_features = self.dropout_1(
+        #     tf.reshape(cnn_pool_features, shape=(-1, self.h_sizes[-1]))
+        #     , training=training)
+        token_features = tf.reshape(cnn_pool_features, shape=(-1, self.h_sizes[-1]))
 
-        local_h2 = self.dropout_2(
-            self.dense_1(token_features)
-            , training=training)
+        # local_h2 = self.dropout_2(
+        #     self.dense_1(token_features)
+        #     , training=training)
+        local_h2 = self.dense_1(token_features)
         tag_logits = self.dense_2(local_h2)
 
         return tf.reshape(tag_logits, (-1, self.seq_len, self.num_classes))
