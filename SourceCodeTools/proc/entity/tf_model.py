@@ -264,7 +264,7 @@ def estimate_crf_transitions(batches, n_tags):
     return np.stack(transitions, axis=0).mean(axis=0)
 
 # @tf.function
-def train_step(model, optimizer, token_ids, prefix, suffix, graph_ids, labels, class_weights, lengths, scorer=None):
+def train_step(model, optimizer, token_ids, prefix, suffix, graph_ids, labels, lengths, class_weights=None, scorer=None):
     with tf.GradientTape() as tape:
         logits = model(token_ids, prefix, suffix, graph_ids)
         loss = model.loss(logits, labels, lengths, class_weights=class_weights)
@@ -275,7 +275,7 @@ def train_step(model, optimizer, token_ids, prefix, suffix, graph_ids, labels, c
     return loss, p, r, f1
 
 # @tf.function
-def test_step(model, token_ids, prefix, suffix, graph_ids, labels, class_weights, lengths, scorer=None):
+def test_step(model, token_ids, prefix, suffix, graph_ids, labels, lengths, class_weights=None, scorer=None):
     logits = model(token_ids, prefix, suffix, graph_ids)
     loss = model.loss(logits, labels, lengths, class_weights=class_weights)
     p, r, f1 = model.score(logits, labels, lengths, scorer=scorer)
@@ -300,8 +300,9 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
                                         prefix=batch['prefix'], suffix=batch['suffix'],
                                         graph_ids=batch['graph_ids'],
                                         labels=batch['tags'],
+                                        lengths=batch['lens'],
                                         # class_weights=batch['class_weights'],
-                                        lengths=batch['lens'], scorer=scorer)
+                                        scorer=scorer)
             losses.append(loss.numpy())
             ps.append(p)
             rs.append(r)
@@ -312,8 +313,10 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
             test_loss, test_p, test_r, test_f1 = test_step(model=model, token_ids=batch['tok_ids'],
                                         prefix=batch['prefix'], suffix=batch['suffix'],
                                         graph_ids=batch['graph_ids'],
-                                        labels=batch['tags'], class_weights=batch['class_weights'],
-                                        lengths=batch['lens'], scorer=scorer)
+                                        labels=batch['tags'],
+                                        lengths=batch['lens'],
+                                        # class_weights=batch['class_weights'],
+                                        scorer=scorer)
 
         print(f"Epoch: {e}, Train Loss: {sum(losses) / len(losses)}, Train P: {sum(ps) / len(ps)}, Train R: {sum(rs) / len(rs)}, Train F1: {sum(f1s) / len(f1s)}, "
               f"Test loss: {test_loss}, Test P: {test_p}, Test R: {test_r}, Test F1: {test_f1}")
