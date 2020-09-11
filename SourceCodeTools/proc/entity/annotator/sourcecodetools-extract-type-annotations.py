@@ -336,7 +336,7 @@ def process_body(body, replacements, remove_docstring=True):
             return None # in case all entities were filtered
 
         # assert isvalid(entry['text'], entry["ents"])
-        assert isvalid(entry['text'], entry["replacements"])
+        # assert isvalid(entry['text'], entry["replacements"])
         return entry
 
         # if isvalid(entry['text'], entry["ents"]):
