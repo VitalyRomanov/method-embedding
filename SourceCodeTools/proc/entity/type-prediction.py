@@ -359,7 +359,7 @@ def main_tf(TRAIN_DATA, TEST_DATA,
     # transitions = estimate_crf_transitions(batches, len(t_map))
 
     model = TypePredictor(word_emb, graph_emb, train_embeddings=False,
-                 h_sizes=[40, 40, 40], dense_size=30, num_classes=len(t_map),
+                 h_sizes=[25, 25, 25], dense_size=15, num_classes=len(t_map),
                  seq_len=max_len, pos_emb_size=30, cnn_win_size=3,
                  suffix_prefix_dims=suffix_prefix_dims, suffix_prefix_buckets=suffix_prefix_buckets)
 
