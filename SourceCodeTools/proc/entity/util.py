@@ -9,9 +9,9 @@ def el_hash(el, buckets):
     return int(hashlib.md5(el.encode('utf-8')).hexdigest(), 16) % buckets
 
 def custom_tokenizer(nlp):
-    prefix_re = re.compile(r'''[\[*]''')
-    suffix_re = re.compile(r'''[\]]''')
-    infix_re = re.compile(r'''[\[\]\(\),=*]''')
+    prefix_re = re.compile(r'''^[[({"':\.!]''')
+    suffix_re = re.compile(r'''[])}"':\.!]$''')
+    infix_re = re.compile(r'''[\[\]\(\)\{\},=\*\"\.!]''')
     return Tokenizer(nlp.vocab,
                                 prefix_search=prefix_re.search,
                                 suffix_search=suffix_re.search,
