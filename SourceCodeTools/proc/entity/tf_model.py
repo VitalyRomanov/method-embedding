@@ -299,7 +299,8 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
             loss, p, r, f1 = train_step(model=model, optimizer=optimizer, token_ids=batch['tok_ids'],
                                         prefix=batch['prefix'], suffix=batch['suffix'],
                                         graph_ids=batch['graph_ids'],
-                                        labels=batch['tags'], class_weights=batch['class_weights'],
+                                        labels=batch['tags'],
+                                        # class_weights=batch['class_weights'],
                                         lengths=batch['lens'], scorer=scorer)
             losses.append(loss.numpy())
             ps.append(p)
