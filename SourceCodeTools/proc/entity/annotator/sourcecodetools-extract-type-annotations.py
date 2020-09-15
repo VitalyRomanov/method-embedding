@@ -1,13 +1,14 @@
-import pandas as pd
-import ast  # , astor
-import sys, os
+import ast
 import json
-import spacy
-import re
-from SourceCodeTools.proc.entity.util import inject_tokenizer
+import os
+import sys
 from ast import literal_eval
 
+import pandas as pd
+import spacy
 from spacy.gold import biluo_tags_from_offsets
+
+from SourceCodeTools.proc.entity.util import inject_tokenizer
 
 nlp = inject_tokenizer(spacy.blank("en"))
 
@@ -30,13 +31,6 @@ def inspect_fdef(node):
 
 def inspect_arg(node):
     return inspect_ann(node)
-    # if node.annotation is not None:
-    #     return [{"name": "annotation", "line": node.annotation.lineno - 1, "end_line": node.annotation.end_lineno - 1,
-    #              "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset,
-    #              "var_line": node.lineno - 1, "var_end_line": node.end_lineno - 1, "var_col_offset": node.col_offset,
-    #              "var_end_col_offset": node.end_col_offset}]
-    # else:
-    #     return []
 
 
 def inspect_ann(node):
@@ -90,7 +84,7 @@ def correct_entities(entities, removed_offsets):
                 else:
                     raise Exception("Invalid entity size")
             elif offset[0] >= entity[1] and offset[1] >= entity[1]:
-                new_entities.append((entity))
+                new_entities.append(entity)
             elif offset[0] <= entity[1] <= offset[1] or offset[0] <= entity[0] <= offset[1]:
                 pass  # likely to be a type annotation being removed
             else:
@@ -156,7 +150,6 @@ def remove_offsets(body, entities, offsets):
 
 
 def unpack_returns(body, labels):
-
     returns = []
 
     for ind, row in labels.iterrows():
@@ -189,15 +182,14 @@ def unpack_returns(body, labels):
 
 
 def unpack_annotations(body, labels):
-
     variables = []
     annotations = []
 
     for ind, row in labels.iterrows():
         if row['name'] == "annotation":
             variables.append((
-                             row['var_line'], row['var_end_line'], row['var_col_offset'], row['var_end_col_offset'],
-                             'variable'))
+                row['var_line'], row['var_end_line'], row['var_col_offset'], row['var_end_col_offset'],
+                'variable'))
             annotations.append(
                 (row['line'], row['end_line'], row['col_offset'], row['end_col_offset'], 'annotation '))
 
@@ -228,7 +220,6 @@ def unpack_annotations(body, labels):
 
 
 def process_body(body, replacements):
-
     replacements = [(r[0], r[0], r[1], r[2], r[3]) for r in replacements]
     replacements = to_offsets(body, replacements)
 
@@ -250,16 +241,14 @@ def process_body(body, replacements):
 
     initial_labels = get_initial_labels(body_)
 
-    if initial_labels is None: return None
+    if initial_labels is None:
+        return None
 
     returns, return_cuts = unpack_returns(body_, initial_labels)
     annotations, annotation_cuts = unpack_annotations(body_, initial_labels)
 
-    # if body_.startswith("def __init__(\n        self,\n        expr,\n        engine: str = \"numexpr\",\n        parser: str = \"pandas\",\n        env: Optional[Scope] = None,\n        level: int = 0,\n    )"):
-    #     print()
-
     body_, replacements_annotations, _ = remove_offsets(body_, replacements + annotations,
-                                                             return_cuts + annotation_cuts)
+                                                        return_cuts + annotation_cuts)
 
     entry['replacements'].extend(replacements_annotations[:-len(annotations)])
     entry['ents'].extend(replacements_annotations[-len(annotations):])
@@ -298,74 +287,11 @@ def get_initial_labels(body_):
         return None
 
 
-# def strip_docstring(body):  # remove first docstring (docstring of the main function (not nested functions)
-#     # # TODO
-#     # # this does not seem to be working well
-#     # root = ast.parse(body)
-#     # main_doc = None
-#     # ranges = []
-#     # for node in ast.walk(root):
-#     #     try:
-#     #         docstring = ast.get_docstring(node)
-#     #     except:
-#     #         continue
-#     #     else:
-#     #         if docstring is not None:
-#     #             ranges.append((node.body[0].lineno-1, node.body[0].end_lineno))
-#     #             # if main_doc is None:
-#     #             #     main_doc = docstring
-#     #             # node.body = node.body[1:]
-#     #
-#     # ranges = sorted(ranges, key=lambda x: x[0], reverse=True)
-#
-#     body_lines = body.split("\n")
-#
-#     new_body = []
-#     new_doc = []
-#
-#     block = False
-#     no_removals = False
-#
-#     docstring_starts = 0
-#     doc_len_lines = 0
-#
-#     block_symbol = ""
-#
-#     for ind, line in enumerate(body_lines):
-#         if not block and (line.lstrip().startswith('"""') or line.lstrip().startswith("'''")):
-#             block = True
-#             block_symbol = line.lstrip()[:3]
-#             # continue
-#
-#         if block is False or no_removals is True:
-#             new_body.append(line)
-#         else:
-#             new_doc.append(line)
-#             docstring_starts = ind
-#             # doc_len_lines = 1
-#
-#         if block and line.rstrip().endswith(block_symbol) or line.rstrip().endswith(block_symbol):
-#             if len(new_doc) == 1 and len(line.strip()) >= 6 or \
-#                     len(new_doc) > 1:
-#                 block = False
-#                 no_removals = True
-#                 block_symbol = ""
-#                 # continue
-#
-#     doc_len_lines += len(new_doc)
-#
-#     new_body = "\n".join(new_body)
-#     new_doc = "\n".join(new_doc)
-#
-#     return new_body, new_doc, docstring_starts, doc_len_lines
-#     # return astor.to_source(root), main_doc
-
-
 def isvalid(text, ents):
     doc = nlp(text)
     tags = biluo_tags_from_offsets(doc, ents)
-    for t, tag in zip(doc, tags):
-        print(tag, t.text, sep="\t")
+    # for t, tag in zip(doc, tags):
+    #     print(tag, t.text, sep="\t")
     if "-" in tags:
         return False
     else:
@@ -377,209 +303,6 @@ def overlap(p1, p2):
         return True
     else:
         return False
-
-
-# def label_replacements_overap(labels, replacements):
-#     evict = set()
-#     for ind, row in labels.iterrows():
-#         for ind, r in enumerate(replacements):
-#             if r[0] == line - 1:
-#                 if overlap((row.col_offset, row.end_col_offset), (r[1], r[2])):
-#                     evict.add(ind)
-#
-#     return [r for ind, r in enumerate(replacements) if ind not in evict]
-
-
-# def adjust_replacements(replacements, doc_start, doc_len):
-#     repl = []
-#
-#     for r in replacements:
-#         line = r[0]
-#         if line > doc_start:
-#             line -= doc_len
-#
-#         repl.append((line, r[1], r[2], r[3]))
-#
-#     return repl
-
-
-# def account_for_strip(replacements, first_line_strip):
-#     repl = []
-#     for r in replacements:
-#         line = r[0]
-#         col_s = r[1]
-#         col_e = r[2]
-#
-#         if line == 0:
-#             col_s -= first_line_strip
-#             col_e -= first_line_strip
-#
-#         repl.append((line, col_s, col_e, r[3]))
-#
-#     return repl
-
-
-# def prepare_replacements(replacements):
-#     return pd.DataFrame(
-#         [{"line": r[0], "col_offset": r[1], "end_col_offset": r[2], "ann": r[3]} for r in replacements]).sort_values(
-#         by=['line', 'end_col_offset'], ascending=[True, False])
-
-
-# def adjust_contraction(entry, line, head, contraction):
-#     for i in range(len(entry["ents"])):
-#         tline, start, end, ann = entry["ents"][i]
-#         if tline == line:
-#             entry["ents"][i] = (tline, start - contraction, end - contraction, ann)
-#
-#     for i in range(len(entry['replacements'])):
-#         tline, start, end, ann = entry["replacements"][i]
-#         if tline == line:
-#             if start >= len(head):
-#                 entry["replacements"][i] = (tline, start - contraction, end - contraction, ann)
-#
-#     return entry
-
-
-# def process_body(body, replacements, remove_docstring=True):
-#     body_ = body.strip()
-#
-#     replacements = account_for_strip(replacements, first_line_strip=len(body) - len(body.lstrip()))
-#
-#     entry = {"ents": [], "cats": [], "replacements": []}
-#
-#     if remove_docstring:
-#         try:
-#             only_body, doc, doc_start, doc_len = strip_docstring(body_)
-#             o_r = replacements
-#             replacements = adjust_replacements(replacements, doc_start, doc_len)
-#         except UnicodeDecodeError:
-#             return None
-#         except SyntaxError:
-#             return None
-#
-#         entry['text'] = only_body
-#         entry['docstring'] = doc
-#
-#         body_ = only_body
-#
-#     initial_labels = get_initial_labels(body_)
-#
-#     # wrap everything in dataframe and sort
-#     # replacements = prepare_replacements(replacements)
-#
-#     if initial_labels is not None:
-#
-#         body_lines = body_.split("\n")
-#
-#         replacements = label_replacements_overap(initial_labels, replacements)
-#
-#         entry['replacements'].extend(replacements)
-#
-#         # initial labels are sorted
-#         #
-#         for ind, row in initial_labels.iterrows():
-#             line = row.line - 1
-#
-#             # TODO
-#             # multiline annotations are not parsed correctly
-#
-#             annotation = body_lines[line][row.col_offset: row.end_col_offset]
-#             annotation = preprocess(annotation)
-#             tail = body_lines[line][row.end_col_offset:]
-#             head = body_lines[line][:row.col_offset].rstrip()
-#             before_contraction = len(body_lines[line])
-#
-#             if row['name'] == "returns":
-#                 try:
-#                     assert head.endswith("->")
-#                 except AssertionError:
-#                     return None
-#                 head = head[:-2]
-#                 if line == 0:  # only use labels for the main and not nested functions
-#                     entry["cats"].append({"returns": annotation})
-#
-#                 contraction = before_contraction - len(head) - len(tail)
-#
-#                 entry = adjust_contraction(entry, line, head, contraction)
-#
-#                 # for i in range(len(entry["ents"])):
-#                 #     tline, start, end, ann = entry["ents"][i]
-#                 #     if tline == line:
-#                 #         entry["ents"][i] = (tline, start - contraction, end - contraction, ann)
-#                 #
-#                 # for i in range(len(entry['replacements'])):
-#                 #     tline, start, end, ann = entry["replacements"][i]
-#                 #     if tline == line:
-#                 #         if start >= len(head):
-#                 #             entry["replacements"][i] = (tline, start - contraction, end - contraction, ann)
-#
-#             elif row['name'] == "annotation":
-#
-#                 try:
-#                     assert head.endswith(':')
-#                 except AssertionError:
-#                     return None
-#                 head = head[:-1]
-#                 contraction = before_contraction - len(head) - len(tail)
-#
-#                 entry = adjust_contraction(entry, line, head, contraction)
-#
-#                 # for i in range(len(entry["ents"])):
-#                 #     tline, start, end, ann = entry["ents"][i]
-#                 #     if tline == line:
-#                 #         entry["ents"][i] = (tline, start - contraction, end - contraction, ann)
-#                 #
-#                 # for i in range(len(entry['replacements'])):
-#                 #     tline, start, end, ann = entry["replacements"][i]
-#                 #     if tline == line:
-#                 #         if start >= len(head):
-#                 #             entry["replacements"][i] = (tline, start - contraction, end - contraction, ann)
-#
-#                 assert int(row.var_col_offset) != len(head)
-#
-#                 entry["ents"].append((line, int(row.var_col_offset), len(head), annotation))
-#             else:
-#                 raise Exception("wtf")
-#
-#             new_line = head + tail
-#             body_lines[line] = new_line
-#
-#         entry['text'] = "\n".join(body_lines)
-#
-#         cum_lens = get_cum_lens(entry['text'])
-#
-#         ents_before = [body_lines[line][start: end] for
-#                        ind, (line, start, end, annotation) in enumerate(entry["ents"])]
-#
-#         entry["ents"] = [(cum_lens[line] + start, cum_lens[line] + end, annotation) for
-#                          ind, (line, start, end, annotation) in enumerate(entry["ents"])]
-#
-#         entry["replacements"] = [(cum_lens[line] + start, cum_lens[line] + end, annotation) for
-#                                  ind, (line, start, end, annotation) in enumerate(entry["replacements"])]
-#
-#         ents_after = [entry['text'][start: end] for
-#                       ind, (start, end, annotation) in enumerate(entry["ents"])]
-#
-#         assert ents_before == ents_after
-#
-#         entry['original'] = body
-#
-#         # entry["ents"] = list(map(lambda x: x if x[2] in allowed else (x[0], x[1], "Other"), entry["ents"]))
-#         # entry["cats"] = list(filter(lambda x: x["returns"] if x["returns"] in allowed else "Other", entry['cats']))
-#
-#         if not entry["ents"]:  # and not entry["cats"]:
-#             return None  # in case all entities were filtered
-#
-#         # assert isvalid(entry['text'], entry["ents"])
-#         assert isvalid(entry['text'], entry["replacements"])
-#         return entry
-#
-#         # if isvalid(entry['text'], entry["ents"]):
-#         #     return entry
-#         # else:
-#         #     return None
-#     else:
-#         return None
 
 
 def to_global_ids(entry, id_map, local_names, global_names):
