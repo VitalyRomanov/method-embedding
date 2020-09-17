@@ -51,7 +51,7 @@ def get_cum_lens(body):
     body_lines = body.split("\n")
     cum_lens = [0]
     for ind, line in enumerate(body_lines):
-        cum_lens.append(len(line) + cum_lens[-1] + 1)
+        cum_lens.append(len(line) + cum_lens[-1] + 1) # +1 for new line character
     return cum_lens
 
 
@@ -109,28 +109,43 @@ def to_offsets(body, entities):
 
 
 def get_docstring(body):
+
     body_lines = body.split("\n")
 
-    block_symbol = ""
-    block = False
+    docstring_ranges = []
 
-    docstrings = []
-    cdocstring = None
+    for node in ast.walk(ast.parse(body)):
+        try:
+            docstring = ast.get_docstring(node)
+        except:
+            continue
+        else:
+            if docstring is not None:
+                docstring_ranges.append((node.body[0].lineno - 1, node.body[0].end_lineno - 1, #first line, last line
+                                         0, len(body_lines[node.body[0].end_lineno - 1]), "docstring")) # beginning of first line, end of last line
 
-    for line_no, line in enumerate(body_lines):
-        if not block and (line.lstrip().startswith('"""') or line.lstrip().startswith("'''")):
-            block = True
-            block_symbol = line.lstrip()[:3]
-            cdocstring = (line_no, 0)  # line and col_offset
+    return to_offsets(body, docstring_ranges)
 
-        if block and line.rstrip().endswith(block_symbol):
-            if line_no == cdocstring[0] and len(line.strip()) >= 6 or \
-                    line_no != cdocstring[0]:
-                block = False
-                block_symbol = ""
-                docstrings.append((cdocstring[0], line_no, cdocstring[1], len(line), "docstring"))
-
-    return to_offsets(body, docstrings)
+    # block_symbol = ""
+    # block = False
+    #
+    # docstrings = []
+    # cdocstring = None
+    #
+    # for line_no, line in enumerate(body_lines):
+    #     if not block and (line.lstrip().startswith('"""') or line.lstrip().startswith("'''")):
+    #         block = True
+    #         block_symbol = line.lstrip()[:3]
+    #         cdocstring = (line_no, 0)  # line and col_offset
+    #
+    #     if block and line.rstrip().endswith(block_symbol):
+    #         if line_no == cdocstring[0] and len(line.strip()) >= 6 or \
+    #                 line_no != cdocstring[0]:
+    #             block = False
+    #             block_symbol = ""
+    #             docstrings.append((cdocstring[0], line_no, cdocstring[1], len(line), "docstring"))
+    #
+    # return to_offsets(body, docstrings)
 
 
 def remove_offsets(body, entities, offsets):
@@ -264,7 +279,8 @@ def process_body(body, replacements):
 def get_initial_labels(body_):
     try:
         root = ast.parse(body_)
-    except:
+    except SyntaxError as e:
+        # print(e)
         return None
 
     positions = []
