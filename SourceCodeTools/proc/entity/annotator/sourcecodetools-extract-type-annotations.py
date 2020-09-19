@@ -9,6 +9,7 @@ import spacy
 from spacy.gold import biluo_tags_from_offsets
 
 from SourceCodeTools.proc.entity.util import inject_tokenizer
+from SourceCodeTools.proc.entity.annotator.annotator_utils import get_cum_lens, to_offsets
 
 nlp = inject_tokenizer(spacy.blank("en"))
 
@@ -41,18 +42,6 @@ def inspect_ann(node):
                  "var_end_col_offset": node.end_col_offset}]
     else:
         return []
-
-
-def get_cum_lens(body):
-    """
-    Calculate the cummulative lengths of each line with respect to the beginning of
-    the function's body.
-    """
-    body_lines = body.split("\n")
-    cum_lens = [0]
-    for ind, line in enumerate(body_lines):
-        cum_lens.append(len(line) + cum_lens[-1] + 1) # +1 for new line character
-    return cum_lens
 
 
 def resolve_collisions(entities_1, entities_2):
@@ -93,19 +82,6 @@ def correct_entities(entities, removed_offsets):
         for_correction = new_entities
 
     return for_correction
-
-
-def to_offsets(body, entities):
-    """
-    Transform entity annotation format from (line, end_line, col, end_col)
-    to (char_ind, end_char_ind).
-    """
-    cum_lens = get_cum_lens(body)
-
-    repl = [(cum_lens[line] + start, cum_lens[end_line] + end, annotation) for
-            ind, (line, end_line, start, end, annotation) in enumerate(entities)]
-
-    return repl
 
 
 def get_docstring(body):
