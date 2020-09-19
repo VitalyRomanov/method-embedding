@@ -23,7 +23,9 @@ class AstGraphGenerator(object):
         for f_def_node in ast.iter_child_nodes(self.root):
             if type(f_def_node) == ast.FunctionDef:
                 edges.extend(self.parse(f_def_node))
-        return pd.DataFrame(edges)
+
+        df = pd.DataFrame(edges)
+        return df.astype({col: "Int32" for col in df.columns if col not in {"src", "dst", "type"}})
 
     def parse(self, node):
         if hasattr(node,'lineno'):
@@ -108,7 +110,10 @@ class AstGraphGenerator(object):
         operand_name, ext_edges = self.parse_operand(operand)
         edges.extend(ext_edges)
 
-        edges.append({"src": operand_name, "dst": node_name, "type": type})
+        if hasattr(operand, "lineno"):
+            edges.append({"src": operand_name, "dst": node_name, "type": type, "line": operand.lineno-1, "end_line": operand.end_lineno-1, "col_offset": operand.col_offset, "end_col_offset": operand.end_col_offset})
+        else:
+            edges.append({"src": operand_name, "dst": node_name, "type": type})
 
     def generic_parse(self, node, operands):
 
@@ -250,7 +255,7 @@ class AstGraphGenerator(object):
             # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
             # https://www.python.org/dev/peps/pep-0484/#forward-references
             annotation = self.source[node.annotation.lineno - 1][node.annotation.col_offset: node.annotation.end_col_offset]
-            edges.append({"src": annotation, "dst": name, "type": 'annotation', "line": self.cline, "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset, "var_col_offset": node.col_offset, "var_end_col_offset": node.end_col_offset})
+            edges.append({"src": annotation, "dst": name, "type": 'annotation', "line": node.annotation.lineno-1, "end_line": node.annotation.end_lineno-1, "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset, "var_line": node.lineno-1, "var_end_line": node.end_lineno-1, "var_col_offset": node.col_offset, "var_end_col_offset": node.end_col_offset})
         return edges, name
         # return self.generic_parse(node, ["arg", "annotation"])
 
@@ -270,7 +275,7 @@ class AstGraphGenerator(object):
         # https://www.python.org/dev/peps/pep-0484/#forward-references
         annotation = self.source[self.cline][node.annotation.col_offset: node.annotation.end_col_offset]
         edges, name = self.generic_parse(node, ["target"])
-        edges.append({"src": annotation, "dst": name, "type": 'annotation', "line": self.cline, "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset, "var_col_offset": node.col_offset, "var_end_col_offset": node.end_col_offset})
+        edges.append({"src": annotation, "dst": name, "type": 'annotation', "line": node.annotation.lineno-1, "end_line": node.annotation.end_lineno-1, "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset, "var_line": node.lineno-1, "var_end_line": node.end_lineno-1, "var_col_offset": node.col_offset, "var_end_col_offset": node.end_col_offset})
         return edges, name
         # return self.generic_parse(node, ["target", "annotation"])
 
@@ -611,11 +616,17 @@ class AstGraphGenerator(object):
 
         target, ext_edges = self.parse_operand(node.target)
         edges.extend(ext_edges)
-        edges.append({"src": target, "dst": cph_name, "type": "target"})
+        if hasattr(node.target, "lineno"):
+            edges.append({"src": target, "dst": cph_name, "type": "target", "line": node.target.lineno-1, "end_line": node.target.end_lineno-1, "col_offset": node.target.col_offset, "end_col_offset": node.target.end_col_offset})
+        else:
+            edges.append({"src": target, "dst": cph_name, "type": "target"})
 
         iter_, ext_edges = self.parse_operand(node.iter)
         edges.extend(ext_edges)
-        edges.append({"src": iter_, "dst": cph_name, "type": "iter"})
+        if hasattr(node.iter, "lineno"):
+            edges.append({"src": iter_, "dst": cph_name, "type": "iter", "line": node.iter.lineno-1, "end_line": node.iter.end_lineno-1, "col_offset": node.iter.col_offset, "end_col_offset": node.iter.end_col_offset})
+        else:
+            edges.append({"src": iter_, "dst": cph_name, "type": "iter"})
 
         for if_ in node.ifs:
             if_n, ext_edges = self.parse_operand(if_)
@@ -629,31 +640,18 @@ if __name__ == "__main__":
     f_bodies = pd.read_csv(sys.argv[1])
     failed = 0
     for ind, c in enumerate(f_bodies['normalized_body']):
-        try:
+        if isinstance(c, str):
             try:
-                c.strip()
-            except:
-                print(c)
+                g = AstGraphGenerator(c.lstrip())
+            except SyntaxError as e:
+                print(e)
                 continue
-            g = AstGraphGenerator(c.strip())
             failed += 1
             edges = g.get_edges()
             edges.to_csv(os.path.join(os.path.dirname(sys.argv[1]), "body_edges.csv"), mode="a", index=False, header=(ind==0))
             print("\r%d/%d" % (ind, len(f_bodies['normalized_body'])), end = "")
-        except SyntaxError as e:
-            print(c.strip())
-            # raise e
+        else:
+            print("Skipped not a string")
 
-    # class sio:
-    #     def __init__(self, s):
-    #         self.s = s.split("\n")
-    #         self.c = 0
-    #     def __call__(self):
-    #         if self.c >= len(self.s): raise StopIteration()
-    #         r = self.s[self.c]
-    #         self.c +=1
-    #         return r.encode('utf8')
-    # import tokenize
-    # tokenize.tokenize
     print(" " * 30, end="\r")
     print(failed, len(f_bodies['normalized_body']))
