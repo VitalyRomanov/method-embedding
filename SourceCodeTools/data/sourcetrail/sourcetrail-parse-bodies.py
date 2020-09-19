@@ -2,6 +2,7 @@ from csv import QUOTE_NONNUMERIC
 import pandas as pd
 import sys, os
 import ast
+import string, random
 
 from typing import Tuple, List
 from pprint import pprint
@@ -90,6 +91,26 @@ def get_docstring_ast(body):
     except:
         return ""
 
+def get_random_string(str_len):
+    return "".join(random.choices(string.ascii_letters, k=str_len))
+
+def generate_random_remplacement(len: int, source: List[str]):
+    attempts_left = 30
+    secondary_attempts = 10
+    replacement = get_random_string(len)
+    body = "\n".join(source)
+    while body.find(replacement) != -1:
+        attempts_left -= 1
+        replacement = get_random_string(len)
+        if attempts_left <= 0:
+            secondary_attempts -= 1
+            replacement = "".join(random.choices("АБВГДЕЖЗИКЛМНОПРСТУФХЦЧЪЫЬЭЮЯабвгдежзиклмнопрстуфхцчъыьэюя", k=len))
+            if secondary_attempts == 0:
+                raise Exception("Could not replace with random name")
+
+    return replacement
+
+
 
 bodies = []
 
@@ -119,7 +140,15 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
             #            len(sources[f_end]) - len(sources[f_end].lstrip())
 
             body: str = "\n".join(sources[f_start: f_end])
+            try:
+                ast.parse(body.lstrip())
+            except SyntaxError as e:
+                continue
+
             bodies.append({"id": row.element_id, "body": body, "docstring": get_docstring_ast(body)})
+            body_with_random_replacements = bodies[-1]['body'].split("\n")
+            random_2_original = {}
+            random_2_srctrl = {}
 
             elements.sort_values(by=["start_line", "end_column"], inplace=True, ascending=[True, False])
 
@@ -164,7 +193,7 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
                             # this is an unresolved symbol, avoid
                             replaced_ranges.pop(-1)
                         else:
-                            name = f"srstrlnd_{st_id}" # sourcetrailnode
+                            name = f"srctrlnd_{st_id}" # sourcetrailnode
 
                             # this is a hack for java
                             # remove special symbols so that code can later be parsed by ast parser
@@ -181,23 +210,32 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
                                 curr_line - 1 - f_start, e_start, e_end, name
                             ))
 
+
+                            random_name = generate_random_remplacement(len=e_end - e_start, source=body_with_random_replacements)
+                            random_2_original[random_name] = body_with_random_replacements[curr_line - 1 - f_start][
+                                                             e_start:e_end]
+                            body_with_random_replacements[curr_line - 1 - f_start] = do_replacement(body_with_random_replacements[curr_line - 1 - f_start], e_start, e_end, random_name)
+                            random_2_srctrl[random_name] = name
+
+
                             sources[curr_line - 1] = do_replacement(sources[curr_line - 1], e_start, e_end, name)
                             # sources[curr_line - 1] = sources[curr_line - 1][:e_start] + name + \
                             #                          sources[curr_line - 1][e_end:]
                     prev_line = curr_line
 
             norm_body = "\n".join(sources[f_start: f_end])
+            body_with_random_replacements = "\n".join(body_with_random_replacements)
             bodies[-1]["normalized_body"] = norm_body
             bodies[-1]["replacement_list"] = repr(list_of_replacements)
+            bodies[-1]["random_replacements"] = body_with_random_replacements
+            bodies[-1]["random_2_original"] = random_2_original
+            bodies[-1]["random_2_srctrl"] = random_2_srctrl
 
-            try:
-                ast.parse(norm_body.strip())
-            except Exception as e:
-                # print(bodies[-1]['body'])
-                # print(bodies[-1]['normalized_body'])
-                # print(e)
-                # print(row.start_line, row.end_line)
-                pass
+            # try:
+            #     ast.parse(norm_body.lstrip())
+            # except SyntaxError as e:
+            #     print(e)
+            #     pass
 
             # for line in sources[row.start_line - 1: row.end_line - 1]:
             #     for token in tokenizer.tokenize(line):
