@@ -131,15 +131,15 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
 
             # move to zero-index
             f_start -= 1
-            if lang != "java":
-                f_end -= 1
+            # if lang != "java":
+            f_end -= 1
 
             # if lang == "python":
             #     # assert that f_end is indeed the end of function
             #     assert len(sources[f_end - 1]) - len(sources[f_end - 1].lstrip()) != \
             #            len(sources[f_end]) - len(sources[f_end].lstrip())
 
-            body: str = "\n".join(sources[f_start: f_end])
+            body: str = "\n".join(sources[f_start: f_end + 1])
             try:
                 ast.parse(body.lstrip())
             except SyntaxError as e:
@@ -150,6 +150,8 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
             random_2_original = {}
             random_2_srctrl = {}
 
+            assert sources[f_start] == body_with_random_replacements[0]
+
             elements.sort_values(by=["start_line", "end_column"], inplace=True, ascending=[True, False])
 
             prev_line = 0
@@ -159,11 +161,12 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
             for ind, row_elem in elements.iterrows():
                 if row_elem.start_line == row_elem.end_line:
 
-                    curr_line = row_elem.start_line
+                    curr_line = row_elem.start_line - 1
                     if prev_line != curr_line:
                         replaced_ranges = []
+                        assert body_with_random_replacements[curr_line - f_start] == sources[curr_line]
 
-                    line = sources[curr_line - 1]
+                    line = sources[curr_line]
 
                     start_c = row_elem.start_column - 1
                     end_c = row_elem.end_column
@@ -171,7 +174,7 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
                     # this is a hack for java, some annotations in java have a large span
                     # e.g. some annotations cover the entire signature declaration
                     if lang == 'java':
-                        if " " in sources[curr_line - 1][start_c: end_c]:
+                        if " " in sources[curr_line][start_c: end_c]:
                             continue
 
                     if not overlap((start_c, end_c), replaced_ranges):
@@ -207,23 +210,23 @@ for occ_ind, (group_id, group) in enumerate(occurrence_group):
                             # name = name.replace('.', '____')
 
                             list_of_replacements.append((
-                                curr_line - 1 - f_start, e_start, e_end, name
+                                curr_line - f_start, e_start, e_end, name
                             ))
 
 
                             random_name = generate_random_remplacement(len=e_end - e_start, source=body_with_random_replacements)
-                            random_2_original[random_name] = body_with_random_replacements[curr_line - 1 - f_start][
+                            random_2_original[random_name] = body_with_random_replacements[curr_line - f_start][
                                                              e_start:e_end]
-                            body_with_random_replacements[curr_line - 1 - f_start] = do_replacement(body_with_random_replacements[curr_line - 1 - f_start], e_start, e_end, random_name)
+                            body_with_random_replacements[curr_line - f_start] = do_replacement(body_with_random_replacements[curr_line - f_start], e_start, e_end, random_name)
                             random_2_srctrl[random_name] = name
 
 
-                            sources[curr_line - 1] = do_replacement(sources[curr_line - 1], e_start, e_end, name)
-                            # sources[curr_line - 1] = sources[curr_line - 1][:e_start] + name + \
-                            #                          sources[curr_line - 1][e_end:]
+                            sources[curr_line] = do_replacement(sources[curr_line], e_start, e_end, name)
+                            # sources[curr_line] = sources[curr_line][:e_start] + name + \
+                            #                          sources[curr_line][e_end:]
                     prev_line = curr_line
 
-            norm_body = "\n".join(sources[f_start: f_end])
+            norm_body = "\n".join(sources[f_start: f_end + 1])
             body_with_random_replacements = "\n".join(body_with_random_replacements)
             bodies[-1]["normalized_body"] = norm_body
             bodies[-1]["replacement_list"] = repr(list_of_replacements)
