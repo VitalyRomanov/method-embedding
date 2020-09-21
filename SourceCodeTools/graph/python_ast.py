@@ -164,7 +164,7 @@ class AstGraphGenerator(object):
             # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
             # https://www.python.org/dev/peps/pep-0484/#forward-references
             annotation = self.source[node.returns.lineno - 1][node.returns.col_offset: node.returns.end_col_offset]
-            edges.append({"src": annotation, "dst": f_name, "type": 'returns', "line": self.cline, "col_offset": node.returns.col_offset, "end_col_offset": node.returns.end_col_offset})
+            edges.append({"src": annotation, "dst": f_name, "type": 'returns', "line": node.returns.lineno - 1, "end_line": node.returns.end_lineno - 1, "col_offset": node.returns.col_offset, "end_col_offset": node.returns.end_col_offset})
 
         assert isinstance(node.name, str)
         edges.append({"src": f_name, "dst": node.name, "type": "fname"})
@@ -201,10 +201,10 @@ class AstGraphGenerator(object):
         # similar issues as with parsing alias, module name is parsed as a long chunk
         # print(ast.dump(node))
         edges, name = self.generic_parse(node, ["names"])
-        if node.module:
-            name_from, edges_from = self.parse_operand(ast.parse(node.module).body[0].value)
-            edges.extend(edges_from)
-            edges.append({"src": name_from, "dst": name, "type": "module"})
+        # if node.module:
+        #     name_from, edges_from = self.parse_operand(ast.parse(node.module).body[0].value)
+        #     edges.extend(edges_from)
+        #     edges.append({"src": name_from, "dst": name, "type": "module"})
         return edges, name
         # return self.generic_parse(node, ["module", "names"])
 
@@ -237,10 +237,12 @@ class AstGraphGenerator(object):
         # TODO
         # aliases should be handled by sourcetrail. here i am trying to assign alias to a
         # local mention of the module. maybe i should simply ignore aliases altogether
-        # print(ast.dump(node))
-        name, edges = self.parse_operand(ast.parse(node.name).body[0].value)
-        if node.asname:
-            edges.append({"src": name, "dst": node.asname, "type": "alias"})
+
+        name = self.get_name(node)
+        edges = []
+        # name, edges = self.parse_operand(ast.parse(node.name).body[0].value) # <- this was the functional line
+        # # if node.asname:
+        # #     edges.append({"src": name, "dst": node.asname, "type": "alias"})
         return edges, name
         # return self.generic_parse(node, ["name", "asname"])
 
