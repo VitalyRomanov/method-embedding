@@ -9,7 +9,7 @@ import spacy
 from spacy.gold import biluo_tags_from_offsets
 
 from SourceCodeTools.proc.entity.util import inject_tokenizer
-from SourceCodeTools.proc.entity.annotator.annotator_utils import get_cum_lens, to_offsets
+from SourceCodeTools.proc.entity.annotator.annotator_utils import to_offsets, overlap
 
 nlp = inject_tokenizer(spacy.blank("en"))
 
@@ -33,6 +33,13 @@ def inspect_fdef(node):
 def inspect_arg(node):
     return inspect_ann(node)
 
+
+def isint(val):
+    try:
+        int(val)
+        return True
+    except:
+        return False
 
 def inspect_ann(node):
     if node.annotation is not None:
@@ -100,6 +107,7 @@ def get_docstring(body):
                 docstring_ranges.append((node.body[0].lineno - 1, node.body[0].end_lineno - 1, #first line, last line
                                          0, len(body_lines[node.body[0].end_lineno - 1]), "docstring")) # beginning of first line, end of last line
 
+    # do not need to use as_bytes here because column offsets are created with len(), not with ast package
     return to_offsets(body, docstring_ranges)
 
     # block_symbol = ""
@@ -147,7 +155,9 @@ def unpack_returns(body, labels):
         if row['name'] == "returns":
             returns.append((row['line'], row['end_line'], row['col_offset'], row['end_col_offset'], "returns"))
 
-    return_offsets = to_offsets(body, returns)
+    # most likely do not need to use as_bytes here, because non-unicode usually appear in strings
+    # but type annotations usually appear in the end of signature and in the beginnig of a line
+    return_offsets = to_offsets(body, returns, as_bytes=True)
 
     cuts = []
     ret = []
@@ -184,8 +194,10 @@ def unpack_annotations(body, labels):
             annotations.append(
                 (row['line'], row['end_line'], row['col_offset'], row['end_col_offset'], 'annotation '))
 
-    variables = to_offsets(body, variables)
-    annotations = to_offsets(body, annotations)
+    # most likely do not need to use as_bytes here, because non-unicode usually appear in strings
+    # but type annotations usually appear in the end of signature and in the beginnig of a line
+    variables = to_offsets(body, variables, as_bytes=True)
+    annotations = to_offsets(body, annotations, as_bytes=True)
 
     cuts = []
     vars = []
@@ -211,8 +223,9 @@ def unpack_annotations(body, labels):
 
 
 def process_body(body, replacements):
-    replacements = [(r[0], r[0], r[1], r[2], r[3]) for r in replacements]
-    replacements = to_offsets(body, replacements)
+    # do not need these two lines anymore
+    # replacements = [(r[0], r[0], r[1], r[2], r[3]) for r in replacements]
+    # replacements = to_offsets(body, replacements)
 
     entry = {"ents": [],
              "cats": [],
@@ -241,8 +254,8 @@ def process_body(body, replacements):
     body_, replacements_annotations, _ = remove_offsets(body_, replacements + annotations,
                                                         return_cuts + annotation_cuts)
 
-    entry['replacements'].extend(replacements_annotations[:-len(annotations)])
-    entry['ents'].extend(replacements_annotations[-len(annotations):])
+    entry['replacements'].extend(list(filter(lambda x: isint(x[2]), replacements_annotations)))
+    entry['ents'].extend(list(filter(lambda x: not isint(x[2]), replacements_annotations)))
     entry['cats'].extend(returns)
     entry['text'] = body_
 
@@ -290,18 +303,19 @@ def isvalid(text, ents):
         return True
 
 
-def overlap(p1, p2):
-    if (p2[1] - p1[0]) * (p2[0] - p1[1]) <= 0:
-        return True
-    else:
-        return False
+# def overlap(p1, p2):
+#     if (p2[1] - p1[0]) * (p2[0] - p1[1]) <= 0:
+#         return True
+#     else:
+#         return False
 
 
 def to_global_ids(entry, id_map, local_names, global_names):
     replacements = []
     for r in entry['replacements']:
-        id_ = int(r[2].split("_")[-1])
-        assert local_names[id_] == global_names[id_map[id_]], f"{local_names[id_]} != {global_names[id_map[id_]]}"
+        # id_ = int(r[2].split("_")[-1])
+        id_ = r[2]
+        # assert local_names[id_] == global_names[id_map[id_]], f"{local_names[id_]} != {global_names[id_map[id_]]}"
         # assert local_names[id_][0].lower() == local_names[id_][0], f"{local_names[id_]}"
         replacements.append((r[0], r[1], str(id_map[id_])))
 
@@ -331,6 +345,7 @@ def main(args):
         if entry is not None:
             entry = to_global_ids(entry, id_maps, local_names, global_names)
             data.append(entry)
+        print(f"{ind}/{len(bodies)}", end="\r")
 
     format = "jsonl"
     if format == "jsonl":
