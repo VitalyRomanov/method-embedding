@@ -575,7 +575,8 @@ class AstGraphGenerator(object):
         return self.generic_parse(node, ["value"])
 
     def parse_JoinedStr(self, node):
-        return self.generic_parse(node, ["values"])
+        return self.generic_parse(node, [])
+        # return self.generic_parse(node, ["values"])
 
     def parse_FormattedValue(self, node):
         # have missing fields. example:
