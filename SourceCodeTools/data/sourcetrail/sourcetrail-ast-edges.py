@@ -6,7 +6,7 @@ import re
 from copy import copy
 import ast
 
-from SourceCodeTools.proc.entity.annotator.annotator_utils import to_offsets, overlap
+from SourceCodeTools.proc.entity.annotator.annotator_utils import to_offsets, overlap, resolve_self_collision
 
 
 # from node_name_serializer import deserialize_node_name
@@ -316,9 +316,9 @@ def write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_na
         # srctrlnodes = to_offsets(c, get_sourcetrail_nodes(edges))
         # for x in srctrlnodes:
         #     x = (b2c[x[0]], b2c[x[1]], x[2])
-        srctrlnodes = filter_nodes(adjust_offsets(
+        srctrlnodes = resolve_self_collision(filter_nodes(adjust_offsets(
             to_offsets(c, get_sourcetrail_nodes(edges), as_bytes=True)
-            , -strip_len), orig_body)
+            , -strip_len), orig_body))
 
         replacements = list(map(
             lambda x: (x[0], x[1], node_resolver.resolve(x[2])),

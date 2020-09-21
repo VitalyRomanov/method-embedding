@@ -50,3 +50,34 @@ def overlap(p1, p2):
         return True
     else:
         return False
+
+
+def resolve_self_collision(offsets):
+    no_collisions = []
+
+    for ind_1, offset_1 in enumerate(offsets):
+        # keep first
+        if any(map(lambda x: overlap(offset_1, x), no_collisions)):
+            pass
+        else:
+            no_collisions.append(offset_1)
+        # new = []
+        # evict = []
+        #
+        # for ind_2, offset_2 in enumerate(no_collisions):
+        #     if overlap(offset_1, offset_2):
+        #         # keep smallest
+        #         if (offset_1[1] - offset_1[0]) <= (offset_2[1] - offset_2[0]):
+        #             evict.append(ind_2)
+        #             new.append(offset_1)
+        #         else:
+        #             pass
+        #     else:
+        #         new.append(offset_1)
+        #
+        # for ind in sorted(evict, reverse=True):
+        #     no_collisions.pop(ind)
+        #
+        # no_collisions.extend(new)
+
+    return no_collisions
