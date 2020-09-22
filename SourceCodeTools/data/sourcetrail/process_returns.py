@@ -4,8 +4,9 @@ import os, sys
 nodes_path = sys.argv[1]
 edges_path = sys.argv[2]
 annotation_edges_path = sys.argv[3]
-return_type = sys.argv[4]
-fname_type = sys.argv[5]
+type_maps = pd.read_csv(sys.argv[4])
+fname_type = int(type_maps.query("desc == 'fname'")['type'])
+return_type = int(type_maps.query("desc == 'returns'")['type'])
 
 nodes = pd.read_csv(nodes_path).astype({"serialized_name": "str"}).rename({"id": "source_node_id"}, axis=1)
 edges = pd.read_csv(edges_path)

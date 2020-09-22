@@ -4,8 +4,12 @@ import sys, os
 
 nodes = pd.read_csv(sys.argv[1], escapechar='\\')
 edges = pd.read_csv(sys.argv[2])
-annotation_type = int(sys.argv[3])
-returns_type = int(sys.argv[4])
+type_maps = pd.read_csv(sys.argv[3])
+annotation_type = int(type_maps.query("desc == 'annotation'")['type'])
+returns_type = int(type_maps.query("desc == 'returns'")['type'])
+
+print(annotation_type, returns_type)
+
 # nodes = pd.read_csv("/home/ltv/data/local_run/method-embedding/src/large_scale/envs/common_nodes.csv")
 # edges = pd.read_csv("/home/ltv/data/local_run/method-embedding/src/large_scale/envs/common_edges_with_types_with_ast.csv")
 # annotation_type = -3
