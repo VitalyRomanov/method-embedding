@@ -354,9 +354,13 @@ def write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_na
 
     print(" " * 30, end="\r")
 
-    pd.DataFrame(bodies_with_replacements).to_csv(
-        os.path.join(os.path.dirname(nodes_with_ast_name), "bodies_with_replacements.csv"), index=False, quoting=QUOTE_NONNUMERIC
-    )
+    if len(bodies_with_replacements) == 0:
+        with open(os.path.join(os.path.dirname(nodes_with_ast_name), "bodies_with_replacements.csv")) as sink:
+            sink.write("id,body,replacement_list\n")
+    else:
+        pd.DataFrame(bodies_with_replacements).to_csv(
+            os.path.join(os.path.dirname(nodes_with_ast_name), "bodies_with_replacements.csv"), index=False, quoting=QUOTE_NONNUMERIC
+        )
 
     with open(nodes_with_ast_name, 'w', encoding='utf8', errors='replace') as f:
         pd.concat([node, pd.DataFrame(node_resolver.new_nodes)]).to_csv(f, index=False, quoting=QUOTE_NONNUMERIC)
