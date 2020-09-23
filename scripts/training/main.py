@@ -13,8 +13,6 @@ from SourceCodeTools.data.sourcetrail.Dataset import SourceGraphDataset, read_or
 from SourceCodeTools.graph.model.train.utils import get_name, get_model_base
 
 
-
-
 def main(models, args):
     """
 
@@ -46,13 +44,13 @@ def main(models, args):
 
                 from SourceCodeTools.graph.model.train.train_node_classifier import training_procedure
 
-                m, scores = training_procedure(dataset, model, params, args.epochs, args)
+                m, scores = training_procedure(dataset, model, params, args.epochs, args, MODEL_BASE)
 
             elif args.training_mode == "vector_sim":
 
                 from SourceCodeTools.graph.model.train.train_vector_sim import training_procedure
 
-                m, ee, scores = training_procedure(dataset, model, params, args.epochs, args.restore_state)
+                m, ee, scores = training_procedure(dataset, model, params, args.epochs, args.restore_state, MODEL_BASE)
 
                 torch.save(
                     {
@@ -66,7 +64,7 @@ def main(models, args):
                 from SourceCodeTools.graph.model.train.train_vector_sim_with_classifier import training_procedure
 
                 m, ee, lp, scores = training_procedure(dataset, model, params, args.epochs, args.data_file,
-                                                       args.restore_state)
+                                                       args.restore_state, MODEL_BASE)
 
                 torch.save(
                     {
@@ -81,7 +79,7 @@ def main(models, args):
                 from SourceCodeTools.graph.model.train.train_vector_sim_next_call import training_procedure
 
                 m, ee, lp, scores = training_procedure(dataset, model, params, args.epochs, args.call_seq_file,
-                                                       args.restore_state)
+                                                       args.restore_state, MODEL_BASE)
 
                 torch.save(
                     {
@@ -96,7 +94,7 @@ def main(models, args):
 
                 m, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, scores = \
                     training_procedure(dataset, model, params, args.epochs, args.call_seq_file, args.fname_file,
-                                       args.varuse_file, args.restore_state)
+                                       args.varuse_file, args.restore_state, MODEL_BASE)
 
                 torch.save(
                     {
@@ -125,7 +123,9 @@ def main(models, args):
                 "state": "state_dict.pt",
                 "scores": scores,
                 "time": dateTime,
-            }.update(args.__dict__)
+            }
+
+            metadata.update(args.__dict__)
 
             pickle.dump(m.get_embeddings(dataset.global_id_map), open(join(MODEL_BASE, metadata['layers']), "wb"))
             pickle.dump(dataset, open(join(MODEL_BASE, "dataset.pkl"), "wb"))
@@ -177,7 +177,7 @@ if __name__ == "__main__":
                         help='Edges filtered before training')
     parser.add_argument('--note', dest='note', default="",
                         help='Note, added to metadata')
-    parser.add_argument('model_output_dir', dest='model_output_dir',
+    parser.add_argument('model_output_dir',
                         help='Location of the final model')
     parser.add_argument('--use_node_types', action='store_true')
     parser.add_argument('--restore_state', action='store_true')
@@ -186,10 +186,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-
     if args.filter_edges is not None:
         args.filter_edges = [int(e_type) for e_type in args.filter_edges.split(",")]
-
 
     models_ = {
         # GAT: gat_params,

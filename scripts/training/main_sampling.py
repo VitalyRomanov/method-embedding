@@ -13,11 +13,8 @@ from SourceCodeTools.data.sourcetrail.Dataset import SourceGraphDataset, read_or
 
 
 def main(models, args):
-
     for model, param_grid in models.items():
         for params in param_grid:
-
-
 
             dateTime = str(datetime.now())
             print("\n\n")
@@ -30,20 +27,18 @@ def main(models, args):
 
             dataset = read_or_create_dataset(args=args, model_base=MODEL_BASE, model_name=model.__name__)
 
-
-
             if args.training_mode == 'node_classifier':
 
                 from SourceCodeTools.graph.model.train.sampling_node_classifier import training_procedure
 
-                m, scores = training_procedure(dataset, model, params, args.epochs, args)
+                m, scores = training_procedure(dataset, model, params, args.epochs, args, MODEL_BASE)
 
             elif args.training_mode == "multitask":
 
                 from SourceCodeTools.graph.model.train.sampling_multitask import training_procedure
 
                 m, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, scores = \
-                    training_procedure(dataset, model, params, args.epochs, args)
+                    training_procedure(dataset, model, params, args.epochs, args, MODEL_BASE)
 
                 torch.save(
                     {
@@ -72,7 +67,9 @@ def main(models, args):
                 "state": "state_dict.pt",
                 "scores": scores,
                 "time": dateTime,
-            }.update(args.__dict__)
+            }
+
+            metadata.update(args.__dict__)
 
             pickle.dump(m.get_embeddings(dataset.global_id_map), open(join(MODEL_BASE, metadata['layers']), "wb"))
             pickle.dump(dataset, open(join(MODEL_BASE, "dataset.pkl"), "wb"))
@@ -126,7 +123,7 @@ if __name__ == "__main__":
                         help='Batch size')
     parser.add_argument('--note', dest='note', default="",
                         help='Note, added to metadata')
-    parser.add_argument('model_output_dir', dest='model_output_dir',
+    parser.add_argument('model_output_dir',
                         help='Location of the final model')
     parser.add_argument('--use_node_types', action='store_true')
     parser.add_argument('--restore_state', action='store_true')
