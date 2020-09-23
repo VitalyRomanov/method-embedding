@@ -9,13 +9,13 @@ import json
 from os import mkdir
 from os.path import isdir, join
 import torch
-from SourceCodeTools.data.sourcetrail.Dataset import SourceGraphDataset
-from SourceCodeTools.graph.model.train.utils import get_name
+from SourceCodeTools.data.sourcetrail.Dataset import SourceGraphDataset, read_or_create_dataset
+from SourceCodeTools.graph.model.train.utils import get_name, get_model_base
 
 
 
 
-def main(nodes_path, edges_path, models, desc, args):
+def main(models, args):
     """
 
     :param nodes_path:
@@ -34,33 +34,13 @@ def main(nodes_path, edges_path, models, desc, args):
             dateTime = str(datetime.now())
             print("\n\n")
             print(dateTime)
-            print("Model: {}, Params: {}, Desc: {}".format(model.__name__, params, desc))
-
-            if model.__name__ == "GAT" or model.__name__ == "GGNN":
-                dataset = SourceGraphDataset(nodes_path, edges_path, label_from=LABELS_FROM,
-                                             restore_state=args.restore_state, filter=args.filter_edges, self_loops=args.self_loops,
-                                             holdout=args.holdout, train_frac=args.train_frac)
-            elif model.__name__ == "RGCN":
-                dataset = SourceGraphDataset(nodes_path,
-                                             edges_path,
-                                             label_from=LABELS_FROM,
-                                             node_types=args.use_node_types,
-                                             edge_types=True,
-                                             restore_state=args.restore_state,
-                                             filter=args.filter_edges,
-                                             self_loops = args.self_loops,
-                                             holdout=args.holdout,
-                                             train_frac=args.train_frac
-                                             )
-            else:
-                raise Exception("Unknown model: {}".format(model.__name__))
+            print(f"Model: {model.__name__}, Params: {params}")
 
             model_attempt = get_name(model, dateTime)
 
-            MODEL_BASE = join(MODELS_PATH, model_attempt)
+            MODEL_BASE = get_model_base(args, model_attempt)
 
-            if not isdir(MODEL_BASE):
-                mkdir(MODEL_BASE)
+            dataset = read_or_create_dataset(args=args, model_base=MODEL_BASE, model_name=model.__name__)
 
             if args.training_mode == 'node_classifier':
 
@@ -145,19 +125,12 @@ def main(nodes_path, edges_path, models, desc, args):
                 "state": "state_dict.pt",
                 "scores": scores,
                 "time": dateTime,
-                "description": desc,
-                # "training_mode": args.training_mode,
-                # "datafile": args.data_file,
-                # "call_seq": args.call_seq_file,
-                # "fname_file": args.fname_file,
-                # "varuse_file": args.varuse_file,
-                # "note": args.note,
-                # "epochs": EPOCHS
             }.update(args.__dict__)
 
-            pickle.dump(m.get_embeddings(dataset.global_id_map), open(join(metadata['base'], metadata['layers']), "wb"))
+            pickle.dump(m.get_embeddings(dataset.global_id_map), open(join(MODEL_BASE, metadata['layers']), "wb"))
+            pickle.dump(dataset, open(join(MODEL_BASE, "dataset.pkl"), "wb"))
 
-            with open(join(metadata['base'], "metadata.json"), "w") as mdata:
+            with open(join(MODEL_BASE, "metadata.json"), "w") as mdata:
                 mdata.write(json.dumps(metadata, indent=4))
 
             torch.save(
@@ -165,12 +138,12 @@ def main(nodes_path, edges_path, models, desc, args):
                     'model_state_dict': m.state_dict(),
                     'splits': dataset.splits
                 },
-                join(metadata['base'], metadata['state'])
+                join(MODEL_BASE, metadata['state'])
             )
 
-            dataset.nodes.to_csv(join(metadata['base'], "nodes.csv"), index=False)
-            dataset.edges.to_csv(join(metadata['base'], "edges.csv"), index=False)
-            dataset.held.to_csv(join(metadata['base'], "held.csv"), index=False)
+            dataset.nodes.to_csv(join(MODEL_BASE, "nodes.csv"), index=False)
+            dataset.edges.to_csv(join(MODEL_BASE, "edges.csv"), index=False)
+            dataset.held.to_csv(join(MODEL_BASE, "held.csv"), index=False)
 
             print("done")
 
@@ -204,6 +177,8 @@ if __name__ == "__main__":
                         help='Edges filtered before training')
     parser.add_argument('--note', dest='note', default="",
                         help='Note, added to metadata')
+    parser.add_argument('model_output_dir', dest='model_output_dir',
+                        help='Location of the final model')
     parser.add_argument('--use_node_types', action='store_true')
     parser.add_argument('--restore_state', action='store_true')
     parser.add_argument('--self_loops', action='store_true')
@@ -223,10 +198,10 @@ if __name__ == "__main__":
     }
 
     data_paths = pandas.read_csv("../../graph-network/deprecated/data_paths.tsv", sep="\t")
-    MODELS_PATH = "../../graph-network/models"
+    # MODELS_PATH = "../../graph-network/models"
     # EPOCHS = args.epochs
 
-    if not isdir(MODELS_PATH):
-        mkdir(MODELS_PATH)
+    if not isdir(args.model_output_dir):
+        mkdir(args.model_output_dir)
 
-    main(args.node_path, args.edge_path, models_, "full", args)
+    main(models_, args)

@@ -1,5 +1,5 @@
 from SourceCodeTools.graph.model import GCNSampling, GATSampler, RGCNSampling
-from SourceCodeTools.graph.model.train.utils import get_name
+from SourceCodeTools.graph.model.train.utils import get_name, get_model_base
 import sys
 from datetime import datetime
 from params import gcnsampling_params, gatsampling_params, rgcnsampling_params
@@ -9,101 +9,41 @@ import json
 from os import mkdir
 from os.path import isdir, join
 import torch
-from SourceCodeTools.data.sourcetrail.Dataset import SourceGraphDataset
+from SourceCodeTools.data.sourcetrail.Dataset import SourceGraphDataset, read_or_create_dataset
 
 
-def main(nodes_path, edges_path, models, desc, args):
+def main(models, args):
 
     for model, param_grid in models.items():
         for params in param_grid:
 
-            LABELS_FROM = "type"
+
 
             dateTime = str(datetime.now())
             print("\n\n")
             print(dateTime)
-            print("Model: {}, Params: {}, Desc: {}".format(model.__name__, params, desc))
-
-            if model.__name__ == "GCNSampling" or model.__name__ == "GATSampler":
-                dataset = SourceGraphDataset(nodes_path, edges_path, label_from=LABELS_FROM,
-                                             restore_state=args.restore_state, filter=args.filter_edges, self_loops=args.self_loops,
-                                             holdout=args.holdout, train_frac=args.train_frac)
-            elif model.__name__ == "RGCNSampling":
-                dataset = SourceGraphDataset(nodes_path,
-                                             edges_path,
-                                             label_from=LABELS_FROM,
-                                             node_types=args.use_node_types,
-                                             edge_types=True,
-                                             restore_state=args.restore_state,
-                                             filter=args.filter_edges,
-                                             self_loops=args.self_loops,
-                                             holdout=args.holdout,
-                                             train_frac=args.train_frac
-                                             )
-            else:
-                raise Exception("Unknown model: {}".format(model.__name__))
+            print(f"Model: {model.__name__}, Params: {params}")
 
             model_attempt = get_name(model, dateTime)
 
-            MODEL_BASE = join(MODELS_PATH, model_attempt)
+            MODEL_BASE = get_model_base(args, model_attempt)
 
-            if not isdir(MODEL_BASE):
-                mkdir(MODEL_BASE)
+            dataset = read_or_create_dataset(args=args, model_base=MODEL_BASE, model_name=model.__name__)
+
+
 
             if args.training_mode == 'node_classifier':
 
                 from SourceCodeTools.graph.model.train.sampling_node_classifier import training_procedure
 
-                m, scores = training_procedure(dataset, model, params, EPOCHS, args)
+                m, scores = training_procedure(dataset, model, params, args.epochs, args)
 
-            # elif args.training_mode == "vector_sim":
-            #
-            #     from train_vector_sim import training_procedure
-            #
-            #     m, ee, scores = training_procedure(dataset, model, params, EPOCHS, args.restore_state)
-            #
-            #     torch.save(
-            #         {
-            #             'elem_embeder': ee.state_dict(),
-            #         },
-            #         join(MODEL_BASE, "vector_sim.pt")
-            #     )
-            #
-            # elif args.training_mode == "vector_sim_classifier":
-            #
-            #     from train_vector_sim_with_classifier import training_procedure
-            #
-            #     m, ee, lp, scores = training_procedure(dataset, model, params, EPOCHS, args.data_file,
-            #                                            args.restore_state)
-            #
-            #     torch.save(
-            #         {
-            #             'elem_embeder': ee.state_dict(),
-            #             'link_predictor': lp.state_dict(),
-            #         },
-            #         join(MODEL_BASE, "vector_sim_with_classifier.pt")
-            #     )
-            #
-            # elif args.training_mode == "predict_next_function":
-            #
-            #     from train_vector_sim_next_call import training_procedure
-            #
-            #     m, ee, lp, scores = training_procedure(dataset, model, params, EPOCHS, args.call_seq_file,
-            #                                            args.restore_state)
-            #
-            #     torch.save(
-            #         {
-            #             'elem_embeder': ee.state_dict(),
-            #             'link_predictor': lp.state_dict(),
-            #         },
-            #         join(MODEL_BASE, "vector_sim_next_call.pt")
-            #     )
             elif args.training_mode == "multitask":
 
                 from SourceCodeTools.graph.model.train.sampling_multitask import training_procedure
 
                 m, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, scores = \
-                    training_procedure(dataset, model, params, EPOCHS, args)
+                    training_procedure(dataset, model, params, args.epochs, args)
 
                 torch.save(
                     {
@@ -132,19 +72,12 @@ def main(nodes_path, edges_path, models, desc, args):
                 "state": "state_dict.pt",
                 "scores": scores,
                 "time": dateTime,
-                "description": desc,
-                # "training_mode": args.training_mode,
-                # "datafile": None, #args.data_file,
-                # "call_seq": args.call_seq_file,
-                # "fname_file": args.fname_file,
-                # "varuse_file": args.varuse_file,
-                # "note": args.note,
-                # "batch_size": args.batch_size
             }.update(args.__dict__)
 
-            pickle.dump(m.get_embeddings(dataset.global_id_map), open(join(metadata['base'], metadata['layers']), "wb"))
+            pickle.dump(m.get_embeddings(dataset.global_id_map), open(join(MODEL_BASE, metadata['layers']), "wb"))
+            pickle.dump(dataset, open(join(MODEL_BASE, "dataset.pkl"), "wb"))
 
-            with open(join(metadata['base'], "metadata.json"), "w") as mdata:
+            with open(join(MODEL_BASE, "metadata.json"), "w") as mdata:
                 mdata.write(json.dumps(metadata, indent=4))
 
             torch.save(
@@ -152,12 +85,12 @@ def main(nodes_path, edges_path, models, desc, args):
                     'model_state_dict': m.state_dict(),
                     'splits': dataset.splits
                 },
-                join(metadata['base'], metadata['state'])
+                join(MODEL_BASE, metadata['state'])
             )
 
-            dataset.nodes.to_csv(join(metadata['base'], "nodes.csv"), index=False)
-            dataset.edges.to_csv(join(metadata['base'], "edges.csv"), index=False)
-            dataset.held.to_csv(join(metadata['base'], "held.csv"), index=False)
+            dataset.nodes.to_csv(join(MODEL_BASE, "nodes.csv"), index=False)
+            dataset.edges.to_csv(join(MODEL_BASE, "edges.csv"), index=False)
+            dataset.held.to_csv(join(MODEL_BASE, "held.csv"), index=False)
 
             print("done")
 
@@ -193,6 +126,8 @@ if __name__ == "__main__":
                         help='Batch size')
     parser.add_argument('--note', dest='note', default="",
                         help='Note, added to metadata')
+    parser.add_argument('model_output_dir', dest='model_output_dir',
+                        help='Location of the final model')
     parser.add_argument('--use_node_types', action='store_true')
     parser.add_argument('--restore_state', action='store_true')
     parser.add_argument('--self_loops', action='store_true')
@@ -208,11 +143,12 @@ if __name__ == "__main__":
         RGCNSampling: rgcnsampling_params
     }
 
-    data_paths = pandas.read_csv("../../graph-network/deprecated/data_paths.tsv", sep="\t")
-    MODELS_PATH = "../../graph-network/models"
-    EPOCHS = args.epochs
+    # data_paths = pandas.read_csv("../../graph-network/deprecated/data_paths.tsv", sep="\t")
+    # MODELS_PATH = "../../graph-network/models"
+    # MODELS_PATH = args.model_output_dir
+    # EPOCHS = args.epochs
 
-    if not isdir(MODELS_PATH):
-        mkdir(MODELS_PATH)
+    if not isdir(args.model_output_dir):
+        mkdir(args.model_output_dir)
 
-    main(args.node_path, args.edge_path, models_, "full", args)
+    main(models_, args)

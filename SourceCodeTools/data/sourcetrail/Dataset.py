@@ -4,6 +4,8 @@ import numpy
 import pickle
 import torch
 
+from os.path import join
+
 def load_data(node_path, edge_path):
     nodes = pandas.read_csv(node_path, dtype={'id': int, 'type': int, 'serialized_name': str}, escapechar='\\')
     edges = pandas.read_csv(edge_path, dtype={'id': int, 'type': int, 'source_node_id': int, 'target_node_id': int})
@@ -102,17 +104,16 @@ class SourceGraphDataset:
         if self_loops:
             self.nodes, self.edges = SourceGraphDataset.assess_need_for_self_loops(self.nodes, self.edges)
 
-        if restore_state:
-            self.nodes, self.edges, self.held = pickle.load(open("../../../graph-network/tmp_edgesplits.pkl", "rb"))
-            print("Restored graph from saved state")
+        # if restore_state:
+        #     self.nodes, self.edges, self.held = pickle.load(open("../../../graph-network/tmp_edgesplits.pkl", "rb"))
+        #     print("Restored graph from saved state")
+        # else:
+        # the next line will delete isolated nodes
+        if holdout is None:
+            self.nodes, self.edges, self.held = SourceGraphDataset.holdout(self.nodes, self.edges, self.holdout_frac)
         else:
-            # the next line will delete isolated nodes
-            if holdout is None:
-                self.nodes, self.edges, self.held = SourceGraphDataset.holdout(self.nodes, self.edges, self.holdout_frac)
-            else:
-                self.held = pandas.read_csv(holdout)
-
-            pickle.dump((self.nodes, self.edges, self.held), open("../../../graph-network/tmp_edgesplits.pkl", "wb"))
+            self.held = pandas.read_csv(holdout)
+        # pickle.dump((self.nodes, self.edges, self.held), open("../../../graph-network/tmp_edgesplits.pkl", "wb"))
 
         # # ablation
         # print("Edges before filtering", self.edges.shape[0])
@@ -150,12 +151,13 @@ class SourceGraphDataset:
         self.nodes, self.typed_id_map = self.add_typed_ids()
         self.edges = self.add_compact_edges()
 
-        if restore_state:
-            self.splits = pickle.load(open("../../../graph-network/tmp_splits.pkl", "rb"))
-            print("Restored node splits from saved state")
-        else:
-            self.splits = get_train_test_val_indices(self.nodes.index, train_frac=train_frac)
-            pickle.dump(self.splits, open("../../../graph-network/tmp_splits.pkl", "wb"))
+        # if restore_state:
+        #     self.splits = pickle.load(open("../../../graph-network/tmp_splits.pkl", "rb"))
+        #     print("Restored node splits from saved state")
+        # else:
+        self.splits = get_train_test_val_indices(self.nodes.index, train_frac=train_frac)
+        # pickle.dump(self.splits, open("../../../graph-network/tmp_splits.pkl", "wb"))
+
         self.add_splits()
 
         self.create_graph()
@@ -626,3 +628,35 @@ def ensure_valid_edges(nodes, edges):
     print("ending up with {} nodes and {} edges".format(nodes.shape[0], edges.shape[0]))
 
     return nodes, edges
+
+
+def read_or_create_dataset(args, model_base, model_name, LABELS_FROM="type"):
+    if args.restore_state:
+        # i'm not happy with this behaviour that differs based on the flag status
+        dataset = pickle.load(open(join(model_base, "dataset.pkl"), "rb"))
+    else:
+
+        if model_name == "GCNSampling" or model_name == "GATSampler" or model_name == "GAT" or model_name == "GGNN":
+            dataset = SourceGraphDataset(args.node_path, args.edge_path, label_from=LABELS_FROM,
+                                         restore_state=args.restore_state, filter=args.filter_edges,
+                                         self_loops=args.self_loops,
+                                         holdout=args.holdout, train_frac=args.train_frac)
+        elif model_name == "RGCNSampling" or model_name == "RGCN":
+            dataset = SourceGraphDataset(args.node_path,
+                                         args.edge_path,
+                                         label_from=LABELS_FROM,
+                                         node_types=args.use_node_types,
+                                         edge_types=True,
+                                         restore_state=args.restore_state,
+                                         filter=args.filter_edges,
+                                         self_loops=args.self_loops,
+                                         holdout=args.holdout,
+                                         train_frac=args.train_frac
+                                         )
+        else:
+            raise Exception(f"Unknown model: {model_name}")
+
+        # save dataset state for recovery
+        pickle.dump(dataset, open(join(model_base, "dataset.pkl"), "wb"))
+
+    return dataset
