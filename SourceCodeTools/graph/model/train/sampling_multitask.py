@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.optim.lr_scheduler import ExponentialLR
 import dgl
 from math import ceil
 from time import time
@@ -396,6 +397,7 @@ def train(MODEL_BASE, g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_va
         ], lr=lr
     )
 
+    lr_scheduler = ExponentialLR(optimizer, gamma=0.991)
     best_val_acc_fname = 0.
     best_test_acc_fname = 0.
     best_val_acc_varuse = 0.
@@ -513,6 +515,8 @@ def train(MODEL_BASE, g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_va
             "lp_apicall": lp_apicall.state_dict(),
             "epoch": epoch
         }, join(MODEL_BASE, "saved_state.pt"))
+
+        lr_scheduler.step()
 
     # return {
     #     "loss": loss.item(),
