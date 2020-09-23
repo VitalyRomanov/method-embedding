@@ -5,10 +5,10 @@ import sys, os
 nodes = pd.read_csv(sys.argv[1], escapechar='\\')
 edges = pd.read_csv(sys.argv[2])
 type_maps = pd.read_csv(sys.argv[3])
+out_annotations = sys.argv[4]
+out_no_annotations = sys.argv[5]
 annotation_type = int(type_maps.query("desc == 'annotation'")['type'])
 returns_type = int(type_maps.query("desc == 'returns'")['type'])
-
-print(annotation_type, returns_type)
 
 # nodes = pd.read_csv("/home/ltv/data/local_run/method-embedding/src/large_scale/envs/common_nodes.csv")
 # edges = pd.read_csv("/home/ltv/data/local_run/method-embedding/src/large_scale/envs/common_edges_with_types_with_ast.csv")
@@ -42,8 +42,8 @@ annotations = edges.query(f"type == {annotation_type} or type == {returns_type}"
 
 no_annotations = edges.query(f"type != {annotation_type} and type != {returns_type}")
 
-annotations.to_csv(sys.argv[2].replace(".csv", "_annotations.csv"), index=False)
-no_annotations.to_csv(sys.argv[2].replace(".csv", "_no_annotations.csv"), index=False)
+annotations.to_csv(out_annotations, index=False)
+no_annotations.to_csv(out_no_annotations, index=False)
 
 #%%
 
