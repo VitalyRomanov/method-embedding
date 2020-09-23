@@ -4,7 +4,9 @@ setup(name='SourceCodeTools',
       version='0.0.1',
       py_modules=['SourceCodeTools'],
       install_requires=[
-            'pandas',
+            'nltk',
+            'tensorflow==2.3.0',
+            'pandas>=1.1.1',
             'javac_parser'
       ],
       scripts=[
