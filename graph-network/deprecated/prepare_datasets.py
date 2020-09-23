@@ -71,8 +71,8 @@ def filter_module(nodes, edges, module_names):
 
 
 
-if not isdir("data"):
-    mkdir("data")
+if not isdir("deprecated/data"):
+    mkdir("deprecated/data")
 
 def mkall(prefix, nodes, edges, excluded=[]):
     prefix = prefix + "_".join(excluded)

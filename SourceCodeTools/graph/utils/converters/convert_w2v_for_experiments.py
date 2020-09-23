@@ -1,9 +1,9 @@
-from Embedder import Embedder
+from SourceCodeTools.graph.model.Embedder import Embedder
 import torch
 import os, sys
 import pandas as pd
 import numpy as np
-from Dataset import get_train_test_val_indices, SourceGraphDataset, load_data
+from SourceCodeTools.data.sourcetrail.Dataset import get_train_test_val_indices, SourceGraphDataset, load_data
 import pickle
 
 

@@ -1,18 +1,30 @@
-from models import GCNSampling, GATSampler, RGCNSampling
-from main import get_name
+# %%
 import sys
+from SourceCodeTools.graph.model import GAT, RGCN, GGNN
 from datetime import datetime
-from params import gcnsampling_params, gatsampling_params, rgcnsampling_params
+from params import gat_params, rgcn_params, ggnn_params
 import pandas
 import pickle
 import json
 from os import mkdir
 from os.path import isdir, join
 import torch
-from Dataset import SourceGraphDataset
+from SourceCodeTools.data.sourcetrail.Dataset import SourceGraphDataset
+from SourceCodeTools.graph.model.train.utils import get_name
+
+
 
 
 def main(nodes_path, edges_path, models, desc, args):
+    """
+
+    :param nodes_path:
+    :param edges_path:
+    :param models:
+    :param desc:
+    :param args:
+    :return:
+    """
 
     for model, param_grid in models.items():
         for params in param_grid:
@@ -24,11 +36,11 @@ def main(nodes_path, edges_path, models, desc, args):
             print(dateTime)
             print("Model: {}, Params: {}, Desc: {}".format(model.__name__, params, desc))
 
-            if model.__name__ == "GCNSampling" or model.__name__ == "GATSampler":
+            if model.__name__ == "GAT" or model.__name__ == "GGNN":
                 dataset = SourceGraphDataset(nodes_path, edges_path, label_from=LABELS_FROM,
                                              restore_state=args.restore_state, filter=args.filter_edges, self_loops=args.self_loops,
                                              holdout=args.holdout, train_frac=args.train_frac)
-            elif model.__name__ == "RGCNSampling":
+            elif model.__name__ == "RGCN":
                 dataset = SourceGraphDataset(nodes_path,
                                              edges_path,
                                              label_from=LABELS_FROM,
@@ -36,7 +48,7 @@ def main(nodes_path, edges_path, models, desc, args):
                                              edge_types=True,
                                              restore_state=args.restore_state,
                                              filter=args.filter_edges,
-                                             self_loops=args.self_loops,
+                                             self_loops = args.self_loops,
                                              holdout=args.holdout,
                                              train_frac=args.train_frac
                                              )
@@ -52,58 +64,59 @@ def main(nodes_path, edges_path, models, desc, args):
 
             if args.training_mode == 'node_classifier':
 
-                from sampling_node_classifier import training_procedure
+                from SourceCodeTools.graph.model.train.train_node_classifier import training_procedure
 
-                m, scores = training_procedure(dataset, model, params, EPOCHS, args)
+                m, scores = training_procedure(dataset, model, params, args.epochs, args)
 
-            # elif args.training_mode == "vector_sim":
-            #
-            #     from train_vector_sim import training_procedure
-            #
-            #     m, ee, scores = training_procedure(dataset, model, params, EPOCHS, args.restore_state)
-            #
-            #     torch.save(
-            #         {
-            #             'elem_embeder': ee.state_dict(),
-            #         },
-            #         join(MODEL_BASE, "vector_sim.pt")
-            #     )
-            #
-            # elif args.training_mode == "vector_sim_classifier":
-            #
-            #     from train_vector_sim_with_classifier import training_procedure
-            #
-            #     m, ee, lp, scores = training_procedure(dataset, model, params, EPOCHS, args.data_file,
-            #                                            args.restore_state)
-            #
-            #     torch.save(
-            #         {
-            #             'elem_embeder': ee.state_dict(),
-            #             'link_predictor': lp.state_dict(),
-            #         },
-            #         join(MODEL_BASE, "vector_sim_with_classifier.pt")
-            #     )
-            #
-            # elif args.training_mode == "predict_next_function":
-            #
-            #     from train_vector_sim_next_call import training_procedure
-            #
-            #     m, ee, lp, scores = training_procedure(dataset, model, params, EPOCHS, args.call_seq_file,
-            #                                            args.restore_state)
-            #
-            #     torch.save(
-            #         {
-            #             'elem_embeder': ee.state_dict(),
-            #             'link_predictor': lp.state_dict(),
-            #         },
-            #         join(MODEL_BASE, "vector_sim_next_call.pt")
-            #     )
+            elif args.training_mode == "vector_sim":
+
+                from SourceCodeTools.graph.model.train.train_vector_sim import training_procedure
+
+                m, ee, scores = training_procedure(dataset, model, params, args.epochs, args.restore_state)
+
+                torch.save(
+                    {
+                        'elem_embeder': ee.state_dict(),
+                    },
+                    join(MODEL_BASE, "vector_sim.pt")
+                )
+
+            elif args.training_mode == "vector_sim_classifier":
+
+                from SourceCodeTools.graph.model.train.train_vector_sim_with_classifier import training_procedure
+
+                m, ee, lp, scores = training_procedure(dataset, model, params, args.epochs, args.data_file,
+                                                       args.restore_state)
+
+                torch.save(
+                    {
+                        'elem_embeder': ee.state_dict(),
+                        'link_predictor': lp.state_dict(),
+                    },
+                    join(MODEL_BASE, "vector_sim_with_classifier.pt")
+                )
+
+            elif args.training_mode == "predict_next_function":
+
+                from SourceCodeTools.graph.model.train.train_vector_sim_next_call import training_procedure
+
+                m, ee, lp, scores = training_procedure(dataset, model, params, args.epochs, args.call_seq_file,
+                                                       args.restore_state)
+
+                torch.save(
+                    {
+                        'elem_embeder': ee.state_dict(),
+                        'link_predictor': lp.state_dict(),
+                    },
+                    join(MODEL_BASE, "vector_sim_next_call.pt")
+                )
             elif args.training_mode == "multitask":
 
-                from sampling_multitask import training_procedure
+                from SourceCodeTools.graph.model.train.train_multitask import training_procedure
 
                 m, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, scores = \
-                    training_procedure(dataset, model, params, EPOCHS, args)
+                    training_procedure(dataset, model, params, args.epochs, args.call_seq_file, args.fname_file,
+                                       args.varuse_file, args.restore_state)
 
                 torch.save(
                     {
@@ -133,14 +146,14 @@ def main(nodes_path, edges_path, models, desc, args):
                 "scores": scores,
                 "time": dateTime,
                 "description": desc,
-                "training_mode": args.training_mode,
-                "datafile": None, #args.data_file,
-                "call_seq": args.call_seq_file,
-                "fname_file": args.fname_file,
-                "varuse_file": args.varuse_file,
-                "note": args.note,
-                "batch_size": args.batch_size
-            }
+                # "training_mode": args.training_mode,
+                # "datafile": args.data_file,
+                # "call_seq": args.call_seq_file,
+                # "fname_file": args.fname_file,
+                # "varuse_file": args.varuse_file,
+                # "note": args.note,
+                # "epochs": EPOCHS
+            }.update(args.__dict__)
 
             pickle.dump(m.get_embeddings(dataset.global_id_map), open(join(metadata['base'], metadata['layers']), "wb"))
 
@@ -188,29 +201,30 @@ if __name__ == "__main__":
     parser.add_argument('--filter_edges', dest='filter_edges', default=None,
                         help='Edges filtered before training')
     parser.add_argument('--epochs', dest='epochs', default=100, type=int,
-                        help='Number of epochs')
-    parser.add_argument('--batch_size', dest='batch_size', default=128, type=int,
-                        help='Batch size')
+                        help='Edges filtered before training')
     parser.add_argument('--note', dest='note', default="",
                         help='Note, added to metadata')
     parser.add_argument('--use_node_types', action='store_true')
     parser.add_argument('--restore_state', action='store_true')
     parser.add_argument('--self_loops', action='store_true')
     parser.add_argument('--override_labels', action='store_true')
-    parser.add_argument('--gpu', dest='gpu', default=-1, type=int,
-                        help='')
 
     args = parser.parse_args()
 
+
+    if args.filter_edges is not None:
+        args.filter_edges = [int(e_type) for e_type in args.filter_edges.split(",")]
+
+
     models_ = {
-        # GCNSampling: gcnsampling_params,
-        # GATSampler: gatsampling_params,
-        RGCNSampling: rgcnsampling_params
+        # GAT: gat_params,
+        RGCN: rgcn_params,
+        # GGNN: ggnn_params
     }
 
-    data_paths = pandas.read_csv("data_paths.tsv", sep="\t")
-    MODELS_PATH = "models"
-    EPOCHS = args.epochs
+    data_paths = pandas.read_csv("../../graph-network/deprecated/data_paths.tsv", sep="\t")
+    MODELS_PATH = "../../graph-network/models"
+    # EPOCHS = args.epochs
 
     if not isdir(MODELS_PATH):
         mkdir(MODELS_PATH)

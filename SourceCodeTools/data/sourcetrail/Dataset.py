@@ -103,7 +103,7 @@ class SourceGraphDataset:
             self.nodes, self.edges = SourceGraphDataset.assess_need_for_self_loops(self.nodes, self.edges)
 
         if restore_state:
-            self.nodes, self.edges, self.held = pickle.load(open("tmp_edgesplits.pkl", "rb"))
+            self.nodes, self.edges, self.held = pickle.load(open("../../../graph-network/tmp_edgesplits.pkl", "rb"))
             print("Restored graph from saved state")
         else:
             # the next line will delete isolated nodes
@@ -112,7 +112,7 @@ class SourceGraphDataset:
             else:
                 self.held = pandas.read_csv(holdout)
 
-            pickle.dump((self.nodes, self.edges, self.held), open("tmp_edgesplits.pkl", "wb"))
+            pickle.dump((self.nodes, self.edges, self.held), open("../../../graph-network/tmp_edgesplits.pkl", "wb"))
 
         # # ablation
         # print("Edges before filtering", self.edges.shape[0])
@@ -151,11 +151,11 @@ class SourceGraphDataset:
         self.edges = self.add_compact_edges()
 
         if restore_state:
-            self.splits = pickle.load(open("tmp_splits.pkl", "rb"))
+            self.splits = pickle.load(open("../../../graph-network/tmp_splits.pkl", "rb"))
             print("Restored node splits from saved state")
         else:
             self.splits = get_train_test_val_indices(self.nodes.index, train_frac=train_frac)
-            pickle.dump(self.splits, open("tmp_splits.pkl", "wb"))
+            pickle.dump(self.splits, open("../../../graph-network/tmp_splits.pkl", "wb"))
         self.add_splits()
 
         self.create_graph()

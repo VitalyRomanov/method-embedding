@@ -7,6 +7,7 @@ setup(name='SourceCodeTools',
             'nltk',
             'tensorflow==2.3.0',
             'pandas>=1.1.1',
+            'sklearn',
             'javac_parser'
       ],
       scripts=[

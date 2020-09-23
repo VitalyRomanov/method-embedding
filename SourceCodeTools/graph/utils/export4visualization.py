@@ -1,4 +1,4 @@
-from Embedder import Embedder
+from SourceCodeTools.graph.model.Embedder import Embedder
 import pickle
 import sys
 import pandas
