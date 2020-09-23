@@ -1,7 +1,8 @@
 conda activate SourceCodeTools
 
-sourcetrail-extract-node-names.py common_nodes.csv
-sourcetrail-edge-types-to-int.py common_edges_with_ast.csv
-sourcetrail-extract-type-information.py common_nodes_with_ast.csv common_edges_with_types_with_ast.csv common_type_maps_with_ast.csv
+OUT_DIR=$1
+
+sourcetrail-extract-type-information.py $OUT_DIR/common_nodes.csv $OUT_DIR/common_edges_ast_type_as_int.csv $OUT_DIR/ast_types_int_to_str.csv $OUT_DIR/common_edges_annotations.csv $OUT_DIR/common_edges_no_annotations.csv
+cp $OUT_DIR/common_edges_no_annotations.csv $OUT_DIR/common_edges.csv
 
 conda deactivate
