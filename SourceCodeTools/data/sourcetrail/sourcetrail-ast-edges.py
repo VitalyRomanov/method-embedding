@@ -5,6 +5,7 @@ from csv import QUOTE_NONNUMERIC
 import re
 from copy import copy
 import ast
+from nltk import RegexpTokenizer
 
 from SourceCodeTools.proc.entity.annotator.annotator_utils import to_offsets, overlap, resolve_self_collision
 
@@ -240,6 +241,16 @@ def join_offsets(offsets_1, offsets_2, body=None):
 
     return joined
 
+tokenizer = RegexpTokenizer("\w+|[^\w\s]")
+def random_replacement_lookup(name, replacements):
+    if "[" not in name:
+        return replacements.get(name, name)
+    else:
+        tokens = tokenizer.tokenize(name)
+        r_tokens = map(lambda x: replacements.get(x,x), tokens)
+        corrected_name = "".join(r_tokens)
+        return corrected_name
+
 
 def write_edges_v1(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name):
     for ind_bodies, (_, row) in enumerate(bodies.iterrows()):
@@ -301,10 +312,11 @@ def write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_na
         if len(edges) == 0:
             continue
 
-        random_replacements_lookup = lambda x: ast.literal_eval(row['random_2_srctrl']).get(x,x)
+        replacements = ast.literal_eval(row['random_2_srctrl'])
+        replacements_lookup = lambda x: random_replacement_lookup(x, replacements)
 
-        edges['src'] = edges['src'].apply(random_replacements_lookup)
-        edges['dst'] = edges['dst'].apply(random_replacements_lookup)
+        edges['src'] = edges['src'].apply(replacements_lookup)
+        edges['dst'] = edges['dst'].apply(replacements_lookup)
 
         edges['src'] = edges['src'].apply(node_resolver.resolve)
         edges['dst'] = edges['dst'].apply(node_resolver.resolve)
