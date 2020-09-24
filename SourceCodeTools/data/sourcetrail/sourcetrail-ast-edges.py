@@ -70,6 +70,21 @@ class NodeResolver:
         return self.node_maps[name]
 
 
+# import spacy
+# from SourceCodeTools.proc.entity.util import inject_tokenizer
+# from spacy.gold import biluo_tags_from_offsets
+# def isvalid(text, ents):
+#     nlp = inject_tokenizer(spacy.blank("en"))
+#     doc = nlp(text)
+#     tags = biluo_tags_from_offsets(doc, ents)
+#     for t, tag in zip(doc, tags):
+#         print(tag, t.text, sep="\t")
+#     if "-" in tags:
+#         return False
+#     else:
+#         return True
+
+
 # def resolve_edge_type(edge_type):
 #     global valid_new_type, type_maps, new_types
 #
@@ -347,6 +362,8 @@ def write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_na
             "body": row['body'],
             "replacement_list": all_offsets
         })
+
+        # isvalid(row['body'], all_offsets)
 
         # replacements = []
         # for ind, row in edges.iterrows():
