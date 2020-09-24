@@ -315,7 +315,7 @@ def to_global_ids(entry, id_map, local_names, global_names):
     for r in entry['replacements']:
         # id_ = int(r[2].split("_")[-1])
         id_ = r[2]
-        # assert local_names[id_] == global_names[id_map[id_]], f"{local_names[id_]} != {global_names[id_map[id_]]}"
+        assert local_names[id_] == global_names[id_map[id_]], f"{local_names[id_]} != {global_names[id_map[id_]]}"
         # assert local_names[id_][0].lower() == local_names[id_][0], f"{local_names[id_]}"
         replacements.append((r[0], r[1], str(id_map[id_])))
 
