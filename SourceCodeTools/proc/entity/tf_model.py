@@ -197,8 +197,7 @@ class TypePredictor(Model):
         #                          weights=graph_embedder.e, trainable=train_embeddings,
         #                          mask_zero=True)
 
-        input_dim = tok_embedder.e.shape[1] + suffix_prefix_dims * 2
-                     # graph_embedder.e.shape[1] + \
+        input_dim = tok_embedder.e.shape[1] + suffix_prefix_dims * 2 #+ graph_embedder.e.shape[1]
 
         self.text_cnn = TextCnn(input_size=input_dim, h_sizes=h_sizes,
                                 seq_len=seq_len, pos_emb_size=pos_emb_size,
@@ -302,40 +301,57 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
     lr = tf.Variable(learning_rate, trainable=False)
     optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
 
-    for e in range(epochs):
-        losses = []
-        ps = []
-        rs = []
-        f1s = []
+    train_losses = []
+    test_losses = []
+    train_f1s = []
+    test_f1s = []
 
-        for ind, batch in enumerate(train_batches):
-            # token_ids, graph_ids, labels, class_weights, lengths = b
-            loss, p, r, f1 = train_step(model=model, optimizer=optimizer, token_ids=batch['tok_ids'],
-                                        prefix=batch['prefix'], suffix=batch['suffix'],
-                                        graph_ids=batch['graph_ids'],
-                                        labels=batch['tags'],
-                                        lengths=batch['lens'],
-                                        # class_weights=batch['class_weights'],
-                                        scorer=scorer)
-            losses.append(loss.numpy())
-            ps.append(p)
-            rs.append(r)
-            f1s.append(f1)
+    try:
 
-        for ind, batch in enumerate(test_batches):
-            # token_ids, graph_ids, labels, class_weights, lengths = b
-            test_loss, test_p, test_r, test_f1 = test_step(model=model, token_ids=batch['tok_ids'],
-                                        prefix=batch['prefix'], suffix=batch['suffix'],
-                                        graph_ids=batch['graph_ids'],
-                                        labels=batch['tags'],
-                                        lengths=batch['lens'],
-                                        # class_weights=batch['class_weights'],
-                                        scorer=scorer)
+        for e in range(epochs):
+            losses = []
+            ps = []
+            rs = []
+            f1s = []
 
-        print(f"Epoch: {e}, Train Loss: {sum(losses) / len(losses)}, Train P: {sum(ps) / len(ps)}, Train R: {sum(rs) / len(rs)}, Train F1: {sum(f1s) / len(f1s)}, "
-              f"Test loss: {test_loss}, Test P: {test_p}, Test R: {test_r}, Test F1: {test_f1}")
+            for ind, batch in enumerate(train_batches):
+                # token_ids, graph_ids, labels, class_weights, lengths = b
+                loss, p, r, f1 = train_step(model=model, optimizer=optimizer, token_ids=batch['tok_ids'],
+                                            prefix=batch['prefix'], suffix=batch['suffix'],
+                                            graph_ids=batch['graph_ids'],
+                                            labels=batch['tags'],
+                                            lengths=batch['lens'],
+                                            # class_weights=batch['class_weights'],
+                                            scorer=scorer)
+                losses.append(loss.numpy())
+                ps.append(p)
+                rs.append(r)
+                f1s.append(f1)
 
-        lr.assign(lr * learning_rate_decay)
+            for ind, batch in enumerate(test_batches):
+                # token_ids, graph_ids, labels, class_weights, lengths = b
+                test_loss, test_p, test_r, test_f1 = test_step(model=model, token_ids=batch['tok_ids'],
+                                            prefix=batch['prefix'], suffix=batch['suffix'],
+                                            graph_ids=batch['graph_ids'],
+                                            labels=batch['tags'],
+                                            lengths=batch['lens'],
+                                            # class_weights=batch['class_weights'],
+                                            scorer=scorer)
+
+            print(f"Epoch: {e}, Train Loss: {sum(losses) / len(losses)}, Train P: {sum(ps) / len(ps)}, Train R: {sum(rs) / len(rs)}, Train F1: {sum(f1s) / len(f1s)}, "
+                  f"Test loss: {test_loss}, Test P: {test_p}, Test R: {test_r}, Test F1: {test_f1}")
+
+            train_losses.append(float(sum(losses) / len(losses)))
+            train_f1s.append(float(sum(f1s) / len(f1s)))
+            test_losses.append(float(test_loss))
+            test_f1s.append(float(test_f1))
+
+            lr.assign(lr * learning_rate_decay)
+
+    except KeyboardInterrupt:
+        pass
+
+    return train_losses, train_f1s, test_losses, test_f1s
 
 
 

@@ -15,10 +15,10 @@ from spacy.util import minibatch, compounding
 import numpy as np
 from copy import copy
 
-from Embedder import Embedder
+from SourceCodeTools.graph.model.Embedder import Embedder
 # from tf_model import create_batches
 
-from tf_model import estimate_crf_transitions, TypePredictor, train
+from SourceCodeTools.proc.entity.tf_model import estimate_crf_transitions, TypePredictor, train
 
 max_len = 400
 
@@ -117,7 +117,8 @@ def prepare_data(sents, model_path):
     sents_t = []
     sents_r = []
 
-    nlp = spacy.load(model_path)  # load existing spaCy model
+    # nlp = spacy.load(model_path)  # load existing spaCy model
+    nlp = inject_tokenizer(spacy.blank("en"))
 
     def try_int(val):
         try:
@@ -340,7 +341,7 @@ def main_tf(TRAIN_DATA, TEST_DATA,
             tokenizer_path=None, graph_emb_path=None, word_emb_path=None,
             output_dir=None, n_iter=30, max_len=100,
             suffix_prefix_dims=50, suffix_prefix_buckets=1000,
-            learning_rate=0.01, learning_rate_decay=1.0):
+            learning_rate=0.01, learning_rate_decay=1.0, batch_size=32):
 
     train_s, train_e, train_r = prepare_data(TRAIN_DATA, tokenizer_path)
     test_s, test_e, test_r = prepare_data(TEST_DATA, tokenizer_path)
@@ -353,22 +354,97 @@ def main_tf(TRAIN_DATA, TEST_DATA,
     graph_emb = load_pkl_emb(graph_emb_path)
     word_emb = load_pkl_emb(word_emb_path)
 
-    batches = create_batches(32, max_len, train_s, train_r, train_e, graph_emb.ind, word_emb.ind, t_map, cw, element_hash_size=suffix_prefix_buckets)
+    batches = create_batches(batch_size, max_len, train_s, train_r, train_e, graph_emb.ind, word_emb.ind, t_map, cw, element_hash_size=suffix_prefix_buckets)
     test_batch = create_batches(len(test_s), max_len, test_s, test_r, test_e, graph_emb.ind, word_emb.ind, t_map, cw, element_hash_size=suffix_prefix_buckets)
 
-    # transitions = estimate_crf_transitions(batches, len(t_map))
+    params = {
+        "params": [
+        #     {
+        #     "h_sizes": [20, 20, 20],
+        #     "dense_size": 20,
+        #     "pos_emb_size": 20,
+        #     "cnn_win_size": 3,
+        #     "suffix_prefix_dims": 20,
+        #     "suffix_prefix_buckets": 1000,
+        # },
+            {
+            "h_sizes": [40, 40, 40],
+            "dense_size": 30,
+            "pos_emb_size": 30,
+            "cnn_win_size": 5,
+            "suffix_prefix_dims": 50,
+            "suffix_prefix_buckets": 2000,
+        },{
+            "h_sizes": [80, 80, 80],
+            "dense_size": 40,
+            "pos_emb_size": 50,
+            "cnn_win_size": 7,
+            "suffix_prefix_dims": 70,
+            "suffix_prefix_buckets": 3000,
+        }],
+        # "h_sizes": [[40, 40, 40], [20, 20, 20], [80, 80, 80]],
+        # "dense_size": [20, 30, 40],
+        # "pos_emb_size": [20, 30, 50],
+        # "cnn_win_size": [3, 5, 7],
+        # "suffix_prefix_dims": [20, 50, 70],
+        # "suffix_prefix_buckets": [1000, 2000],
+        "learning_rate": [0.0001,],
+        "learning_rate_decay": [0.991, 0.998]
+    }
+    from sklearn.model_selection import ParameterGrid
 
-    model = TypePredictor(word_emb, graph_emb, train_embeddings=False,
-                 h_sizes=[40, 40, 40], dense_size=30, num_classes=len(t_map),
-                 seq_len=max_len, pos_emb_size=30, cnn_win_size=3,
-                 suffix_prefix_dims=suffix_prefix_dims, suffix_prefix_buckets=suffix_prefix_buckets)
+    for param_set_ind, params in enumerate(ParameterGrid(params)):
 
-    train(model=model, train_batches=batches, test_batches=test_batch, epochs=n_iter, learning_rate=learning_rate,
-          scorer=lambda pred, true: scorer(pred, true, inv_t_map), learning_rate_decay=learning_rate_decay)
+        print(f"\n\n{params}")
+        lr = params.pop("learning_rate")
+        lr_decay = params.pop("learning_rate_decay")
+        params = params['params']
+
+        ntrials = 3
+
+        param_dir = os.path.join(output_dir, repr(param_set_ind))
+        os.mkdir(param_dir)
+
+        for trial_ind in range(ntrials):
+
+            trial_dir = os.path.join(param_dir, repr(trial_ind))
+            os.mkdir(trial_dir)
+
+            model = TypePredictor(word_emb, graph_emb, train_embeddings=False,
+                                  num_classes=len(t_map), seq_len=max_len,**params)
+
+            train_losses, train_f1, test_losses, test_f1 = train(model=model, train_batches=batches, test_batches=test_batch, epochs=n_iter, learning_rate=lr,
+                  scorer=lambda pred, true: scorer(pred, true, inv_t_map), learning_rate_decay=lr_decay)
+
+            chechpoint_path = os.path.join(trial_dir, "checkpoint")
+            model.save_weights(chechpoint_path)
+
+            metadata = {
+                "train_losses": train_losses,
+                "train_f1": train_f1,
+                "test_losses": test_losses,
+                "test_f1": test_f1,
+                "learning_rate": lr,
+                "learning_rate_decay": lr_decay,
+                "epochs": n_iter
+            }
+
+            metadata.update(params)
+
+            with open(os.path.join(trial_dir, "params.json"), "w") as metadata_sink:
+                metadata_sink.write(json.dumps(metadata, indent=4))
 
 
+    # model = TypePredictor(word_emb, graph_emb, train_embeddings=False,
+    #              h_sizes=[40, 40, 40], dense_size=30, num_classes=len(t_map),
+    #              seq_len=max_len, pos_emb_size=30, cnn_win_size=3,
+    #              suffix_prefix_dims=suffix_prefix_dims, suffix_prefix_buckets=suffix_prefix_buckets)
+    #
+    # train(model=model, train_batches=batches, test_batches=test_batch, epochs=n_iter, learning_rate=learning_rate,
+    #       scorer=lambda pred, true: scorer(pred, true, inv_t_map), learning_rate_decay=learning_rate_decay)
+    #
+    # model.save_weights(output_dir)
 
-    print()
 
 
 if __name__ == "__main__":
@@ -387,12 +463,21 @@ if __name__ == "__main__":
                         help='')
     parser.add_argument('--learning_rate_decay', dest='learning_rate_decay', default=1.0, type=float,
                         help='')
+    parser.add_argument('--batch_size', dest='batch_size', default=32, type=int,
+                        help='')
+    parser.add_argument('model_output',
+                        help='')
 
     args = parser.parse_args()
 
     model_path = sys.argv[1]
     data_path = sys.argv[2]
-    output_dir = "model-final-ner"
+
+    # output_dir = os.path.join(args.model_output, "type-prediction-model")
+    output_dir = args.model_output
+    if not os.path.isdir(output_dir):
+        os.mkdir(output_dir)
+
     n_iter = 500
 
     allowed = {'str', 'bool', 'Optional', 'None', 'int', 'Any', 'Union', 'List', 'Dict', 'Callable', 'ndarray',
@@ -410,5 +495,6 @@ if __name__ == "__main__":
             output_dir=output_dir,
             n_iter=n_iter,
             learning_rate=args.learning_rate,
-            learning_rate_decay=args.learning_rate_decay)
+            learning_rate_decay=args.learning_rate_decay,
+            batch_size=args.batch_size)
     # main_spacy(TRAIN_DATA, TEST_DATA, model=model_path,output_dir=output_dir, n_iter=n_iter)
