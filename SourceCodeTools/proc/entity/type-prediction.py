@@ -2,7 +2,7 @@ from __future__ import unicode_literals, print_function
 import spacy
 import sys, json, os
 import pickle
-from SourceCodeTools.proc.entity.util import inject_tokenizer, read_data, deal_with_incorrect_offsets, el_hash
+from SourceCodeTools.proc.entity.util import inject_tokenizer, read_data, deal_with_incorrect_offsets, el_hash, overlap
 from spacy.gold import biluo_tags_from_offsets, offsets_from_biluo_tags
 
 from spacy.gold import GoldParse
@@ -14,6 +14,8 @@ import spacy
 from spacy.util import minibatch, compounding
 import numpy as np
 from copy import copy
+
+from SourceCodeTools.proc.entity.ast_tools import get_declarations
 
 from SourceCodeTools.graph.model.Embedder import Embedder
 # from tf_model import create_batches
@@ -112,6 +114,38 @@ def main_spacy(TRAIN_DATA, TEST_DATA, model, output_dir=None, n_iter=100):
             print("\t", score)
 
 
+def tags_to_mask(tags):
+    return list(map(lambda t: 1. if t != "O" else 0., tags))
+
+def declarations_to_tags(doc, decls):
+    declarations = []
+
+    for decl, mentions in decls.items():
+        tag_decl = biluo_tags_from_offsets(doc, [decl])
+        tag_mentions = biluo_tags_from_offsets(doc, mentions)
+
+        assert "-" not in tag_decl
+
+        # while "-" in tag_decl:
+        #     tag_decl[tag_decl.index("-")] = "O"
+
+        # decl_mask = tags_to_mask(tag_decl)
+
+        # assert sum(decl_mask) > 0.
+
+        while "-" in tag_mentions:
+            tag_mentions[tag_mentions.index("-")] = "O"
+
+        # if "-" in tag_mentions:
+        #     for t, tag in zip(doc, tag_mentions):
+        #         print(t, tag, sep="\t")
+
+        declarations.append((tag_decl, tag_mentions))
+
+    return declarations
+
+
+
 def prepare_data(sents, model_path):
     sents_w = []
     sents_t = []
@@ -148,6 +182,62 @@ def prepare_data(sents, model_path):
         sents_r.append(repl_tags)
 
     return sents_w, sents_t, sents_r
+
+
+def filter_declarations(entities, declarations):
+    valid = {}
+
+    for decl in declarations:
+        for e in entities:
+            if overlap(decl, e):
+                valid[decl] = declarations[decl]
+
+    return valid
+
+
+def prepare_data_with_mentions(sents, model_path):
+    sents_w = []
+    sents_t = []
+    sents_r = []
+    sents_decls = []
+
+    # nlp = spacy.load(model_path)  # load existing spaCy model
+    nlp = inject_tokenizer(spacy.blank("en"))
+
+    def try_int(val):
+        try:
+            return int(val)
+        except:
+            return val
+
+    for s in sents:
+        doc = nlp(s[0])
+        ents = s[1]['entities']
+        repl = s[1]['replacements']
+        decls = get_declarations(s[0])
+
+        decls = filter_declarations(ents, decls)
+
+        tokens = [t.text for t in doc]
+        ents_tags = biluo_tags_from_offsets(doc, ents)
+        repl_tags = biluo_tags_from_offsets(doc, repl)
+
+        while "-" in ents_tags:
+            ents_tags[ents_tags.index("-")] = "O"
+
+        while "-" in repl_tags:
+            repl_tags[repl_tags.index("-")] = "O"
+
+        decls = declarations_to_tags(doc, decls)
+
+        repl_tags = [try_int(t.split("-")[-1]) for t in repl_tags]
+
+        sents_w.append(tokens)
+        sents_t.append(ents_tags)
+        sents_r.append(repl_tags)
+        sents_decls.append(decls)
+
+    return sents_w, sents_t, sents_r, sents_decls
 
 
 def load_pkl_emb(path):
@@ -271,6 +361,75 @@ def create_batches(batch_size, seq_len, sents, repl, tags, graphmap, wordmap, ta
     return batch
 
 
+def create_batches_with_mentions(batch_size, seq_len, sents, repl, tags, decls, mentions, graphmap, wordmap, tagmap, class_weights, element_hash_size=1000):
+    pad_id = len(wordmap)
+    rpad_id = len(graphmap)
+    n_sents = len(sents)
+
+    b_sents = []
+    b_repls = []
+    b_tags = []
+    b_cw = []
+    b_lens = []
+    b_pref = []
+    b_suff = []
+    b_decls = []
+
+
+    for ind, (s, rr, tt)  in enumerate(zip(sents, repl, tags)):
+        blank_s = np.ones((seq_len,), dtype=np.int32) * pad_id
+        blank_r = np.ones((seq_len,), dtype=np.int32) * rpad_id
+        blank_t = np.zeros((seq_len,), dtype=np.int32)
+        blank_cw = np.ones((seq_len,), dtype=np.int32)
+        blank_pref = np.ones((seq_len,), dtype=np.int32) * element_hash_size
+        blank_suff = np.ones((seq_len,), dtype=np.int32) * element_hash_size
+
+
+        int_sent = np.array([wordmap.get(w, pad_id) for w in s], dtype=np.int32)
+        int_repl = np.array([graphmap.get(r, rpad_id) for r in rr], dtype=np.int32)
+        int_tags = np.array([tagmap.get(t, 0) for t in tt], dtype=np.int32)
+        int_cw = np.array([class_weights.get(t, 1.0) for t in tt], dtype=np.int32)
+        int_pref = np.array([el_hash(w[:3], element_hash_size-1) for w in s], dtype=np.int32)
+        int_suff = np.array([el_hash(w[-3:], element_hash_size-1) for w in s], dtype=np.int32)
+
+
+        blank_s[0:min(int_sent.size, seq_len)] = int_sent[0:min(int_sent.size, seq_len)]
+        blank_r[0:min(int_sent.size, seq_len)] = int_repl[0:min(int_sent.size, seq_len)]
+        blank_t[0:min(int_sent.size, seq_len)] = int_tags[0:min(int_sent.size, seq_len)]
+        blank_cw[0:min(int_sent.size, seq_len)] = int_cw[0:min(int_sent.size, seq_len)]
+        blank_pref[0:min(int_sent.size, seq_len)] = int_pref[0:min(int_sent.size, seq_len)]
+        blank_suff[0:min(int_sent.size, seq_len)] = int_suff[0:min(int_sent.size, seq_len)]
+
+        # print(int_sent[0:min(int_sent.size, seq_len)].shape)
+
+        b_lens.append(len(s) if len(s) < seq_len else seq_len)
+        b_sents.append(blank_s)
+        b_repls.append(blank_r)
+        b_tags.append(blank_t)
+        b_cw.append(blank_cw)
+        b_pref.append(blank_pref)
+        b_suff.append(blank_suff)
+
+    lens = np.array(b_lens, dtype=np.int32)
+    sentences = np.stack(b_sents)
+    replacements = np.stack(b_repls)
+    pos_tags = np.stack(b_tags)
+    cw = np.stack(b_cw)
+    prefixes = np.stack(b_pref)
+    suffixes = np.stack(b_suff)
+
+    batch = []
+    for i in range(n_sents // batch_size):
+        batch.append({"tok_ids": sentences[i * batch_size: i * batch_size + batch_size, :],
+                      "graph_ids": replacements[i * batch_size: i * batch_size + batch_size, :],
+                      "prefix": prefixes[i * batch_size: i * batch_size + batch_size, :],
+                      "suffix": suffixes[i * batch_size: i * batch_size + batch_size, :],
+                      "tags": pos_tags[i * batch_size: i * batch_size + batch_size, :],
+                      "class_weights": cw[i * batch_size: i * batch_size + batch_size, :],
+                      "lens": lens[i * batch_size: i * batch_size + batch_size]})
+
+    return batch
+
 def parse_biluo(biluo):
     spans = []
 
@@ -343,8 +502,8 @@ def main_tf(TRAIN_DATA, TEST_DATA,
             suffix_prefix_dims=50, suffix_prefix_buckets=1000,
             learning_rate=0.01, learning_rate_decay=1.0, batch_size=32):
 
-    train_s, train_e, train_r = prepare_data(TRAIN_DATA, tokenizer_path)
-    test_s, test_e, test_r = prepare_data(TEST_DATA, tokenizer_path)
+    train_s, train_e, train_r, train_decls = prepare_data_with_mentions(TRAIN_DATA, tokenizer_path)
+    test_s, test_e, test_r, test_decls = prepare_data_with_mentions(TEST_DATA, tokenizer_path)
 
     cw = ClassWeightNormalizer()
     cw.init(train_e)

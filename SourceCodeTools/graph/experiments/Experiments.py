@@ -33,6 +33,7 @@ class Experiments:
     typeuse - experimen that tries to predict typeuse edges based on heldout set
     varuse - experiment that tries to predict which variable names are used in the current function
     fname - experiment that tries to predict the name of a function. valid only for function nodes. information is extracted from training data
+    typeann -
     """
     def __init__(self,
                  base_path=None,
