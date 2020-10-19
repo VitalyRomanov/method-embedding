@@ -502,8 +502,8 @@ def main_tf(TRAIN_DATA, TEST_DATA,
             suffix_prefix_dims=50, suffix_prefix_buckets=1000,
             learning_rate=0.01, learning_rate_decay=1.0, batch_size=32):
 
-    train_s, train_e, train_r, train_decls = prepare_data_with_mentions(TRAIN_DATA, tokenizer_path)
-    test_s, test_e, test_r, test_decls = prepare_data_with_mentions(TEST_DATA, tokenizer_path)
+    train_s, train_e, train_r, train_decls = prepare_data(TRAIN_DATA, tokenizer_path)
+    test_s, test_e, test_r, test_decls = prepare_data(TEST_DATA, tokenizer_path)
 
     cw = ClassWeightNormalizer()
     cw.init(train_e)
