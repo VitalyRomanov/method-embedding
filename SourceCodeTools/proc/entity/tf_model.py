@@ -278,13 +278,19 @@ def estimate_crf_transitions(batches, n_tags):
     return np.stack(transitions, axis=0).mean(axis=0)
 
 # @tf.function
-def train_step(model, optimizer, token_ids, prefix, suffix, graph_ids, labels, lengths, class_weights=None, scorer=None):
+# def train_step(epoch_frac, model, optimizer, token_ids, prefix, suffix, graph_ids, labels, lengths, class_weights=None, scorer=None):
+def train_step(epoch_frac, model, optimizer, token_ids, prefix, suffix, graph_ids, labels, lengths,
+                   class_weights=None, scorer=None):
     with tf.GradientTape() as tape:
         logits = model(token_ids, prefix, suffix, graph_ids, training=True)
         loss = model.loss(logits, labels, lengths, class_weights=class_weights)
         p, r, f1 = model.score(logits, labels, lengths, scorer=scorer)
         gradients = tape.gradient(loss, model.trainable_variables)
-        optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+        if epoch_frac < 0.5:
+            # do not update embeddings during the first half of the training
+            optimizer.apply_gradients((g, v) for g, v in zip(gradients, model.trainable_variables) if not v.name.startswith("default_embedder"))
+        else:
+            optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 
     return loss, p, r, f1
 
@@ -317,7 +323,7 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
 
             for ind, batch in enumerate(train_batches):
                 # token_ids, graph_ids, labels, class_weights, lengths = b
-                loss, p, r, f1 = train_step(model=model, optimizer=optimizer, token_ids=batch['tok_ids'],
+                loss, p, r, f1 = train_step(e/epochs, model=model, optimizer=optimizer, token_ids=batch['tok_ids'],
                                             prefix=batch['prefix'], suffix=batch['suffix'],
                                             graph_ids=batch['graph_ids'],
                                             labels=batch['tags'],
