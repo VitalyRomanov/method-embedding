@@ -571,7 +571,7 @@ def main_tf(TRAIN_DATA, TEST_DATA,
             trial_dir = os.path.join(param_dir, repr(trial_ind))
             os.mkdir(trial_dir)
 
-            model = TypePredictor(word_emb, graph_emb, train_embeddings=False,
+            model = TypePredictor(word_emb, graph_emb, train_embeddings=True,
                                   num_classes=len(t_map), seq_len=max_len,**params)
 
             train_losses, train_f1, test_losses, test_f1 = train(model=model, train_batches=batches, test_batches=test_batch, epochs=n_iter, learning_rate=lr,
