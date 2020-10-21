@@ -22,72 +22,7 @@ from spacy.gold import offsets_from_biluo_tags
 # https://arxiv.org/pdf/1903.07785v1.pdf
 # https://github.com/tensorflow/models/tree/master/research/cvt_text/model
 
-
-class DefaultEmbedding(Model):
-    """
-    Creates an embedder that provides the default value for the index -1. The default value is a zero-vector
-    """
-    def __init__(self, init_vectors=None, shape=None, trainable=True):
-        super(DefaultEmbedding, self).__init__()
-
-        if init_vectors is not None:
-            self.embs = tf.Variable(init_vectors, dtype=tf.float32,
-                           trainable=trainable, name="default_embedder_var")
-            shape = init_vectors.shape
-        else:
-            self.embs = tf.Variable(tf.random.uniform(shape=(shape[0], shape[1]), dtype=tf.float32),
-                               name="default_embedder_pad")
-        # self.pad = tf.zeros(shape=(1, init_vectors.shape[1]), name="default_embedder_pad")
-        # self.pad = tf.random.uniform(shape=(1, init_vectors.shape[1]), name="default_embedder_pad")
-        self.pad = tf.Variable(tf.random.uniform(shape=(1, shape[1]), dtype=tf.float32),
-                               name="default_embedder_pad")
-
-
-    def __call__(self, ids):
-        emb_matr = tf.concat([self.embs, self.pad], axis=0)
-        return tf.nn.embedding_lookup(params=emb_matr, ids=ids)
-        # return tf.expand_dims(tf.nn.embedding_lookup(params=self.emb_matr, ids=ids), axis=3)
-
-
-class PositionalEncoding(Model):
-    def __init__(self, seq_len, pos_emb_size):
-        super(PositionalEncoding, self).__init__()
-
-        positions = list(range(seq_len * 2))
-        position_splt = positions[:seq_len]
-        position_splt.reverse()
-        self.position_encoding = tf.constant(toeplitz(position_splt, positions[seq_len:]),
-                                        dtype=tf.int32,
-                                        name="position_encoding")
-        # self.position_embedding = tf.random.uniform(name="position_embedding", shape=(seq_len * 2, pos_emb_size), dtype=tf.float32)
-        self.position_embedding = tf.Variable(tf.random.uniform(shape=(seq_len * 2, pos_emb_size), dtype=tf.float32),
-                               name="position_embedding")
-        # self.position_embedding = tf.Variable(name="position_embedding", shape=(seq_len * 2, pos_emb_size), dtype=tf.float32)
-
-    def __call__(self):
-        # return tf.nn.embedding_lookup(self.position_embedding, self.position_encoding, name="position_lookup")
-        return tf.nn.embedding_lookup(self.position_embedding, self.position_encoding, name="position_lookup")
-
-
-class TextCnnLayer(Model):
-    def __init__(self, out_dim, kernel_shape, activation=None):
-        super(TextCnnLayer, self).__init__()
-
-        self.kernel_shape = kernel_shape
-        self.out_dim = out_dim
-
-        self.textConv = Conv2D(filters=out_dim, kernel_size=kernel_shape,
-                                  activation=activation, data_format='channels_last')
-
-        padding_size = (self.kernel_shape[0] - 1) // 2
-        assert padding_size * 2 + 1 == self.kernel_shape[0]
-        self.pad_constant = tf.constant([[0, 0], [padding_size, padding_size], [0, 0], [0, 0]])
-
-    def __call__(self, x):
-        padded = tf.pad(x, self.pad_constant)
-        # emb_sent_exp = tf.expand_dims(input, axis=3)
-        convolve = self.textConv(padded)
-        return tf.squeeze(convolve, axis=-2)
+from SourceCodeTools.proc.entity.tf_model import DefaultEmbedding, TextCnnLayer
 
 
 class TextCnn(Model):
@@ -158,16 +93,6 @@ class TextCnn(Model):
         tag_logits = self.dense_2(local_h2)
 
         return tf.reshape(tag_logits, (-1, self.seq_len, self.num_classes))
-
-
-# def TextCRF(Model):
-#     def __init__(self):
-#         super(TextCRF, self).__init__()
-#
-#         self.transitions = []
-#
-#     def __call__(self, ):
-#         pass
 
 
 class TypePredictor(Model):
@@ -260,14 +185,6 @@ class TypePredictor(Model):
 
         return p, r, f1
 
-        # return tf.reduce_sum(tf.cast(true_labels == estimated_labels, tf.int32)) / len(true_labels)
-        # self.accuracy.update_state(true_labels, estimated_labels)
-        # acc = self.accuracy.result().numpy()
-        # self.accuracy.reset_states()
-        # return acc
-
-    # def reset_states(self):
-    #     self.accuracy.reset_states()
 
 def estimate_crf_transitions(batches, n_tags):
     transitions = []
@@ -279,18 +196,6 @@ def estimate_crf_transitions(batches, n_tags):
 
 # @tf.function
 # def train_step(epoch_frac, model, optimizer, token_ids, prefix, suffix, graph_ids, labels, lengths, class_weights=None, scorer=None):
-def train_step(epoch_frac, model, optimizer, token_ids, prefix, suffix, graph_ids, labels, lengths,
-                   class_weights=None, scorer=None):
-    with tf.GradientTape() as tape:
-        logits = model(token_ids, prefix, suffix, graph_ids, training=True)
-        loss = model.loss(logits, labels, lengths, class_weights=class_weights)
-        p, r, f1 = model.score(logits, labels, lengths, scorer=scorer)
-        gradients = tape.gradient(loss, model.trainable_variables)
-        optimizer.apply_gradients((g, v) for g, v in zip(gradients, model.trainable_variables) if not v.name.startswith("default_embedder"))
-
-    return loss, p, r, f1
-
-
 def train_step_finetune(model, optimizer, token_ids, prefix, suffix, graph_ids, labels, lengths,
                    class_weights=None, scorer=None, finetune=False):
     with tf.GradientTape() as tape:
@@ -305,6 +210,7 @@ def train_step_finetune(model, optimizer, token_ids, prefix, suffix, graph_ids, 
             optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 
     return loss, p, r, f1
+
 
 # @tf.function
 def test_step(model, token_ids, prefix, suffix, graph_ids, labels, lengths, class_weights=None, scorer=None):
@@ -613,22 +519,22 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
 #     return sents_w, sents_t, sents_c, tags, tagmap, chunk_tags, chunkmap
 
 
-# def load_model(model_p):
-#     # model = Word2Vec.load(model_p)
-#     model = KeyedVectors.load_word2vec_format(model_p)
-#     voc_len = len(model.vocab)
-#
-#     vectors = np.zeros((voc_len, 300), dtype=np.float32)
-#
-#     w2i = dict()
-#
-#     for ind, word in enumerate(model.vocab.keys()):
-#         w2i[word] = ind
-#         vectors[ind, :] = model[word]
-#
-#     # w2i["*P*"] = len(w2i)
-#
-#     return model, w2i, vectors
+def load_model(model_p):
+    # model = Word2Vec.load(model_p)
+    model = KeyedVectors.load_word2vec_format(model_p)
+    voc_len = len(model.vocab)
+
+    vectors = np.zeros((voc_len, 300), dtype=np.float32)
+
+    w2i = dict()
+
+    for ind, word in enumerate(model.vocab.keys()):
+        w2i[word] = ind
+        vectors[ind, :] = model[word]
+
+    # w2i["*P*"] = len(w2i)
+
+    return model, w2i, vectors
 
 
 # def create_batches(batch_size, seq_len, sents, repl, tags, graphmap, wordmap, tagmap):
