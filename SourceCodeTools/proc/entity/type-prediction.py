@@ -361,7 +361,7 @@ def create_batches(batch_size, seq_len, sents, repl, tags, graphmap, wordmap, ta
     return batch
 
 
-def create_batches_with_mentions(batch_size, seq_len, sents, repl, tags, decls, mentions, graphmap, wordmap, tagmap, class_weights, element_hash_size=1000):
+def create_batches_with_mentions(batch_size, seq_len, sents, repl, tags, decls_mentions, graphmap, wordmap, tagmap, class_weights, element_hash_size=1000):
     pad_id = len(wordmap)
     rpad_id = len(graphmap)
     n_sents = len(sents)
@@ -374,20 +374,23 @@ def create_batches_with_mentions(batch_size, seq_len, sents, repl, tags, decls, 
     b_pref = []
     b_suff = []
     b_decls = []
+    b_ment = []
 
 
-    for ind, (s, rr, tt)  in enumerate(zip(sents, repl, tags)):
+    for ind, (s, rr, tt, dec_men)  in enumerate(zip(sents, repl, tags, decls_mentions)):
         blank_s = np.ones((seq_len,), dtype=np.int32) * pad_id
         blank_r = np.ones((seq_len,), dtype=np.int32) * rpad_id
         blank_t = np.zeros((seq_len,), dtype=np.int32)
         blank_cw = np.ones((seq_len,), dtype=np.int32)
         blank_pref = np.ones((seq_len,), dtype=np.int32) * element_hash_size
         blank_suff = np.ones((seq_len,), dtype=np.int32) * element_hash_size
+        blank_target = np.zeros((seq_len,), dtype=np.int32)
+        blank_mentions = np.zeros((seq_len,), dtype=np.int32)
 
 
         int_sent = np.array([wordmap.get(w, pad_id) for w in s], dtype=np.int32)
         int_repl = np.array([graphmap.get(r, rpad_id) for r in rr], dtype=np.int32)
-        int_tags = np.array([tagmap.get(t, 0) for t in tt], dtype=np.int32)
+        # int_tags = np.array([tagmap.get(t, 0) for t in tt], dtype=np.int32)
         int_cw = np.array([class_weights.get(t, 1.0) for t in tt], dtype=np.int32)
         int_pref = np.array([el_hash(w[:3], element_hash_size-1) for w in s], dtype=np.int32)
         int_suff = np.array([el_hash(w[-3:], element_hash_size-1) for w in s], dtype=np.int32)
@@ -395,20 +398,34 @@ def create_batches_with_mentions(batch_size, seq_len, sents, repl, tags, decls, 
 
         blank_s[0:min(int_sent.size, seq_len)] = int_sent[0:min(int_sent.size, seq_len)]
         blank_r[0:min(int_sent.size, seq_len)] = int_repl[0:min(int_sent.size, seq_len)]
-        blank_t[0:min(int_sent.size, seq_len)] = int_tags[0:min(int_sent.size, seq_len)]
+        # blank_t[0:min(int_sent.size, seq_len)] = int_tags[0:min(int_sent.size, seq_len)]
         blank_cw[0:min(int_sent.size, seq_len)] = int_cw[0:min(int_sent.size, seq_len)]
         blank_pref[0:min(int_sent.size, seq_len)] = int_pref[0:min(int_sent.size, seq_len)]
         blank_suff[0:min(int_sent.size, seq_len)] = int_suff[0:min(int_sent.size, seq_len)]
 
-        # print(int_sent[0:min(int_sent.size, seq_len)].shape)
+        for dec, men in dec_men:
+            blank_t[:] = 0
+            blank_target[:] = 0
+            blank_mentions[:] = 0
+            int_dec = np.array([0 if w == "O" else 1 for w in dec], dtype=np.int32)
+            int_men = np.array([0 if w == "O" else 1 for w in men], dtype=np.int32)
+            int_tags = np.array([tagmap[t] if dec != "O" else 0 for t, dec in zip(tt, dec)], dtype=np.int32)
+            assert sum(int_tags) != 0
 
-        b_lens.append(len(s) if len(s) < seq_len else seq_len)
-        b_sents.append(blank_s)
-        b_repls.append(blank_r)
-        b_tags.append(blank_t)
-        b_cw.append(blank_cw)
-        b_pref.append(blank_pref)
-        b_suff.append(blank_suff)
+            blank_target[0:min(int_dec.size, seq_len)] = int_dec[0:min(int_dec.size, seq_len)]
+            blank_mentions[0:min(int_men.size, seq_len)] = int_men[0:min(int_men.size, seq_len)]
+            blank_t[0:min(int_sent.size, seq_len)] = int_tags[0:min(int_sent.size, seq_len)]
+
+            b_lens.append(len(s) if len(s) < seq_len else seq_len)
+            b_sents.append(blank_s)
+            b_repls.append(blank_r)
+            b_tags.append(blank_t)
+            b_cw.append(blank_cw)
+            b_pref.append(blank_pref)
+            b_suff.append(blank_suff)
+            b_decls.append(blank_target)
+            b_ment.append(blank_mentions)
+
 
     lens = np.array(b_lens, dtype=np.int32)
     sentences = np.stack(b_sents)
@@ -417,6 +434,8 @@ def create_batches_with_mentions(batch_size, seq_len, sents, repl, tags, decls, 
     cw = np.stack(b_cw)
     prefixes = np.stack(b_pref)
     suffixes = np.stack(b_suff)
+    targets = np.stack(b_decls)
+    mentions = np.stack(b_ment)
 
     batch = []
     for i in range(n_sents // batch_size):
@@ -424,6 +443,8 @@ def create_batches_with_mentions(batch_size, seq_len, sents, repl, tags, decls, 
                       "graph_ids": replacements[i * batch_size: i * batch_size + batch_size, :],
                       "prefix": prefixes[i * batch_size: i * batch_size + batch_size, :],
                       "suffix": suffixes[i * batch_size: i * batch_size + batch_size, :],
+                      "target": targets[i * batch_size: i * batch_size + batch_size, :],
+                      "mentions": mentions[i * batch_size: i * batch_size + batch_size, :],
                       "tags": pos_tags[i * batch_size: i * batch_size + batch_size, :],
                       "class_weights": cw[i * batch_size: i * batch_size + batch_size, :],
                       "lens": lens[i * batch_size: i * batch_size + batch_size]})
@@ -495,15 +516,14 @@ def scorer(pred, labels, inverse_tag_map, eps=1e-8):
     return precision, recall, f1
 
 
-
-def main_tf(TRAIN_DATA, TEST_DATA,
+def main_tf_hyper_search(TRAIN_DATA, TEST_DATA,
             tokenizer_path=None, graph_emb_path=None, word_emb_path=None,
             output_dir=None, n_iter=30, max_len=100,
             suffix_prefix_dims=50, suffix_prefix_buckets=1000,
             learning_rate=0.01, learning_rate_decay=1.0, batch_size=32):
 
-    train_s, train_e, train_r = prepare_data(TRAIN_DATA, tokenizer_path)
-    test_s, test_e, test_r = prepare_data(TEST_DATA, tokenizer_path)
+    train_s, train_e, train_r, train_decls_mentions = prepare_data_with_mentions(TRAIN_DATA, tokenizer_path)
+    test_s, test_e, test_r, test_decls_mentions = prepare_data_with_mentions(TEST_DATA, tokenizer_path)
 
     cw = ClassWeightNormalizer()
     cw.init(train_e)
@@ -513,8 +533,8 @@ def main_tf(TRAIN_DATA, TEST_DATA,
     graph_emb = load_pkl_emb(graph_emb_path)
     word_emb = load_pkl_emb(word_emb_path)
 
-    batches = create_batches(batch_size, max_len, train_s, train_r, train_e, graph_emb.ind, word_emb.ind, t_map, cw, element_hash_size=suffix_prefix_buckets)
-    test_batch = create_batches(len(test_s), max_len, test_s, test_r, test_e, graph_emb.ind, word_emb.ind, t_map, cw, element_hash_size=suffix_prefix_buckets)
+    batches = create_batches_with_mentions(batch_size, max_len, train_s, train_r, train_e, train_decls_mentions, graph_emb.ind, word_emb.ind, t_map, cw, element_hash_size=suffix_prefix_buckets)
+    test_batch = create_batches_with_mentions(len(test_s), max_len, test_s, test_r, test_e, test_decls_mentions, graph_emb.ind, word_emb.ind, t_map, cw, element_hash_size=suffix_prefix_buckets)
 
     params = {
         "params": [
@@ -596,15 +616,36 @@ def main_tf(TRAIN_DATA, TEST_DATA,
                 metadata_sink.write(json.dumps(metadata, indent=4))
 
 
-    # model = TypePredictor(word_emb, graph_emb, train_embeddings=False,
-    #              h_sizes=[40, 40, 40], dense_size=30, num_classes=len(t_map),
-    #              seq_len=max_len, pos_emb_size=30, cnn_win_size=3,
-    #              suffix_prefix_dims=suffix_prefix_dims, suffix_prefix_buckets=suffix_prefix_buckets)
-    #
-    # train(model=model, train_batches=batches, test_batches=test_batch, epochs=n_iter, learning_rate=learning_rate,
-    #       scorer=lambda pred, true: scorer(pred, true, inv_t_map), learning_rate_decay=learning_rate_decay)
-    #
-    # model.save_weights(output_dir)
+
+def main_tf(TRAIN_DATA, TEST_DATA,
+            tokenizer_path=None, graph_emb_path=None, word_emb_path=None,
+            output_dir=None, n_iter=30, max_len=100,
+            suffix_prefix_dims=50, suffix_prefix_buckets=1000,
+            learning_rate=0.01, learning_rate_decay=1.0, batch_size=32):
+
+    train_s, train_e, train_r, train_decls_mentions = prepare_data_with_mentions(TRAIN_DATA, tokenizer_path)
+    test_s, test_e, test_r, test_decls_mentions = prepare_data_with_mentions(TEST_DATA, tokenizer_path)
+
+    cw = ClassWeightNormalizer()
+    cw.init(train_e)
+
+    t_map, inv_t_map = create_tag_map(train_e)
+
+    graph_emb = load_pkl_emb(graph_emb_path)
+    word_emb = load_pkl_emb(word_emb_path)
+
+    batches = create_batches_with_mentions(batch_size, max_len, train_s, train_r, train_e, train_decls_mentions, graph_emb.ind, word_emb.ind, t_map, cw, element_hash_size=suffix_prefix_buckets)
+    test_batch = create_batches_with_mentions(len(test_s), max_len, test_s, test_r, test_e, test_decls_mentions, graph_emb.ind, word_emb.ind, t_map, cw, element_hash_size=suffix_prefix_buckets)
+
+    model = TypePredictor(word_emb, graph_emb, train_embeddings=False,
+                 h_sizes=[40, 40, 40], dense_size=30, num_classes=len(t_map),
+                 seq_len=max_len, pos_emb_size=30, cnn_win_size=3,
+                 suffix_prefix_dims=suffix_prefix_dims, suffix_prefix_buckets=suffix_prefix_buckets)
+
+    train(model=model, train_batches=batches, test_batches=test_batch, epochs=n_iter, learning_rate=learning_rate,
+          scorer=lambda pred, true: scorer(pred, true, inv_t_map), learning_rate_decay=learning_rate_decay)
+
+    model.save_weights(output_dir)
 
 
 
@@ -650,7 +691,7 @@ if __name__ == "__main__":
     #     ent_types += ee
 
     TRAIN_DATA, TEST_DATA = read_data(args.data_path, normalize=True, allowed=allowed, include_replacements=True)
-    main_tf(TRAIN_DATA, TEST_DATA, args.tokenizer,
+    main_tf_hyper_search(TRAIN_DATA, TEST_DATA, args.tokenizer,
             graph_emb_path=args.graph_emb_path,
             word_emb_path=args.word_emb_path,
             output_dir=output_dir,
