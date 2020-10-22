@@ -266,7 +266,7 @@ def main_tf_hyper_search(TRAIN_DATA, TEST_DATA,
             #     "mention_emb_dim": 25,
             # }
         ],
-        "learning_rate": [0.0001,],
+        "learning_rate": [0.0001, 0.001],
         "learning_rate_decay": [0.998] # 0.991
     }
     from sklearn.model_selection import ParameterGrid
