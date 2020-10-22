@@ -105,7 +105,7 @@ def create_batches_with_mentions(batch_size, seq_len, sents, repl, tags, decls_m
     for ind, (s, rr, tt, dec_men)  in enumerate(zip(sents, repl, tags, decls_mentions)):
         blank_s = np.ones((seq_len,), dtype=np.int32) * pad_id
         blank_r = np.ones((seq_len,), dtype=np.int32) * rpad_id
-        blank_t = np.zeros((1,), dtype=np.int32)
+        blank_t = np.zeros((seq_len,), dtype=np.int32)
         blank_cw = np.ones((seq_len,), dtype=np.int32)
         blank_pref = np.ones((seq_len,), dtype=np.int32) * element_hash_size
         blank_suff = np.ones((seq_len,), dtype=np.int32) * element_hash_size
@@ -134,15 +134,15 @@ def create_batches_with_mentions(batch_size, seq_len, sents, repl, tags, decls_m
             blank_mentions[:] = 0
             int_dec = np.array([0 if w == "O" else 1 for w in dec], dtype=np.int32)
             int_men = np.array([0 if w == "O" else 1 for w in men], dtype=np.int32)
-            # int_tags = np.array([tagmap[t] if dec != "O" else 0 for t, dec in zip(tt, dec)], dtype=np.int32)
+            int_tags = np.array([tagmap[t] if dec != "O" else tagmap["O"] for t, dec in zip(tt, dec)], dtype=np.int32)
             # assert sum(int_tags) != 0
-            blank_t[0] = np.array([tagmap[list(filter(lambda x: x != "O", (t if dec != "O" else "O" for t, dec in zip(tt, dec))))[0]]], dtype=np.int32)
+            # blank_t[0] = np.array([tagmap[list(filter(lambda x: x != "O", (t if dec != "O" else "O" for t, dec in zip(tt, dec))))[0]]], dtype=np.int32)
 
 
 
             blank_target[0:min(int_dec.size, seq_len)] = int_dec[0:min(int_dec.size, seq_len)]
             blank_mentions[0:min(int_men.size, seq_len)] = int_men[0:min(int_men.size, seq_len)]
-            # blank_t[0:min(int_sent.size, seq_len)] = int_tags[0:min(int_sent.size, seq_len)]
+            blank_t[0:min(int_sent.size, seq_len)] = int_tags[0:min(int_sent.size, seq_len)]
 
             b_lens.append(len(s) if len(s) < seq_len else seq_len)
             b_sents.append(blank_s)

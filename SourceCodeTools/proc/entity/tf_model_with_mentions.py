@@ -79,23 +79,23 @@ class TextCnn(Model):
         #     #     tf.expand_dims(tf.nn.tanh(tf.reduce_max(tf.concat([temp_cnn_emb, position_features], axis=-1), axis=1)), axis=1))
         #
         # cnn_pool_features = tf.concat(cnn_pool_feat, axis=1)
-        # cnn_pool_features = temp_cnn_emb
-        cnn_pool_features = tf.math.reduce_max(temp_cnn_emb, axis=1)
+        cnn_pool_features = temp_cnn_emb
+        # cnn_pool_features = tf.math.reduce_max(temp_cnn_emb, axis=1)
 
         # token_features = self.dropout_1(
         #     tf.reshape(cnn_pool_features, shape=(-1, self.h_sizes[-1]))
         #     , training=training)
-        # token_features = tf.reshape(cnn_pool_features, shape=(-1, self.h_sizes[-1]))
+        token_features = tf.reshape(cnn_pool_features, shape=(-1, self.h_sizes[-1]))
 
         # local_h2 = self.dropout_2(
         #     self.dense_1(token_features)
         #     , training=training)
-        # local_h2 = self.dense_1(token_features)
-        local_h2 = self.dense_1(cnn_pool_features)
+        local_h2 = self.dense_1(token_features)
+        # local_h2 = self.dense_1(cnn_pool_features)
         tag_logits = self.dense_2(local_h2)
 
-        return tag_logits
-        # return tf.reshape(tag_logits, (-1, self.seq_len, self.num_classes))
+        # return tag_logits
+        return tf.reshape(tag_logits, (-1, self.seq_len, self.num_classes))
 
 
 class TypePredictor(Model):
@@ -211,10 +211,10 @@ def train_step(model, optimizer, token_ids, prefix, suffix, target, mentions, gr
                    class_weights=None, scorer=None, finetune=False):
     with tf.GradientTape() as tape:
         logits = model(token_ids, prefix, suffix, graph_ids, target, mentions, training=True)
-        loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(tf.one_hot(labels, depth=logits.shape[-1]), logits, axis=-1))
-        # loss = model.loss(logits, labels, lengths, class_weights=class_weights)
-        p, r, f1 = scorer(tf.math.argmax(logits, axis=-1).numpy(), labels.reshape(-1,))
-        # p, r, f1 = model.score(logits, labels, lengths, scorer=scorer)
+        # loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(tf.one_hot(labels, depth=logits.shape[-1]), logits, axis=-1))
+        # p, r, f1 = scorer(tf.math.argmax(logits, axis=-1).numpy(), labels.reshape(-1,))
+        loss = model.loss(logits, labels, lengths, class_weights=class_weights)
+        p, r, f1 = model.score(logits, labels, lengths, scorer=scorer)
         gradients = tape.gradient(loss, model.trainable_variables)
         if not finetune:
             # do not update embeddings
@@ -228,11 +228,11 @@ def train_step(model, optimizer, token_ids, prefix, suffix, target, mentions, gr
 # @tf.function
 def test_step(model, token_ids, prefix, suffix, graph_ids, target, mentions, labels, lengths, class_weights=None, scorer=None):
     logits = model(token_ids, prefix, suffix, graph_ids, target, mentions, training=False)
-    loss = tf.reduce_mean(
-        tf.nn.softmax_cross_entropy_with_logits(tf.one_hot(labels, depth=logits.shape[-1]), logits, axis=-1))
-    p, r, f1 = scorer(tf.math.argmax(logits, axis=-1).numpy(), labels.reshape(-1, ))
-    # loss = model.loss(logits, labels, lengths, class_weights=class_weights)
-    # p, r, f1 = model.score(logits, labels, lengths, scorer=scorer)
+    # loss = tf.reduce_mean(
+    #     tf.nn.softmax_cross_entropy_with_logits(tf.one_hot(labels, depth=logits.shape[-1]), logits, axis=-1))
+    # p, r, f1 = scorer(tf.math.argmax(logits, axis=-1).numpy(), labels.reshape(-1, ))
+    loss = model.loss(logits, labels, lengths, class_weights=class_weights)
+    p, r, f1 = model.score(logits, labels, lengths, scorer=scorer)
 
     return loss, p, r, f1
 
