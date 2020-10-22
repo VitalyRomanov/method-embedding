@@ -79,27 +79,31 @@ class TextCnn(Model):
         #     #     tf.expand_dims(tf.nn.tanh(tf.reduce_max(tf.concat([temp_cnn_emb, position_features], axis=-1), axis=1)), axis=1))
         #
         # cnn_pool_features = tf.concat(cnn_pool_feat, axis=1)
-        cnn_pool_features = temp_cnn_emb
+        # cnn_pool_features = temp_cnn_emb
+        cnn_pool_features = tf.math.reduce_max(temp_cnn_emb, axis=1)
 
         # token_features = self.dropout_1(
         #     tf.reshape(cnn_pool_features, shape=(-1, self.h_sizes[-1]))
         #     , training=training)
-        token_features = tf.reshape(cnn_pool_features, shape=(-1, self.h_sizes[-1]))
+        # token_features = tf.reshape(cnn_pool_features, shape=(-1, self.h_sizes[-1]))
 
         # local_h2 = self.dropout_2(
         #     self.dense_1(token_features)
         #     , training=training)
-        local_h2 = self.dense_1(token_features)
+        # local_h2 = self.dense_1(token_features)
+        local_h2 = self.dense_1(cnn_pool_features)
         tag_logits = self.dense_2(local_h2)
 
-        return tf.reshape(tag_logits, (-1, self.seq_len, self.num_classes))
+        return tag_logits
+        # return tf.reshape(tag_logits, (-1, self.seq_len, self.num_classes))
 
 
 class TypePredictor(Model):
     def __init__(self, tok_embedder, graph_embedder, train_embeddings=False,
                  h_sizes=[500], dense_size=100, num_classes=None,
                  seq_len=100, pos_emb_size=30, cnn_win_size=3,
-                 crf_transitions=None, suffix_prefix_dims=50, suffix_prefix_buckets=1000):
+                 crf_transitions=None, suffix_prefix_dims=50, suffix_prefix_buckets=1000,
+                 target_emb_dim=15, mention_emb_dim=15):
         super(TypePredictor, self).__init__()
         assert num_classes is not None, "set num_classes"
 
@@ -111,6 +115,8 @@ class TypePredictor(Model):
             self.graph_emb = DefaultEmbedding(init_vectors=graph_embedder.e, trainable=train_embeddings)
         self.prefix_emb = DefaultEmbedding(shape=(suffix_prefix_buckets, suffix_prefix_dims))
         self.suffix_emb = DefaultEmbedding(shape=(suffix_prefix_buckets, suffix_prefix_dims))
+        self.target_emb = Embedding(2, target_emb_dim)
+        self.mention_emb = Embedding(2, mention_emb_dim)
 
         # self.tok_emb = Embedding(input_dim=tok_embedder.e.shape[0],
         #                          output_dim=tok_embedder.e.shape[1],
@@ -123,7 +129,7 @@ class TypePredictor(Model):
         #                          mask_zero=True)
 
         #
-        input_dim = tok_embedder.e.shape[1] + suffix_prefix_dims * 2 + graph_embedder.e.shape[1]
+        input_dim = tok_embedder.e.shape[1] + suffix_prefix_dims * 2 + graph_embedder.e.shape[1] + target_emb_dim + mention_emb_dim
 
         self.text_cnn = TextCnn(input_size=input_dim, h_sizes=h_sizes,
                                 seq_len=seq_len, pos_emb_size=pos_emb_size,
@@ -143,17 +149,22 @@ class TypePredictor(Model):
     #     return mask
 
 
-    def __call__(self, token_ids, prefix_ids, suffix_ids, graph_ids, training=True):
+    def __call__(self, token_ids, prefix_ids, suffix_ids, graph_ids, target, mentions, training=True):
 
         tok_emb = self.tok_emb(token_ids)
         graph_emb = self.graph_emb(graph_ids)
         prefix_emb = self.prefix_emb(prefix_ids)
         suffix_emb = self.suffix_emb(suffix_ids)
+        target_emb = self.target_emb(target)
+        mention_emb = self.mention_emb(mentions)
+
 
         embs = tf.concat([tok_emb,
                           graph_emb,
                           prefix_emb,
-                          suffix_emb], axis=-1)
+                          suffix_emb,
+                          target_emb,
+                          mention_emb], axis=-1)
 
         logits = self.text_cnn(embs, training=training)
 
@@ -196,12 +207,14 @@ def estimate_crf_transitions(batches, n_tags):
 
 # @tf.function
 # def train_step(epoch_frac, model, optimizer, token_ids, prefix, suffix, graph_ids, labels, lengths, class_weights=None, scorer=None):
-def train_step(model, optimizer, token_ids, prefix, suffix, graph_ids, labels, lengths,
+def train_step(model, optimizer, token_ids, prefix, suffix, target, mentions, graph_ids, labels, lengths,
                    class_weights=None, scorer=None, finetune=False):
     with tf.GradientTape() as tape:
-        logits = model(token_ids, prefix, suffix, graph_ids, training=True)
-        loss = model.loss(logits, labels, lengths, class_weights=class_weights)
-        p, r, f1 = model.score(logits, labels, lengths, scorer=scorer)
+        logits = model(token_ids, prefix, suffix, graph_ids, target, mentions, training=True)
+        loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(tf.one_hot(labels, depth=logits.shape[-1]), logits, axis=-1))
+        # loss = model.loss(logits, labels, lengths, class_weights=class_weights)
+        p, r, f1 = scorer(tf.math.argmax(logits, axis=-1).numpy(), labels.reshape(-1,))
+        # p, r, f1 = model.score(logits, labels, lengths, scorer=scorer)
         gradients = tape.gradient(loss, model.trainable_variables)
         if not finetune:
             # do not update embeddings
@@ -213,10 +226,13 @@ def train_step(model, optimizer, token_ids, prefix, suffix, graph_ids, labels, l
 
 
 # @tf.function
-def test_step(model, token_ids, prefix, suffix, graph_ids, labels, lengths, class_weights=None, scorer=None):
-    logits = model(token_ids, prefix, suffix, graph_ids, training=False)
-    loss = model.loss(logits, labels, lengths, class_weights=class_weights)
-    p, r, f1 = model.score(logits, labels, lengths, scorer=scorer)
+def test_step(model, token_ids, prefix, suffix, graph_ids, target, mentions, labels, lengths, class_weights=None, scorer=None):
+    logits = model(token_ids, prefix, suffix, graph_ids, target, mentions, training=False)
+    loss = tf.reduce_mean(
+        tf.nn.softmax_cross_entropy_with_logits(tf.one_hot(labels, depth=logits.shape[-1]), logits, axis=-1))
+    p, r, f1 = scorer(tf.math.argmax(logits, axis=-1).numpy(), labels.reshape(-1, ))
+    # loss = model.loss(logits, labels, lengths, class_weights=class_weights)
+    # p, r, f1 = model.score(logits, labels, lengths, scorer=scorer)
 
     return loss, p, r, f1
 
@@ -259,12 +275,14 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
             for ind, batch in enumerate(test_batches):
                 # token_ids, graph_ids, labels, class_weights, lengths = b
                 test_loss, test_p, test_r, test_f1 = test_step(model=model, token_ids=batch['tok_ids'],
-                                            prefix=batch['prefix'], suffix=batch['suffix'],
-                                            graph_ids=batch['graph_ids'],
-                                            labels=batch['tags'],
-                                            lengths=batch['lens'],
-                                            # class_weights=batch['class_weights'],
-                                            scorer=scorer)
+                                                               prefix=batch['prefix'], suffix=batch['suffix'],
+                                                               graph_ids=batch['graph_ids'],
+                                                               labels=batch['tags'],
+                                                               lengths=batch['lens'],
+                                                               target=batch['target'],
+                                                               mentions=batch['mentions'],
+                                                               # class_weights=batch['class_weights'],
+                                                               scorer=scorer)
 
             print(f"Epoch: {e}, Train Loss: {sum(losses) / len(losses)}, Train P: {sum(ps) / len(ps)}, Train R: {sum(rs) / len(rs)}, Train F1: {sum(f1s) / len(f1s)}, "
                   f"Test loss: {test_loss}, Test P: {test_p}, Test R: {test_r}, Test F1: {test_f1}")
