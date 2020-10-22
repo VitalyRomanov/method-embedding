@@ -117,6 +117,8 @@ class TextCnn(Model):
         if dense_activation is None:
             dense_activation = activation
 
+        self.attention = tfa.layers.MultiHeadAttention(head_size=200, num_heads=1)
+
         self.dense_1 = Dense(dense_size, activation=dense_activation)
         self.dropout_1 = tf.keras.layers.Dropout(rate=drop_rate)
         self.dense_2 = Dense(num_classes, activation=None) # logits
@@ -145,6 +147,8 @@ class TextCnn(Model):
         #
         # cnn_pool_features = tf.concat(cnn_pool_feat, axis=1)
         cnn_pool_features = temp_cnn_emb
+
+        cnn_pool_features = self.attention([cnn_pool_features, cnn_pool_features])
 
         # token_features = self.dropout_1(
         #     tf.reshape(cnn_pool_features, shape=(-1, self.h_sizes[-1]))
