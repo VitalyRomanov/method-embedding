@@ -185,7 +185,7 @@ from SourceCodeTools.proc.entity.type_prediction import scorer
 
 def main_tf_hyper_search(TRAIN_DATA, TEST_DATA,
             tokenizer_path=None, graph_emb_path=None, word_emb_path=None,
-            output_dir=None, n_iter=30, max_len=100,
+            output_dir=None, n_iter=30, max_len=500,
             suffix_prefix_dims=50, suffix_prefix_buckets=1000,
             learning_rate=0.01, learning_rate_decay=1.0, batch_size=32, finetune=False):
 
@@ -205,37 +205,37 @@ def main_tf_hyper_search(TRAIN_DATA, TEST_DATA,
 
     params = {
         "params": [
-        #     {
-        #     "h_sizes": [20, 20, 20],
-        #     "dense_size": 20,
-        #     "pos_emb_size": 20,
-        #     "cnn_win_size": 3,
-        #     "suffix_prefix_dims": 20,
-        #     "suffix_prefix_buckets": 1000,
-        # },
             {
-            "h_sizes": [40, 40, 40],
-            "dense_size": 30,
-            "pos_emb_size": 30,
-            "cnn_win_size": 5,
-            "suffix_prefix_dims": 50,
-            "suffix_prefix_buckets": 2000,
-        },
-        #     {
-        #     "h_sizes": [80, 80, 80],
-        #     "dense_size": 40,
-        #     "pos_emb_size": 50,
-        #     "cnn_win_size": 7,
-        #     "suffix_prefix_dims": 70,
-        #     "suffix_prefix_buckets": 3000,
-        # }
+                "h_sizes": [20, 20, 20],
+                "dense_size": 20,
+                "pos_emb_size": 20,
+                "cnn_win_size": 3,
+                "suffix_prefix_dims": 20,
+                "suffix_prefix_buckets": 1000,
+                "target_emb_dim": 5,
+                "mention_emb_dim": 5
+            },
+            {
+                "h_sizes": [40, 40, 40],
+                "dense_size": 30,
+                "pos_emb_size": 30,
+                "cnn_win_size": 5,
+                "suffix_prefix_dims": 50,
+                "suffix_prefix_buckets": 2000,
+                "target_emb_dim": 15,
+                "mention_emb_dim": 15
+            },
+            {
+                "h_sizes": [80, 80, 80],
+                "dense_size": 40,
+                "pos_emb_size": 50,
+                "cnn_win_size": 7,
+                "suffix_prefix_dims": 70,
+                "suffix_prefix_buckets": 3000,
+                "target_emb_dim": 25,
+                "mention_emb_dim": 25,
+            }
         ],
-        # "h_sizes": [[40, 40, 40], [20, 20, 20], [80, 80, 80]],
-        # "dense_size": [20, 30, 40],
-        # "pos_emb_size": [20, 30, 50],
-        # "cnn_win_size": [3, 5, 7],
-        # "suffix_prefix_dims": [20, 50, 70],
-        # "suffix_prefix_buckets": [1000, 2000],
         "learning_rate": [0.0001,],
         "learning_rate_decay": [0.998] # 0.991
     }
@@ -259,7 +259,7 @@ def main_tf_hyper_search(TRAIN_DATA, TEST_DATA,
             os.mkdir(trial_dir)
 
             model = TypePredictor(word_emb, graph_emb, train_embeddings=finetune,
-                                  num_classes=len(t_map), seq_len=max_len,**params)
+                                  num_classes=len(t_map), seq_len=max_len, **params)
 
             train_losses, train_f1, test_losses, test_f1 = train(model=model, train_batches=batches, test_batches=test_batch, epochs=n_iter, learning_rate=lr,
                   scorer=lambda pred, true: scorer(pred, true, inv_t_map), learning_rate_decay=lr_decay)
