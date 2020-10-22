@@ -184,6 +184,67 @@ def prepare_data(sents, model_path):
     return sents_w, sents_t, sents_r
 
 
+def prepare_data_with_mentions(sents, model):
+    sents_w = []
+    sents_t = []
+    sents_r = []
+    unlabeled_decls = []
+
+    nlp = inject_tokenizer(spacy.blank("en"))
+
+    def try_int(val):
+        try:
+            return int(val)
+        except:
+            return val
+
+    for s in sents:
+        doc = nlp(s[0])
+        ents = s[1]['entities']
+        repl = s[1]['replacements']
+        decls = get_declarations(s[0])
+
+        unlabeled_dec = prepare_mask(ents, decls)
+
+        tokens = [t.text for t in doc]
+        ents_tags = biluo_tags_from_offsets(doc, ents)
+        repl_tags = biluo_tags_from_offsets(doc, repl)
+        unlabeled_dec = biluo_tags_from_offsets(doc, unlabeled_dec)
+
+        assert len(tokens) == len(ents_tags) == len(repl_tags) == len(unlabeled_dec)
+
+        while "-" in ents_tags:
+            ents_tags[ents_tags.index("-")] = "O"
+
+        while "-" in repl_tags:
+            repl_tags[repl_tags.index("-")] = "O"
+
+        while "-" in unlabeled_dec:
+            unlabeled_dec[unlabeled_dec.index("-")] = "O"
+
+        # decls = declarations_to_tags(doc, decls)
+
+        repl_tags = [try_int(t.split("-")[-1]) for t in repl_tags]
+
+        sents_w.append(tokens)
+        sents_t.append(ents_tags)
+        sents_r.append(repl_tags)
+        unlabeled_decls.append(unlabeled_dec)
+
+    return sents_w, sents_t, sents_r, unlabeled_decls
+
+
+def prepare_mask(entities, declarations):
+    for_mask = []
+    for decl in declarations:
+        for e in entities:
+            if overlap(decl, e):
+                break
+        else:
+            for_mask.append(decl)
+    return for_mask
+
+
 def filter_declarations(entities, declarations):
     valid = {}
 
@@ -316,6 +377,82 @@ def create_batches(batch_size, seq_len, sents, repl, tags, graphmap, wordmap, ta
     return batch
 
 
+def create_batches_with_mask(batch_size, seq_len, sents, repl, tags, unlabeled_decls, graphmap, wordmap, tagmap, class_weights, element_hash_size=1000):
+    pad_id = len(wordmap)
+    rpad_id = len(graphmap)
+    n_sents = len(sents)
+
+    b_sents = []
+    b_repls = []
+    b_tags = []
+    b_cw = []
+    b_lens = []
+    b_pref = []
+    b_suff = []
+    b_hide_mask = []
+
+
+    for ind, (s, rr, tt, un)  in enumerate(zip(sents, repl, tags, unlabeled_decls)):
+        blank_s = np.ones((seq_len,), dtype=np.int32) * pad_id
+        blank_r = np.ones((seq_len,), dtype=np.int32) * rpad_id
+        blank_t = np.zeros((seq_len,), dtype=np.int32)
+        blank_cw = np.ones((seq_len,), dtype=np.int32)
+        blank_pref = np.ones((seq_len,), dtype=np.int32) * element_hash_size
+        blank_suff = np.ones((seq_len,), dtype=np.int32) * element_hash_size
+        blank_hide_mask = np.ones((seq_len,), dtype=np.int32)
+
+
+        int_sent = np.array([wordmap.get(w, pad_id) for w in s], dtype=np.int32)
+        int_repl = np.array([graphmap.get(r, rpad_id) for r in rr], dtype=np.int32)
+        int_tags = np.array([tagmap.get(t, 0) for t in tt], dtype=np.int32)
+        int_cw = np.array([class_weights.get(t, 1.0) for t in tt], dtype=np.int32)
+        int_pref = np.array([el_hash(w[:3], element_hash_size-1) for w in s], dtype=np.int32)
+        int_suff = np.array([el_hash(w[-3:], element_hash_size-1) for w in s], dtype=np.int32)
+        int_hide_mask = np.array([1 if t == "O" else 0 for t in un], dtype=np.int32)
+
+
+        blank_s[0:min(int_sent.size, seq_len)] = int_sent[0:min(int_sent.size, seq_len)]
+        blank_r[0:min(int_sent.size, seq_len)] = int_repl[0:min(int_sent.size, seq_len)]
+        blank_t[0:min(int_sent.size, seq_len)] = int_tags[0:min(int_sent.size, seq_len)]
+        blank_cw[0:min(int_sent.size, seq_len)] = int_cw[0:min(int_sent.size, seq_len)]
+        blank_pref[0:min(int_sent.size, seq_len)] = int_pref[0:min(int_sent.size, seq_len)]
+        blank_suff[0:min(int_sent.size, seq_len)] = int_suff[0:min(int_sent.size, seq_len)]
+        blank_hide_mask[0:min(int_sent.size, seq_len)] = int_hide_mask[0:min(int_sent.size, seq_len)]
+
+        # print(int_sent[0:min(int_sent.size, seq_len)].shape)
+
+        b_lens.append(len(s) if len(s) < seq_len else seq_len)
+        b_sents.append(blank_s)
+        b_repls.append(blank_r)
+        b_tags.append(blank_t)
+        b_cw.append(blank_cw)
+        b_pref.append(blank_pref)
+        b_suff.append(blank_suff)
+        b_hide_mask.append(blank_hide_mask)
+
+    lens = np.array(b_lens, dtype=np.int32)
+    sentences = np.stack(b_sents)
+    replacements = np.stack(b_repls)
+    pos_tags = np.stack(b_tags)
+    cw = np.stack(b_cw)
+    prefixes = np.stack(b_pref)
+    suffixes = np.stack(b_suff)
+    hide_mask = np.stack(b_hide_mask)
+
+    batch = []
+    for i in range(n_sents // batch_size):
+        batch.append({"tok_ids": sentences[i * batch_size: i * batch_size + batch_size, :],
+                      "graph_ids": replacements[i * batch_size: i * batch_size + batch_size, :],
+                      "prefix": prefixes[i * batch_size: i * batch_size + batch_size, :],
+                      "suffix": suffixes[i * batch_size: i * batch_size + batch_size, :],
+                      "tags": pos_tags[i * batch_size: i * batch_size + batch_size, :],
+                      "class_weights": cw[i * batch_size: i * batch_size + batch_size, :],
+                      "hide_mask": hide_mask[i * batch_size: i * batch_size + batch_size, :],
+                      "lens": lens[i * batch_size: i * batch_size + batch_size]})
+
+    return batch
+
+
 def parse_biluo(biluo):
     spans = []
 
@@ -387,8 +524,8 @@ def main_tf_hyper_search(TRAIN_DATA, TEST_DATA,
             suffix_prefix_dims=50, suffix_prefix_buckets=1000,
             learning_rate=0.01, learning_rate_decay=1.0, batch_size=32, finetune=False):
 
-    train_s, train_e, train_r = prepare_data(TRAIN_DATA, tokenizer_path)
-    test_s, test_e, test_r = prepare_data(TEST_DATA, tokenizer_path)
+    train_s, train_e, train_r, train_unlabeled_decls = prepare_data_with_mentions(TRAIN_DATA, tokenizer_path)
+    test_s, test_e, test_r, test_unlabeled_decls = prepare_data_with_mentions(TEST_DATA, tokenizer_path)
 
     cw = ClassWeightNormalizer()
     cw.init(train_e)
@@ -398,8 +535,10 @@ def main_tf_hyper_search(TRAIN_DATA, TEST_DATA,
     graph_emb = load_pkl_emb(graph_emb_path)
     word_emb = load_pkl_emb(word_emb_path)
 
-    batches = create_batches(batch_size, max_len, train_s, train_r, train_e, graph_emb.ind, word_emb.ind, t_map, cw, element_hash_size=suffix_prefix_buckets)
-    test_batch = create_batches(len(test_s), max_len, test_s, test_r, test_e, graph_emb.ind, word_emb.ind, t_map, cw, element_hash_size=suffix_prefix_buckets)
+    batches = create_batches_with_mask(batch_size, max_len, train_s, train_r, train_e, train_unlabeled_decls, graph_emb.ind,
+                                       word_emb.ind, t_map, cw, element_hash_size=suffix_prefix_buckets)
+    test_batch = create_batches_with_mask(len(test_s), max_len, test_s, test_r, test_e, test_unlabeled_decls, graph_emb.ind,
+                                          word_emb.ind, t_map, cw, element_hash_size=suffix_prefix_buckets)
 
     params = {
         "params": [

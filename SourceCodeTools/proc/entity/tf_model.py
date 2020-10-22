@@ -235,12 +235,15 @@ class TypePredictor(Model):
         return logits
 
 
-    def loss(self, logits, labels, lengths, class_weights=None):
+    def loss(self, logits, labels, lengths, class_weights=None, extra_mask=None):
         losses = tf.nn.softmax_cross_entropy_with_logits(tf.one_hot(labels, depth=logits.shape[-1]), logits, axis=-1)
+        seq_mask = tf.sequence_mask(lengths, self.seq_len)
+        if extra_mask is not None:
+            seq_mask = tf.math.logical_and(seq_mask, extra_mask)
         if class_weights is None:
-            loss = tf.reduce_mean(tf.boolean_mask(losses, tf.sequence_mask(lengths, self.seq_len)))
+            loss = tf.reduce_mean(tf.boolean_mask(losses, seq_mask))
         else:
-            loss = tf.reduce_mean(tf.boolean_mask(losses * class_weights, tf.sequence_mask(lengths, self.seq_len)))
+            loss = tf.reduce_mean(tf.boolean_mask(losses * class_weights, seq_mask))
 
         # log_likelihood, transition_params = tfa.text.crf_log_likelihood(logits, labels, lengths, transition_params=self.crf_transition_params)
         # # log_likelihood, transition_params = tfa.text.crf_log_likelihood(logits, labels, lengths)
@@ -250,8 +253,10 @@ class TypePredictor(Model):
 
         return loss
 
-    def score(self, logits, labels, lengths, scorer=None):
+    def score(self, logits, labels, lengths, scorer=None, extra_mask=None):
         mask = tf.sequence_mask(lengths, self.seq_len)
+        if extra_mask is not None:
+            mask = tf.math.logical_and(mask, extra_mask)
         true_labels = tf.boolean_mask(labels, mask)
         argmax = tf.math.argmax(logits, axis=-1)
         estimated_labels = tf.cast(tf.boolean_mask(argmax, mask), tf.int32)
@@ -292,11 +297,11 @@ def train_step(epoch_frac, model, optimizer, token_ids, prefix, suffix, graph_id
 
 
 def train_step_finetune(model, optimizer, token_ids, prefix, suffix, graph_ids, labels, lengths,
-                   class_weights=None, scorer=None, finetune=False):
+                   extra_mask=None, class_weights=None, scorer=None, finetune=False):
     with tf.GradientTape() as tape:
         logits = model(token_ids, prefix, suffix, graph_ids, training=True)
-        loss = model.loss(logits, labels, lengths, class_weights=class_weights)
-        p, r, f1 = model.score(logits, labels, lengths, scorer=scorer)
+        loss = model.loss(logits, labels, lengths, class_weights=class_weights, extra_mask=extra_mask)
+        p, r, f1 = model.score(logits, labels, lengths, scorer=scorer, extra_mask=extra_mask)
         gradients = tape.gradient(loss, model.trainable_variables)
         if not finetune:
             # do not update embeddings
@@ -307,10 +312,10 @@ def train_step_finetune(model, optimizer, token_ids, prefix, suffix, graph_ids, 
     return loss, p, r, f1
 
 # @tf.function
-def test_step(model, token_ids, prefix, suffix, graph_ids, labels, lengths, class_weights=None, scorer=None):
+def test_step(model, token_ids, prefix, suffix, graph_ids, labels, lengths, extra_mask=None, class_weights=None, scorer=None):
     logits = model(token_ids, prefix, suffix, graph_ids, training=False)
-    loss = model.loss(logits, labels, lengths, class_weights=class_weights)
-    p, r, f1 = model.score(logits, labels, lengths, scorer=scorer)
+    loss = model.loss(logits, labels, lengths, class_weights=class_weights, extra_mask=extra_mask)
+    p, r, f1 = model.score(logits, labels, lengths, scorer=scorer, extra_mask=extra_mask)
 
     return loss, p, r, f1
 
@@ -340,6 +345,7 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
                                             graph_ids=batch['graph_ids'],
                                             labels=batch['tags'],
                                             lengths=batch['lens'],
+                                            extra_mask=batch['hide_mask'],
                                             # class_weights=batch['class_weights'],
                                             scorer=scorer,
                                             finetune=finetune and e/epochs > 0.6)
@@ -355,6 +361,7 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
                                             graph_ids=batch['graph_ids'],
                                             labels=batch['tags'],
                                             lengths=batch['lens'],
+                                            extra_mask=batch['hide_mask'],
                                             # class_weights=batch['class_weights'],
                                             scorer=scorer)
 
