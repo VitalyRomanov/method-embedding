@@ -227,8 +227,6 @@ class RGCN(nn.Module):
                  dropout=0,
                  use_self_loop=False,
                  activation=F.relu):
-        # TODO
-        # 1. Parameter activation is not used
         super(RGCN, self).__init__()
         out_dim = num_classes
         self.g = g
