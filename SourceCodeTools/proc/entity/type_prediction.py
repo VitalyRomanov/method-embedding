@@ -635,8 +635,8 @@ def main_tf(TRAIN_DATA, TEST_DATA,
             suffix_prefix_dims=50, suffix_prefix_buckets=1000,
             learning_rate=0.01, learning_rate_decay=1.0, batch_size=32, finetune=False):
 
-    train_s, train_e, train_r = prepare_data(TRAIN_DATA, tokenizer_path)
-    test_s, test_e, test_r = prepare_data(TEST_DATA, tokenizer_path)
+    train_s, train_e, train_r, train_unlabeled_decls = prepare_data_with_mentions(TRAIN_DATA, tokenizer_path)
+    test_s, test_e, test_r, test_unlabeled_decls = prepare_data_with_mentions(TEST_DATA, tokenizer_path)
 
     cw = ClassWeightNormalizer()
     cw.init(train_e)
@@ -646,8 +646,8 @@ def main_tf(TRAIN_DATA, TEST_DATA,
     graph_emb = load_pkl_emb(graph_emb_path)
     word_emb = load_pkl_emb(word_emb_path)
 
-    batches = create_batches(batch_size, max_len, train_s, train_r, train_e, graph_emb.ind, word_emb.ind, t_map, cw, element_hash_size=suffix_prefix_buckets)
-    test_batch = create_batches(len(test_s), max_len, test_s, test_r, test_e, graph_emb.ind, word_emb.ind, t_map, cw, element_hash_size=suffix_prefix_buckets)
+    batches = create_batches_with_mask(batch_size, max_len, train_s, train_r, train_e, train_unlabeled_decls, graph_emb.ind, word_emb.ind, t_map, cw, element_hash_size=suffix_prefix_buckets)
+    test_batch = create_batches_with_mask(len(test_s), max_len, test_s, test_r, test_e, test_unlabeled_decls, graph_emb.ind, word_emb.ind, t_map, cw, element_hash_size=suffix_prefix_buckets)
 
     model = TypePredictor(word_emb, graph_emb, train_embeddings=finetune,
                  h_sizes=[40, 40, 40], dense_size=30, num_classes=len(t_map),
