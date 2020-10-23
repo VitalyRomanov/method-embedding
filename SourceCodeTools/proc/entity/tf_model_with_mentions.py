@@ -41,14 +41,10 @@ class TextCnn(Model):
         kernel_sizes.insert(0, input_size)
         kernel_sizes = [(cnn_win_size, ks) for ks in kernel_sizes]
 
-        # self.layers_tok = [ TextCnnLayer(out_dim=h_size, kernel_shape=kernel_size, activation=activation)
-        #     for h_size, kernel_size in zip(h_sizes, kernel_sizes)]
+        self.layers_tok = [ TextCnnLayer(out_dim=h_size, kernel_shape=kernel_size, activation=activation)
+            for h_size, kernel_size in zip(h_sizes, kernel_sizes)]
 
-        self.layers_tok = [tfa.layers.MultiHeadAttention(head_size=h_size, num_heads=1, output_size=h_size)
-                           for h_size in h_sizes]
-
-        self.layers_pos = [TextCnnLayer(out_dim=h_size, kernel_shape=(cnn_win_size, pos_emb_size), activation=activation)
-                       for h_size, _ in zip(h_sizes, kernel_sizes)]
+        self.attention = tfa.layers.MultiHeadAttention(head_size=h_sizes[-1], num_heads=1)
 
         # self.positional = PositionalEncoding(seq_len=seq_len, pos_emb_size=pos_emb_size)
 
@@ -66,11 +62,8 @@ class TextCnn(Model):
 
         temp_cnn_emb = embs
 
-        # for l in self.layers_tok:
-        #     temp_cnn_emb = l(tf.expand_dims(temp_cnn_emb, axis=3))
-
         for l in self.layers_tok:
-            temp_cnn_emb = l([temp_cnn_emb, temp_cnn_emb])
+            temp_cnn_emb = l(tf.expand_dims(temp_cnn_emb, axis=3))
 
         # pos_cnn = self.positional()
         # for l in self.layers_pos:
@@ -89,6 +82,8 @@ class TextCnn(Model):
         # cnn_pool_features = tf.concat(cnn_pool_feat, axis=1)
         cnn_pool_features = temp_cnn_emb
         # cnn_pool_features = tf.math.reduce_max(temp_cnn_emb, axis=1)
+
+        cnn_pool_features = self.attention([cnn_pool_features, cnn_pool_features])
 
         # token_features = self.dropout_1(
         #     tf.reshape(cnn_pool_features, shape=(-1, self.h_sizes[-1]))
