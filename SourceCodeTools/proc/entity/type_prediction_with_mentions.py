@@ -106,6 +106,7 @@ def create_batches_with_mentions(batch_size, seq_len, sents, repl, tags, decls_m
         blank_s = np.ones((seq_len,), dtype=np.int32) * pad_id
         blank_r = np.ones((seq_len,), dtype=np.int32) * rpad_id
         blank_t = np.zeros((seq_len,), dtype=np.int32)
+        # blank_t = np.zeros((1,), dtype=np.int32)
         blank_cw = np.ones((seq_len,), dtype=np.int32)
         blank_pref = np.ones((seq_len,), dtype=np.int32) * element_hash_size
         blank_suff = np.ones((seq_len,), dtype=np.int32) * element_hash_size
@@ -129,7 +130,7 @@ def create_batches_with_mentions(batch_size, seq_len, sents, repl, tags, decls_m
         blank_suff[0:min(int_sent.size, seq_len)] = int_suff[0:min(int_sent.size, seq_len)]
 
         for dec, men in dec_men:
-            blank_t[:] = 0
+            blank_t[:] = tagmap["O"]
             blank_target[:] = 0
             blank_mentions[:] = 0
             int_dec = np.array([0 if w == "O" else 1 for w in dec], dtype=np.int32)

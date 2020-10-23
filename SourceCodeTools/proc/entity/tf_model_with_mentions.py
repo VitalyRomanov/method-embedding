@@ -41,8 +41,11 @@ class TextCnn(Model):
         kernel_sizes.insert(0, input_size)
         kernel_sizes = [(cnn_win_size, ks) for ks in kernel_sizes]
 
-        self.layers_tok = [ TextCnnLayer(out_dim=h_size, kernel_shape=kernel_size, activation=activation)
-            for h_size, kernel_size in zip(h_sizes, kernel_sizes)]
+        # self.layers_tok = [ TextCnnLayer(out_dim=h_size, kernel_shape=kernel_size, activation=activation)
+        #     for h_size, kernel_size in zip(h_sizes, kernel_sizes)]
+
+        self.layers_tok = [tfa.layers.MultiHeadAttention(head_size=h_size, num_heads=1, output_size=h_size)
+                           for h_size in h_sizes]
 
         self.layers_pos = [TextCnnLayer(out_dim=h_size, kernel_shape=(cnn_win_size, pos_emb_size), activation=activation)
                        for h_size, _ in zip(h_sizes, kernel_sizes)]
@@ -51,6 +54,8 @@ class TextCnn(Model):
 
         if dense_activation is None:
             dense_activation = activation
+
+        self.attention = tfa.layers.MultiHeadAttention(head_size=200, num_heads=1)
 
         self.dense_1 = Dense(dense_size, activation=dense_activation)
         self.dropout_1 = tf.keras.layers.Dropout(rate=drop_rate)
@@ -61,8 +66,11 @@ class TextCnn(Model):
 
         temp_cnn_emb = embs
 
+        # for l in self.layers_tok:
+        #     temp_cnn_emb = l(tf.expand_dims(temp_cnn_emb, axis=3))
+
         for l in self.layers_tok:
-            temp_cnn_emb = l(tf.expand_dims(temp_cnn_emb, axis=3))
+            temp_cnn_emb = l([temp_cnn_emb, temp_cnn_emb])
 
         # pos_cnn = self.positional()
         # for l in self.layers_pos:
