@@ -542,14 +542,14 @@ def main_tf_hyper_search(TRAIN_DATA, TEST_DATA,
 
     params = {
         "params": [
-            {
-                "h_sizes": [10, 10, 10],
-                "dense_size": 10,
-                "pos_emb_size": 10,
-                "cnn_win_size": 5,
-                "suffix_prefix_dims": 10,
-                "suffix_prefix_buckets": 1000,
-            },
+            # {
+            #     "h_sizes": [10, 10, 10],
+            #     "dense_size": 10,
+            #     "pos_emb_size": 10,
+            #     "cnn_win_size": 5,
+            #     "suffix_prefix_dims": 10,
+            #     "suffix_prefix_buckets": 1000,
+            # },
             {
                 "h_sizes": [20, 20, 20],
                 "dense_size": 20,
@@ -581,7 +581,7 @@ def main_tf_hyper_search(TRAIN_DATA, TEST_DATA,
         # "cnn_win_size": [3, 5, 7],
         # "suffix_prefix_dims": [20, 50, 70],
         # "suffix_prefix_buckets": [1000, 2000],
-        "learning_rate": [0.0001,],
+        "learning_rate": [0.0001, 0.001],
         "learning_rate_decay": [0.998] # 0.991
     }
     from sklearn.model_selection import ParameterGrid
