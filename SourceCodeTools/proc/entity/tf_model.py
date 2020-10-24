@@ -131,6 +131,9 @@ class TextCnn(Model):
         for l in self.layers_tok:
             temp_cnn_emb = l(tf.expand_dims(temp_cnn_emb, axis=3))
 
+        # TODO
+        # simplify to one CNN and one attention
+
         # pos_cnn = self.positional()
         # for l in self.layers_pos:
         #     pos_cnn = l(tf.expand_dims(pos_cnn, axis=3))
