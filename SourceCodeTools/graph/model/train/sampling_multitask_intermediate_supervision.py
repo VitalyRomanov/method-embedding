@@ -11,29 +11,10 @@ from SourceCodeTools.graph.model.ElementEmbedder import ElementEmbedder
 from SourceCodeTools.graph.model.LinkPredictor import LinkPredictor
 
 
-def extract_embed(node_embed, input_nodes):
-    """
-    Select node given by input nodes
-
-    Parameters
-    ----------
-    node_embed: all node embeddings
-    input_node: node ids required for output
-
-    Returns
-    -------
-
-    """
-    emb = {}
-    for ntype, nid in input_nodes.items():
-        nid = input_nodes[ntype]
-        emb[ntype] = node_embed[ntype][nid]
-    return emb
+from SourceCodeTools.graph.model.train.sampling_multitask import extract_embed, logits_embedder, logits_nodes, idx_len, get_loaders, get_training_targets
 
 
 def logits_batch(model, input_nodes, blocks, use_types, ntypes):
-    cumm_logits = []
-
     if use_types:
         emb = extract_embed(model.node_embed(), input_nodes)
     else:
@@ -45,117 +26,32 @@ def logits_batch(model, input_nodes, blocks, use_types, ntypes):
         else:
             emb = model.node_embed()[input_nodes]
 
-    logits = model(emb, blocks)
+    layers = model(emb, blocks, return_all=True)
 
-    if use_types:
-        for ntype in ntypes:
+    def merge_logits(logits, use_types):
 
-            logits_ = logits.get(ntype, None)
-            if logits_ is None: continue
+        cumm_logits = []
+
+        if use_types:
+            for ntype in ntypes:
+
+                logits_ = logits.get(ntype, None)
+                if logits_ is None: continue
+
+                cumm_logits.append(logits_)
+        else:
+            if ntypes is not None:
+                # single node type
+                key = next(iter(ntypes))
+                logits_ = logits[key]
+            else:
+                logits_ = logits
 
             cumm_logits.append(logits_)
-    else:
-        if ntypes is not None:
-            # single node type
-            key = next(iter(ntypes))
-            logits_ = logits[key]
-        else:
-            logits_ = logits
 
-        cumm_logits.append(logits_)
+        return torch.cat(cumm_logits)
 
-    return torch.cat(cumm_logits)
-
-
-def logits_embedder(node_embeddings, elem_embeder, link_predictor, seeds, negative_factor=1, device='cpu'):
-    K = negative_factor
-    indices = seeds
-    batch_size = len(seeds)
-
-    node_embeddings_batch = node_embeddings
-    element_embeddings = elem_embeder(elem_embeder[indices.tolist()].to(device))
-
-    positive_batch = torch.cat([node_embeddings_batch, element_embeddings], 1)
-    labels_pos = torch.ones(batch_size, dtype=torch.long)
-
-    node_embeddings_neg_batch = node_embeddings_batch.repeat(K, 1)
-    negative_indices = torch.LongTensor(elem_embeder.sample_negative(batch_size * K)).to(device)
-    negative_random = elem_embeder(negative_indices)
-    negative_batch = torch.cat([node_embeddings_neg_batch, negative_random], 1)
-    labels_neg = torch.zeros(batch_size * K, dtype=torch.long)
-
-    batch = torch.cat([positive_batch, negative_batch], 0)
-    labels = torch.cat([labels_pos, labels_neg], 0).to(device)
-
-    logits = link_predictor(batch)
-
-    return logits, labels
-
-def handle_non_unique(non_unique_ids):
-    id_list = non_unique_ids.tolist()
-    unique_ids = list(set(id_list))
-    new_position = dict(zip(unique_ids, range(len(unique_ids))))
-    slice_map = torch.tensor(list(map(lambda x: new_position[x], id_list)), dtype=torch.long)
-    return torch.tensor(unique_ids, dtype=torch.long), slice_map
-
-def logits_nodes(model, node_embeddings,
-                 elem_embeder, link_predictor, create_dataloader,
-                 src_seeds, use_types, ntypes, negative_factor=1, device='cpu'):
-    K = negative_factor
-    indices = src_seeds
-    batch_size = len(src_seeds)
-
-    node_embeddings_batch = node_embeddings
-    next_call_indices = elem_embeder[indices.tolist()] # this assumes indices is torch tensor
-
-    # dst targets are not unique
-    unique_dst, slice_map = handle_non_unique(next_call_indices)
-    assert all(unique_dst[slice_map] == next_call_indices)
-
-    dataloader = create_dataloader(unique_dst)
-    input_nodes, dst_seeds, blocks = next(iter(dataloader))
-    blocks = [blk.to(device) for blk in blocks]
-    assert dst_seeds.shape == unique_dst.shape
-    assert all(dst_seeds == unique_dst)
-    unique_dst_embeddings = logits_batch(model, input_nodes, blocks, use_types, ntypes)
-    next_call_embeddings = unique_dst_embeddings[slice_map.to(device)]
-    positive_batch = torch.cat([node_embeddings_batch, next_call_embeddings], 1)
-    labels_pos = torch.ones(batch_size, dtype=torch.long)
-
-    node_embeddings_neg_batch = node_embeddings_batch.repeat(K, 1)
-    negative_indices = torch.tensor(elem_embeder.sample_negative(
-        batch_size * K), dtype=torch.long)  # embeddings are sampled from 3/4 unigram distribution
-    unique_negative, slice_map = handle_non_unique(negative_indices)
-    assert all(unique_negative[slice_map] == negative_indices)
-
-    dataloader = create_dataloader(unique_negative)
-    input_nodes, dst_seeds, blocks = next(iter(dataloader))
-    blocks = [blk.to(device) for blk in blocks]
-    assert dst_seeds.shape == unique_negative.shape
-    assert all(dst_seeds == unique_negative)
-    unique_negative_random = logits_batch(model, input_nodes, blocks, use_types, ntypes)
-    negative_random = unique_negative_random[slice_map.to(device)]
-    negative_batch = torch.cat([node_embeddings_neg_batch, negative_random], 1)
-    labels_neg = torch.zeros(batch_size * K, dtype=torch.long)
-
-    batch = torch.cat([positive_batch, negative_batch], 0)
-    labels = torch.cat([labels_pos, labels_neg], 0).to(device)
-
-    logits = link_predictor(batch)
-
-    return logits, labels
-
-
-def labels_batch(seeds, labels, use_types, ntypes):
-    cumm_labels = []
-
-    if use_types:
-        for ntype in ntypes:
-            cumm_labels.append(labels[ntype][seeds[ntype]])
-    else:
-        cumm_labels.append(labels[seeds])
-
-    return torch.cat(cumm_labels)
+    return [merge_logits(l, use_types) for l in layers]
 
 
 def evaluate(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall,
@@ -172,11 +68,29 @@ def evaluate(model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_api
         blocks = [blk.to(device) for blk in blocks]
 
         src_embs = logits_batch(model, input_nodes, blocks, use_types, ntypes)
-        logits_fname, labels_fname = logits_embedder(src_embs, ee_fname, lp_fname, seeds, neg_samplig_factor, device=device)
-        logits_varuse, labels_varuse = logits_embedder(src_embs, ee_varuse, lp_varuse, seeds, neg_samplig_factor, device=device)
-        logits_apicall, labels_apicall = logits_nodes(model, src_embs,
-                                                      ee_apicall, lp_apicall, create_apicall_loader,
-                                                      seeds, use_types, ntypes, neg_samplig_factor, device=device)
+
+        logits_labels_fname = [logits_embedder(logitsfname, ee_fname, lpfname, seeds,
+                                               neg_samplig_factor, device=device)
+                               for logitsfname, lpfname in zip(src_embs, lp_fname)]
+
+        logits_labels_varuse = [logits_embedder(logitsvaruse, ee_varuse, lpvaruse, seeds,
+                                                neg_samplig_factor, device=device)
+                                for logitsvaruse, lpvaruse in zip(src_embs, lp_varuse)]
+
+        logits_labels_apicall = [logits_nodes(model, logitsapicall,
+                                              ee_apicall, lpapicall, create_apicall_loader,
+                                              seeds, use_types, ntypes, neg_samplig_factor,
+                                              device=device)
+                                 for logitsapicall, lpapicall in zip(src_embs, lp_apicall)]
+
+        logits_fname, labels_fname = logits_labels_fname[-1]
+        logits_varuse, labels_varuse = logits_labels_varuse[-1]
+        logits_apicall, labels_apicall = logits_labels_apicall[-1]
+        # logits_fname, labels_fname = logits_embedder(src_embs, ee_fname, lp_fname, seeds, neg_samplig_factor, device=device)
+        # logits_varuse, labels_varuse = logits_embedder(src_embs, ee_varuse, lp_varuse, seeds, neg_samplig_factor, device=device)
+        # logits_apicall, labels_apicall = logits_nodes(model, src_embs,
+        #                                               ee_apicall, lp_apicall, create_apicall_loader,
+        #                                               seeds, use_types, ntypes, neg_samplig_factor, device=device)
 
         acc_fname = torch.sum(logits_fname.argmax(dim=1) == labels_fname).item() / len(labels_fname)
         acc_varuse = torch.sum(logits_varuse.argmax(dim=1) == labels_varuse).item() / len(labels_varuse)
@@ -208,7 +122,12 @@ def evaluate_embedder(model, ee, lp, loader,
         blocks = [blk.to(device) for blk in blocks]
 
         src_embs = logits_batch(model, input_nodes, blocks, use_types, ntypes)
-        logits, labels = logits_embedder(src_embs, ee, lp, seeds, neg_samplig_factor, device=device)
+        # logits, labels = logits_embedder(src_embs, ee, lp, seeds, neg_samplig_factor, device=device)
+        logits_labels = [logits_embedder(logits_, ee, lp_, seeds,
+                                               neg_samplig_factor, device=device)
+                               for logits_, lp_ in zip(src_embs, lp)]
+
+        logits, labels = logits_labels[-1]
 
         logp = nn.functional.log_softmax(logits, 1)
         loss = nn.functional.cross_entropy(logp, labels)
@@ -232,9 +151,16 @@ def evaluate_nodes(model, ee, lp,
         blocks = [blk.to(device) for blk in blocks]
 
         src_embs = logits_batch(model, input_nodes, blocks, use_types, ntypes)
-        logits, labels = logits_nodes(model, src_embs,
-                                          ee, lp, create_apicall_loader,
-                                          seeds, use_types, ntypes, neg_samplig_factor, device=device)
+        # logits, labels = logits_nodes(model, src_embs,
+        #                                   ee, lp, create_apicall_loader,
+        #                                   seeds, use_types, ntypes, neg_samplig_factor, device=device)
+        logits_labels = [logits_nodes(model, logits_,
+                                              ee, lp_, create_apicall_loader,
+                                              seeds, use_types, ntypes, neg_samplig_factor,
+                                              device=device)
+                                 for logits_, lp_ in zip(src_embs, lp)]
+
+        logits, labels = logits_labels[-1]
 
         logp = nn.functional.log_softmax(logits, 1)
         loss = nn.functional.cross_entropy(logp, labels)
@@ -335,56 +261,21 @@ def final_evaluation(g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_var
     return scores
 
 
-def get_training_targets(g):
-    if hasattr(g, 'ntypes'):
-        ntypes = g.ntypes
-        labels = {ntype: g.nodes[ntype].data['labels'] for ntype in g.ntypes}
-        use_types = True
-        if len(g.ntypes) == 1:
-            key = next(iter(labels.keys()))
-            labels = labels[key]
-            use_types = False
-        train_idx = {ntype: torch.nonzero(g.nodes[ntype].data['train_mask']).squeeze() for ntype in g.ntypes}
-        test_idx = {ntype: torch.nonzero(g.nodes[ntype].data['test_mask']).squeeze() for ntype in g.ntypes}
-        val_idx = {ntype: torch.nonzero(g.nodes[ntype].data['val_mask']).squeeze() for ntype in g.ntypes}
-    else:
-        ntypes = None
-        labels = g.ndata['labels']
-        train_idx = g.ndata['train_mask']
-        test_idx = g.ndata['test_mask']
-        val_idx = g.ndata['val_mask']
-        use_types = False
+def get_seed_nodes(layers, blocks, seeds):
 
-    return train_idx, test_idx, val_idx, labels, use_types, ntypes
+    seed_layers = []
 
+    for layer, block in zip(layers, blocks):
+        ids = block.dstdata["_ID"]
+        ids_ = ids.tolist()
+        seeds_ = seeds.tolist()
+        locations = torch.LongTensor([ids_.index(seed) for seed in seeds_])
+        # TODO
+        # assert -1 not in locations
+        seed_layers.append(layer[locations])
 
-def get_loaders(g, train_idx, test_idx, val_idx, num_per_neigh, layers, batch_size):
-    # train sampler
-    sampler = dgl.dataloading.MultiLayerNeighborSampler([num_per_neigh] * layers)
-    loader = dgl.dataloading.NodeDataLoader(
-        g, train_idx, sampler, batch_size=batch_size, shuffle=False, num_workers=0)
+    return seed_layers
 
-    # validation sampler
-    # we do not use full neighbor to save computation resources
-    val_sampler = dgl.dataloading.MultiLayerNeighborSampler([num_per_neigh] * layers)
-    val_loader = dgl.dataloading.NodeDataLoader(
-        g, val_idx, val_sampler, batch_size=batch_size, shuffle=False, num_workers=0)
-
-    # we do not use full neighbor to save computation resources
-    test_sampler = dgl.dataloading.MultiLayerNeighborSampler([num_per_neigh] * layers)
-    test_loader = dgl.dataloading.NodeDataLoader(
-        g, test_idx, test_sampler, batch_size=batch_size, shuffle=False, num_workers=0)
-
-    return loader, test_loader, val_loader
-
-def idx_len(idx):
-    if isinstance(idx, dict):
-        length = 0
-        for key in idx:
-            length += len(idx[key])
-    else:
-        length = len(idx)
-    return length
 
 def train(MODEL_BASE, g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, epochs, device, lr, ref_batch_size):
     """
@@ -397,16 +288,28 @@ def train(MODEL_BASE, g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_va
     """
 
     # optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    adam_params = [
+        {'params': model.parameters()},
+        {'params': ee_fname.parameters()},
+        {'params': ee_varuse.parameters()},
+        {'params': ee_apicall.parameters()},
+    ]
+    adam_params.extend({'params': lp.parameters()} for lp in lp_fname)
+    adam_params.extend({'params': lp.parameters()} for lp in lp_varuse)
+    adam_params.extend({'params': lp.parameters()} for lp in lp_apicall)
+
     optimizer = torch.optim.Adam(
-        [
-            {'params': model.parameters()},
-            {'params': ee_fname.parameters()},
-            {'params': ee_varuse.parameters()},
-            {'params': ee_apicall.parameters()},
-            {'params': lp_fname.parameters()},
-            {'params': lp_varuse.parameters()},
-            {'params': lp_apicall.parameters()},
-        ], lr=lr
+        # [
+        #     {'params': model.parameters()},
+        #     {'params': ee_fname.parameters()},
+        #     {'params': ee_varuse.parameters()},
+        #     {'params': ee_apicall.parameters()},
+        #     {'params': lp_fname.parameters()},
+        #     {'params': lp_varuse.parameters()},
+        #     {'params': lp_apicall.parameters()},
+        # ],
+        adam_params,
+        lr=lr
     )
 
     lr_scheduler = ExponentialLR(optimizer, gamma=0.991)
@@ -456,20 +359,41 @@ def train(MODEL_BASE, g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_va
                 (input_nodes_apicall, seeds_apicall, blocks_apicall)) in \
                 enumerate(zip(loader_fname, loader_varuse, loader_apicall)):
 
+            # TODO
+            # can take intermediate representations when self_loops is True
+            # make supervision for intermediate representations as well
             blocks_fname = [blk.to(device) for blk in blocks_fname]
             blocks_varuse = [blk.to(device) for blk in blocks_varuse]
             blocks_apicall = [blk.to(device) for blk in blocks_apicall]
 
+            assert all(
+                map(lambda x: x in blocks_fname[2].dstdata['_ID'].tolist(), blocks_fname[3].dstdata['_ID'].tolist()))
+            assert all(
+                map(lambda x: x in blocks_fname[1].dstdata['_ID'].tolist(), blocks_fname[3].dstdata['_ID'].tolist()))
+
             src_embs_fname = logits_batch(model, input_nodes_fname, blocks_fname, use_types, ntypes)
-            logits_fname, labels_fname = logits_embedder(src_embs_fname, ee_fname, lp_fname, seeds_fname, neg_samplig_factor, device=device)
+            src_embs_fname = get_seed_nodes(src_embs_fname, blocks_fname, seeds_fname)
+            logits_labels_fname = [logits_embedder(logitsfname, ee_fname, lpfname, seeds_fname,
+                                                   neg_samplig_factor, device=device)
+                                   for logitsfname, lpfname in zip(src_embs_fname, lp_fname)]
 
             src_embs_varuse = logits_batch(model, input_nodes_varuse, blocks_varuse, use_types, ntypes)
-            logits_varuse, labels_varuse = logits_embedder(src_embs_varuse, ee_varuse, lp_varuse, seeds_varuse, neg_samplig_factor, device=device)
+            src_embs_varuse = get_seed_nodes(src_embs_varuse, blocks_varuse, seeds_varuse)
+            logits_labels_varuse = [logits_embedder(logitsvaruse, ee_varuse, lpvaruse, seeds_varuse,
+                                                   neg_samplig_factor, device=device)
+                                   for logitsvaruse, lpvaruse in zip(src_embs_varuse, lp_varuse)]
 
             src_embs_apicall = logits_batch(model, input_nodes_apicall, blocks_apicall, use_types, ntypes)
-            logits_apicall, labels_apicall = logits_nodes(model, src_embs_apicall,
-                                                          ee_apicall, lp_apicall, create_apicall_loader,
-                                                          seeds_apicall, use_types, ntypes, neg_samplig_factor, device=device)
+            src_embs_apicall = get_seed_nodes(src_embs_apicall, blocks_apicall, seeds_apicall)
+            logits_labels_apicall = [logits_nodes(model, logitsapicall,
+                                                          ee_apicall, lpapicall, create_apicall_loader,
+                                                          seeds_apicall, use_types, ntypes, neg_samplig_factor,
+                                                          device=device)
+                                    for logitsapicall, lpapicall in zip(src_embs_apicall, lp_apicall)]
+
+            logits_fname, labels_fname = logits_labels_fname[-1]
+            logits_varuse, labels_varuse = logits_labels_varuse[-1]
+            logits_apicall, labels_apicall = logits_labels_apicall[-1]
 
             # TODO
             # some issues are possible because of the lack of softmax
@@ -477,8 +401,18 @@ def train(MODEL_BASE, g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_va
             train_acc_varuse = torch.sum(logits_varuse.argmax(dim=1) == labels_varuse).item() / len(labels_varuse)
             train_acc_apicall = torch.sum(logits_apicall.argmax(dim=1) == labels_apicall).item() / len(labels_apicall)
 
-            train_logits = torch.cat([logits_fname, logits_varuse, logits_apicall], 0)
-            train_labels = torch.cat([labels_fname, labels_varuse, labels_apicall], 0)
+            train_logits, train_labels = zip(*logits_labels_fname)
+            train_logits = list(train_logits)
+            train_labels = list(train_labels)
+            temp_logits, temp_labels = zip(*logits_labels_varuse)
+            train_logits.extend(temp_logits)
+            train_labels.extend(temp_labels)
+            temp_logits, temp_labels = zip(*logits_labels_apicall)
+            train_logits.extend(temp_logits)
+            train_labels.extend(temp_labels)
+
+            train_logits = torch.cat(train_logits, 0)
+            train_labels = torch.cat(train_labels, 0)
 
             logp = nn.functional.log_softmax(train_logits, 1)
             loss = nn.functional.nll_loss(logp, train_labels)
@@ -522,20 +456,13 @@ def train(MODEL_BASE, g, model, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_va
             'ee_fname': ee_fname.state_dict(),
             'ee_varuse': ee_varuse.state_dict(),
             'ee_apicall': ee_apicall.state_dict(),
-            "lp_fname": lp_fname.state_dict(),
-            "lp_varuse": lp_varuse.state_dict(),
-            "lp_apicall": lp_apicall.state_dict(),
+            'lp_fname': [lp.state_dict() for lp in lp_fname],
+            'lp_varuse': [lp.state_dict() for lp in lp_varuse],
+            'lp_apicall': [lp.state_dict() for lp in lp_apicall],
             "epoch": epoch
         }, join(MODEL_BASE, "saved_state.pt"))
 
         lr_scheduler.step()
-
-    # return {
-    #     "loss": loss.item(),
-    #     "train_acc": train_acc,
-    #     "val_acc": val_acc,
-    #     "test_acc": test_acc,
-    # }
 
 
 def training_procedure(dataset, model, params, EPOCHS, args, MODEL_BASE):
@@ -559,9 +486,10 @@ def training_procedure(dataset, model, params, EPOCHS, args, MODEL_BASE):
     ee_varuse = create_elem_embedder(args.varuse_file, dataset.nodes, ELEM_EMB_SIZE, True).to(device)
     ee_apicall = create_elem_embedder(args.call_seq_file, dataset.nodes, ELEM_EMB_SIZE, False).to(device)
 
-    lp_fname = LinkPredictor(ee_fname.emb_size + m.emb_size).to(device)
-    lp_varuse = LinkPredictor(ee_varuse.emb_size + m.emb_size).to(device)
-    lp_apicall = LinkPredictor(m.emb_size + m.emb_size).to(device)
+    n_layers = len(m.layers)
+    lp_fname = [LinkPredictor(ee_fname.emb_size + m.emb_size).to(device) for _ in range(n_layers)]
+    lp_varuse = [LinkPredictor(ee_varuse.emb_size + m.emb_size).to(device) for _ in range(n_layers)]
+    lp_apicall = [LinkPredictor(m.emb_size + m.emb_size).to(device) for _ in range(n_layers)]
 
     if args.restore_state:
         checkpoint = torch.load(join(MODEL_BASE, "saved_state.pt"))

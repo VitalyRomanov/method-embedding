@@ -35,22 +35,39 @@ def main(models, args):
 
             elif args.training_mode == "multitask":
 
-                from SourceCodeTools.graph.model.train.sampling_multitask import training_procedure
+                if args.intermediate_supervision:
+                    params['use_self_loop'] = True
+                    from SourceCodeTools.graph.model.train.sampling_multitask_intermediate_supervision import training_procedure
+                else:
+                    from SourceCodeTools.graph.model.train.sampling_multitask import training_procedure
 
                 m, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, scores = \
                     training_procedure(dataset, model, params, args.epochs, args, MODEL_BASE)
 
-                torch.save(
-                    {
-                        'elem_embeder_fname': ee_fname.state_dict(),
-                        'elem_embeder_varuse': ee_varuse.state_dict(),
-                        'elem_embeder_apicall': ee_apicall.state_dict(),
-                        'link_predictor_fname': lp_fname.state_dict(),
-                        'link_predictor_varuse': lp_varuse.state_dict(),
-                        'link_predictor_apicall': lp_apicall.state_dict(),
-                    },
-                    join(MODEL_BASE, "multitask.pt")
-                )
+                if args.intermediate_supervision:
+                    torch.save(
+                        {
+                            'elem_embeder_fname': ee_fname.state_dict(),
+                            'elem_embeder_varuse': ee_varuse.state_dict(),
+                            'elem_embeder_apicall': ee_apicall.state_dict(),
+                            'link_predictor_fname': [lp.state_dict() for lp in lp_fname],
+                            'link_predictor_varuse': [lp.state_dict() for lp in lp_varuse],
+                            'link_predictor_apicall': [lp.state_dict() for lp in lp_apicall],
+                        },
+                        join(MODEL_BASE, "multitask.pt")
+                    )
+                else:
+                    torch.save(
+                        {
+                            'elem_embeder_fname': ee_fname.state_dict(),
+                            'elem_embeder_varuse': ee_varuse.state_dict(),
+                            'elem_embeder_apicall': ee_apicall.state_dict(),
+                            'link_predictor_fname': lp_fname.state_dict(),
+                            'link_predictor_varuse': lp_varuse.state_dict(),
+                            'link_predictor_apicall': lp_apicall.state_dict(),
+                        },
+                        join(MODEL_BASE, "multitask.pt")
+                    )
             else:
                 raise ValueError("Unknown training mode:", args.training_mode)
 
@@ -129,6 +146,7 @@ if __name__ == "__main__":
     parser.add_argument('--restore_state', action='store_true')
     parser.add_argument('--self_loops', action='store_true')
     parser.add_argument('--override_labels', action='store_true')
+    parser.add_argument('--intermediate_supervision', action='store_true')
     parser.add_argument('--gpu', dest='gpu', default=-1, type=int,
                         help='')
 

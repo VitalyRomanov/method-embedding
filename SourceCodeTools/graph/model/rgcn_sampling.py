@@ -209,19 +209,43 @@ class RGCNSampling(nn.Module):
     def node_embed(self):
         return self.embed_layer()
 
-    def forward(self, h=None, blocks=None):
+    # def forward(self, h=None, blocks=None):
+    #     if h is None:
+    #         # full graph training
+    #         h = self.embed_layer()
+    #     if blocks is None:
+    #         # full graph training
+    #         for layer in self.layers:
+    #             h = layer(self.g, h)
+    #     else:
+    #         # minibatch training
+    #         for layer, block in zip(self.layers, blocks):
+    #             h = layer(block, h)
+    #     return h
+
+    def forward(self, h=None, blocks=None,
+                return_all=False): # added this as an experimental feature for intermediate supervision
         if h is None:
             # full graph training
             h = self.embed_layer()
+
+        all_layers = [] # added this as an experimental feature for intermediate supervision
+
         if blocks is None:
             # full graph training
             for layer in self.layers:
                 h = layer(self.g, h)
+                all_layers.append(h) # added this as an experimental feature for intermediate supervision
         else:
             # minibatch training
             for layer, block in zip(self.layers, blocks):
                 h = layer(block, h)
-        return h
+                all_layers.append(h) # added this as an experimental feature for intermediate supervision
+
+        if return_all: # added this as an experimental feature for intermediate supervision
+            return all_layers
+        else:
+            return h
 
     def inference(self, g, batch_size, device, num_workers, x=None):
         """Minibatch inference of final representation over all node types.
