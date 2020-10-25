@@ -123,6 +123,7 @@ def evaluate_embedder(model, ee, lp, loader,
 
         src_embs = logits_batch(model, input_nodes, blocks, use_types, ntypes)
         # logits, labels = logits_embedder(src_embs, ee, lp, seeds, neg_samplig_factor, device=device)
+        src_embs = get_seed_nodes(src_embs, blocks, seeds)
         logits_labels = [logits_embedder(logits_, ee, lp_, seeds,
                                                neg_samplig_factor, device=device)
                                for logits_, lp_ in zip(src_embs, lp)]
@@ -154,6 +155,7 @@ def evaluate_nodes(model, ee, lp,
         # logits, labels = logits_nodes(model, src_embs,
         #                                   ee, lp, create_apicall_loader,
         #                                   seeds, use_types, ntypes, neg_samplig_factor, device=device)
+        src_embs = get_seed_nodes(src_embs, blocks, seeds)
         logits_labels = [logits_nodes(model, logits_,
                                               ee, lp_, create_apicall_loader,
                                               seeds, use_types, ntypes, neg_samplig_factor,
