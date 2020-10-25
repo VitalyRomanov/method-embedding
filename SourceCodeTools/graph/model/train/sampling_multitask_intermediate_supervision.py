@@ -525,4 +525,5 @@ def training_procedure(dataset, model, params, EPOCHS, args, MODEL_BASE):
     scores = final_evaluation(dataset.g, m, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, device, args.batch_size)
 
     return m.to('cpu'), ee_fname.to('cpu'), ee_varuse.to('cpu'), ee_apicall.to('cpu'), \
-           lp_fname.to('cpu'), lp_varuse.to('cpu'), lp_apicall.to('cpu'), scores
+            [lp.to('cpu') for lp in lp_fname], [lp.to('cpu') for lp in lp_varuse], [lp.to('cpu') for lp in lp_apicall], scores
+           # lp_fname.to('cpu'), lp_varuse.to('cpu'), lp_apicall.to('cpu'), scores
