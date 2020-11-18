@@ -9,6 +9,10 @@ from csv import QUOTE_NONNUMERIC
 #     df['compact_' + prop] = df[prop].apply(compactor)
 #     return df
 
+edges_path = sys.argv[1]
+edges_out = sys.argv[2]
+types_out = sys.argv[3]
+
 def isanumber(x):
     try:
         int(x)
@@ -16,7 +20,7 @@ def isanumber(x):
     except:
         return False
 
-common_edges = pd.read_csv(sys.argv[1])
+common_edges = pd.read_csv(edges_path)
 
 uniq = common_edges['type'].unique()
 uniq = [i for i in uniq if not isanumber(i)]
@@ -26,9 +30,9 @@ common_edges['type'] = common_edges['type'].apply(lambda x: prop2pid.get(x, x))
 
 common_edges = common_edges.astype({"type": "int64"})
 
-common_edges.to_csv(sys.argv[2], index=False, quoting=QUOTE_NONNUMERIC)
+common_edges.to_csv(edges_out, index=False, quoting=QUOTE_NONNUMERIC)
 
-with open(sys.argv[3], "w") as sink:
+with open(types_out, "w") as sink:
     sink.write("type,desc\n")
     for item,val in prop2pid.items():
         sink.write(f"{val},{item}\n")
