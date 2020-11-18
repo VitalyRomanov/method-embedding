@@ -86,7 +86,7 @@ def prepare_data_with_mentions(sents, model_path):
 
 from SourceCodeTools.proc.entity.type_prediction import load_pkl_emb, load_w2v_map, create_tag_map
 
-def create_batches_with_mentions(batch_size, seq_len, sents, repl, tags, decls_mentions, graphmap, wordmap, tagmap, class_weights, element_hash_size=1000):
+def create_batches_with_mentions(batch_size, seq_len, sents, repl, tags, decls_mentions, graphmap, wordmap, tagmap, class_weights=None, element_hash_size=1000):
     pad_id = len(wordmap)
     rpad_id = len(graphmap)
     n_sents = len(sents)
@@ -117,7 +117,8 @@ def create_batches_with_mentions(batch_size, seq_len, sents, repl, tags, decls_m
         int_sent = np.array([wordmap.get(w, pad_id) for w in s], dtype=np.int32)
         int_repl = np.array([graphmap.get(r, rpad_id) for r in rr], dtype=np.int32)
         # int_tags = np.array([tagmap.get(t, 0) for t in tt], dtype=np.int32)
-        int_cw = np.array([class_weights.get(t, 1.0) for t in tt], dtype=np.int32)
+        if class_weights is not None:
+            int_cw = np.array([class_weights.get(t, 1.0) for t in tt], dtype=np.int32)
         int_pref = np.array([el_hash(w[:3], element_hash_size-1) for w in s], dtype=np.int32)
         int_suff = np.array([el_hash(w[-3:], element_hash_size-1) for w in s], dtype=np.int32)
 
@@ -125,7 +126,8 @@ def create_batches_with_mentions(batch_size, seq_len, sents, repl, tags, decls_m
         blank_s[0:min(int_sent.size, seq_len)] = int_sent[0:min(int_sent.size, seq_len)]
         blank_r[0:min(int_sent.size, seq_len)] = int_repl[0:min(int_sent.size, seq_len)]
         # blank_t[0:min(int_sent.size, seq_len)] = int_tags[0:min(int_sent.size, seq_len)]
-        blank_cw[0:min(int_sent.size, seq_len)] = int_cw[0:min(int_sent.size, seq_len)]
+        if class_weights is not None:
+            blank_cw[0:min(int_sent.size, seq_len)] = int_cw[0:min(int_sent.size, seq_len)]
         blank_pref[0:min(int_sent.size, seq_len)] = int_pref[0:min(int_sent.size, seq_len)]
         blank_suff[0:min(int_sent.size, seq_len)] = int_suff[0:min(int_sent.size, seq_len)]
 
@@ -193,16 +195,16 @@ def main_tf_hyper_search(TRAIN_DATA, TEST_DATA,
     train_s, train_e, train_r, train_decls_mentions = prepare_data_with_mentions(TRAIN_DATA, tokenizer_path)
     test_s, test_e, test_r, test_decls_mentions = prepare_data_with_mentions(TEST_DATA, tokenizer_path)
 
-    cw = ClassWeightNormalizer()
-    cw.init(train_e)
+    # cw = ClassWeightNormalizer()
+    # cw.init(train_e)
 
     t_map, inv_t_map = create_tag_map(train_e)
 
     graph_emb = load_pkl_emb(graph_emb_path)
     word_emb = load_pkl_emb(word_emb_path)
 
-    batches = create_batches_with_mentions(batch_size, max_len, train_s, train_r, train_e, train_decls_mentions, graph_emb.ind, word_emb.ind, t_map, cw, element_hash_size=suffix_prefix_buckets)
-    test_batch = create_batches_with_mentions(len(test_s), max_len, test_s, test_r, test_e, test_decls_mentions, graph_emb.ind, word_emb.ind, t_map, cw, element_hash_size=suffix_prefix_buckets)
+    batches = create_batches_with_mentions(batch_size, max_len, train_s, train_r, train_e, train_decls_mentions, graph_emb.ind, word_emb.ind, t_map, element_hash_size=suffix_prefix_buckets)
+    test_batch = create_batches_with_mentions(len(test_s), max_len, test_s, test_r, test_e, test_decls_mentions, graph_emb.ind, word_emb.ind, t_map, element_hash_size=suffix_prefix_buckets)
 
     params = {
         "params": [
@@ -314,16 +316,16 @@ def main_tf(TRAIN_DATA, TEST_DATA,
     train_s, train_e, train_r, train_decls_mentions = prepare_data_with_mentions(TRAIN_DATA, tokenizer_path)
     test_s, test_e, test_r, test_decls_mentions = prepare_data_with_mentions(TEST_DATA, tokenizer_path)
 
-    cw = ClassWeightNormalizer()
-    cw.init(train_e)
+    # cw = ClassWeightNormalizer()
+    # cw.init(train_e)
 
     t_map, inv_t_map = create_tag_map(train_e)
 
     graph_emb = load_pkl_emb(graph_emb_path)
     word_emb = load_pkl_emb(word_emb_path)
 
-    batches = create_batches_with_mentions(batch_size, max_len, train_s, train_r, train_e, train_decls_mentions, graph_emb.ind, word_emb.ind, t_map, cw, element_hash_size=suffix_prefix_buckets)
-    test_batch = create_batches_with_mentions(len(test_s), max_len, test_s, test_r, test_e, test_decls_mentions, graph_emb.ind, word_emb.ind, t_map, cw, element_hash_size=suffix_prefix_buckets)
+    batches = create_batches_with_mentions(batch_size, max_len, train_s, train_r, train_e, train_decls_mentions, graph_emb.ind, word_emb.ind, t_map, element_hash_size=suffix_prefix_buckets)
+    test_batch = create_batches_with_mentions(len(test_s), max_len, test_s, test_r, test_e, test_decls_mentions, graph_emb.ind, word_emb.ind, t_map, element_hash_size=suffix_prefix_buckets)
 
     model = TypePredictor(word_emb, graph_emb, train_embeddings=finetune,
                  h_sizes=[40, 40, 40], dense_size=30, num_classes=len(t_map),
