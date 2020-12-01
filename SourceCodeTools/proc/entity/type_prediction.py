@@ -16,32 +16,13 @@ import numpy as np
 from copy import copy
 
 from SourceCodeTools.proc.entity.ast_tools import get_declarations
-
+from SourceCodeTools.proc.entity.ClassWeightNormalizer import ClassWeightNormalizer
 from SourceCodeTools.graph.model.Embedder import Embedder
 # from tf_model import create_batches
 
 from SourceCodeTools.proc.entity.tf_model import estimate_crf_transitions, TypePredictor, train
 
 max_len = 400
-
-
-class ClassWeightNormalizer:
-    def __init__(self):
-        self.class_counter = None
-
-    def init(self, classes):
-        import itertools
-        from collections import Counter
-        self.class_counter = Counter(c for c in itertools.chain.from_iterable(classes))
-        total_count = sum(self.class_counter.values())
-        self.class_weights = {key: total_count / val for key, val in self.class_counter.items()}
-
-    def __getitem__(self, item):
-        return self.class_weights[item]
-
-    def get(self, item, default):
-        return self.class_weights.get(item, default)
-
 
 def evaluate(ner_model, examples):
     scorer = Scorer()
@@ -51,7 +32,7 @@ def evaluate(ner_model, examples):
         pred_value = ner_model(input_)
         scorer.score(pred_value, gold)
     return {key: scorer.scores[key] for key in ['ents_p', 'ents_r', 'ents_f', 'ents_per_type']}
-    return scorer.scores['ents_per_type']
+    # return scorer.scores['ents_per_type']
 
 
 # def isvalid(nlp, text, ents):
@@ -529,8 +510,8 @@ def main_tf_hyper_search(TRAIN_DATA, TEST_DATA,
     train_s, train_e, train_r, train_unlabeled_decls = prepare_data_with_mentions(TRAIN_DATA, tokenizer_path)
     test_s, test_e, test_r, test_unlabeled_decls = prepare_data_with_mentions(TEST_DATA, tokenizer_path)
 
-    cw = ClassWeightNormalizer()
-    cw.init(train_e)
+    # cw = ClassWeightNormalizer()
+    # cw.init(train_e)
 
     t_map, inv_t_map = create_tag_map(train_e)
 
