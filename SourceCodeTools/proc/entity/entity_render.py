@@ -1,0 +1,67 @@
+import spacy
+from SourceCodeTools.proc.entity.util import inject_tokenizer
+
+html_template = """<!DOCTYPE html>
+<html lang="en"><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+    <title>Type Prediction</title>
+    <style type="text/css">
+        mark {{
+            background: #ddd; padding: 0.25em 0.3em; margin: 0 0.15em; line-height: 1; border-radius: 0.35em;
+        }}
+        span {{
+            font-size: 0.8em; font-weight: bold; line-height: 1; border-radius: 0.35em; text-transform: uppercase; vertical-align: middle; margin-left: 0.5rem
+        }}
+        #record
+        {{
+            white-space:pre-wrap;
+        }}
+        body {{
+            font-size: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol'; padding: 4rem 2rem; direction: ltr
+        }}
+    </style>
+</head>
+
+<body>
+{}
+</body></html>
+"""
+
+entry = """    <b>Predicted</b>
+    <div id="record">
+{}
+    </div>
+    <b>Annotated</b>
+    <div id="record">
+{}
+    </div>
+    <hr>
+"""
+
+def annotate(doc, entities):
+    line = ""
+
+    entities = sorted(entities, key=lambda x: x[0])
+    # entities = list(filter(lambda x: x[2] != "Other", entities))
+
+    for ind, t in enumerate(doc):
+        if entities:
+            if ind == entities[0][0]:
+                line += "<mark>"
+            if ind == entities[0][1]:
+                line += f"<span>{entities[0][2]}</span></mark>"
+                entities.pop(0)
+        line += t.text + t.whitespace_
+
+    return line
+
+
+def render_annotations(annotations):
+    nlp = inject_tokenizer(spacy.blank("en"))
+    entries = ""
+    for annotation in annotations:
+        text, predicted, annotated = annotation
+        doc = nlp(text[0])
+        entries += entry.format(annotate(doc, predicted), annotate(doc, annotated))
+
+    return html_template.format(entries)
