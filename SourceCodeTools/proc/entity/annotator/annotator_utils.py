@@ -1,3 +1,6 @@
+from typing import List, Tuple
+
+
 def get_cum_lens(body, as_bytes=False):
     """
     Calculate the cummulative lengths of each line with respect to the beginning of
@@ -24,10 +27,14 @@ def get_byte_to_char_map(unicode_string):
     return response
 
 
-def to_offsets(body, entities, as_bytes=False):
+def to_offsets(body: str, entities: List[Tuple], as_bytes=False):
     """
     Transform entity annotation format from (line, end_line, col, end_col)
     to (char_ind, end_char_ind).
+    :param body: string containing function body
+    :param entities: list of tuples containing entity start- and end-offsets in bytes
+    :param as_bytes: treat entity offsets as offsets for bytes. this is needed when body contains non-ascii characters
+    :return: list of tuples that represent start- and end-offsets in a string that contains function body
     """
     cum_lens = get_cum_lens(body, as_bytes=as_bytes)
 
@@ -45,7 +52,13 @@ def to_offsets(body, entities, as_bytes=False):
     return repl
 
 
-def overlap(p1, p2):
+def overlap(p1: Tuple, p2: Tuple) -> bool:
+    """
+    Check whether two entities defined by (start_position, end_position) overlap
+    :param p1: tuple for the first entity
+    :param p2: tuple for the second entity
+    :return: boolean flag whether two entities overlap
+    """
     if (p2[1] - p1[0]) * (p2[0] - p1[1]) <= 0:
         return True
     else:
