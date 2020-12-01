@@ -1,15 +1,17 @@
+from SourceCodeTools.proc.entity.util import deal_with_incorrect_offsets
+from spacy.gold import GoldParse
+from spacy.util import minibatch, compounding
+from spacy.scorer import Scorer
+import random
+import spacy
+import os
+
 def evaluate(ner_model, examples):
     """
-    Extract scores from Spacy scorer
-
-    Parameters
-    ----------
-    ner_model: Spacy ner-capable model
-    examples: annotated texts in the format [(text, annotations)]
-
-    Returns
-    -------
-    dictionary with scores
+    Perform evaluation of the ner model using spacy's scorer and return the results as a dict
+    @param ner_model: ner-capable spacy model
+    @param examples: texts in the format [(text, annotation)]
+    @return:
     """
     scorer = Scorer()
     for input_, annot in examples:
@@ -22,6 +24,15 @@ def evaluate(ner_model, examples):
 
 
 def main_spacy(TRAIN_DATA, TEST_DATA, model, output_dir=None, n_iter=100):
+    """
+
+    @param TRAIN_DATA:
+    @param TEST_DATA:
+    @param model:
+    @param output_dir:
+    @param n_iter:
+    @return:
+    """
     nlp = spacy.load(model)  # load existing spaCy model
 
     print("dealing with inconsistencies")

@@ -3,10 +3,17 @@ import ast
 from SourceCodeTools.proc.entity.annotator.annotator_utils import to_offsets, resolve_self_collision
 
 def get_mentions(function, root, mention):
+    """
+    Find all mentions of a variable in the function's body
+    :param function: string that contains function's body
+    :param root: body parsed with ast package
+    :param mention: the name of a variable to look for
+    :return: list of offsets where the variable is mentioned
+    """
     mentions = []
 
     for node in ast.walk(root):
-        if isinstance(node, ast.Name):
+        if isinstance(node, ast.Name): # a variable or a ...
             if node.id == mention:
                 offset = to_offsets(function,
                                     [(node.lineno-1, node.end_lineno-1, node.col_offset, node.end_col_offset, "mention")])
@@ -37,13 +44,20 @@ def get_descendants(function, children):
 
 
 def get_declarations(function):
+    """
+
+    :param function:
+    :return:
+    """
     root = ast.parse(function)
 
     declarations = {}
     added = set()
 
     for node in ast.walk(root):
-        if isinstance(node, ast.arg):
+        if isinstance(node, ast.arg): # function argument
+            # TODO
+            # not quite sure why this if statement was needed, but there should be no annotations in the code
             if node.annotation is None:
                 offset = to_offsets(function,
                                     [(node.lineno-1, node.end_lineno-1, node.col_offset, node.end_col_offset, "arg")])
@@ -51,7 +65,7 @@ def get_declarations(function):
                 assert function[offset[-1][0]:offset[-1][1]] == node.arg, f"{function[offset[-1][0]:offset[-1][1]]} != {node.arg}"
 
                 declarations[offset[-1]] = get_mentions(function, root, node.arg)
-                added.add(node.arg)
+                added.add(node.arg) # mark variable name as seen
         elif isinstance(node, ast.Assign):
             desc = get_descendants(function, node.targets)
 

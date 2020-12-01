@@ -35,6 +35,8 @@ class DefaultEmbedding(Model):
                            trainable=trainable, name="default_embedder_var")
             shape = init_vectors.shape
         else:
+            # TODO
+            # the default value is no longer constant. need to replace this with a standard embedder
             self.embs = tf.Variable(tf.random.uniform(shape=(shape[0], shape[1]), dtype=tf.float32),
                                name="default_embedder_pad")
         # self.pad = tf.zeros(shape=(1, init_vectors.shape[1]), name="default_embedder_pad")
@@ -94,6 +96,19 @@ class TextCnn(Model):
     def __init__(self, input_size, h_sizes, seq_len,
                  pos_emb_size, cnn_win_size, dense_size, num_classes,
                  activation=None, dense_activation=None, drop_rate=0.2):
+        """
+
+        :param input_size: dimensionality of input embeddings
+        :param h_sizes: sizes of hidden layers
+        :param seq_len: maximum sequence length
+        :param pos_emb_size: dimensionality of positional embeddings
+        :param cnn_win_size: width of cnn window
+        :param dense_size: number of unius in dense network
+        :param num_classes: number of output units
+        :param activation: activation for cnn
+        :param dense_activation: activation for dense layers
+        :param drop_rate: dropout rate for dense network
+        """
         super(TextCnn, self).__init__()
 
         self.seq_len = seq_len
@@ -101,10 +116,14 @@ class TextCnn(Model):
         self.dense_size = dense_size
         self.num_classes = num_classes
 
-        kernel_sizes = copy(h_sizes)
-        kernel_sizes.pop(-1)
-        kernel_sizes.insert(0, input_size)
-        kernel_sizes = [(cnn_win_size, ks) for ks in kernel_sizes]
+        def infer_kernel_sizes(h_sizes):
+            kernel_sizes = copy(h_sizes)
+            kernel_sizes.pop(-1)
+            kernel_sizes.insert(0, input_size)
+            kernel_sizes = [(cnn_win_size, ks) for ks in kernel_sizes]
+            return kernel_sizes
+
+        kernel_sizes = infer_kernel_sizes(h_sizes)
 
         self.layers_tok = [ TextCnnLayer(out_dim=h_size, kernel_shape=kernel_size, activation=activation)
             for h_size, kernel_size in zip(h_sizes, kernel_sizes)]
@@ -128,6 +147,7 @@ class TextCnn(Model):
 
         temp_cnn_emb = embs
 
+        # pass embeddings through several CNN layers
         for l in self.layers_tok:
             temp_cnn_emb = l(tf.expand_dims(temp_cnn_emb, axis=3))
 
@@ -179,10 +199,29 @@ class TextCnn(Model):
 
 class TypePredictor(Model):
     def __init__(self, tok_embedder, graph_embedder, train_embeddings=False,
-                 h_sizes=[500], dense_size=100, num_classes=None,
+                 h_sizes=None, dense_size=100, num_classes=None,
                  seq_len=100, pos_emb_size=30, cnn_win_size=3,
                  crf_transitions=None, suffix_prefix_dims=50, suffix_prefix_buckets=1000):
+        """
+
+        :param tok_embedder: embedder for tokens
+        :param graph_embedder: embedder for graph nodes
+        :param train_embeddings: whether to finetune embeddings
+        :param h_sizes: hiddenlayer sizes
+        :param dense_size: sizes of dense layers
+        :param num_classes: number of output classes
+        :param seq_len: maximum length of sentences
+        :param pos_emb_size: dimensionality of positional embeddings
+        :param cnn_win_size: width of cnn window
+        :param crf_transitions: CRF transition probabilities
+        :param suffix_prefix_dims: dimensionality of suffix and prefix embeddings
+        :param suffix_prefix_buckets: number of suffix and prefix embeddings
+        """
         super(TypePredictor, self).__init__()
+
+        if h_sizes is None:
+            h_sizes = [500]
+
         assert num_classes is not None, "set num_classes"
 
         self.seq_len = seq_len
@@ -243,6 +282,15 @@ class TypePredictor(Model):
 
 
     def loss(self, logits, labels, lengths, class_weights=None, extra_mask=None):
+        """
+        Compute loss
+        :param logits:
+        :param labels:
+        :param lengths:
+        :param class_weights:
+        :param extra_mask: mask for hiding some of the token labels, not counting them towards the loss
+        :return:
+        """
         losses = tf.nn.softmax_cross_entropy_with_logits(tf.one_hot(labels, depth=logits.shape[-1]), logits, axis=-1)
         seq_mask = tf.sequence_mask(lengths, self.seq_len)
         if extra_mask is not None:
@@ -261,6 +309,15 @@ class TypePredictor(Model):
         return loss
 
     def score(self, logits, labels, lengths, scorer=None, extra_mask=None):
+        """
+        Compute precision, recall and f1 scores using the provided scorer function
+        :param logits:
+        :param labels:
+        :param lengths: tensor of actual sentence lengths
+        :param scorer: scorer function
+        :param extra_mask: mask for hiding some of the token labels, not counting them towards the score
+        :return:
+        """
         mask = tf.sequence_mask(lengths, self.seq_len)
         if extra_mask is not None:
             mask = tf.math.logical_and(mask, extra_mask)
@@ -289,18 +346,18 @@ def estimate_crf_transitions(batches, n_tags):
 
     return np.stack(transitions, axis=0).mean(axis=0)
 
-# @tf.function
-# def train_step(epoch_frac, model, optimizer, token_ids, prefix, suffix, graph_ids, labels, lengths, class_weights=None, scorer=None):
-def train_step(epoch_frac, model, optimizer, token_ids, prefix, suffix, graph_ids, labels, lengths,
-                   class_weights=None, scorer=None):
-    with tf.GradientTape() as tape:
-        logits = model(token_ids, prefix, suffix, graph_ids, training=True)
-        loss = model.loss(logits, labels, lengths, class_weights=class_weights)
-        p, r, f1 = model.score(logits, labels, lengths, scorer=scorer)
-        gradients = tape.gradient(loss, model.trainable_variables)
-        optimizer.apply_gradients((g, v) for g, v in zip(gradients, model.trainable_variables) if not v.name.startswith("default_embedder"))
-
-    return loss, p, r, f1
+# # @tf.function
+# # def train_step(epoch_frac, model, optimizer, token_ids, prefix, suffix, graph_ids, labels, lengths, class_weights=None, scorer=None):
+# def train_step(epoch_frac, model, optimizer, token_ids, prefix, suffix, graph_ids, labels, lengths,
+#                    class_weights=None, scorer=None):
+#     with tf.GradientTape() as tape:
+#         logits = model(token_ids, prefix, suffix, graph_ids, training=True)
+#         loss = model.loss(logits, labels, lengths, class_weights=class_weights)
+#         p, r, f1 = model.score(logits, labels, lengths, scorer=scorer)
+#         gradients = tape.gradient(loss, model.trainable_variables)
+#         optimizer.apply_gradients((g, v) for g, v in zip(gradients, model.trainable_variables) if not v.name.startswith("default_embedder"))
+#
+#     return loss, p, r, f1
 
 
 def train_step_finetune(model, optimizer, token_ids, prefix, suffix, graph_ids, labels, lengths,

@@ -1,104 +1,42 @@
 from __future__ import unicode_literals, print_function
-import spacy
-import sys, json, os
+
+import json
+import os
 import pickle
-from SourceCodeTools.proc.entity.util import inject_tokenizer, read_data, deal_with_incorrect_offsets, el_hash, overlap
-from spacy.gold import biluo_tags_from_offsets, offsets_from_biluo_tags
+import sys
+from typing import List, Dict
 
-from spacy.gold import GoldParse
-from spacy.scorer import Scorer
-
-import random
-from pathlib import Path
-import spacy
-from spacy.util import minibatch, compounding
 import numpy as np
-from copy import copy
+import spacy
+from spacy.gold import biluo_tags_from_offsets
 
-from SourceCodeTools.proc.entity.ast_tools import get_declarations
-from SourceCodeTools.proc.entity.ClassWeightNormalizer import ClassWeightNormalizer
 from SourceCodeTools.graph.model.Embedder import Embedder
-# from tf_model import create_batches
-
-from SourceCodeTools.proc.entity.tf_model import estimate_crf_transitions, TypePredictor, train
+from SourceCodeTools.proc.entity.ClassWeightNormalizer import ClassWeightNormalizer
+from SourceCodeTools.proc.entity.ast_tools import get_declarations
+from SourceCodeTools.proc.entity.tf_model import TypePredictor, train
+from SourceCodeTools.proc.entity.util import inject_tokenizer, read_data, el_hash, overlap
 
 max_len = 400
 
-def evaluate(ner_model, examples):
-    scorer = Scorer()
-    for input_, annot in examples:
-        doc_gold_text = ner_model.make_doc(input_)
-        gold = GoldParse(doc_gold_text, entities=annot['entities'])
-        pred_value = ner_model(input_)
-        scorer.score(pred_value, gold)
-    return {key: scorer.scores[key] for key in ['ents_p', 'ents_r', 'ents_f', 'ents_per_type']}
-    # return scorer.scores['ents_per_type']
-
-
-# def isvalid(nlp, text, ents):
-#     doc = nlp(text)
-#     tags = biluo_tags_from_offsets(doc, ents)
-#     if "-" in tags:
-#         return False
-#     else:
-#         return True
-
-
-def main_spacy(TRAIN_DATA, TEST_DATA, model, output_dir=None, n_iter=100):
-    nlp = spacy.load(model)  # load existing spaCy model
-
-    print("dealing with inconsistencies")
-    TRAIN_DATA = deal_with_incorrect_offsets(TRAIN_DATA, nlp)
-    TEST_DATA = deal_with_incorrect_offsets(TEST_DATA, nlp)
-    print("done dealing with inconsistencies")
-
-    # create the built-in pipeline components and add them to the pipeline
-    # nlp.create_pipe works for built-ins that are registered with spaCy
-    if "ner" not in nlp.pipe_names:
-        ner = nlp.create_pipe("ner")
-        nlp.add_pipe(ner, last=True)
-    # otherwise, get it so we can add labels
-    else:
-        ner = nlp.get_pipe("ner")
-
-    # add labels
-    for _, annotations in TRAIN_DATA:
-        for ent in annotations.get("entities"):
-            ner.add_label(ent[2])
-
-    # get names of other pipes to disable them during training
-    other_pipes = [pipe for pipe in nlp.pipe_names if pipe != "ner"]
-    with nlp.disable_pipes(*other_pipes):  # only train NER
-        # reset and initialize the weights randomly – but only if we're
-        # training a new model
-        # if model is None:
-        nlp.begin_training()
-        for itn in range(n_iter):
-            random.shuffle(TRAIN_DATA)
-            losses = {}
-            # batch up the examples using spaCy's minibatch
-            batches = minibatch(TRAIN_DATA, size=compounding(4.0, 32.0, 1.001))
-            for batch in batches:
-                texts, annotations = zip(*batch)
-                nlp.update(
-                    texts,  # batch of texts
-                    annotations,  # batch of annotations
-                    drop=0.5,  # dropout - make it harder to memorise data
-                    losses=losses,
-                )
-            print(f"{itn}:")
-            print("\tLosses", losses)
-            score = evaluate(nlp, TEST_DATA)
-            if not os.path.isdir("models"):
-                os.mkdir("models")
-            nlp.to_disk(os.path.join("models", f"model_{itn}"))
-            print("\t", score)
-
 
 def tags_to_mask(tags):
+    """
+    Create a mask for BILUO tags where non-"O" tags are marked with 1.
+    :param tags: list tags to mask
+    :return: list of 1. and 0. that represent mask. For a list of input tags ['O', 'B-X', 'I-X', 'L-X', 'O'] it
+    will return [0., 1., 1., 1., 0.]
+    """
     return list(map(lambda t: 1. if t != "O" else 0., tags))
 
+
 def declarations_to_tags(doc, decls):
+    """
+    Converts the declarations and mentions of a variable into BILUO format
+    :param doc: source code of a function
+    :param decls: dictionary that maps from the variable declarations (first usage) to all the mentions
+                    later in the function
+    :return: List of tuple [(declaration_tags), (mentions_tags)]
+    """
     declarations = []
 
     for decl, mentions in decls.items():
@@ -126,13 +64,18 @@ def declarations_to_tags(doc, decls):
     return declarations
 
 
-
-def prepare_data(sents, model_path):
+def prepare_data(sents):
+    """
+    Converts annotations from character span format into BILUO tags for tokens. Spacy is used for tokenization.
+    :param sents: texts in the format [(text, dictionary_with_annotations)]. dictionary with annotations contains
+                    fields 'entities' and 'replacements'
+    :return: three lists. first is a list of list of tokens. second is the list of lists of BILUO tags for annotations.
+    third is the list of lists of BILUO tags for raplacements
+    """
     sents_w = []
     sents_t = []
     sents_r = []
 
-    # nlp = spacy.load(model_path)  # load existing spaCy model
     nlp = inject_tokenizer(spacy.blank("en"))
 
     def try_int(val):
@@ -165,7 +108,17 @@ def prepare_data(sents, model_path):
     return sents_w, sents_t, sents_r
 
 
-def prepare_data_with_mentions(sents, model):
+def prepare_data_with_unlabeled(sents):
+    """
+    Tokenize functions, convert entities into BILUO format, convert graph replacements into BILUO format,
+    create BILUO tags for unlabeled declarations
+    :param sents: data in the format [(text, annotations)]
+    :return: four lists:
+            1. tokenized functions
+            2. BILUO labels for type annotations
+            3: BILUO labels for graph replacements
+            4. BILUO labels for unlabeled declarations of variables
+    """
     sents_w = []
     sents_t = []
     sents_r = []
@@ -185,7 +138,7 @@ def prepare_data_with_mentions(sents, model):
         repl = s[1]['replacements']
         decls = get_declarations(s[0])
 
-        unlabeled_dec = prepare_mask(ents, decls)
+        unlabeled_dec = filter_unlabeled(ents, decls)
 
         tokens = [t.text for t in doc]
         ents_tags = biluo_tags_from_offsets(doc, ents)
@@ -215,7 +168,13 @@ def prepare_data_with_mentions(sents, model):
     return sents_w, sents_t, sents_r, unlabeled_decls
 
 
-def prepare_mask(entities, declarations):
+def filter_unlabeled(entities, declarations):
+    """
+    Get a list of declarations that were not mentioned in `entities`
+    :param entities: List of entity offsets
+    :param declarations: dict, where keys are declaration offsets
+    :return: list of declarations that were not mentioned in `entities`
+    """
     for_mask = []
     for decl in declarations:
         for e in entities:
@@ -226,25 +185,24 @@ def prepare_mask(entities, declarations):
     return for_mask
 
 
-def filter_declarations(entities, declarations):
-    valid = {}
-
-    for decl in declarations:
-        for e in entities:
-            if overlap(decl, e):
-                valid[decl] = declarations[decl]
-
-    return valid
-
-
 def load_pkl_emb(path):
+    """
+
+    :param path:
+    :return:
+    """
     embedder = pickle.load(open(path, "rb"))
     if isinstance(embedder, list):
         embedder = embedder[-1]
     return embedder
 
-def load_w2v_map(w2v_path):
 
+def load_w2v_map(w2v_path):
+    """
+    Load embeddings for words in w2v txt format
+    :param w2v_path:
+    :return: Embedder
+    """
     embs = []
     w_map = dict()
 
@@ -260,27 +218,20 @@ def load_w2v_map(w2v_path):
 
     return Embedder(w_map, np.array(embs))
 
-    # model = KeyedVectors.load_word2vec_format(model_p)
-    # voc_len = len(model.vocab)
-    #
-    # vectors = np.zeros((voc_len, 100), dtype=np.float32)
-    #
-    # w2i = dict()
-    #
-    # for ind, word in enumerate(model.vocab.keys()):
-    #     w2i[word] = ind
-    #     vectors[ind, :] = model[word]
-    #
-    # # w2i["*P*"] = len(w2i)
-    #
-    # return model, w2i, vectors
 
 def create_tag_map(sents):
+    """
+    Map tags to an integer values
+    :param sents: list of tags for sentences
+    :return: mapping from tags to integers and mappting from integers to tags
+    """
     tags = set()
 
+    # find unique tags
     for s in sents:
         tags.update(set(s))
 
+    # map tags to a contiguous index
     tagmap = dict(zip(tags, range(len(tags))))
 
     aid, iid = zip(*tagmap.items())
@@ -289,7 +240,24 @@ def create_tag_map(sents):
     return tagmap, inv_tagmap
 
 
-def create_batches(batch_size, seq_len, sents, repl, tags, graphmap, wordmap, tagmap, class_weights, element_hash_size=1000):
+def create_batches(batch_size: int, seq_len: int,
+                   sents: List[List[str]], repl: List[List[str]], tags: List[List[str]],
+                   graphmap: Dict[str, int], wordmap: Dict[str, int], tagmap: Dict[str, int],
+                   class_weights: ClassWeightNormalizer = None, element_hash_size=1000):
+    """
+    Format tagged functions into batches
+    :param batch_size: number of functions in a batch
+    :param seq_len: maximum number of tokes in a function
+    :param sents: list of tokens
+    :param repl: list of replacement tags
+    :param tags: list of label tags
+    :param graphmap: mapping from graph ids to greph embedding ids
+    :param wordmap: mapping from words to word embedding ids
+    :param tagmap: mapping from tags to tag ids
+    :param class_weights: mapping from class to its frequency
+    :param element_hash_size: number of buckets for hashing suffixes and prefixes
+    :return: list of dictionaries for batches
+    """
     pad_id = len(wordmap)
     rpad_id = len(graphmap)
     n_sents = len(sents)
@@ -302,8 +270,7 @@ def create_batches(batch_size, seq_len, sents, repl, tags, graphmap, wordmap, ta
     b_pref = []
     b_suff = []
 
-
-    for ind, (s, rr, tt)  in enumerate(zip(sents, repl, tags)):
+    for ind, (s, rr, tt) in enumerate(zip(sents, repl, tags)):
         blank_s = np.ones((seq_len,), dtype=np.int32) * pad_id
         blank_r = np.ones((seq_len,), dtype=np.int32) * rpad_id
         blank_t = np.zeros((seq_len,), dtype=np.int32)
@@ -311,19 +278,19 @@ def create_batches(batch_size, seq_len, sents, repl, tags, graphmap, wordmap, ta
         blank_pref = np.ones((seq_len,), dtype=np.int32) * element_hash_size
         blank_suff = np.ones((seq_len,), dtype=np.int32) * element_hash_size
 
-
         int_sent = np.array([wordmap.get(w, pad_id) for w in s], dtype=np.int32)
         int_repl = np.array([graphmap.get(r, rpad_id) for r in rr], dtype=np.int32)
         int_tags = np.array([tagmap.get(t, 0) for t in tt], dtype=np.int32)
-        int_cw = np.array([class_weights.get(t, 1.0) for t in tt], dtype=np.int32)
-        int_pref = np.array([el_hash(w[:3], element_hash_size-1) for w in s], dtype=np.int32)
-        int_suff = np.array([el_hash(w[-3:], element_hash_size-1) for w in s], dtype=np.int32)
-
+        if class_weights is not None:
+            int_cw = np.array([class_weights.get(t, 1.0) for t in tt], dtype=np.int32)
+        int_pref = np.array([el_hash(w[:3], element_hash_size - 1) for w in s], dtype=np.int32)
+        int_suff = np.array([el_hash(w[-3:], element_hash_size - 1) for w in s], dtype=np.int32)
 
         blank_s[0:min(int_sent.size, seq_len)] = int_sent[0:min(int_sent.size, seq_len)]
         blank_r[0:min(int_sent.size, seq_len)] = int_repl[0:min(int_sent.size, seq_len)]
         blank_t[0:min(int_sent.size, seq_len)] = int_tags[0:min(int_sent.size, seq_len)]
-        blank_cw[0:min(int_sent.size, seq_len)] = int_cw[0:min(int_sent.size, seq_len)]
+        if class_weights is not None:
+            blank_cw[0:min(int_sent.size, seq_len)] = int_cw[0:min(int_sent.size, seq_len)]
         blank_pref[0:min(int_sent.size, seq_len)] = int_pref[0:min(int_sent.size, seq_len)]
         blank_suff[0:min(int_sent.size, seq_len)] = int_suff[0:min(int_sent.size, seq_len)]
 
@@ -358,7 +325,27 @@ def create_batches(batch_size, seq_len, sents, repl, tags, graphmap, wordmap, ta
     return batch
 
 
-def create_batches_with_mask(batch_size, seq_len, sents, repl, tags, unlabeled_decls, graphmap, wordmap, tagmap, class_weights=None, element_hash_size=1000):
+def create_batches_with_mask(batch_size, seq_len,
+                             sents: List[List[str]], repl: List[List[str]], tags: List[List[str]],
+                             unlabeled_decls: List[List[str]],
+                             graphmap: Dict[str, int], wordmap: Dict[str, int], tagmap: Dict[str, int],
+                             class_weights: ClassWeightNormalizer = None, element_hash_size=1000):
+    """
+    Format tagged functions into batches, additionally provide a mask for coverng declarations that are not labeled
+    so that the model does learn not to label unlabeled variables
+    :param batch_size: number of functions in a batch
+    :param seq_len: maximum number of tokes in a function
+    :param sents: list of tokens
+    :param repl: list of replacement tags
+    :param tags: list of label tags
+    :param unlabeled_decls: list of declarations without any label
+    :param graphmap: mapping from graph ids to greph embedding ids
+    :param wordmap: mapping from words to word embedding ids
+    :param tagmap: mapping from tags to tag ids
+    :param class_weights: mapping from class to its frequency
+    :param element_hash_size: number of buckets for hashing suffixes and prefixes
+    :return: list of dictionaries for batches
+    """
     pad_id = len(wordmap)
     rpad_id = len(graphmap)
     n_sents = len(sents)
@@ -372,8 +359,7 @@ def create_batches_with_mask(batch_size, seq_len, sents, repl, tags, unlabeled_d
     b_suff = []
     b_hide_mask = []
 
-
-    for ind, (s, rr, tt, un)  in enumerate(zip(sents, repl, tags, unlabeled_decls)):
+    for ind, (s, rr, tt, un) in enumerate(zip(sents, repl, tags, unlabeled_decls)):
         blank_s = np.ones((seq_len,), dtype=np.int32) * pad_id
         blank_r = np.ones((seq_len,), dtype=np.int32) * rpad_id
         blank_t = np.zeros((seq_len,), dtype=np.int32)
@@ -382,16 +368,14 @@ def create_batches_with_mask(batch_size, seq_len, sents, repl, tags, unlabeled_d
         blank_suff = np.ones((seq_len,), dtype=np.int32) * element_hash_size
         blank_hide_mask = np.ones((seq_len,), dtype=np.int32)
 
-
         int_sent = np.array([wordmap.get(w, pad_id) for w in s], dtype=np.int32)
         int_repl = np.array([graphmap.get(r, rpad_id) for r in rr], dtype=np.int32)
         int_tags = np.array([tagmap.get(t, 0) for t in tt], dtype=np.int32)
         if class_weights is not None:
             int_cw = np.array([class_weights.get(t, 1.0) for t in tt], dtype=np.int32)
-        int_pref = np.array([el_hash(w[:3], element_hash_size-1) for w in s], dtype=np.int32)
-        int_suff = np.array([el_hash(w[-3:], element_hash_size-1) for w in s], dtype=np.int32)
+        int_pref = np.array([el_hash(w[:3], element_hash_size - 1) for w in s], dtype=np.int32)
+        int_suff = np.array([el_hash(w[-3:], element_hash_size - 1) for w in s], dtype=np.int32)
         int_hide_mask = np.array([1 if t == "O" else 0 for t in un], dtype=np.int32)
-
 
         blank_s[0:min(int_sent.size, seq_len)] = int_sent[0:min(int_sent.size, seq_len)]
         blank_r[0:min(int_sent.size, seq_len)] = int_repl[0:min(int_sent.size, seq_len)]
@@ -437,6 +421,11 @@ def create_batches_with_mask(batch_size, seq_len, sents, repl, tags, unlabeled_d
 
 
 def parse_biluo(biluo):
+    """
+    Parse BILUO and return token spans for entities
+    :param biluo: list of BILUO tokens
+    :return: list of token spans
+    """
     spans = []
 
     expected = {"B", "U", "0"}
@@ -482,8 +471,18 @@ def parse_biluo(biluo):
     return spans
 
 
-
 def scorer(pred, labels, inverse_tag_map, eps=1e-8):
+    """
+    Compute f1 score, precision, and recall from BILUO labels
+    :param pred: predicted BILUO labels
+    :param labels: ground truth BILUO labels
+    :param inverse_tag_map:
+    :param eps:
+    :return:
+    """
+    # TODO
+    # the scores can be underestimated because ground truth does not contain all possible labels
+    # this results in higher reported false alarm rate
     pred_biluo = [inverse_tag_map[p] for p in pred]
     labels_biluo = [inverse_tag_map[p] for p in labels]
 
@@ -501,14 +500,31 @@ def scorer(pred, labels, inverse_tag_map, eps=1e-8):
     return precision, recall, f1
 
 
-def main_tf_hyper_search(TRAIN_DATA, TEST_DATA,
-            tokenizer_path=None, graph_emb_path=None, word_emb_path=None,
-            output_dir=None, n_iter=30, max_len=100,
-            suffix_prefix_dims=50, suffix_prefix_buckets=1000,
-            learning_rate=0.01, learning_rate_decay=1.0, batch_size=32, finetune=False):
+def main_tf_hyper_search(train_data, test_data,
+                         graph_emb_path=None, word_emb_path=None,
+                         output_dir=None, n_iter=30, max_len=100,
+                         suffix_prefix_dims=50, suffix_prefix_buckets=1000,
+                         learning_rate=0.01, learning_rate_decay=1.0, batch_size=32, finetune=False):
+    """
+    hyperparameter search
+    :param train_data:
+    :param test_data:
+    :param graph_emb_path:
+    :param word_emb_path:
+    :param output_dir:
+    :param n_iter:
+    :param max_len:
+    :param suffix_prefix_dims:
+    :param suffix_prefix_buckets:
+    :param learning_rate:
+    :param learning_rate_decay:
+    :param batch_size:
+    :param finetune: whether to finetune embeddings
+    :return:
+    """
 
-    train_s, train_e, train_r, train_unlabeled_decls = prepare_data_with_mentions(TRAIN_DATA, tokenizer_path)
-    test_s, test_e, test_r, test_unlabeled_decls = prepare_data_with_mentions(TEST_DATA, tokenizer_path)
+    train_s, train_e, train_r, train_unlabeled_decls = prepare_data_with_unlabeled(train_data)
+    test_s, test_e, test_r, test_unlabeled_decls = prepare_data_with_unlabeled(test_data)
 
     # cw = ClassWeightNormalizer()
     # cw.init(train_e)
@@ -518,10 +534,14 @@ def main_tf_hyper_search(TRAIN_DATA, TEST_DATA,
     graph_emb = load_pkl_emb(graph_emb_path)
     word_emb = load_pkl_emb(word_emb_path)
 
-    batches = create_batches_with_mask(batch_size, max_len, train_s, train_r, train_e, train_unlabeled_decls, graph_emb.ind,
-                                       word_emb.ind, t_map, element_hash_size=suffix_prefix_buckets)
-    test_batch = create_batches_with_mask(len(test_s), max_len, test_s, test_r, test_e, test_unlabeled_decls, graph_emb.ind,
-                                          word_emb.ind, t_map, element_hash_size=suffix_prefix_buckets)
+    batches = create_batches_with_mask(batch_size, max_len,
+                                       train_s, train_r, train_e, train_unlabeled_decls,
+                                       graph_emb.ind, word_emb.ind, t_map,
+                                       element_hash_size=suffix_prefix_buckets)
+    test_batch = create_batches_with_mask(len(test_s), max_len,
+                                          test_s, test_r, test_e, test_unlabeled_decls,
+                                          graph_emb.ind,word_emb.ind, t_map,
+                                          element_hash_size=suffix_prefix_buckets)
 
     params = {
         "params": [
@@ -549,23 +569,17 @@ def main_tf_hyper_search(TRAIN_DATA, TEST_DATA,
                 "suffix_prefix_dims": 50,
                 "suffix_prefix_buckets": 2000,
             },
-        #     {
-        #     "h_sizes": [80, 80, 80],
-        #     "dense_size": 40,
-        #     "pos_emb_size": 50,
-        #     "cnn_win_size": 7,
-        #     "suffix_prefix_dims": 70,
-        #     "suffix_prefix_buckets": 3000,
-        # }
+            #     {
+            #     "h_sizes": [80, 80, 80],
+            #     "dense_size": 40,
+            #     "pos_emb_size": 50,
+            #     "cnn_win_size": 7,
+            #     "suffix_prefix_dims": 70,
+            #     "suffix_prefix_buckets": 3000,
+            # }
         ],
-        # "h_sizes": [[40, 40, 40], [20, 20, 20], [80, 80, 80]],
-        # "dense_size": [20, 30, 40],
-        # "pos_emb_size": [20, 30, 50],
-        # "cnn_win_size": [3, 5, 7],
-        # "suffix_prefix_dims": [20, 50, 70],
-        # "suffix_prefix_buckets": [1000, 2000],
         "learning_rate": [0.0001],
-        "learning_rate_decay": [0.998] # 0.991
+        "learning_rate_decay": [0.998]  # 0.991
     }
     from sklearn.model_selection import ParameterGrid
 
@@ -582,15 +596,18 @@ def main_tf_hyper_search(TRAIN_DATA, TEST_DATA,
         os.mkdir(param_dir)
 
         for trial_ind in range(ntrials):
-
             trial_dir = os.path.join(param_dir, repr(trial_ind))
             os.mkdir(trial_dir)
 
             model = TypePredictor(word_emb, graph_emb, train_embeddings=finetune,
-                                  num_classes=len(t_map), seq_len=max_len,**params)
+                                  num_classes=len(t_map), seq_len=max_len, **params)
 
-            train_losses, train_f1, test_losses, test_f1 = train(model=model, train_batches=batches, test_batches=test_batch, epochs=n_iter, learning_rate=lr,
-                  scorer=lambda pred, true: scorer(pred, true, inv_t_map), learning_rate_decay=lr_decay, finetune=finetune)
+            train_losses, train_f1, test_losses, test_f1 = train(model=model, train_batches=batches,
+                                                                 test_batches=test_batch, epochs=n_iter,
+                                                                 learning_rate=lr,
+                                                                 scorer=lambda pred, true: scorer(pred, true,
+                                                                                                  inv_t_map),
+                                                                 learning_rate_decay=lr_decay, finetune=finetune)
 
             chechpoint_path = os.path.join(trial_dir, "checkpoint")
             model.save_weights(chechpoint_path)
@@ -613,15 +630,30 @@ def main_tf_hyper_search(TRAIN_DATA, TEST_DATA,
             pickle.dump((t_map, inv_t_map), open(os.path.join(trial_dir, "tag_types.pkl"), "wb"))
 
 
-
 def main_tf(TRAIN_DATA, TEST_DATA,
-            tokenizer_path=None, graph_emb_path=None, word_emb_path=None,
+            graph_emb_path=None, word_emb_path=None,
             output_dir=None, n_iter=30, max_len=100,
             suffix_prefix_dims=50, suffix_prefix_buckets=1000,
             learning_rate=0.01, learning_rate_decay=1.0, batch_size=32, finetune=False):
+    """
 
-    train_s, train_e, train_r, train_unlabeled_decls = prepare_data_with_mentions(TRAIN_DATA, tokenizer_path)
-    test_s, test_e, test_r, test_unlabeled_decls = prepare_data_with_mentions(TEST_DATA, tokenizer_path)
+    :param TRAIN_DATA:
+    :param TEST_DATA:
+    :param graph_emb_path:
+    :param word_emb_path:
+    :param output_dir:
+    :param n_iter:
+    :param max_len:
+    :param suffix_prefix_dims:
+    :param suffix_prefix_buckets:
+    :param learning_rate:
+    :param learning_rate_decay:
+    :param batch_size:
+    :param finetune:
+    :return:
+    """
+    train_s, train_e, train_r, train_unlabeled_decls = prepare_data_with_unlabeled(TRAIN_DATA)
+    test_s, test_e, test_r, test_unlabeled_decls = prepare_data_with_unlabeled(TEST_DATA)
 
     # cw = ClassWeightNormalizer()
     # cw.init(train_e)
@@ -631,29 +663,29 @@ def main_tf(TRAIN_DATA, TEST_DATA,
     graph_emb = load_pkl_emb(graph_emb_path)
     word_emb = load_pkl_emb(word_emb_path)
 
-    batches = create_batches_with_mask(batch_size, max_len, train_s, train_r, train_e, train_unlabeled_decls, graph_emb.ind, word_emb.ind, t_map, element_hash_size=suffix_prefix_buckets)
-    test_batch = create_batches_with_mask(len(test_s), max_len, test_s, test_r, test_e, test_unlabeled_decls, graph_emb.ind, word_emb.ind, t_map, element_hash_size=suffix_prefix_buckets)
+    batches = create_batches_with_mask(batch_size, max_len, train_s, train_r, train_e, train_unlabeled_decls,
+                                       graph_emb.ind, word_emb.ind, t_map, element_hash_size=suffix_prefix_buckets)
+    test_batch = create_batches_with_mask(len(test_s), max_len, test_s, test_r, test_e, test_unlabeled_decls,
+                                          graph_emb.ind, word_emb.ind, t_map, element_hash_size=suffix_prefix_buckets)
 
     model = TypePredictor(word_emb, graph_emb, train_embeddings=finetune,
-                 h_sizes=[40, 40, 40], dense_size=30, num_classes=len(t_map),
-                 seq_len=max_len, pos_emb_size=30, cnn_win_size=3,
-                 suffix_prefix_dims=suffix_prefix_dims, suffix_prefix_buckets=suffix_prefix_buckets)
+                          h_sizes=[40, 40, 40], dense_size=30, num_classes=len(t_map),
+                          seq_len=max_len, pos_emb_size=30, cnn_win_size=3,
+                          suffix_prefix_dims=suffix_prefix_dims, suffix_prefix_buckets=suffix_prefix_buckets)
 
     train(model=model, train_batches=batches, test_batches=test_batch, epochs=n_iter, learning_rate=learning_rate,
-          scorer=lambda pred, true: scorer(pred, true, inv_t_map), learning_rate_decay=learning_rate_decay, finetune=finetune)
+          scorer=lambda pred, true: scorer(pred, true, inv_t_map), learning_rate_decay=learning_rate_decay,
+          finetune=finetune)
 
     model.save_weights(output_dir)
 
     pickle.dump((t_map, inv_t_map), open("tag_types.pkl", "wb"))
 
 
-
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description='Process some integers.')
-    parser.add_argument('--tokenizer', dest='tokenizer', default=None,
-                        help='')
     parser.add_argument('--data_path', dest='data_path', default=None,
                         help='Path to the file with nodes')
     parser.add_argument('--graph_emb_path', dest='graph_emb_path', default=None,
@@ -685,9 +717,9 @@ if __name__ == "__main__":
     allowed = {'str', 'bool', 'Optional', 'None', 'int', 'Any', 'Union', 'List', 'Dict', 'Callable', 'ndarray',
                'FrameOrSeries', 'bytes', 'DataFrame', 'Matcher', 'float', 'Tuple', 'bool_t', 'Description', 'Type'}
 
-    TRAIN_DATA, TEST_DATA = read_data(args.data_path, normalize=True, allowed=allowed, include_replacements=True)
+    train_data, test_data = read_data(args.data_path, normalize=True, allowed=allowed, include_replacements=True)
     if args.hyper_search:
-        main_tf_hyper_search(TRAIN_DATA, TEST_DATA, args.tokenizer,
+        main_tf_hyper_search(train_data, test_data,
                              graph_emb_path=args.graph_emb_path,
                              word_emb_path=args.word_emb_path,
                              output_dir=output_dir,
@@ -697,7 +729,7 @@ if __name__ == "__main__":
                              batch_size=args.batch_size,
                              finetune=args.finetune)
     else:
-        main_tf(TRAIN_DATA, TEST_DATA, args.tokenizer,
+        main_tf(train_data, test_data,
                 graph_emb_path=args.graph_emb_path,
                 word_emb_path=args.word_emb_path,
                 output_dir=output_dir,
