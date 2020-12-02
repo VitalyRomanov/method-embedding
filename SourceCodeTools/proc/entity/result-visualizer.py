@@ -38,6 +38,8 @@ for dir in os.listdir(results_path):
 
                         legend.append(f"{dir}_{trial}")
 
+if not os.path.isdir(output_path):
+    os.mkdir(output_path)
 
 plt.figure(figsize=(20, 10))
 for s in test_f1:
