@@ -11,6 +11,8 @@ class Embedder:
     def __getitem__(self, key):
         # if not hasattr(self, "map_id"):
         #     self.map_id = np.vectorize(lambda id: self.ind[id])
+        # TODO
+        # support for str key type
         if type(key) == int:
             return self.e[self.ind[key], :]
         elif type(key) == np.ndarray:
