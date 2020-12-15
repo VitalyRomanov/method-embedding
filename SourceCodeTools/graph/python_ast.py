@@ -11,25 +11,24 @@ class AstGraphGenerator(object):
     def __init__(self, source):
         self.source = source.split("\n")  # lines of the source code
         self.root = ast.parse(source)
-        self.current_contition = []
-        self.contition_status = []
+        self.current_condition = []
+        self.condition_status = []
+        self.function_scope = []
 
     def get_name(self, node):
         return node.__class__.__name__ + "_" + str(hex(int(time_ns())))
 
     def get_edges(self):
-        """Called if no explicit visitor function exists for a node."""
         edges = []
         for f_def_node in ast.iter_child_nodes(self.root):
             if type(f_def_node) == ast.FunctionDef:
                 edges.extend(self.parse(f_def_node))
+                break # to avoid going through nested definitions
 
         df = pd.DataFrame(edges)
         return df.astype({col: "Int32" for col in df.columns if col not in {"src", "dst", "type"}})
 
     def parse(self, node):
-        if hasattr(node,'lineno'):
-            self.cline = node.lineno - 1
         n_type = type(node)
         method_name = "parse_" + n_type.__name__
         if hasattr(self, method_name):
@@ -49,14 +48,16 @@ class AstGraphGenerator(object):
         for node in nodes:
             s = self.parse(node)
             if isinstance(s, tuple):
-                # some parsers return edeges and names. at this level, names are not needed
+                # some parsers return edges and names. at this level, names are not needed
                 edges.extend(s[0])
-                last_node = s[1]
 
                 if last_node:
                     edges.append({"dst": s[1], "src": last_node, "type": "next"})
+                    edges.append({"dst": last_node, "src": s[1], "type": "prev"})
 
-                for cond_name, cons_stat in zip(self.current_contition, self.contition_status):
+                last_node = s[1]
+
+                for cond_name, cons_stat in zip(self.current_condition, self.condition_status):
                     edges.append({"src": last_node, "dst": cond_name, "type": "depends_on_" + cons_stat})
             else:
                 edges.extend(s)
@@ -68,14 +69,22 @@ class AstGraphGenerator(object):
             cond_stat = [cond_stat]
 
         for cn, cs in zip(cond_name, cond_stat):
-            self.current_contition.append(cn)
-            self.contition_status.append(cs)
+            self.current_condition.append(cn)
+            self.condition_status.append(cs)
 
         edges.extend(self.parse_body(body))
 
         for i in range(len(cond_name)):
-            self.current_contition.pop(-1)
-            self.contition_status.pop(-1)
+            self.current_condition.pop(-1)
+            self.condition_status.pop(-1)
+
+    def parse_as_mention(self, name):
+        mention_name = name + "@" + self.function_scope[-1]
+        edges = [
+            {"src": name, "dst": mention_name, "type": "local_mention"},
+            {"src": self.function_scope[-1], "dst": mention_name, "type": "mention_scope"}
+        ]
+        return edges, mention_name
 
     def parse_operand(self, node):
         # need to make sure upper level name is correct
@@ -115,11 +124,14 @@ class AstGraphGenerator(object):
         else:
             edges.append({"src": operand_name, "dst": node_name, "type": type})
 
-    def generic_parse(self, node, operands):
+    def generic_parse(self, node, operands, with_name=None):
 
         edges = []
 
-        node_name = self.get_name(node)
+        if with_name is None:
+            node_name = self.get_name(node)
+        else:
+            node_name = with_name
 
         for operand in operands:
             if operand in ["body", "orelse", "finalbody"]:
@@ -154,12 +166,16 @@ class AstGraphGenerator(object):
         return type_str
 
     def parse_FunctionDef(self, node):
-        # returns stores return type annotation
         # edges, f_name = self.generic_parse(node, ["name", "args", "returns", "decorator_list"])
         # edges, f_name = self.generic_parse(node, ["args", "returns", "decorator_list"])
-        edges, f_name = self.generic_parse(node, ["args", "decorator_list"])
+
+        f_name = self.get_name(node)
+        self.function_scope.append(f_name)
+
+        edges, f_name = self.generic_parse(node, ["args", "decorator_list"], with_name=f_name)
 
         if node.returns is not None:
+            # returns stores return type annotation
             # can contain quotes
             # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
             # https://www.python.org/dev/peps/pep-0484/#forward-references
@@ -174,6 +190,8 @@ class AstGraphGenerator(object):
 
         self.parse_in_context(f_name, "defined_in", edges, node.body)
 
+        self.function_scope.pop(-1)
+
         return edges
 
     def parse_AsyncFunctionDef(self, node):
@@ -183,7 +201,7 @@ class AstGraphGenerator(object):
 
         edges, assign_name = self.generic_parse(node, ["value", "targets"])
 
-        # for cond_name, cons_stat in zip(self.current_contition, self.contition_status):
+        # for cond_name, cons_stat in zip(self.current_condition, self.condition_status):
         #     edges.append({"src": assign_name, "dst": cond_name, "type": "depends_on_" + cons_stat})
 
         return edges, assign_name
@@ -251,7 +269,12 @@ class AstGraphGenerator(object):
         # if node.annotation:
         #     print(self.source[node.lineno-1]) # can get definition string here
         #     print(node.arg)
-        edges, name = self.generic_parse(node, ["arg"])
+
+        # # included mention
+        name = self.get_name(node)
+        edges, mention_name = self.parse_as_mention(node.arg)
+        edges.append({'src':mention_name, 'dst': name, 'type': 'arg'})
+        # edges, name = self.generic_parse(node, ["arg"])
         if node.annotation is not None:
             # can contain quotes
             # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
@@ -275,7 +298,7 @@ class AstGraphGenerator(object):
         # can contain quotes
         # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
         # https://www.python.org/dev/peps/pep-0484/#forward-references
-        annotation = self.source[self.cline][node.annotation.col_offset: node.annotation.end_col_offset]
+        annotation = self.source[node.lineno - 1][node.annotation.col_offset: node.annotation.end_col_offset]
         edges, name = self.generic_parse(node, ["target"])
         edges.append({"src": annotation, "dst": name, "type": 'annotation', "line": node.annotation.lineno-1, "end_line": node.annotation.end_lineno-1, "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset, "var_line": node.lineno-1, "var_end_line": node.end_lineno-1, "var_col_offset": node.col_offset, "var_end_col_offset": node.end_col_offset})
         return edges, name
@@ -319,7 +342,7 @@ class AstGraphGenerator(object):
         return self.generic_parse(node, ["type"])
 
     def parse_Call(self, node):
-        return self.generic_parse(node, ["func", "args"])
+        return self.generic_parse(node, ["func", "args","keywords"])
         # edges = []
         # # print("\t\t", ast.dump(node))
         # call_name = self.get_name(node)
@@ -336,6 +359,14 @@ class AstGraphGenerator(object):
         # return edges, call_name
         # # return get_call(node.func), tuple(parse(a) for a in node.args)
 
+    def parse_keyword(self, node):
+        # change arg name so that it does not mix with variable names
+        if isinstance(node.arg, str):
+            node.arg += "@keyword"
+            return self.generic_parse(node, ["arg", "value"])
+        else:
+            return self.generic_parse(node, ["value"])
+
     def parse_name(self, node):
         edges = []
         # if type(node) == ast.Attribute:
@@ -343,7 +374,7 @@ class AstGraphGenerator(object):
         #     right = node.attr
         #     return self.parse(node.value) + "___" + node.attr
         if type(node) == ast.Name:
-            return str(node.id)
+            return self.parse_as_mention(str(node.id))
         elif type(node) == ast.NameConstant:
             return str(node.value)
 
@@ -528,7 +559,7 @@ class AstGraphGenerator(object):
         expr_name, ext_edges = self.parse_operand(node.value)
         edges.extend(ext_edges)
         
-        # for cond_name, cons_stat in zip(self.current_contition, self.contition_status):
+        # for cond_name, cons_stat in zip(self.current_condition, self.condition_status):
         #     edges.append({"src": expr_name, "dst": cond_name, "type": "depends_on_" + cons_stat})
         return edges
 
@@ -537,7 +568,7 @@ class AstGraphGenerator(object):
         call_name = "call" + str(int(time_ns()))
         edges.append({"src": node.__class__.__name__, "dst": call_name, "type": "control_flow"})
 
-        # for cond_name, cons_stat in zip(self.current_contition, self.contition_status):
+        # for cond_name, cons_stat in zip(self.current_condition, self.condition_status):
         #     edges.append({"src": call_name, "dst": cond_name, "type": "depends_on_" + cons_stat})
         return edges, call_name
 
