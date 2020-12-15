@@ -1,8 +1,8 @@
 conda activate SourceCodeTools
 
-ENVS_DIR=$1
-RUN_DIR=$(dirname "$0")
-SQL_Q=$RUN_DIR/extract.sql
+ENVS_DIR=$(realpath $1)
+RUN_DIR=$(realpath $(dirname "$0"))
+SQL_Q=$(realpath $RUN_DIR/extract.sql)
 
 #echo $RUN_DIR
 #echo $SQL_Q
