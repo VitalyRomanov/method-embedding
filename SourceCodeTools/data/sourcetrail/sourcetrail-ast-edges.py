@@ -328,10 +328,21 @@ def write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_na
             continue
 
         replacements = ast.literal_eval(row['random_2_srctrl'])
-        replacements_lookup = lambda x: random_replacement_lookup(x, replacements)
+        # replacements_lookup = lambda x: random_replacement_lookup(x, replacements)
+        replacements_lookup = lambda x: random_replacement_lookup(x, replacements) if "@" not in x else random_replacement_lookup(x.split("@")[0], replacements) + "@" + x.split("@")[1]
 
         edges['src'] = edges['src'].apply(replacements_lookup)
         edges['dst'] = edges['dst'].apply(replacements_lookup)
+
+        # filter mention_scope edges for sourcetrail nodes
+        ######
+        srctrl_decode = lambda x: x.split("@")[0] if x.startswith("srctrlnd") and "@" in x else x
+        edges['src'] = edges['src'].apply(srctrl_decode)
+        edges['dst'] = edges['dst'].apply(srctrl_decode)
+        edges = edges.query("src!=dst")
+        edges['help'] = edges['dst'].apply(lambda x: x.split("_")[0])
+        edges = edges.query("help!='srctrlnd' or type!='mention_scope'").drop("help", axis=1)
+        ######
 
         edges['src'] = edges['src'].apply(node_resolver.resolve)
         edges['dst'] = edges['dst'].apply(node_resolver.resolve)
