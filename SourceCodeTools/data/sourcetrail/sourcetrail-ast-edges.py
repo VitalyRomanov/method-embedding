@@ -8,7 +8,7 @@ import ast
 from nltk import RegexpTokenizer
 
 from SourceCodeTools.proc.entity.annotator.annotator_utils import to_offsets, overlap, resolve_self_collision
-
+pd.options.mode.chained_assignment = None
 
 # from node_name_serializer import deserialize_node_name
 
