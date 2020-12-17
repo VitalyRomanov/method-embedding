@@ -1,8 +1,8 @@
 import pandas
-import dgl
+# import dgl
 import numpy
 import pickle
-import torch
+# import torch
 
 from os.path import join
 
@@ -406,6 +406,7 @@ class SourceGraphDataset:
         type2id = compact_property(self.edges['type'])
         edge_types = self.edges['type'].apply(lambda x: type2id[x]).values
 
+        import dgl, torch
         g = dgl.DGLGraph()
         g.add_nodes(self.nodes.shape[0])
         g.add_edges(self.edges['src_type_graph_id'].values.tolist(), self.edges['dst_type_graph_id'].values.tolist())
@@ -475,6 +476,7 @@ class SourceGraphDataset:
                 )
             )
 
+        import dgl, torch
         self.g = dgl.heterograph(typed_subgraphs, self.typed_node_counts)
 
         # self_loop_signatures = edges[['type', 'dst_type']].drop_duplicates(['type', 'dst_type'])
