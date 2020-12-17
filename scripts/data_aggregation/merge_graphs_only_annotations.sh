@@ -1,10 +1,10 @@
 conda activate SourceCodeTools
 
-ENVS_DIR=$1
-RUN_DIR=$(dirname "$0")
-OUT_DIR=$2
+ENVS_DIR=$(realpath $1)
+RUN_DIR=$(realpath $(dirname "$0"))
+OUT_DIR=$(realpath $2)
 
-SPARK_GRAPH_ANALYSIS="$RUN_DIR/../../spark-SourceGraphAnalysis/out/artifacts/GraphAnalysis_jar"
+SPARK_GRAPH_ANALYSIS=$(realpath "$RUN_DIR/../../spark-SourceGraphAnalysis/out/artifacts/GraphAnalysis_jar")
 if [ ! -f $SPARK_GRAPH_ANALYSIS/GraphAnalysis.jar ]; then
   echo "Graph Analysis executable not found:" "$SPARK_GRAPH_ANALYSIS/GraphAnalysis.jar"
 fi
