@@ -29,7 +29,7 @@ for dir in $(ls $ENVS_DIR); do
       sourcetrail-node-local2global.py $OUT_DIR/with_ast/common_nodes.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/local2global_with_ast.csv
 
       sourcetrail-map-id-columns-only-annotations.py $OUT_DIR/with_ast/common_nodes.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/edges_with_ast.csv $OUT_DIR/with_ast/common_edges_ast_type_as_str.csv target_node_id source_node_id
-      sourcetrail-map-id-columns.py $OUT_DIR/with_ast/common_nodes.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/source-graph-bodies.csv $OUT_DIR/with_ast/common.csv id
+      sourcetrail-map-id-columns.py $OUT_DIR/with_ast/common_nodes.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/source-graph-bodies.csv $OUT_DIR/with_ast/common_bodies_with_annotations.csv id
       sourcetrail-map-id-columns.py $OUT_DIR/with_ast/common_nodes.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/source-graph-function-variable-pairs.csv $OUT_DIR/with_ast/common-function-variable-pairs.csv src
       sourcetrail-map-id-columns.py $OUT_DIR/with_ast/common_nodes.csv $ENVS_DIR/$dir/nodes_with_ast.csv $ENVS_DIR/$dir/call_seq.csv $OUT_DIR/with_ast/common-call-seq.csv src dst
     fi
