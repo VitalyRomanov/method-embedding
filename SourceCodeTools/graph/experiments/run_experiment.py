@@ -21,9 +21,9 @@ apicall creates an experiment where we try to predict the exstense of "next call
 # parser.add_argument('experiment', default=None,
 #                     help='Select experiment [apicall|link|typeuse|varuse|fname|nodetype]')
 parser.add_argument("--base_path", default=None, help="path to the trained GNN model")
-parser.add_argument("--api_seq", default=None, help="path to the trained GNN model")
-parser.add_argument("--var_use", default=None, help="path to the trained GNN model")
-parser.add_argument("--type_ann", default=None, help="path to the trained GNN model")
+parser.add_argument("--api_seq", default=None, help="")
+parser.add_argument("--var_use", default=None, help="")
+parser.add_argument("--type_ann", default=None, help="")
 parser.add_argument('--random', action='store_true')
 parser.add_argument('--test_embedder', action='store_true')
 args = parser.parse_args()
@@ -79,7 +79,7 @@ def run_experiment(e, EXPERIMENT_NAME, random=False, test_embedder=False):
         experiment.embed.e = np.random.randn(experiment.embed.e.shape[0], experiment.embed.e.shape[1])
 
     if test_embedder:
-        # this does not really show anything new compared with random initialization. needto compare
+        # this does not really show anything new compared with random initialization. need to compare
         # against Node2Vec or KG embeddings
         experiment.embed.e = tf.Variable(
             initial_value=np.random.randn(experiment.embed.e.shape[0], experiment.embed.e.shape[1]),
