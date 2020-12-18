@@ -45,6 +45,8 @@ parser.add_argument('--nodes_path', dest='nodes_path', default=None,
                     help='Path to the file with nodes')
 parser.add_argument('--edges_path', dest='edges_path', default=None,
                     help='Path to the file with edges')
+parser.add_argument('--held_path', dest='held_path', default=None,
+                    help='Path to the file with holdout edges')
 parser.add_argument('--entities_path', dest='entities_path', default=None,
                     help='')
 parser.add_argument('--entities_emb_path', dest='entities_emb_path', default=None,
@@ -58,6 +60,7 @@ args = parser.parse_args()
 ent_map, new_embs = load_npy(args.entities_path, args.entities_emb_path)
 
 nodes, edges = load_data(args.nodes_path, args.edges_path)
+pd.read_csv(args.held_path).to_csv(os.path.join(args.out_path, "held.csv"), index=False)
 
 nodes['global_graph_id'] = nodes['id'].apply(lambda x: ent_map[x])
 
