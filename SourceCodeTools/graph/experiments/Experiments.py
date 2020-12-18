@@ -39,6 +39,7 @@ class Experiments:
                  base_path=None,
                  api_seq_path=None,
                  type_use_path=None,
+                 type_link_path=None,
                  node_type_path=None,
                  variable_use_path=None,
                  function_name_path=None,
@@ -61,7 +62,8 @@ class Experiments:
             'typeuse': type_use_path,
             'varuse': variable_use_path,
             'fname': function_name_path,
-            'typeann': type_ann
+            'typeann': type_ann,
+            'typelink': type_link_path
         }
 
         self.base_path = base_path
@@ -159,6 +161,15 @@ class Experiments:
             # held = keep_from_set(held, node_pool)
 
             return Experiment(self.embed, nodes, edges, held, split_on="nodes", neg_sampling_strategy="word2vec", compact_dst=False)
+
+        elif type == "typelink":
+            typelink = pandas.read_csv(self.experiments['typelink']).astype({"src":"int32", "dst":"int32"})
+
+            node_pool = set(nodes['id'].values.tolist())
+
+            typelink = keep_from_set(typelink, node_pool)
+
+            return Experiment(self.embed, nodes, edges, typelink, split_on="nodes", neg_sampling_strategy="word2vec", compact_dst=False)
 
         elif type == "typeann":
             type_ann = pandas.read_csv(self.experiments['typeann']).astype({"src": "int32", "dst": "str"})

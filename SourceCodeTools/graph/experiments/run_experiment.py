@@ -24,6 +24,7 @@ parser.add_argument("--base_path", default=None, help="path to the trained GNN m
 parser.add_argument("--api_seq", default=None, help="")
 parser.add_argument("--var_use", default=None, help="")
 parser.add_argument("--type_ann", default=None, help="")
+parser.add_argument("--type_link", default=None, help="")
 parser.add_argument("--experiment", default="typeann", help="")
 parser.add_argument('--random', action='store_true')
 parser.add_argument('--test_embedder', action='store_true')
@@ -52,10 +53,12 @@ BASE_PATH = args.base_path
 API_SEQ = args.api_seq
 VAR_USE = args.var_use
 TYPE_ANN = args.type_ann
+TYPE_LINK = args.type_link
 
 e = Experiments(base_path=BASE_PATH,
                 api_seq_path=API_SEQ,
                 type_use_path=None, #not needed
+                type_link_path=TYPE_LINK,
                 node_type_path=None, #not needed
                 variable_use_path=VAR_USE, #not needed
                 function_name_path=None,
@@ -88,7 +91,7 @@ def run_experiment(e, EXPERIMENT_NAME, random=False, test_embedder=False):
         )
 
 
-    if EXPERIMENT_NAME in {'link', 'apicall', 'typeuse'}:
+    if EXPERIMENT_NAME in {'link', 'apicall', 'typeuse','typelink'}:
         clf = NNClassifier(experiment.embed_size)
     elif EXPERIMENT_NAME in {'varuse', 'fname'}:
         clf = ElementPredictor(experiment.embed_size, experiment.unique_elements, 100)
