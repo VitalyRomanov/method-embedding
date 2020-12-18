@@ -6,7 +6,7 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 
 # from graphtools import Embedder
-from Embedder import Embedder
+from SourceCodeTools.graph.model.Embedder import Embedder
 import pickle
 import random as rnd
 import torch
@@ -283,7 +283,7 @@ class Experiment:
         elif self.split_on == "nodes":
             # # this is useful if you use ElementEmbedder
             self.target['id'] = self.target['src']
-            from ElementEmbedderBase import ElementEmbedderBase
+            from SourceCodeTools.graph.model.ElementEmbedderBase import ElementEmbedderBase
             self.ee = ElementEmbedderBase(self.target, compact_dst=compact_dst)
             self.train_nodes, self.test_nodes = train_test_split(self.unique_src, test_size=self.TEST_FRAC,
                                                                  random_state=42)
