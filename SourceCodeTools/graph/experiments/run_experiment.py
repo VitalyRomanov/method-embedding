@@ -24,6 +24,7 @@ parser.add_argument("--base_path", default=None, help="path to the trained GNN m
 parser.add_argument("--api_seq", default=None, help="")
 parser.add_argument("--var_use", default=None, help="")
 parser.add_argument("--type_ann", default=None, help="")
+parser.add_argument("--experiment", default="typeann", help="")
 parser.add_argument('--random', action='store_true')
 parser.add_argument('--test_embedder', action='store_true')
 args = parser.parse_args()
