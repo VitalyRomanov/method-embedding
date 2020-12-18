@@ -70,6 +70,15 @@ splits = get_train_test_val_indices(nodes.index)
 # nodes['label'] = nodes['type']
 
 
+def add_splits(nodes, splits):
+    nodes['train_mask'] = False
+    nodes.loc[nodes.index[splits[0]], 'train_mask'] = True
+    nodes['test_mask'] = False
+    nodes.loc[nodes.index[splits[1]], 'test_mask'] = True
+    nodes['val_mask'] = False
+    nodes.loc[nodes.index[splits[2]], 'val_mask'] = True
+
+
 emb = Embedder(ent_map, new_embs)
 
 if not os.path.isdir(args.out_path):
@@ -81,6 +90,8 @@ torch.save(
     },
     os.path.join(args.out_path, "state_dict.pt")
 )
+
+add_splits(nodes, splits)
 
 nodes.to_csv(os.path.join(args.out_path, "nodes.csv"), index=False)
 edges.to_csv(os.path.join(args.out_path, "edges.csv"), index=False)

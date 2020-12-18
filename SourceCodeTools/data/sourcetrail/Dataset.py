@@ -45,7 +45,7 @@ def compact_property(values):
 
 
 def get_train_test_val_indices(labels, train_frac=0.6):
-    # numpy.random.seed(42)
+    numpy.random.seed(42)
 
     indices = numpy.arange(start=0, stop=labels.size)
     numpy.random.shuffle(indices)
