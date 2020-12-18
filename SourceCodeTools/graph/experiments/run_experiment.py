@@ -170,7 +170,9 @@ def run_experiment(e, EXPERIMENT_NAME, random=False, test_embedder=False):
 
     return ma_train, max(tests)
 
-for experiment_name in ['typeann']:#, 'apicall','link','typeuse','varuse','fname','nodetype']:
+exps = args.experiments.split(",")
+
+for experiment_name in exps:#['typeann']:#, 'apicall','link','typeuse','varuse','fname','nodetype']:
     print(f"\n{experiment_name}:")
     try:
         train_acc, test_acc = run_experiment(e, experiment_name, random=args.random, test_embedder=args.test_embedder)
