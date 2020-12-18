@@ -606,7 +606,7 @@ def ensure_connectedness(nodes: pandas.DataFrame, edges: pandas.DataFrame):
     return nodes, edges
 
 
-def ensure_valid_edges(nodes, edges):
+def ensure_valid_edges(nodes, edges, ignore_src=False):
     """
     Filter edges that link to nodes that do not exist
     :param nodes:
@@ -619,9 +619,10 @@ def ensure_valid_edges(nodes, edges):
 
     unique_nodes = set(nodes['id'].values.tolist())
 
-    edges = edges[
-        edges['src'].apply(lambda nid: nid in unique_nodes)
-    ]
+    if not ignore_src:
+        edges = edges[
+            edges['src'].apply(lambda nid: nid in unique_nodes)
+        ]
 
     edges = edges[
         edges['dst'].apply(lambda nid: nid in unique_nodes)
