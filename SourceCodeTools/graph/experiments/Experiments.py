@@ -69,8 +69,8 @@ class Experiments:
             'fname': function_name_path,
             'typeann': type_ann,
             'typelink': type_link_path,
-            'typelink_train': type_link_path,
-            'typelink_test': type_link_path
+            'typelink_train': type_link_train_path,
+            'typelink_test': type_link_test_path
         }
 
         self.base_path = base_path
