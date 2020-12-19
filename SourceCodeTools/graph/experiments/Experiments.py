@@ -526,8 +526,6 @@ class Experiment:
 
     def batch_nodes(self, indices, size=128, K=15, test=False):
 
-        print(indices)
-        print(indices.shape)
         if not test and indices.shape[0] < size:
             raise ValueError("The amount of training data is too small")
 
@@ -591,8 +589,8 @@ class Experiment_tt(Experiment):
         if len(target_train) != len(train_nodes):
             print(f"Removed {len(target_train) - len(train_nodes)} nodes from train in favor of the test set")
 
-        train_nodes = np.array(train_nodes)
-        test_nodes = np.array(test_nodes)
+        train_nodes = np.array(list(train_nodes))
+        test_nodes = np.array(list(test_nodes))
 
         # size of embeddings given by gnn model
         self.embed_size = self.embed.e.shape[1]
