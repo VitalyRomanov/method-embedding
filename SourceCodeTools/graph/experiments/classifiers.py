@@ -17,28 +17,49 @@ class LRClassifier(Model):
 
 
 class NNClassifier(Model):
-    def __init__(self, input_size=None):
+    def __init__(self, input_size=None, h_size=None):
         super(NNClassifier, self).__init__()
-        self.l1 = Dense(20,
+
+        if h_size is None:
+            h_size = [20]
+
+        self.layers_ = []
+        for ind, l in enumerate(h_size):
+            if ind == 0:
+                self.layers_.append(
+                    Dense(l,
                             # kernel_regularizer=regularizers.l2(0.001),
                             input_shape=(input_size,), activation=tf.nn.relu)
-        self.l2 = Dense(30, activation=tf.nn.relu)
-        self.l3 = Dense(10, activation=tf.nn.relu)
-        self.logits = Dense(2)
+                )
+            else:
+                self.layers_.append(Dense(l, activation=tf.nn.relu))
+        self.layers_.append(Dense(2))
+
+        # self.l1 = Dense(h_size[0],
+        #                     # kernel_regularizer=regularizers.l2(0.001),
+        #                     input_shape=(input_size,), activation=tf.nn.relu)
+        # self.l2 = Dense(h_size[1], activation=tf.nn.relu)
+        # self.l3 = Dense(h_size[2], activation=tf.nn.relu)
+        # self.logits = Dense(2)
 
 
     def __call__(self, x, **kwargs):
-        x = self.l1(x)
+        h = x
+        for l in self.layers_:
+            h = l(h)
+        return h
+        # x = self.l1(x)
         # x = self.l2(x)
         # x = self.l3(x)
-        return self.logits(x)
+        # return self.logits(x)
+
 
 class ElementPredictor(Model):
-    def __init__(self, node_emb_size, n_emb, emb_size):
+    def __init__(self, node_emb_size, n_emb, emb_size, h_size=50):
         super(ElementPredictor, self).__init__()
         self.emb_layer = Embedding(n_emb, emb_size)
 
-        self.l1 = Dense(50, activation="relu",
+        self.l1 = Dense(h_size, activation="relu",
                         input_shape=(node_emb_size + emb_size,))
         self.logits = Dense(2)
 
@@ -52,16 +73,35 @@ class ElementPredictor(Model):
 
 
 class NodeClassifier(Model):
-    def __init__(self, node_emb_size, n_classes):
+    def __init__(self, node_emb_size, n_classes, h_size=None):
         super(NodeClassifier, self).__init__()
 
-        self.l1 = Dense(30, input_shape=(node_emb_size,))
-        self.l2 = Dense(15, input_shape=(30,))
-        self.logits = Dense(n_classes, input_shape=(15,))
+        if h_size is None:
+            h_size = [30, 15]
+
+        self.layers_ = []
+        for ind, l in enumerate(h_size):
+            if ind == 0:
+                self.layers_.append(
+                    Dense(l,
+                          # kernel_regularizer=regularizers.l2(0.001),
+                          input_shape=(node_emb_size,), activation=tf.nn.relu)
+                )
+            else:
+                self.layers_.append(Dense(l, activation=tf.nn.relu))
+        self.layers_.append(Dense(n_classes))
+
+        # self.l1 = Dense(h_size[0], input_shape=(node_emb_size,))
+        # self.l2 = Dense(h_size[2], input_shape=(h_size[0],))
+        # self.logits = Dense(n_classes, input_shape=(h_size[1],))
 
     def __call__(self, x, **kwargs):
-        x = self.l1(x)
-        x = self.l2(x)
-        return self.logits(x)
+        h = x
+        for l in self.layers_:
+            h = l(h)
+        return h
+        # x = self.l1(x)
+        # x = self.l2(x)
+        # return self.logits(x)
 
 
