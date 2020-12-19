@@ -526,6 +526,8 @@ class Experiment:
 
     def batch_nodes(self, indices, size=128, K=15, test=False):
 
+        print(indices)
+        print(indices.shape)
         if not test and indices.shape[0] < size:
             raise ValueError("The amount of training data is too small")
 
