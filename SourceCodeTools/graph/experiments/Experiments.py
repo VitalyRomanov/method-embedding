@@ -190,6 +190,11 @@ class Experiments:
 
             node_pool = set(nodes['id'].values.tolist())
 
+            typelink_train = keep_from_set(typelink_train, node_pool)
+            typelink_test = keep_from_set(typelink_test, node_pool)
+
+            print(f"Train set has {len(typelink_train)} edges, test set has {len(typelink_test)} edges")
+
             return Experiment_tt(self.embed, nodes, edges, target_train=typelink_train, target_test=typelink_test, neg_sampling_strategy="word2vec",
                               compact_dst=False)
 
