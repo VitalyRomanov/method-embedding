@@ -61,6 +61,8 @@ e = Experiments(base_path=BASE_PATH,
                 api_seq_path=API_SEQ,
                 type_use_path=None, #not needed
                 type_link_path=TYPE_LINK,
+                type_link_train_path=args.type_link_train,
+                type_link_test_path=args.type_link_test,
                 node_type_path=None, #not needed
                 variable_use_path=VAR_USE, #not needed
                 function_name_path=None,
