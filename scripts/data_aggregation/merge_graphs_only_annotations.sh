@@ -1,7 +1,7 @@
 conda activate SourceCodeTools
 
 ENVS_DIR=$(realpath $1)
-RUN_DIR=$(realpath $(dirname "$0"))
+RUN_DIR=$(realpath $(dirname $0))
 OUT_DIR=$(realpath $2)
 
 SPARK_GRAPH_ANALYSIS=$(realpath "$RUN_DIR/../../spark-SourceGraphAnalysis/out/artifacts/GraphAnalysis_jar")
