@@ -25,6 +25,6 @@ train.rename({
     "src":"target_node_id"
 }, axis=1)[["id","type","source_node_id","target_node_id"]].to_csv(join(dirname(type_annotations_path), "annotations_train.csv"), index=False)
 test.rename({
-    "src":"source_node_id",
-    "dst":"target_node_id"
+    "dst":"source_node_id",
+    "src":"target_node_id"
 }, axis=1)[["id","type","source_node_id","target_node_id"]].to_csv(join(dirname(type_annotations_path), "annotations_test.csv"), index=False)

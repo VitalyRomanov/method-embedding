@@ -25,6 +25,8 @@ parser.add_argument("--api_seq", default=None, help="")
 parser.add_argument("--var_use", default=None, help="")
 parser.add_argument("--type_ann", default=None, help="")
 parser.add_argument("--type_link", default=None, help="")
+parser.add_argument("--type_link_train", default=None, help="")
+parser.add_argument("--type_link_test", default=None, help="")
 parser.add_argument("--experiment", default="typeann", help="")
 parser.add_argument('--random', action='store_true')
 parser.add_argument('--test_embedder', action='store_true')
@@ -91,7 +93,7 @@ def run_experiment(e, EXPERIMENT_NAME, random=False, test_embedder=False):
         )
 
 
-    if EXPERIMENT_NAME in {'link', 'apicall', 'typeuse','typelink'}:
+    if EXPERIMENT_NAME in {'link', 'apicall', 'typeuse','typelink', 'typelink_tt'}:
         clf = NNClassifier(experiment.embed_size)
     elif EXPERIMENT_NAME in {'varuse', 'fname'}:
         clf = ElementPredictor(experiment.embed_size, experiment.unique_elements, 100)
