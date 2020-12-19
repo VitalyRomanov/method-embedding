@@ -185,7 +185,7 @@ class Experiments:
         elif type == "typelink_tt":
             typelink_train = pandas.read_csv(self.experiments['typelink_train']).astype(
                 {"src": "int32", "dst": "int32"})
-            typelink_test = pandas.read_csv(self.experiments['typelink_tese']).astype(
+            typelink_test = pandas.read_csv(self.experiments['typelink_test']).astype(
                 {"src": "int32", "dst": "int32"})
 
             node_pool = set(nodes['id'].values.tolist())
