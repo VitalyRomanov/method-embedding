@@ -8,6 +8,7 @@ from Experiments import Experiments, Experiment
 import argparse
 from classifiers import LRClassifier, NNClassifier, ElementPredictor, NodeClassifier, ElementPredictorWithSubwords
 import tensorflow as tf
+import tensorflow_addons as tfa
 
 # tf.get_logger().setLevel('ERROR')
 import numpy as np
@@ -60,7 +61,8 @@ def run_experiment(e, experiment_name, args):
     #             loss='sparse_categorical_crossentropy')
 
     loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+    # optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+    optimizer = tfa.optimizers.lazy_adam.LazyAdam(learning_rate=0.001)
 
     train_loss = tf.keras.metrics.Mean(name='train_loss')
     train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='train_accuracy')
