@@ -149,6 +149,8 @@ if __name__ == "__main__":
     parser.add_argument('--test_embedder', action='store_true')
     args = parser.parse_args()
 
+    print(args.__dict__)
+
     e = Experiments(base_path=args.base_path,
                     api_seq_path=args.api_seq,
                     type_link_path=args.type_link,
