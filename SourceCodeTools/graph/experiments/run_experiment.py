@@ -6,7 +6,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 from Experiments import Experiments, Experiment
 import argparse
-from classifiers import LRClassifier, NNClassifier, ElementPredictor, NodeClassifier
+from classifiers import LRClassifier, NNClassifier, ElementPredictor, NodeClassifier, ElementPredictorWithSubwords
 import tensorflow as tf
 
 # tf.get_logger().setLevel('ERROR')
@@ -16,8 +16,9 @@ from ast import literal_eval
 
 link_prediction_experiments = ['link', 'apicall', 'typeuse', 'typelink', 'typelink_tt']
 name_prediction_experiments = ['varuse', 'fname']
+name_subword_predictor = ['typeann_name']
 node_classification_experiments = ['nodetype', "typeann"]
-all_experiments = link_prediction_experiments + name_prediction_experiments + node_classification_experiments
+all_experiments = link_prediction_experiments + name_prediction_experiments + node_classification_experiments + name_subword_predictor
 
 
 def run_experiment(e, experiment_name, args):
@@ -48,6 +49,9 @@ def run_experiment(e, experiment_name, args):
     elif experiment_name in node_classification_experiments:
         clf = NodeClassifier(experiment.embed_size, experiment.unique_elements,
                              h_size=literal_eval(args.node_classifier_h_size))
+    elif experiment_name in name_subword_predictor:
+        clf = ElementPredictorWithSubwords(experiment.embed_size, experiment.num_buckets, args.name_emb_dim,
+                               h_size=args.element_predictor_h_size)
     else:
         raise ValueError(
             f"Unknown experiment: {type}. The following experiments are available: [{'|'.join(all_experiments)}].")
