@@ -6,6 +6,7 @@ from collections.abc import Iterable
 import pandas as pd
 import os
 
+
 class AstGraphGenerator(object):
 
     def __init__(self, source):
@@ -23,7 +24,7 @@ class AstGraphGenerator(object):
         for f_def_node in ast.iter_child_nodes(self.root):
             if type(f_def_node) == ast.FunctionDef:
                 edges.extend(self.parse(f_def_node))
-                break # to avoid going through nested definitions
+                break  # to avoid going through nested definitions
 
         df = pd.DataFrame(edges)
         return df.astype({col: "Int32" for col in df.columns if col not in {"src", "dst", "type"}})
@@ -39,7 +40,7 @@ class AstGraphGenerator(object):
             print(node._fields)
             pprint(self.source)
             return self.generic_parse(node, node._fields)
-            raise Exception()
+            # raise Exception()
             # return [type(node)]
 
     def parse_body(self, nodes):
