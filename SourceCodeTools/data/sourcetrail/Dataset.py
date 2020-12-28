@@ -415,9 +415,9 @@ class SourceGraphDataset:
         g.edata['etypes'] = torch.tensor(edge_types, dtype=torch.int64)
 
         masks = self.nodes[['typed_id', 'train_mask', 'test_mask', 'val_mask']].sort_values('typed_id')
-        self.g.ndata['train_mask'] = torch.tensor(masks['train_mask'].values, dtype=bool)
-        self.g.ndata['test_mask'] = torch.tensor(masks['test_mask'].values, dtype=bool)
-        self.g.ndata['val_mask'] = torch.tensor(masks['val_mask'].values, dtype=bool)
+        g.ndata['train_mask'] = torch.tensor(masks['train_mask'].values, dtype=bool)
+        g.ndata['test_mask'] = torch.tensor(masks['test_mask'].values, dtype=bool)
+        g.ndata['val_mask'] = torch.tensor(masks['val_mask'].values, dtype=bool)
 
         self.g = g
 
