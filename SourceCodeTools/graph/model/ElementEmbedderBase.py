@@ -58,6 +58,9 @@ class ElementEmbedderBase:
     def get_src_pool(self, ntypes=None):
         if ntypes is None:
             return set(self.elements['id'].to_list())
+        elif ntypes == ['_U']:
+            # this case processes graphs with no specific node types https://docs.dgl.ai/en/latest/api/python/heterograph.html
+            return {"_U": set(self.elements['id'].to_list())}
         else:
             return {ntype: set(self.elements.query(f"src_type == {ntype}")['src_typed_id'].tolist()) for ntype in ntypes}
 

@@ -315,3 +315,6 @@ class GATSampler(nn.Module):
 
     def get_embeddings(self, id_maps):
         return [Embedder(id_maps, e) for e in self.get_layers()]
+
+    def node_embed(self):
+        return {'_U':self.embed}

@@ -76,7 +76,8 @@ gatsampling_grids = [
         'attn_drop': [0.3],
         'negative_slope': [0.2],
         'residual': [False],
-        'activation': [torch.nn.functional.leaky_relu]  # torch.nn.functional.leaky_relu
+        'activation': [torch.nn.functional.leaky_relu],  # torch.nn.functional.leaky_relu
+        'lr': [0.01]
     },
 ]
 

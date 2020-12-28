@@ -579,8 +579,8 @@ def training_procedure(dataset, model, params, EPOCHS, args, MODEL_BASE):
         train(MODEL_BASE, g, m, ee_fname, ee_varuse, ee_apicall, lp_fname, lp_varuse, lp_apicall, EPOCHS, device, lr, args.batch_size)
     except KeyboardInterrupt:
         print("Training interrupted")
-    except:
-        raise Exception()
+    except Exception as e:
+        raise e
 
     m.eval()
     ee_fname.eval()
