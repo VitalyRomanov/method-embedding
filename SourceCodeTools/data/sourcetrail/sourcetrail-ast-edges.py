@@ -8,6 +8,7 @@ import ast
 from nltk import RegexpTokenizer
 
 from SourceCodeTools.proc.entity.annotator.annotator_utils import to_offsets, overlap, resolve_self_collision
+from bpemb import BPEmb
 pd.options.mode.chained_assignment = None
 
 # from node_name_serializer import deserialize_node_name
@@ -304,8 +305,122 @@ def write_edges_v1(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_na
         pd.concat([node, pd.DataFrame(node_resolver.new_nodes)]).to_csv(f, index=False, quoting=QUOTE_NONNUMERIC)
 
 
-def write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name):
+def filter_out_mentions_for_srctrl_nodes(edges):
+    # filter mention_scope edges for sourcetrail nodes
+    ######
+    srctrl_decode = lambda x: x.split("@")[0] if x.startswith("srctrlnd") and "@" in x else x
+    edges['src'] = edges['src'].apply(srctrl_decode)
+    edges['dst'] = edges['dst'].apply(srctrl_decode)
+    edges = edges.query("src!=dst")
+    edges['help'] = edges['dst'].apply(lambda x: x.split("_")[0])
+    edges = edges.query("help!='srctrlnd' or type!='mention_scope'").drop("help", axis=1)
+    ######
+    return edges
+
+
+def replace_mentions_with_subwords(edges, bpe):
+    edges = edges.to_dict(orient="records")
+
+    new_edges = []
+    for edge in edges:
+        if edge['type'] == "local_mention":
+            dst = edge['dst']
+            subwords = bpe.encode(edge['src'])
+            for ind, subword in enumerate(subwords):
+                new_edges.append({
+                    'src': subword,
+                    'dst': dst,
+                    'type': 'subword',
+                    'line': pd.NA,
+                    'end_line': pd.NA,
+                    'col_offset': pd.NA,
+                    'end_col_offset': pd.NA,
+                })
+                # if ind < len(subwords) - 1:
+                #     new_edges.append({
+                #         'src': subword,
+                #         'dst': subwords[ind + 1],
+                #         'type': 'next_subword',
+                #         'line': pd.NA,
+                #         'end_line': pd.NA,
+                #         'col_offset': pd.NA,
+                #         'end_col_offset': pd.NA,
+                #     })
+                # if ind > 0:
+                #     new_edges.append({
+                #         'src': subword,
+                #         'dst': subwords[ind - 1],
+                #         'type': 'prev_subword',
+                #         'line': pd.NA,
+                #         'end_line': pd.NA,
+                #         'col_offset': pd.NA,
+                #         'end_col_offset': pd.NA,
+                #     })
+        else:
+            new_edges.append(edge)
+
+    return pd.DataFrame(new_edges)
+
+
+def replace_mentions_with_subword_instances(edges, bpe):
+    edges = edges.to_dict(orient="records")
+
+    new_edges = []
+    for edge in edges:
+        if edge['type'] == "local_mention":
+            dst = edge['dst']
+            subwords = bpe.encode(edge['src'])
+            instances = list(map(lambda x: x + "@" + dst, subwords))
+            for ind, subword in enumerate(subwords):
+                subword_instance = instances[ind]
+                new_edges.append({
+                    'src': subword,
+                    'dst': subword_instance,
+                    'type': 'subword_instance',
+                    'line': pd.NA,
+                    'end_line': pd.NA,
+                    'col_offset': pd.NA,
+                    'end_col_offset': pd.NA,
+                })
+                new_edges.append({
+                    'src': subword_instance,
+                    'dst': dst,
+                    'type': 'subword',
+                    'line': pd.NA,
+                    'end_line': pd.NA,
+                    'col_offset': pd.NA,
+                    'end_col_offset': pd.NA,
+                })
+                if ind < len(subwords) - 1:
+                    new_edges.append({
+                        'src': subword_instance,
+                        'dst': instances[ind + 1],
+                        'type': 'next_subword',
+                        'line': pd.NA,
+                        'end_line': pd.NA,
+                        'col_offset': pd.NA,
+                        'end_col_offset': pd.NA,
+                    })
+                if ind > 0:
+                    new_edges.append({
+                        'src': subword_instance,
+                        'dst': instances[ind - 1],
+                        'type': 'prev_subword',
+                        'line': pd.NA,
+                        'end_line': pd.NA,
+                        'col_offset': pd.NA,
+                        'end_col_offset': pd.NA,
+                    })
+        else:
+            new_edges.append(edge)
+
+    return pd.DataFrame(new_edges)
+
+
+def write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name, n_subwords=100000):
     bodies_with_replacements = []
+
+    bpe = BPEmb(lang="multi", vs=n_subwords, dim=300)
 
     for ind_bodies, (_, row) in enumerate(bodies.iterrows()):
         orig_body = row['random_replacements']
@@ -334,15 +449,12 @@ def write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_na
         edges['src'] = edges['src'].apply(replacements_lookup)
         edges['dst'] = edges['dst'].apply(replacements_lookup)
 
-        # filter mention_scope edges for sourcetrail nodes
-        ######
-        srctrl_decode = lambda x: x.split("@")[0] if x.startswith("srctrlnd") and "@" in x else x
-        edges['src'] = edges['src'].apply(srctrl_decode)
-        edges['dst'] = edges['dst'].apply(srctrl_decode)
-        edges = edges.query("src!=dst")
-        edges['help'] = edges['dst'].apply(lambda x: x.split("_")[0])
-        edges = edges.query("help!='srctrlnd' or type!='mention_scope'").drop("help", axis=1)
-        ######
+        edges = filter_out_mentions_for_srctrl_nodes(edges)
+
+        edges = replace_mentions_with_subword_instances(edges, bpe)
+        # TODO
+        # subwords are only used by named units not detected by sourcetrail
+        # need to decide whether to use subwords for sourcetrail nodes
 
         edges['src'] = edges['src'].apply(node_resolver.resolve)
         edges['dst'] = edges['dst'].apply(node_resolver.resolve)
@@ -408,6 +520,10 @@ def write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_na
 if __name__ == "__main__":
 
     working_directory = sys.argv[1]
+    try:
+        n_subwords = int(sys.argv[2])
+    except:
+        n_subwords = 100000
 
     node_path = os.path.join(working_directory, "normalized_sourcetrail_nodes.csv")
     edge_path = os.path.join(working_directory, "edges.csv")
@@ -423,5 +539,5 @@ if __name__ == "__main__":
     edge.to_csv(edges_with_ast_name, index=False, quoting=QUOTE_NONNUMERIC)
 
     # write_edges_v1(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name)
-    write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name)
+    write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name, n_subwords=n_subwords)
 

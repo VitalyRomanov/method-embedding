@@ -72,6 +72,25 @@ class ElementPredictor(Model):
         return x
 
 
+class ElementPredictorWithSubwords(Model):
+    def __init__(self, node_emb_size, n_emb, emb_size, h_size=50):
+        super(ElementPredictorWithSubwords, self).__init__()
+        self.emb_layer = Embedding(n_emb, emb_size)
+
+        self.l1 = Dense(h_size, activation="relu",
+                        input_shape=(node_emb_size + emb_size,))
+        self.logits = Dense(2)
+
+    def __call__(self, x, elements, **kwargs):
+
+        element_embeddings = self.emb_layer(elements)
+        element_embeddings = tf.reduce_mean(element_embeddings, axis=1)
+        x = concatenate([x, element_embeddings])
+        x = self.l1(x)
+        x = self.logits(x)
+        return x
+
+
 class NodeClassifier(Model):
     def __init__(self, node_emb_size, n_classes, h_size=None):
         super(NodeClassifier, self).__init__()
