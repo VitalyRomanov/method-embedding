@@ -53,8 +53,12 @@ class RelGraphConvLayer(nn.Module):
         self.activation = activation
         self.self_loop = self_loop
 
+        # TODO
+        # think of possibility switching to GAT
+        # rel : dglnn.GATConv(in_feat, out_feat, num_heads=4)
+        # rel : dglnn.GraphConv(in_feat, out_feat, norm='right', weight=False, bias=False, allow_zero_in_degree=True)
         self.conv = dglnn.HeteroGraphConv({
-                rel : dglnn.GraphConv(in_feat, out_feat, norm='right', weight=False, bias=False, allow_zero_in_degree=True)
+                rel : dglnn.GATConv(in_feat, out_feat, num_heads=1)
                 for rel in rel_names
             })
 
@@ -119,7 +123,10 @@ class RelGraphConvLayer(nn.Module):
             if self.activation:
                 h = self.activation(h)
             return self.dropout(h)
-        return {ntype : _apply(ntype, h) for ntype, h in hs.items()}
+        # TODO
+        # think of possibility switching to GAT
+        # return {ntype: _apply(ntype, h).mean(1) for ntype, h in hs.items()}
+        return {ntype : _apply(ntype, h).mean(1) for ntype, h in hs.items()}
 
 class RelGraphEmbed(nn.Module):
     r"""Embedding layer for featureless heterograph."""
@@ -197,12 +204,18 @@ class RGCNSampling(nn.Module):
             self.layers.append(RelGraphConvLayer(
                 self.h_dim, self.h_dim, self.rel_names,
                 self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
-                dropout=self.dropout))
+                dropout=self.dropout, weight=False)) # changed weight for GATConv
+            # TODO
+            # think of possibility switching to GAT
+            # weight=False
         # h2o
         self.layers.append(RelGraphConvLayer(
             self.h_dim, self.out_dim, self.rel_names,
             self.num_bases, activation=None,
-            self_loop=self.use_self_loop))
+            self_loop=self.use_self_loop, weight=False)) # changed weight for GATConv
+        # TODO
+        # think of possibility switching to GAT
+        # weight=False
 
         self.emb_size = num_classes
 
