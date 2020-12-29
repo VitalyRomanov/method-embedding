@@ -58,8 +58,9 @@ class AstGraphGenerator(object):
 
                 last_node = s[1]
 
-                for cond_name, cons_stat in zip(self.current_condition, self.condition_status):
-                    edges.append({"src": last_node, "dst": cond_name, "type": "depends_on_" + cons_stat})
+                for cond_name, cond_stat in zip(self.current_condition, self.condition_status):
+                    edges.append({"src": last_node, "dst": cond_name, "type": "depends_on_" + cond_stat})
+                    edges.append({"src": cond_name, "dst": last_node, "type": "execute_when" + cond_stat})
             else:
                 edges.extend(s)
         return edges
@@ -125,6 +126,9 @@ class AstGraphGenerator(object):
         else:
             edges.append({"src": operand_name, "dst": node_name, "type": type})
 
+        if len(ext_edges) > 0: # need this to avoid adding reverse edges to operation names and other highly connected nodes
+            edges.append({"src": node_name, "dst": operand_name, "type": type + "_rev"})
+
     def generic_parse(self, node, operands, with_name=None):
 
         edges = []
@@ -184,10 +188,13 @@ class AstGraphGenerator(object):
             # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
             # https://www.python.org/dev/peps/pep-0484/#forward-references
             annotation = self.source[node.returns.lineno - 1][node.returns.col_offset: node.returns.end_col_offset]
-            edges.append({"src": annotation, "dst": f_name, "type": 'returns', "line": node.returns.lineno - 1, "end_line": node.returns.end_lineno - 1, "col_offset": node.returns.col_offset, "end_col_offset": node.returns.end_col_offset})
+            edges.append({"src": annotation, "dst": f_name, "type": 'returned_by', "line": node.returns.lineno - 1, "end_line": node.returns.end_lineno - 1, "col_offset": node.returns.col_offset, "end_col_offset": node.returns.end_col_offset})
+            # do not use reverse edges for types, will result in leak from function to function
+            # edges.append({"src": f_name, "dst": annotation, "type": 'returns'})
 
         assert isinstance(node.name, str)
         edges.append({"src": f_name, "dst": node.name, "type": "fname"})
+        edges.append({"src": node.name, "dst": f_name, "type": "fname_for"})
 
         # if node.returns:
         #     print(self.source[node.lineno -1]) # can get definition string here
@@ -284,7 +291,9 @@ class AstGraphGenerator(object):
             # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
             # https://www.python.org/dev/peps/pep-0484/#forward-references
             annotation = self.source[node.annotation.lineno - 1][node.annotation.col_offset: node.annotation.end_col_offset]
-            edges.append({"src": annotation, "dst": name, "type": 'annotation', "line": node.annotation.lineno-1, "end_line": node.annotation.end_lineno-1, "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset, "var_line": node.lineno-1, "var_end_line": node.end_lineno-1, "var_col_offset": node.col_offset, "var_end_col_offset": node.end_col_offset})
+            edges.append({"src": annotation, "dst": name, "type": 'annotation_for', "line": node.annotation.lineno-1, "end_line": node.annotation.end_lineno-1, "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset, "var_line": node.lineno-1, "var_end_line": node.end_lineno-1, "var_col_offset": node.col_offset, "var_end_col_offset": node.end_col_offset})
+            # do not use reverse edges for types, will result in leak from function to function
+            # edges.append({"src": name, "dst": annotation, "type": 'annotation'})
         return edges, name
         # return self.generic_parse(node, ["arg", "annotation"])
 
@@ -304,7 +313,9 @@ class AstGraphGenerator(object):
         # https://www.python.org/dev/peps/pep-0484/#forward-references
         annotation = self.source[node.lineno - 1][node.annotation.col_offset: node.annotation.end_col_offset]
         edges, name = self.generic_parse(node, ["target"])
-        edges.append({"src": annotation, "dst": name, "type": 'annotation', "line": node.annotation.lineno-1, "end_line": node.annotation.end_lineno-1, "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset, "var_line": node.lineno-1, "var_end_line": node.end_lineno-1, "var_col_offset": node.col_offset, "var_end_col_offset": node.end_col_offset})
+        edges.append({"src": annotation, "dst": name, "type": 'annotation_for', "line": node.annotation.lineno-1, "end_line": node.annotation.end_lineno-1, "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset, "var_line": node.lineno-1, "var_end_line": node.end_lineno-1, "var_col_offset": node.col_offset, "var_end_col_offset": node.end_col_offset})
+        # do not use reverse edges for types, will result in leak from function to function
+        # edges.append({"src": name, "dst": annotation, "type": 'annotation'})
         return edges, name
         # return self.generic_parse(node, ["target", "annotation"])
 
@@ -569,12 +580,12 @@ class AstGraphGenerator(object):
 
     def parse_control_flow(self, node):
         edges = []
-        call_name = "call" + str(int(time_ns()))
-        edges.append({"src": node.__class__.__name__, "dst": call_name, "type": "control_flow"})
+        ctrlflow_name = "ctrl_flow" + str(int(time_ns()))
+        edges.append({"src": node.__class__.__name__, "dst": ctrlflow_name, "type": "control_flow"})
 
         # for cond_name, cons_stat in zip(self.current_condition, self.condition_status):
         #     edges.append({"src": call_name, "dst": cond_name, "type": "depends_on_" + cons_stat})
-        return edges, call_name
+        return edges, ctrlflow_name
 
     def parse_Continue(self, node):
         return self.parse_control_flow(node)
@@ -658,6 +669,8 @@ class AstGraphGenerator(object):
             edges.append({"src": target, "dst": cph_name, "type": "target", "line": node.target.lineno-1, "end_line": node.target.end_lineno-1, "col_offset": node.target.col_offset, "end_col_offset": node.target.end_col_offset})
         else:
             edges.append({"src": target, "dst": cph_name, "type": "target"})
+        if len(ext_edges) > 0:
+            edges.append({"src": cph_name, "dst": target, "type": "target_for"})
 
         iter_, ext_edges = self.parse_operand(node.iter)
         edges.extend(ext_edges)
@@ -665,11 +678,15 @@ class AstGraphGenerator(object):
             edges.append({"src": iter_, "dst": cph_name, "type": "iter", "line": node.iter.lineno-1, "end_line": node.iter.end_lineno-1, "col_offset": node.iter.col_offset, "end_col_offset": node.iter.end_col_offset})
         else:
             edges.append({"src": iter_, "dst": cph_name, "type": "iter"})
+        if len(ext_edges) > 0:
+            edges.append({"src": cph_name, "dst": iter_, "type": "iter_for"})
 
         for if_ in node.ifs:
             if_n, ext_edges = self.parse_operand(if_)
             edges.extend(ext_edges)
             edges.append({"src": if_n, "dst": cph_name, "type": "ifs"})
+            if len(ext_edges) > 0:
+                edges.append({"src": cph_name, "dst": if_n, "type": "ifs_rev"})
 
         return edges, cph_name
 
