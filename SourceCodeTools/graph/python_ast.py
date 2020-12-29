@@ -145,8 +145,11 @@ class AstGraphGenerator(object):
                             self.parse_and_add_operand(node_name, oper_, operand, edges)
                     else:
                         self.parse_and_add_operand(node_name, operand_, operand, edges)
-                        
-        edges.append({"src": node.__class__.__name__, "dst": node_name, "type": "node_type"})
+
+        # TODO
+        # need to identify the benefit of this node
+        # maybe it is better to use node types in the graph
+        # edges.append({"src": node.__class__.__name__, "dst": node_name, "type": "node_type"})
 
         return edges, node_name
 
