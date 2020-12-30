@@ -1,35 +1,83 @@
-from SourceCodeTools.graph.python_ast import AstGraphGenerator
-import sys, os
-import pandas as pd
-from csv import QUOTE_NONNUMERIC
-import re
-from copy import copy
 import ast
+import os
+import re
+import sys
+from copy import copy
+from csv import QUOTE_NONNUMERIC
+
+import pandas as pd
 from nltk import RegexpTokenizer
 
+from SourceCodeTools.data.sourcetrail.sourcetrail_types import node_types, edge_types
+from SourceCodeTools.graph.python_ast import AstGraphGenerator
+from SourceCodeTools.graph.python_ast import GNode
 from SourceCodeTools.proc.entity.annotator.annotator_utils import to_offsets, overlap, resolve_self_collision
-from bpemb import BPEmb
+
 pd.options.mode.chained_assignment = None
 
-# from node_name_serializer import deserialize_node_name
+
+def create_subword_tokenizer(lang, vs):
+    from pathlib import Path
+    from bpemb.util import sentencepiece_load, http_get
+    import re
+
+    def _load_file(file, archive=False):
+        cache_dir = Path.home() / Path(".cache/bpemb")
+        archive_suffix = ".tar.gz"
+        base_url = "https://nlp.h-its.org/bpemb/"
+        cached_file = Path(cache_dir) / file
+        if cached_file.exists():
+            return cached_file
+        suffix = archive_suffix if archive else ""
+        file_url = base_url + file + suffix
+        print("downloading", file_url)
+        return http_get(file_url, cached_file, ignore_tardir=True)
+    model_file = "{lang}/{lang}.wiki.bpe.vs{vs}.model".format(lang=lang, vs=vs)
+    model_file = _load_file(model_file)
+    spm = sentencepiece_load(model_file)
+    return lambda text: spm.EncodeAsPieces(re.sub(r"\d", "0", text.lower()))
+
 
 class NodeResolver:
-    def __init__(self, node):
+    def __init__(self, nodes):
 
-        self.nodeid2name = dict(zip(node['id'].tolist(), node['serialized_name'].tolist()))
+        self.nodeid2name = dict(zip(nodes['id'].tolist(), nodes['serialized_name'].tolist()))
+        self.nodeid2type = dict(zip(nodes['id'].tolist(), nodes['type'].tolist()))
 
-        # self.valid_new_type = 260 # fits about 250 new type
-        # self.type_maps = {}
-        # self.new_types = []
-
-        self.valid_new_node = node['id'].max() + 1
-        self.ast_node_type = 3
-        self.node_maps = {}
+        self.valid_new_node = nodes['id'].max() + 1
+        self.node_ids = {}
         self.new_nodes = []
 
-    def resolve(self, name_orig):
+        self.old_nodes = nodes.copy()
+        self.old_nodes['mentioned_in'] = -1
 
-        name_ = copy(name_orig)
+    def get_new_node_id(self):
+        new_id = self.valid_new_node
+        self.valid_new_node += 1
+        return new_id
+
+    def resolve(self, node, srctrl2original):
+
+        decorated = "@" in node.name
+        assert len([c for c in node.name if c == "@"]) <= 1
+
+        if decorated:
+            name_, decorator = node.name.split("@")
+        else:
+            name_ = copy(node.name)
+
+        if name_ in srctrl2original:
+            node_id = int(name_.split("_")[1])
+            if decorated:
+                real_name = srctrl2original[name_]
+                real_name += "@" + decorator
+                type_ = "mention"
+                new_node = GNode(name=real_name, type=type_, name_scope="local")
+            else:
+                real_name = self.nodeid2name[node_id]
+                type_ = self.nodeid2type[node_id]
+                new_node = GNode(name=real_name, type=type_, id=node_id, name_scope="global")
+            return new_node
 
         replacements = dict()
         for name in re.finditer("srctrlnd_[0-9]+", name_):
@@ -46,128 +94,37 @@ class NodeResolver:
                     "id": node_id
                 }
 
-        # try to replace into node id
+        real_name = name_
         for r, v in replacements.items():
-            name_ = name_.replace(r, v["id"])
+            real_name = name_.replace(r, v["name"])
 
-        try:
-            node_id = int(name_)
-            return node_id
-        except:
-            # can go here if the node is not sourcetrail node or
-            # if the node is a composite type
-            pass
+        if decorated:
+            real_name += "@" + decorator
 
-        # failed to convert into id, create new node
-        name_ = copy(name_orig)
-        for r, v in replacements.items():
-            name_ = name_.replace(r, v["name"])
+        return GNode(name=real_name, type=node.type)
 
-        name = name_
-        if name not in self.node_maps:
-            self.node_maps[name] = self.valid_new_node
-            self.new_nodes.append({"id": self.valid_new_node, "type": self.ast_node_type, "serialized_name": name})
-            self.valid_new_node += 1
-        return self.node_maps[name]
+    def resolve_node_id(self, node, function_id):
+        if not hasattr(node, "id"):
+            node_repr = (node.name, node.type)
 
+            if node_repr in self.node_ids:
+                node.setprop("id", self.node_ids[node_repr])
+            else:
+                new_id = self.get_new_node_id()
+                self.node_ids[node_repr] = new_id
+                self.new_nodes.append(
+                    {"id": new_id, "type": node.type, "serialized_name": node.name, "mentioned_in": function_id})
 
-# import spacy
-# from SourceCodeTools.proc.entity.util import inject_tokenizer
-# from spacy.gold import biluo_tags_from_offsets
-# def isvalid(text, ents):
-#     nlp = inject_tokenizer(spacy.blank("en"))
-#     doc = nlp(text)
-#     tags = biluo_tags_from_offsets(doc, ents)
-#     for t, tag in zip(doc, tags):
-#         print(tag, t.text, sep="\t")
-#     if "-" in tags:
-#         return False
-#     else:
-#         return True
+                node.setprop("id", new_id)
+        return node
 
 
-# def resolve_edge_type(edge_type):
-#     global valid_new_type, type_maps, new_types
-#
-#     # if edge_type not in type_maps:
-#     #     type_maps[edge_type] = valid_new_type
-#     #     new_types.append({"type_id": valid_new_type, "type_desc": edge_type})
-#     #     valid_new_type += 1
-#     #     if valid_new_type == 512: raise Exception("Type overlap!")
-#     return edge_type #type_maps[edge_type]
-
-
-# def resolve_node_names(name_orig):
-#     global valid_new_node, ast_node_type, node_maps, new_nodes
-#
-#     name_ = copy(name_orig)
-#
-#     replacements = dict()
-#     for name in re.finditer("src trlnd_[0-9]+", name_):
-#         if isinstance(name, re.Match):
-#             name = name.group()
-#         elif isinstance(name, str):
-#             pass
-#         else:
-#             print("Unknown type")
-#         if name.startswith("srctrlnd_"):
-#             node_id = name.split("_")[1]
-#             replacements[name] = {
-#                 "name": nodeid2name[int(node_id)],
-#                 "id": node_id
-#             }
-#             # if nodeid2name[int(node_id)]=="bokeh.io.output.output_file":
-#             #     pass
-#
-#     # try to replace into node id
-#     for r, v in replacements.items():
-#         name_ = name_.replace(r, v["id"])
-#
-#     try:
-#         node_id = int(name_)
-#         return node_id
-#     except:
-#         # can go here if the node is not sourcetrail node or
-#         # if the node is a composite type
-#         pass
-#
-#     # failed to convert into id, create new node
-#     name_ = copy(name_orig)
-#     for r, v in replacements.items():
-#         name_ = name_.replace(r, v["name"])
-#
-#     name = name_
-#     if name not in node_maps:
-#         node_maps[name] = valid_new_node
-#         new_nodes.append({"id": valid_new_node, "type": ast_node_type, "serialized_name": name})
-#         valid_new_node += 1
-#     return node_maps[name]
-#
-#     # if len(replacements) == 1:
-#     #     # this is an existing node
-#     #     for r, v in replacements.items():
-#     #         name_ = name_.replace(r, v["id"])
-#     #     node_id = int(name_)
-#     #     return node_id
-#     # else:
-#     #     # this is a new node, has either 0 or >=2 replacements
-#     #     for r, v in replacements.items():
-#     #         name_ = name_.replace(r, v["name"])
-#     #
-#     #     name = name_
-#     #     if name not in node_maps:
-#     #         node_maps[name] = valid_new_node
-#     #         new_nodes.append({"id": valid_new_node, "type": ast_node_type, "serialized_name": name})
-#     #         valid_new_node += 1
-#     #     return node_maps[name]
-
-def get_sourcetrail_nodes(edges):
+def get_ast_nodes(edges):
     nodes = []
     for ind, row in edges.iterrows():
         if "line" not in row or pd.isna(row["line"]):
             continue
 
-        # if row['src'].startswith("srctrlnd_"):
         nodes.append((
             row['line'],
             row['end_line'],
@@ -202,7 +159,8 @@ def format_replacement_offsets(offsets):
 
 
 def keep_node(node_string):
-    if "(" in node_string or ")" in node_string or "[" in node_string or "]" in node_string or "{" in node_string or "}" in node_string or " " in node_string or "," in node_string:
+    if "(" in node_string or ")" in node_string or "[" in node_string or "]" in node_string or \
+            "{" in node_string or "}" in node_string or " " in node_string or "," in node_string:
             return False
     return True
 
@@ -214,7 +172,7 @@ def filter_nodes(offsets, body):
     return [offset for offset in offsets if keep_node(body[offset[0]:offset[1]])]
 
 
-def join_offsets(offsets_1, offsets_2, body=None):
+def join_offsets(offsets_1, offsets_2):
     joined = []
     while offsets_1 or offsets_2:
         if len(offsets_1) == 0:
@@ -257,64 +215,26 @@ def join_offsets(offsets_1, offsets_2, body=None):
 
     return joined
 
-tokenizer = RegexpTokenizer("\w+|[^\w\s]")
-def random_replacement_lookup(name, replacements):
+
+def random_replacement_lookup(name, replacements, tokenizer):
     if "[" not in name:
         return replacements.get(name, name)
     else:
         tokens = tokenizer.tokenize(name)
-        r_tokens = map(lambda x: replacements.get(x,x), tokens)
+        r_tokens = map(lambda x: replacements.get(x, x), tokens)
         corrected_name = "".join(r_tokens)
         return corrected_name
 
 
-def write_edges_v1(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name):
-    for ind_bodies, (_, row) in enumerate(bodies.iterrows()):
-        c_ = row['normalized_body']
-        if not isinstance(c_, str): continue
-
-        c = c_.lstrip()
-
-        try:
-            ast.parse(c)
-        except SyntaxError as e:
-            print(e)
-            continue
-
-        g = AstGraphGenerator(c)
-
-        edges = g.get_edges()
-
-        if len(edges) == 0:
-            continue
-
-        # edges['type'] = edges['type'].apply(resolve_edge_type)
-        # edges['source_node_id'] = edges['src'].apply(resolve_node_names)
-        # edges['target_node_id'] = edges['dst'].apply(resolve_node_names)
-        edges['source_node_id'] = edges['src'].apply(node_resolver.resolve)
-        edges['target_node_id'] = edges['dst'].apply(node_resolver.resolve)
-        edges['id'] = 0
-
-        edges[['id', 'type', 'source_node_id', 'target_node_id']].to_csv(edges_with_ast_name, mode="a", index=False,
-                                                                         header=False)
-        print("\r%d/%d" % (ind_bodies, len(bodies['normalized_body'])), end="")
-
-    print(" " * 30, end="\r")
-
-    with open(nodes_with_ast_name, 'w', encoding='utf8', errors='replace') as f:
-        pd.concat([node, pd.DataFrame(node_resolver.new_nodes)]).to_csv(f, index=False, quoting=QUOTE_NONNUMERIC)
-
-
 def filter_out_mentions_for_srctrl_nodes(edges):
     # filter mention_scope edges for sourcetrail nodes
-    ######
-    srctrl_decode = lambda x: x.split("@")[0] if x.startswith("srctrlnd") and "@" in x else x
+    srctrl_decode = lambda x: \
+        GNode(name=x.name.split("@")[0], type="Name") if x.name.startswith("srctrlnd") and "@" in x.name else x
     edges['src'] = edges['src'].apply(srctrl_decode)
     edges['dst'] = edges['dst'].apply(srctrl_decode)
     edges = edges.query("src!=dst")
-    edges['help'] = edges['dst'].apply(lambda x: x.split("_")[0])
+    edges['help'] = edges['dst'].apply(lambda x: x.name.split("_")[0])
     edges = edges.query("help!='srctrlnd' or type!='mention_scope'").drop("help", axis=1)
-    ######
     return edges
 
 
@@ -325,7 +245,7 @@ def replace_mentions_with_subwords(edges, bpe):
     for edge in edges:
         if edge['type'] == "local_mention":
             dst = edge['dst']
-            subwords = bpe.encode(edge['src'])
+            subwords = bpe(edge['src'])
             for ind, subword in enumerate(subwords):
                 new_edges.append({
                     'src': subword,
@@ -362,69 +282,162 @@ def replace_mentions_with_subwords(edges, bpe):
     return pd.DataFrame(new_edges)
 
 
+def produce_subword_edges(subwords, dst):
+    new_edges = []
+
+    subwords = list(map(lambda x: GNode(name=x, type="subword"), subwords))
+    instances = list(map(lambda x: GNode(name=x.name + "@" + dst.name, type="subword_instance"), subwords))
+    for ind, subword in enumerate(subwords):
+        subword_instance = instances[ind]
+        new_edges.append({
+            'src': subword,
+            'dst': subword_instance,
+            'type': 'subword_instance',
+            'line': pd.NA,
+            'end_line': pd.NA,
+            'col_offset': pd.NA,
+            'end_col_offset': pd.NA,
+        })
+        new_edges.append({
+            'src': subword_instance,
+            'dst': dst,
+            'type': 'subword',
+            'line': pd.NA,
+            'end_line': pd.NA,
+            'col_offset': pd.NA,
+            'end_col_offset': pd.NA,
+        })
+        if ind < len(subwords) - 1:
+            new_edges.append({
+                'src': subword_instance,
+                'dst': instances[ind + 1],
+                'type': 'next_subword',
+                'line': pd.NA,
+                'end_line': pd.NA,
+                'col_offset': pd.NA,
+                'end_col_offset': pd.NA,
+            })
+        if ind > 0:
+            new_edges.append({
+                'src': subword_instance,
+                'dst': instances[ind - 1],
+                'type': 'prev_subword',
+                'line': pd.NA,
+                'end_line': pd.NA,
+                'col_offset': pd.NA,
+                'end_col_offset': pd.NA,
+            })
+
+    return new_edges
+
+
+def global_mention_edges(edge):
+    edge['type'] = "global_mention"
+    return [edge, make_reverse_edge(edge)]
+
+
+def make_reverse_edge(edge):
+    rev_edge = copy(edge)
+    rev_edge['type'] = edge['type'] + "_rev"
+    rev_edge['src'] = edge['dst']
+    rev_edge['dst'] = edge['src']
+    return rev_edge
+
+
 def replace_mentions_with_subword_instances(edges, bpe):
     edges = edges.to_dict(orient="records")
 
     new_edges = []
     for edge in edges:
         if edge['type'] == "local_mention":
+            if hasattr(edge['src'], "id"):
+                # this edge connects sourcetrail node need to add couple of links
+                # to ensure global information flow
+                new_edges.extend(global_mention_edges(edge))
+                # edge['type'] = "global_mention"
+                # rev_edge = copy(edge)
+                # rev_edge['src'] = edge['dst']
+                # rev_edge['dst'] = edge['src']
+                # rev_edge['type'] = "global_mention_rev"
+                # new_edges.append(edge)
+                # new_edges.append(rev_edge)
+
             dst = edge['dst']
-            subwords = bpe.encode(edge['src'])
-            instances = list(map(lambda x: x + "@" + dst, subwords))
-            for ind, subword in enumerate(subwords):
-                subword_instance = instances[ind]
-                new_edges.append({
-                    'src': subword,
-                    'dst': subword_instance,
-                    'type': 'subword_instance',
-                    'line': pd.NA,
-                    'end_line': pd.NA,
-                    'col_offset': pd.NA,
-                    'end_col_offset': pd.NA,
-                })
-                new_edges.append({
-                    'src': subword_instance,
-                    'dst': dst,
-                    'type': 'subword',
-                    'line': pd.NA,
-                    'end_line': pd.NA,
-                    'col_offset': pd.NA,
-                    'end_col_offset': pd.NA,
-                })
-                if ind < len(subwords) - 1:
-                    new_edges.append({
-                        'src': subword_instance,
-                        'dst': instances[ind + 1],
-                        'type': 'next_subword',
-                        'line': pd.NA,
-                        'end_line': pd.NA,
-                        'col_offset': pd.NA,
-                        'end_col_offset': pd.NA,
-                    })
-                if ind > 0:
-                    new_edges.append({
-                        'src': subword_instance,
-                        'dst': instances[ind - 1],
-                        'type': 'prev_subword',
-                        'line': pd.NA,
-                        'end_line': pd.NA,
-                        'col_offset': pd.NA,
-                        'end_col_offset': pd.NA,
-                    })
+
+            # this is
+            if hasattr(dst, "name_scope") and dst.name_scope == "local":
+                subwords = bpe(dst.name.split("@")[0])
+            else:
+                subwords = bpe(edge['src'].name)
+
+            new_edges.extend(produce_subword_edges(subwords, dst))
+
+        elif edge['type'] == "attr":
+            new_edges.append(edge)
+            new_edges.append(make_reverse_edge(edge))
+
+            dst = edge['src']
+            subwords = bpe(dst.name)
+            new_edges.extend(produce_subword_edges(subwords, dst))
+
+        elif edge['type'] == "name" or edge['type'] == "names":
+            if hasattr(edge['src'], "id"):
+                new_edges.extend(global_mention_edges(edge))
+
+            dst = edge['dst']
+            subwords = bpe(edge['src'].name.split(".")[-1])
+            new_edges.extend(produce_subword_edges(subwords, dst))
         else:
             new_edges.append(edge)
 
     return pd.DataFrame(new_edges)
 
 
-def write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name, n_subwords=100000):
-    bodies_with_replacements = []
+def get_srctrl2original_replacements(record):
+    random2srctrl = ast.literal_eval(record['random_2_srctrl'])
+    random2original = ast.literal_eval(record['random_2_original'])
 
-    bpe = BPEmb(lang="multi", vs=n_subwords, dim=300)
+    return {random2srctrl[key]: random2original[key] for key in random2original}
+
+
+def append_edges(path, edges):
+    edges[['id', 'type', 'src', 'dst']].to_csv(path, mode="a", index=False, header=False)
+
+
+def write_bodies(path, bodies):
+    pd.DataFrame(bodies).to_csv(
+        path,
+        index=False, quoting=QUOTE_NONNUMERIC
+    )
+
+
+def write_nodes(path, node_resolver):
+    with open(path, 'w', encoding='utf8', errors='replace') as f:
+        pd.concat([node_resolver.old_nodes, pd.DataFrame(node_resolver.new_nodes)])\
+            [['id', 'type', 'serialized_name', 'mentioned_in']].to_csv(f, index=False, quoting=QUOTE_NONNUMERIC)
+
+def add_reverse_edges(edges):
+    rev_edges = edges.copy()
+    rev_edges['source_node_id'] = edges['target_node_id']
+    rev_edges['target_node_id'] = edges['source_node_id']
+    rev_edges['type'] = rev_edges['type'].apply(lambda x: x + "_rev")
+
+    return pd.concat([edges, rev_edges], axis=0)
+
+def write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name, n_subwords=1000000):
+    bodies_with_replacements = []
+    with open(os.path.join(os.path.dirname(nodes_with_ast_name), "bodies_with_replacements.csv"), "w") as sink:
+        sink.write("id,body,replacement_list\n")
+
+    subword_tokenizer = create_subword_tokenizer(lang="multi", vs=n_subwords)
+    tokenizer = RegexpTokenizer("\w+|[^\w\s]")
 
     for ind_bodies, (_, row) in enumerate(bodies.iterrows()):
         orig_body = row['random_replacements']
-        if not isinstance(orig_body, str): continue
+        if not isinstance(orig_body, str):
+            continue
+
+        srctrl2original = get_srctrl2original_replacements(row)
 
         c = orig_body.lstrip()
         strip_len = len(orig_body) - len(c)
@@ -443,41 +456,48 @@ def write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_na
             continue
 
         replacements = ast.literal_eval(row['random_2_srctrl'])
-        # replacements_lookup = lambda x: random_replacement_lookup(x, replacements)
-        replacements_lookup = lambda x: random_replacement_lookup(x, replacements) if "@" not in x else random_replacement_lookup(x.split("@")[0], replacements) + "@" + x.split("@")[1]
+        # replacements_lookup = lambda x: complex_replacement_lookup(x, replacements)
+        replacements_lookup = lambda x: \
+            GNode(name=random_replacement_lookup(x.name, replacements, tokenizer),
+                  type=x.type) if "@" not in x.name else \
+            GNode(name=random_replacement_lookup(x.name.split("@")[0], replacements, tokenizer) +
+                  "@" + x.name.split("@")[1],
+                  type=x.type)
 
         edges['src'] = edges['src'].apply(replacements_lookup)
         edges['dst'] = edges['dst'].apply(replacements_lookup)
 
-        edges = filter_out_mentions_for_srctrl_nodes(edges)
+        # edges = filter_out_mentions_for_srctrl_nodes(edges)
 
-        edges = replace_mentions_with_subword_instances(edges, bpe)
-        # TODO
-        # subwords are only used by named units not detected by sourcetrail
-        # need to decide whether to use subwords for sourcetrail nodes
+        resolve = lambda node: node_resolver.resolve(node, srctrl2original)
 
-        edges['src'] = edges['src'].apply(node_resolver.resolve)
-        edges['dst'] = edges['dst'].apply(node_resolver.resolve)
+        edges['src'] = edges['src'].apply(resolve)
+        edges['dst'] = edges['dst'].apply(resolve)
+
+        edges = replace_mentions_with_subword_instances(edges, subword_tokenizer)
         edges['id'] = 0
 
-        # if ind_bodies == 475:
-        #     print()
+        resolve_node_id = lambda node: node_resolver.resolve_node_id(node, row['id'])
 
-        # srctrlnodes = to_offsets(c, get_sourcetrail_nodes(edges))
-        # for x in srctrlnodes:
-        #     x = (b2c[x[0]], b2c[x[1]], x[2])
-        srctrlnodes = resolve_self_collision(filter_nodes(adjust_offsets(
-            to_offsets(c, get_sourcetrail_nodes(edges), as_bytes=True)
-            , -strip_len), orig_body))
+        edges['src'] = edges['src'].apply(resolve_node_id)
+        edges['dst'] = edges['dst'].apply(resolve_node_id)
 
-        replacements = list(map(
-            lambda x: (x[0], x[1], node_resolver.resolve(x[2])),
+        extract_id = lambda node: node.id
+        edges['src'] = edges['src'].apply(extract_id)
+        edges['dst'] = edges['dst'].apply(extract_id)
+
+        ast_nodes = resolve_self_collision(filter_nodes(adjust_offsets(
+            to_offsets(c, get_ast_nodes(edges), as_bytes=True), -strip_len), orig_body))
+
+        srctrl_nodes = list(map(
+            lambda x: (x[0], x[1], node_resolver.resolve(GNode(name=x[2], type="Name"), srctrl2original).id),
             to_offsets(row['random_replacements'],
-                       format_replacement_offsets(ast.literal_eval(row['replacement_list'])))))
+                       format_replacement_offsets(ast.literal_eval(row['replacement_list'])))
+        ))
 
         all_offsets = join_offsets(
-            sorted(srctrlnodes, key=lambda x: x[0]),
-            sorted(replacements, key=lambda x: x[0]), orig_body
+            sorted(ast_nodes, key=lambda x: x[0]),
+            sorted(srctrl_nodes, key=lambda x: x[0])
         )
 
         bodies_with_replacements.append({
@@ -486,44 +506,23 @@ def write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_na
             "replacement_list": all_offsets
         })
 
-        # isvalid(row['body'], all_offsets)
-
-        # replacements = []
-        # for ind, row in edges.iterrows():
-        #     if pd.isna(row['line']):
-        #         continue
-        #     replacements.append((
-        #         row['line'],
-        #         row['end_line'],
-        #         row['col_offset'],
-        #         row['end_col_offset'],
-        #         row['source_node_id']
-        #     ))
-
-        edges[['id', 'type', 'src', 'dst']].to_csv(edges_with_ast_name, mode="a", index=False,
-                                                                         header=False)
+        append_edges(path=edges_with_ast_name, edges=edges)
         print("\r%d/%d" % (ind_bodies, len(bodies['normalized_body'])), end="")
 
     print(" " * 30, end="\r")
 
-    if len(bodies_with_replacements) == 0:
-        with open(os.path.join(os.path.dirname(nodes_with_ast_name), "bodies_with_replacements.csv"), "w") as sink:
-            sink.write("id,body,replacement_list\n")
-    else:
-        pd.DataFrame(bodies_with_replacements).to_csv(
-            os.path.join(os.path.dirname(nodes_with_ast_name), "bodies_with_replacements.csv"), index=False, quoting=QUOTE_NONNUMERIC
-        )
+    write_bodies(path=os.path.join(os.path.dirname(nodes_with_ast_name), "bodies_with_replacements.csv"),
+                 bodies=bodies_with_replacements)
 
-    with open(nodes_with_ast_name, 'w', encoding='utf8', errors='replace') as f:
-        pd.concat([node, pd.DataFrame(node_resolver.new_nodes)]).to_csv(f, index=False, quoting=QUOTE_NONNUMERIC)
+    write_nodes(path=nodes_with_ast_name, node_resolver=node_resolver)
 
-if __name__ == "__main__":
 
-    working_directory = sys.argv[1]
+def main(argv):
+    working_directory = argv[1]
     try:
-        n_subwords = int(sys.argv[2])
+        n_subwords = int(argv[2])
     except:
-        n_subwords = 100000
+        n_subwords = 1000000
 
     node_path = os.path.join(working_directory, "normalized_sourcetrail_nodes.csv")
     edge_path = os.path.join(working_directory, "edges.csv")
@@ -533,11 +532,19 @@ if __name__ == "__main__":
     edge = pd.read_csv(edge_path, sep=",", dtype={'id': int, 'type': int, 'source_node_id': int, 'target_node_id': int})
     bodies = pd.read_csv(bodies_path, sep=",", dtype={"id": int, "body": str, "docstring": str, "normalized_body": str})
 
+    node['type'] = node['type'].apply(lambda type: node_types[type])
+    edge['type'] = edge['type'].apply(lambda type: edge_types[type])
+    edge = add_reverse_edges(edge)
+
     node_resolver = NodeResolver(node)
     edges_with_ast_name = os.path.join(working_directory, "edges_with_ast.csv")
     nodes_with_ast_name = os.path.join(working_directory, "nodes_with_ast.csv")
+
     edge.to_csv(edges_with_ast_name, index=False, quoting=QUOTE_NONNUMERIC)
 
     # write_edges_v1(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name)
     write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name, n_subwords=n_subwords)
 
+
+if __name__ == "__main__":
+    main(sys.argv)

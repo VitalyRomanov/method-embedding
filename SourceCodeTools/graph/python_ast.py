@@ -4,7 +4,37 @@ from pprint import pprint
 from time import time_ns
 from collections.abc import Iterable
 import pandas as pd
-import os
+# import os
+
+
+class GNode:
+    # name = None
+    # type = None
+    # id = None
+
+    def __init__(self, astnode=None, **kwargs):
+
+        if astnode is not None:
+            self.name = astnode.__class__.__name__ + "_" + str(hex(int(time_ns())))
+            self.type = astnode.__class__.__name__
+
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+    def __eq__(self, other):
+        if self.name == other.name and self.type == other.type:
+            return True
+        else:
+            return False
+
+    def __repr__(self):
+        return self.__dict__.__repr__()
+
+    def __hash__(self):
+        return (self.name, self.type).__hash__()
+
+    def setprop(self, key, value):
+        setattr(self, key, value)
 
 
 class AstGraphGenerator(object):
@@ -17,7 +47,8 @@ class AstGraphGenerator(object):
         self.function_scope = []
 
     def get_name(self, node):
-        return node.__class__.__name__ + "_" + str(hex(int(time_ns())))
+        return GNode(astnode=node)
+        # return (node.__class__.__name__ + "_" + str(hex(int(time_ns()))), node.__class__.__name__)
 
     def get_edges(self):
         edges = []
@@ -60,13 +91,16 @@ class AstGraphGenerator(object):
 
                 for cond_name, cond_stat in zip(self.current_condition, self.condition_status):
                     edges.append({"src": last_node, "dst": cond_name, "type": "depends_on_" + cond_stat})
-                    edges.append({"src": cond_name, "dst": last_node, "type": "execute_when" + cond_stat})
+                    edges.append({"src": cond_name, "dst": last_node, "type": "execute_when_" + cond_stat})
             else:
                 edges.extend(s)
         return edges
 
     def parse_in_context(self, cond_name, cond_stat, edges, body):
         if isinstance(cond_name, str):
+            cond_name = [cond_name]
+            cond_stat = [cond_stat]
+        elif isinstance(cond_name, GNode):
             cond_name = [cond_name]
             cond_stat = [cond_stat]
 
@@ -81,7 +115,9 @@ class AstGraphGenerator(object):
             self.condition_status.pop(-1)
 
     def parse_as_mention(self, name):
-        mention_name = name + "@" + self.function_scope[-1]
+        mention_name = GNode(name=name + "@" + self.function_scope[-1].name, type="mention")
+        name = GNode(name=name, type="Name")
+        # mention_name = (name + "@" + self.function_scope[-1], "mention")
         edges = [
             {"src": name, "dst": mention_name, "type": "local_mention"},
             {"src": self.function_scope[-1], "dst": mention_name, "type": "mention_scope"}
@@ -89,19 +125,30 @@ class AstGraphGenerator(object):
         return edges, mention_name
 
     def parse_operand(self, node):
-        # need to make sure upper level name is correct
+        # need to make sure upper level name is correct; handle @keyword; type placeholder for sourcetrail nodes?
         edges = []
         if isinstance(node, str):
-            # fall here when parsing attributes, they are given as strings
+            # fall here when parsing attributes, they are given as strings; should attributes be parsed into subwords?
+            if "@" in node:
+                parts = node.split("@")
+                node = GNode(name=parts[0], type=parts[1])
+            else:
+                node = GNode(name=node, type="Name")
             iter_ = node
         elif isinstance(node, int) or node is None:
-            iter_ = str(node)
+            iter_ = GNode(str(node), "Literal")
+            # iter_ = str(node)
+        elif isinstance(node, GNode):
+            iter_ = node
         else:
             iter_e = self.parse(node)
             if type(iter_e) == str:
                 iter_ = iter_e
+            elif isinstance(iter_e, GNode):
+                iter_ = iter_e
             elif type(iter_e) == tuple:
                 ext_edges, name = iter_e
+                assert isinstance(name, GNode)
                 edges.extend(ext_edges)
                 iter_ = name
             else:
@@ -126,7 +173,7 @@ class AstGraphGenerator(object):
         else:
             edges.append({"src": operand_name, "dst": node_name, "type": type})
 
-        if len(ext_edges) > 0: # need this to avoid adding reverse edges to operation names and other highly connected nodes
+        if len(ext_edges) > 0:  # need this to avoid adding reverse edges to operation names and other highly connected nodes
             edges.append({"src": node_name, "dst": operand_name, "type": type + "_rev"})
 
     def generic_parse(self, node, operands, with_name=None):
@@ -177,10 +224,12 @@ class AstGraphGenerator(object):
         # edges, f_name = self.generic_parse(node, ["name", "args", "returns", "decorator_list"])
         # edges, f_name = self.generic_parse(node, ["args", "returns", "decorator_list"])
 
-        f_name = self.get_name(node)
-        self.function_scope.append(f_name)
+        # need to creare function name before generic_parse so that the scope is set up correctly
+        # scope is used to create local mentions of variable and function names
+        fdef_name = self.get_name(node)
+        self.function_scope.append(fdef_name)
 
-        edges, f_name = self.generic_parse(node, ["args", "decorator_list"], with_name=f_name)
+        edges, f_name = self.generic_parse(node, ["args", "decorator_list"], with_name=fdef_name)
 
         if node.returns is not None:
             # returns stores return type annotation
@@ -192,9 +241,11 @@ class AstGraphGenerator(object):
             # do not use reverse edges for types, will result in leak from function to function
             # edges.append({"src": f_name, "dst": annotation, "type": 'returns'})
 
+        func_name = GNode(name=node.name, type="Name")
+
         assert isinstance(node.name, str)
-        edges.append({"src": f_name, "dst": node.name, "type": "fname"})
-        edges.append({"src": node.name, "dst": f_name, "type": "fname_for"})
+        edges.append({"src": f_name, "dst": func_name, "type": "fname"})
+        edges.append({"src": func_name, "dst": f_name, "type": "fname_for"})
 
         # if node.returns:
         #     print(self.source[node.lineno -1]) # can get definition string here
@@ -284,7 +335,8 @@ class AstGraphGenerator(object):
         # # included mention
         name = self.get_name(node)
         edges, mention_name = self.parse_as_mention(node.arg)
-        edges.append({'src':mention_name, 'dst': name, 'type': 'arg'})
+        edges.append({'src': mention_name, 'dst': name, 'type': 'arg'})
+        edges.append({'src': name, 'dst': mention_name, 'type': 'arg_rev'})
         # edges, name = self.generic_parse(node, ["arg"])
         if node.annotation is not None:
             # can contain quotes
@@ -391,9 +443,11 @@ class AstGraphGenerator(object):
         if type(node) == ast.Name:
             return self.parse_as_mention(str(node.id))
         elif type(node) == ast.NameConstant:
-            return str(node.value)
+            return GNode(name=str(node.value), type="NameConstant")
 
     def parse_Attribute(self, node):
+        if node.attr is not None:
+            node.attr += "@attr"
         return self.generic_parse(node, ["value", "attr"])
 
     def parse_Name(self, node):
@@ -405,13 +459,15 @@ class AstGraphGenerator(object):
     def parse_Constant(self, node):
         # TODO
         # decide whether this name should be unique or not
-        name = "Constant_"
-        if node.kind is not None:
-            name += ""
+        name = GNode(name="Constant_", type="Constant")
+        # name = "Constant_"
+        # if node.kind is not None:
+        #     name += ""
         return name
 
     def parse_op_name(self, node):
-        return node.__class__.__name__
+        return GNode(name=node.__class__.__name__, type="Op")
+        # return node.__class__.__name__
 
     def parse_And(self, node):
         return self.parse_op_name(node)
@@ -550,7 +606,7 @@ class AstGraphGenerator(object):
         self.parse_in_context(try_name, "final", edges, node.finalbody)
         self.parse_in_context(try_name, "else", edges, node.orelse)
         
-        return edges #, try_name   
+        return edges  # do not return node name since this is an expression and it does not return anything
         
     def parse_While(self, node):
 
@@ -561,7 +617,7 @@ class AstGraphGenerator(object):
 
         self.parse_in_context([while_name, cond_name], ["while", "True"], edges, node.body)
         
-        return edges #, while_name
+        return edges  # do not return node name since this is an expression and it does not return anything
 
     def parse_Compare(self, node):
         return self.generic_parse(node, ["left", "ops", "comparators"])
@@ -580,8 +636,9 @@ class AstGraphGenerator(object):
 
     def parse_control_flow(self, node):
         edges = []
-        ctrlflow_name = "ctrl_flow" + str(int(time_ns()))
-        edges.append({"src": node.__class__.__name__, "dst": ctrlflow_name, "type": "control_flow"})
+        ctrlflow_name = GNode(name="ctrl_flow_" + str(int(time_ns())), type="CtlFlowInstance")
+        # ctrlflow_name = "ctrl_flow_" + str(int(time_ns()))
+        edges.append({"src": GNode(name=node.__class__.__name__, type="CtlFlow"), "dst": ctrlflow_name, "type": "control_flow"})
 
         # for cond_name, cons_stat in zip(self.current_condition, self.condition_status):
         #     edges.append({"src": call_name, "dst": cond_name, "type": "depends_on_" + cons_stat})
@@ -656,12 +713,12 @@ class AstGraphGenerator(object):
         #    arguments(args=[arg(arg='self', annotation=None), arg(arg='tqdm_cls', annotation=None), arg(arg='sleep_interval', annotation=None)], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[])
 
         # vararg constains type annotations
-        return self.generic_parse(node, ["args","vararg"])
+        return self.generic_parse(node, ["args", "vararg"])
 
     def parse_comprehension(self, node):
         edges = []
 
-        cph_name = "comprehension" + str(int(time_ns()))
+        cph_name = GNode(name="comprehension" + str(int(time_ns())), type="comprehension")
 
         target, ext_edges = self.parse_operand(node.target)
         edges.extend(ext_edges)
@@ -703,8 +760,8 @@ if __name__ == "__main__":
                 continue
             failed += 1
             edges = g.get_edges()
-            edges.to_csv(os.path.join(os.path.dirname(sys.argv[1]), "body_edges.csv"), mode="a", index=False, header=(ind==0))
-            print("\r%d/%d" % (ind, len(f_bodies['normalized_body'])), end = "")
+            # edges.to_csv(os.path.join(os.path.dirname(sys.argv[1]), "body_edges.csv"), mode="a", index=False, header=(ind==0))
+            print("\r%d/%d" % (ind, len(f_bodies['normalized_body'])), end="")
         else:
             print("Skipped not a string")
 
