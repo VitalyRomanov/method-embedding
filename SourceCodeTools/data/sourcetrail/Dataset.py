@@ -7,17 +7,18 @@ import pickle
 from os.path import join
 
 def load_data(node_path, edge_path):
-    nodes = pandas.read_csv(node_path, dtype={'id': int, 'type': int, 'serialized_name': str}, escapechar='\\')
-    edges = pandas.read_csv(edge_path, dtype={'id': int, 'type': int, 'source_node_id': int, 'target_node_id': int})
+    # dtype = {'id': int, 'type': int, 'serialized_name': str}
+    nodes = pandas.read_csv(node_path, dtype={'id': int, 'type': str, 'serialized_name': str}, escapechar='\\')
+    edges = pandas.read_csv(edge_path, dtype={'id': int, 'type': str, 'source_node_id': int, 'target_node_id': int})
 
     nodes_ = nodes.rename(mapper={
         'serialized_name': 'name'
-    }, axis=1).astype({"name":str, "id": int, "type": int})
+    }, axis=1)#.astype({"name":str, "id": int, "type": int})
 
     edges_ = edges.rename(mapper={
         'source_node_id': 'src',
         'target_node_id': 'dst'
-    }, axis=1).astype({'id': int, 'type': int, 'src': int, 'dst': int})
+    }, axis=1)#.astype({'id': int, 'type': int, 'src': int, 'dst': int})
 
     nodes_['libname'] = nodes_['name'].apply(lambda name: name.split(".")[0])
 
