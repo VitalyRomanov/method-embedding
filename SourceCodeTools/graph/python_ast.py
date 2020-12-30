@@ -136,7 +136,7 @@ class AstGraphGenerator(object):
                 node = GNode(name=node, type="Name")
             iter_ = node
         elif isinstance(node, int) or node is None:
-            iter_ = GNode(str(node), "Literal")
+            iter_ = GNode(name=str(node), type="ast_Literal")
             # iter_ = str(node)
         elif isinstance(node, GNode):
             iter_ = node
@@ -236,7 +236,8 @@ class AstGraphGenerator(object):
             # can contain quotes
             # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
             # https://www.python.org/dev/peps/pep-0484/#forward-references
-            annotation = self.source[node.returns.lineno - 1][node.returns.col_offset: node.returns.end_col_offset]
+            annotation = GNode(name=self.source[node.returns.lineno - 1][node.returns.col_offset: node.returns.end_col_offset],
+                               type="type_annotation")
             edges.append({"src": annotation, "dst": f_name, "type": 'returned_by', "line": node.returns.lineno - 1, "end_line": node.returns.end_lineno - 1, "col_offset": node.returns.col_offset, "end_col_offset": node.returns.end_col_offset})
             # do not use reverse edges for types, will result in leak from function to function
             # edges.append({"src": f_name, "dst": annotation, "type": 'returns'})
@@ -342,7 +343,8 @@ class AstGraphGenerator(object):
             # can contain quotes
             # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
             # https://www.python.org/dev/peps/pep-0484/#forward-references
-            annotation = self.source[node.annotation.lineno - 1][node.annotation.col_offset: node.annotation.end_col_offset]
+            annotation = GNode(name=self.source[node.annotation.lineno - 1][node.annotation.col_offset: node.annotation.end_col_offset],
+                               type="type_annotation")
             edges.append({"src": annotation, "dst": name, "type": 'annotation_for', "line": node.annotation.lineno-1, "end_line": node.annotation.end_lineno-1, "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset, "var_line": node.lineno-1, "var_end_line": node.end_lineno-1, "var_col_offset": node.col_offset, "var_end_col_offset": node.end_col_offset})
             # do not use reverse edges for types, will result in leak from function to function
             # edges.append({"src": name, "dst": annotation, "type": 'annotation'})
@@ -363,7 +365,8 @@ class AstGraphGenerator(object):
         # can contain quotes
         # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
         # https://www.python.org/dev/peps/pep-0484/#forward-references
-        annotation = self.source[node.lineno - 1][node.annotation.col_offset: node.annotation.end_col_offset]
+        annotation = GNode(name=self.source[node.lineno - 1][node.annotation.col_offset: node.annotation.end_col_offset],
+                           type="type_annotation")
         edges, name = self.generic_parse(node, ["target"])
         edges.append({"src": annotation, "dst": name, "type": 'annotation_for', "line": node.annotation.lineno-1, "end_line": node.annotation.end_lineno-1, "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset, "var_line": node.lineno-1, "var_end_line": node.end_lineno-1, "var_col_offset": node.col_offset, "var_end_col_offset": node.end_col_offset})
         # do not use reverse edges for types, will result in leak from function to function
