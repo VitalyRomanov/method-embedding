@@ -85,6 +85,9 @@ def main():
 
     local_id_mapped = merge_global_with_local(existing_nodes, next_valid_id, local_nodes)
 
+    if len(local_id_mapped) == 0:
+        sys.exit()
+
     global_nodes = merge_with_file_if_exists(local_id_mapped, common_nodes_path)
 
     write_global_nodes(common_nodes_path, global_nodes)

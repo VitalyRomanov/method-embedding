@@ -26,6 +26,9 @@ if len(input_table.query("type == 'annotation_for' or type == 'returned_by'")) >
 
     input_table = map_id_columns(input_table, columns, id_map)
 
+    if len(input_table) == 0:
+        sys.exit()
+
     data = merge_with_file_if_exists(df=input_table, merge_with_file=output_path)
 
     persist(data, output_path)
