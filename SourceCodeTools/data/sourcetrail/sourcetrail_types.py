@@ -10,10 +10,10 @@ node_types = {
 }
 
 edge_types = {
-    1: "definition",
-    8: "fcall",
-    2: "type_use",
+    1: "defines",
+    8: "calls",
+    2: "uses_type",
     16: "inheritance",
-    4: "usage",
-    512: "import"
+    4: "uses",
+    512: "imports"
 }
