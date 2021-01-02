@@ -1,5 +1,5 @@
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.SparkContext
 import org.apache.spark.sql.functions._
 import org.graphframes._
 import org.apache.log4j.Logger
@@ -10,7 +10,6 @@ import org.apache.log4j.Level
 
 
 object GraphAnalysis {
-
   def main(args: Array[String]) {
 
     Logger.getLogger("org.apache.spark").setLevel(Level.ERROR)
@@ -21,80 +20,82 @@ object GraphAnalysis {
 
     val sc = SparkContext.getOrCreate()
 
-    val lang = args(0)
-    var nodes_path = args(1)
-    var edges_path = args(2)
+    val nodes_path = args(0)
+    val edges_path = args(1)
+    val output_path = args(2)
 
-//    val lang = "python"
+    assert(nodes_path.endsWith(".parquet"), "Nodes should be stored in parquet format")
+    assert(edges_path.endsWith(".parquet"), "Edges should be stored in parquet format")
 
-//    var nodes_path = ""
-//    var edges_path = ""
+    val nodes = spark.read.load(nodes_path)
+    val edges = spark.read.load(edges_path)
+      .withColumnRenamed("source_node_id", "src")
+      .withColumnRenamed("target_node_id", "dst")
+      .withColumnRenamed("id", "rel_id")
+      .withColumnRenamed("type", "rel_type")
 
-//    if (lang == "python"){
-//      /Volumes/External/datasets/Code/source-graphs/python-source-graph/
-//      nodes_path = "normalized_sourcetrail_nodes.csv"
-//      edges_path = "non-ambiguous_edges.csv"
-//    } else if (lang == "java") {
-//      /Volumes/External/datasets/Code/source-graphs/java-source-graph-v2
-//      nodes_path = "normalized_sourcetrail_nodes.csv"
-//      edges_path = "edge.csv"
-//    }
-
-    val nodes = spark.read.format("csv").option("header",true).load(nodes_path)
-    val edges = spark.read.format("csv").option("header",true).load(edges_path).withColumnRenamed("source_node_id", "src").withColumnRenamed("target_node_id", "dst").withColumnRenamed("id", "rel_id").withColumnRenamed("type", "rel_type")
+    println(s"Original graph")
+    println(s"Nodes: ${nodes.count()}, Edges: ${edges.count()}")
 
     val g = GraphFrame(nodes, edges).dropIsolatedVertices()
+
+    println(s"After dropping isolated")
+    println(s"Nodes: ${g.vertices.count()}, Edges: ${g.edges.count()}")
 
     sc.setCheckpointDir("temp")
     val cc_result = g.connectedComponents.run()
 
     val g_cc = GraphFrame(cc_result, edges)
 
-    var onlyConnected_g : GraphFrame = null
+    val onlyConnected_g = g_cc
+      .filterVertices("component == 0")
+      .dropIsolatedVertices()
 
-    if (lang == "python") {
-      onlyConnected_g = g_cc.filterVertices("component == 0").dropIsolatedVertices() //.filterEdges("rel_type != \"4\"").dropIsolatedVertices()
-    } else if (lang == "java") {
-      onlyConnected_g = g_cc.filterVertices("component == 0").dropIsolatedVertices()
-    }
+    println(s"In the largest component")
+    println(s"Nodes: ${g_cc.vertices.count()}, Edges: ${g_cc.edges.count()}")
 
-    onlyConnected_g.vertices.write.format("csv").save("component_0_nodes")
-    onlyConnected_g.edges.write.format("csv").save("component_0_edges")
+    onlyConnected_g.vertices//.drop("component")
+      .repartition(1)
+      .write.save(s"${output_path}/component_0_nodes")
 
-    // val node_degres = nodes.join(g.inDegrees, "id")
-    val node_inDegrees = onlyConnected_g.vertices.join(onlyConnected_g.inDegrees, "id")
+    onlyConnected_g.edges
+      .repartition(1)
+      .withColumnRenamed("rel_id", "id")
+      .withColumnRenamed("rel_type", "type")
+      .withColumnRenamed("src", "source_node_id")
+      .withColumnRenamed("dst", "target_node_id")
+      .write.save(s"${output_path}/component_0_edges")
 
-    node_inDegrees.sort(desc("inDegree")).write.format("csv").save("component_0_node_in_degrees")
-    node_inDegrees.groupBy("type").agg(mean("inDegree")).sort(desc("avg(inDegree)")).write.format("csv").save("component_0_node_avg_in_degree")
-    node_inDegrees.groupBy("inDegree").count().sort(desc("count")).write.format("csv").save("component_0_in_degree_count") //  produces  |inDegree|count|
+//    write in degree counts
+    val node_inDegrees = onlyConnected_g.vertices
+      .join(onlyConnected_g.inDegrees, "id")
 
-    // val node_outDegres = nodes.join(g.outDegrees, "id")
-    val node_outDegrees = onlyConnected_g.vertices.join(onlyConnected_g.outDegrees, "id")
+    node_inDegrees
+      .sort(desc("inDegree"))//.select("serialized_name", "inDegree")
+      .repartition(1)
+      .write.format("csv").option("header", "true")
+      .save(s"${output_path}/component_0_node_in_degrees")
 
-    node_outDegrees.sort(desc("outDegree")).write.format("csv").save("component_0_node_out_degrees")
-    node_outDegrees.groupBy("type").agg(mean("outDegree")).sort(desc("avg(outDegree)")).write.format("csv").save("component_0_node_avg_out_degree")
-    node_outDegrees.groupBy("outDegree").count().sort(desc("count")).write.format("csv").save("component_0_out_degree_count")
+//    write out degree counts
+    val node_outDegrees = onlyConnected_g.vertices
+      .join(onlyConnected_g.outDegrees, "id")
 
-    onlyConnected_g.edges.groupBy("rel_type").count().write.format("csv").save("component_0_edge_type_count")
-    onlyConnected_g.vertices.groupBy("type").count().write.format("csv").save("component_0_node_type_count")
+    node_outDegrees
+      .sort(desc("outDegree"))//.select("serialized_name", "outDegree")
+      .repartition(1)
+      .write.format("csv").option("header", "true")
+      .save(s"${output_path}/component_0_node_out_degrees")
 
-//    val cc_result = g.connectedComponents.run()
-//    cc_result.write.format("csv").save("components")
-//    cc_result.groupBy("component").count().orderBy().write.format("csv").save("components_count")
+    onlyConnected_g.edges.groupBy("rel_type").count()
+      .withColumnRenamed("rel_type", "type")
+      .sort(desc("count")).repartition(1)
+      .write.format("csv").option("header", "true")
+      .save(s"${output_path}/component_0_edge_type_count")
 
-//    val triangles = onlyConnected_g.triangleCount.run() // counts how many triangles pass through a given vertex
-//    triangles.show(10)
-
-
-//    val pr_results = g.pageRank.resetProbability(0.15).tol(0.01).run()
-
-//    pr_results.vertices.write.format("csv").save("pagerank_vertices")
-
-//    pr_results.edges.write.format("csv").save("pagerank_edges")
-
-//    val textual_edges_path = "/Volumes/Untitled/normalized_sourcetrail_edges"
-//    val textual_edges = spark.read.format("csv").option("header",true).load(textual_edges_path).withColumnRenamed("source_node_id", "src").withColumnRenamed("target_node_id", "dst").withColumnRenamed("id", "rel_id").withColumnRenamed("type", "rel_type")
-//    textual_edges.filter("src == 'twisted.internet._glibbase.GlibReactorBase.__init__'").count
+    onlyConnected_g.vertices.groupBy("type").count()
+      .sort(desc("count")).repartition(1)
+      .write.format("csv").option("header", "true")
+      .save(s"${output_path}/component_0_node_type_count")
 
   }
 }
