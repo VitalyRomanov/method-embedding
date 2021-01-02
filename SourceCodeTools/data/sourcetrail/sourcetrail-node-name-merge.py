@@ -1,11 +1,14 @@
 import sys, os
 import pandas as p
 from csv import QUOTE_NONNUMERIC
+from SourceCodeTools.data.sourcetrail.sourcetrail_types import node_types
+from SourceCodeTools.data.sourcetrail.file_utils import persist, filenames
 
 # needs testing
 def normalize(line):
     line = line.replace('".	m', "")
     line = line.replace(".	m", "")
+    line = line.replace("	m", "")
     line = line.replace("	s	p	n","#") # this will be replaced with .
     # the following are used by java
     # TODO
@@ -42,8 +45,12 @@ nodes_path = sys.argv[1]
 data = p.read_csv(nodes_path, dtype={"id": int, "type": int, "serialized_name": str})
 data = data[data['type'] != 262144]
 data['serialized_name'] = data['serialized_name'].apply(normalize)
+data['type'] = data['type'].apply(lambda x: node_types[x])
 
-data.to_csv(os.path.join(os.path.dirname(nodes_path), "normalized_sourcetrail_nodes.csv"), index=False, quoting=QUOTE_NONNUMERIC)
+data = data.astype({"id": int, "type": str, "serialized_name": str})
+
+persist(data, os.path.join(os.path.dirname(nodes_path), filenames["nodes"]))
+# data.to_csv(os.path.join(os.path.dirname(nodes_path), "normalized_sourcetrail_nodes.csv"), index=False, quoting=QUOTE_NONNUMERIC)
 # except p.errors.EmptyDataError:
 #     with open(os.path.join(os.path.dirname(nodes_path), "normalized_sourcetrail_nodes.csv"), "w") as sink:
 #         sink.write("id,type,serialized_name\n")
