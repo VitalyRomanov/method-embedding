@@ -1,39 +1,99 @@
-import pandas as pd
-import sys, os
-from csv import QUOTE_NONNUMERIC
+import sys
 
-common_nodes_path = sys.argv[1]
-batch_nodes_path = sys.argv[2]
+from SourceCodeTools.data.sourcetrail.file_utils import *
+from SourceCodeTools.data.sourcetrail.common import merge_with_file_if_exists
 
-if os.path.isfile(common_nodes_path):
-    common_nodes = pd.read_csv(common_nodes_path)
-else:
-    column_names = ["id", "type", "serialized_name"]
-    common_nodes = pd.DataFrame(columns=column_names)
+pd.options.mode.chained_assignment = None
 
-existing_names = set(common_nodes['serialized_name'].tolist())
-# print(existing_names)
 
-records = common_nodes.to_dict(orient="records")
+def read_global_nodes(path):
+    if os.path.isfile(path):
+        common_nodes = unpersist(path)
+        add_node_repr(common_nodes)
+        existing_nodes = set(common_nodes['node_repr'].to_list())
+        records = common_nodes
+        next_valid_id = common_nodes['id'].max() + 1
+    else:
+        existing_nodes = set()
+        records = None
+        next_valid_id = 0
+    return existing_nodes, next_valid_id
 
-batch_nodes = pd.read_csv(batch_nodes_path)
 
-for ind, row in batch_nodes.iterrows():
-    # print(row.serialized_name)
-    if row.serialized_name in existing_names: continue
+def read_local_nodes(path):
+    batch_nodes = unpersist(path)
+    add_node_repr(batch_nodes)
+    return batch_nodes
 
-    # TODO
-    # sometimes there are duplicate nodes from sourcetrail and ast analysis.
-    # something does not work right when checking uniqueness of a name
 
-    records.append({
-        "id": len(records),
-        "type": row.type,
-        "serialized_name": row.serialized_name
-    })
+def add_node_repr(nodes):
+    nodes['node_repr'] = list(zip(nodes['serialized_name'], nodes['type']))
 
-if len(records) != 0:
-    pd.DataFrame(records).to_csv(common_nodes_path, index=False, quoting=QUOTE_NONNUMERIC)
-else:
-    with open(common_nodes_path, "w") as sink:
-        sink.write("id,type,serialized_name\n")
+
+def merge_global_with_local(existing_nodes, next_valid_id, local_nodes):
+    new_nodes = local_nodes[
+        local_nodes['node_repr'].apply(lambda x: x not in existing_nodes)
+    ]
+
+    assert len(new_nodes) == len(set(new_nodes['node_repr'].to_list()))
+
+    ids_start = next_valid_id
+    ids_end = ids_start + len(new_nodes)
+
+    new_nodes['id'] = list(range(ids_start, ids_end))
+
+    return new_nodes.drop('node_repr', axis=1)
+
+    # new_global = []
+    # for ind, local_node in local_nodes.iterrows():
+    #     node_repr = (local_node['serialized_name'], local_node['type'])
+    #     if node_repr in existing_nodes: continue
+    #
+    #     # TODO
+    #     # sometimes there are duplicate nodes from sourcetrail and ast analysis.
+    #     # something does not work right when checking uniqueness of a name
+    #
+    #     local_node['id'] = len(global_nodes) + len(new_global)
+    #
+    #     new_global.append(local_node)
+    #     existing_nodes.add(node_repr)  # should be redundant since all nodes within one file are unique
+
+
+
+    # global_nodes = pd.concat([
+    #     global_nodes.drop('node_repr', axis=1),
+    #     new_nodes.drop('node_repr', axis=1)
+    # ], axis=0)
+    # return global_nodes
+
+
+def write_global_nodes(path, global_nodes):
+    if len(global_nodes) != 0:
+        persist(global_nodes, path)
+        # pd.DataFrame(global_nodes).to_csv(path, index=False, quoting=QUOTE_NONNUMERIC)
+    # else:
+    #     with open(path, "w") as sink:
+    #         sink.write("id,type,serialized_name\n")
+
+
+def main():
+    common_nodes_path = sys.argv[1]
+    batch_nodes_path = sys.argv[2]
+
+    existing_nodes, next_valid_id = read_global_nodes(common_nodes_path)
+    local_nodes = read_local_nodes(batch_nodes_path)
+
+    local_id_mapped = merge_global_with_local(existing_nodes, next_valid_id, local_nodes)
+
+    global_nodes = merge_with_file_if_exists(local_id_mapped, common_nodes_path)
+
+    write_global_nodes(common_nodes_path, global_nodes)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+

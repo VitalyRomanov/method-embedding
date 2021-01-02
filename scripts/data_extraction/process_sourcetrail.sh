@@ -1,8 +1,8 @@
 conda activate SourceCodeTools
 
-ENVS_DIR=$(realpath $1)
-RUN_DIR=$(realpath $(dirname "$0"))
-SQL_Q=$(realpath $RUN_DIR/extract.sql)
+ENVS_DIR=$(realpath "$1")
+RUN_DIR=$(realpath "$(dirname "$0")")
+SQL_Q=$(realpath "$RUN_DIR/extract.sql")
 
 #echo $RUN_DIR
 #echo $SQL_Q
@@ -11,37 +11,46 @@ SQL_Q=$(realpath $RUN_DIR/extract.sql)
 #get directories
 #https://stackoverflow.com/questions/2107945/how-to-loop-over-directories-in-linux
 
-for dir in $(ls $ENVS_DIR); do
-  if [ -d $ENVS_DIR/$dir ]; then
-    echo "Found package $dir"
+for dir in "$ENVS_DIR"/*; do
+  if [ -d "$dir" ]; then
+    package_name="$(basename "$dir")"
 
-    if [ -f $ENVS_DIR/$dir/source-graph-bodies.csv ]; then
-      rm $ENVS_DIR/$dir/source-graph-bodies.csv
+    echo "Found package $package_name"
+
+    if [ -f "$dir/source-graph-bodies.csv" ]; then
+      rm "$dir/source-graph-bodies.csv"
     fi
-    if [ -f $ENVS_DIR/$dir/nodes_with_ast.csv ]; then
-      rm $ENVS_DIR/$dir/nodes_with_ast.csv
+    if [ -f "$dir/nodes_with_ast.csv" ]; then
+      rm "$dir/nodes_with_ast.csv"
     fi
-    if [ -f $ENVS_DIR/$dir/edges_with_ast.csv ]; then
-      rm $ENVS_DIR/$dir/edges_with_ast.csv
+    if [ -f "$dir/edges_with_ast.csv" ]; then
+      rm "$dir/edges_with_ast.csv"
     fi
-    if [ -f $ENVS_DIR/$dir/call_seq.csv ]; then
-      rm $ENVS_DIR/$dir/call_seq.csv
+    if [ -f "$dir/call_seq.csv" ]; then
+      rm "$dir/call_seq.csv"
     fi
-    if [ -f $ENVS_DIR/$dir/source-graph-function-variable-pairs.csv ]; then
-      rm $ENVS_DIR/$dir/source-graph-function-variable-pairs.csv
+    if [ -f "$dir/source-graph-function-variable-pairs.csv" ]; then
+      rm "$dir/source-graph-function-variable-pairs.csv"
     fi
 
 
-    if [ -f $ENVS_DIR/$dir/$dir.srctrldb ]; then
-      cd $ENVS_DIR/$dir
-      sqlite3 $ENVS_DIR/$dir/$dir.srctrldb < $SQL_Q
-      cd $RUN_DIR
-      sourcetrail-verify-files.py $ENVS_DIR/$dir
-      sourcetrail-node-name-merge.py $ENVS_DIR/$dir/nodes.csv
-      sourcetrail-parse-bodies.py $ENVS_DIR/$dir
-      sourcetrail-ast-edges.py $ENVS_DIR/$dir
-      sourcetrail-call-seq-extractor.py $ENVS_DIR/$dir
-      sourcetrail-extract-variable-names.py py $ENVS_DIR/$dir
+    if [ -f "$dir/$package_name.srctrldb" ]; then
+      cd "$dir"
+      sqlite3 "$dir/$package_name.srctrldb" < "$SQL_Q"
+      cd "$RUN_DIR"
+      sourcetrail-verify-files.py "$dir"
+      sourcetrail-node-name-merge.py "$dir/nodes.csv"
+      sourcetrail-decode-edge-types.py "$dir/edges.csv"
+      sourcetrail-parse-bodies.py "$dir"
+      sourcetrail-call-seq-extractor.py "$dir"
+
+
+      sourcetrail-add-reverse-edges.py "$dir/edges.bz2"
+      sourcetrail-ast-edges.py "$dir"
+      sourcetrail-extract-variable-names.py py "$dir"
+
+      rm "$dir"/edges_with_ast_temp.csv
+
     else
       echo "Package not indexed"
     fi

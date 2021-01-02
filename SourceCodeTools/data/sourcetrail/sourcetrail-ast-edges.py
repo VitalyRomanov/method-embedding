@@ -8,10 +8,10 @@ from csv import QUOTE_NONNUMERIC
 import pandas as pd
 from nltk import RegexpTokenizer
 
-from SourceCodeTools.data.sourcetrail.sourcetrail_types import node_types, edge_types
 from SourceCodeTools.graph.python_ast import AstGraphGenerator
 from SourceCodeTools.graph.python_ast import GNode
 from SourceCodeTools.proc.entity.annotator.annotator_utils import to_offsets, overlap, resolve_self_collision
+from SourceCodeTools.data.sourcetrail.file_utils import *
 
 pd.options.mode.chained_assignment = None
 
@@ -105,7 +105,7 @@ class NodeResolver:
 
     def resolve_node_id(self, node, function_id):
         if not hasattr(node, "id"):
-            node_repr = (node.name, node.type)
+            node_repr = (node.name.strip(), node.type.strip())
 
             if node_repr in self.node_ids:
                 node.setprop("id", self.node_ids[node_repr])
@@ -114,6 +114,10 @@ class NodeResolver:
                 self.node_ids[node_repr] = new_id
                 self.new_nodes.append(
                     {"id": new_id, "type": node.type, "serialized_name": node.name, "mentioned_in": function_id})
+
+                # temp = pd.DataFrame(self.new_nodes)
+                # temp['node_repr'] = list(zip(temp['serialized_name'], temp['type']))
+                # assert len(temp) == len(set(temp['node_repr'].to_list()))
 
                 node.setprop("id", new_id)
         return node
@@ -394,8 +398,8 @@ def replace_mentions_with_subword_instances(edges, bpe):
 
 
 def get_srctrl2original_replacements(record):
-    random2srctrl = ast.literal_eval(record['random_2_srctrl'])
-    random2original = ast.literal_eval(record['random_2_original'])
+    random2srctrl = record['random_2_srctrl']
+    random2original = record['random_2_original']
 
     return {random2srctrl[key]: random2original[key] for key in random2original}
 
@@ -405,35 +409,28 @@ def append_edges(path, edges):
 
 
 def write_bodies(path, bodies):
-    pd.DataFrame(bodies).to_csv(
-        path,
-        index=False, quoting=QUOTE_NONNUMERIC
-    )
+    write_pickle(pd.DataFrame(bodies), path)
 
 
 def write_nodes(path, node_resolver):
-    with open(path, 'w', encoding='utf8', errors='replace') as f:
-        pd.concat([node_resolver.old_nodes, pd.DataFrame(node_resolver.new_nodes)])\
-            [['id', 'type', 'serialized_name', 'mentioned_in']].to_csv(f, index=False, quoting=QUOTE_NONNUMERIC)
+    new_nodes = pd.concat([node_resolver.old_nodes, pd.DataFrame(node_resolver.new_nodes)])\
+        [['id', 'type', 'serialized_name', 'mentioned_in']]
+    write_pickle(new_nodes, path)
+    # with open(path, 'w', encoding='utf8', errors='replace') as f:
+    #     pd.concat([node_resolver.old_nodes, pd.DataFrame(node_resolver.new_nodes)])\
+    #         [['id', 'type', 'serialized_name', 'mentioned_in']].to_csv(f, index=False, quoting=QUOTE_NONNUMERIC)
 
-def add_reverse_edges(edges):
-    rev_edges = edges.copy()
-    rev_edges['source_node_id'] = edges['target_node_id']
-    rev_edges['target_node_id'] = edges['source_node_id']
-    rev_edges['type'] = rev_edges['type'].apply(lambda x: x + "_rev")
-
-    return pd.concat([edges, rev_edges], axis=0)
 
 def write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name, n_subwords=1000000):
-    bodies_with_replacements = []
-    with open(os.path.join(os.path.dirname(nodes_with_ast_name), "bodies_with_replacements.csv"), "w") as sink:
-        sink.write("id,body,replacement_list\n")
+    bodies_with_replacements = {}
+    # with open(os.path.join(os.path.dirname(nodes_with_ast_name), "bodies_with_replacements.csv"), "w") as sink:
+    #     sink.write("id,body,replacement_list\n")
 
     subword_tokenizer = create_subword_tokenizer(lang="multi", vs=n_subwords)
     tokenizer = RegexpTokenizer("\w+|[^\w\s]")
 
     for ind_bodies, (_, row) in enumerate(bodies.iterrows()):
-        orig_body = row['random_replacements']
+        orig_body = row['body_with_random_replacements']
         if not isinstance(orig_body, str):
             continue
 
@@ -455,7 +452,7 @@ def write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_na
         if len(edges) == 0:
             continue
 
-        replacements = ast.literal_eval(row['random_2_srctrl'])
+        replacements = row['random_2_srctrl']
         # replacements_lookup = lambda x: complex_replacement_lookup(x, replacements)
         replacements_lookup = lambda x: \
             GNode(name=random_replacement_lookup(x.name, replacements, tokenizer),
@@ -491,8 +488,8 @@ def write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_na
 
         srctrl_nodes = list(map(
             lambda x: (x[0], x[1], node_resolver.resolve(GNode(name=x[2], type="Name"), srctrl2original).id),
-            to_offsets(row['random_replacements'],
-                       format_replacement_offsets(ast.literal_eval(row['replacement_list'])))
+            to_offsets(row['body_with_random_replacements'],
+                       format_replacement_offsets(row['replacement_list']))
         ))
 
         all_offsets = join_offsets(
@@ -500,21 +497,20 @@ def write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_na
             sorted(srctrl_nodes, key=lambda x: x[0])
         )
 
-        bodies_with_replacements.append({
-            "id": row['id'],
-            "body": row['body'],
-            "replacement_list": all_offsets
-        })
+        bodies_with_replacements[row['id']] = all_offsets
 
         append_edges(path=edges_with_ast_name, edges=edges)
-        print("\r%d/%d" % (ind_bodies, len(bodies['normalized_body'])), end="")
+        print("\r%d/%d" % (ind_bodies, len(bodies['body_normalized'])), end="")
 
     print(" " * 30, end="\r")
 
-    write_bodies(path=os.path.join(os.path.dirname(nodes_with_ast_name), "bodies_with_replacements.csv"),
-                 bodies=bodies_with_replacements)
+    bodies['graph_node_replacements'] = bodies['id'].apply(lambda id_: bodies_with_replacements.get(id_, None))
 
+    # write_bodies(path=os.path.join(os.path.dirname(nodes_with_ast_name), "bodies_with_replacements.bz2"),
+    #              bodies=bodies_with_replacements)
+    #
     write_nodes(path=nodes_with_ast_name, node_resolver=node_resolver)
+
 
 
 def main(argv):
@@ -524,26 +520,30 @@ def main(argv):
     except:
         n_subwords = 1000000
 
-    node_path = os.path.join(working_directory, "normalized_sourcetrail_nodes.csv")
-    edge_path = os.path.join(working_directory, "edges.csv")
-    bodies_path = os.path.join(working_directory, "source-graph-bodies.csv")
+    # node_path = os.path.join(working_directory, "normalized_sourcetrail_nodes.csv")
+    # edge_path = os.path.join(working_directory, "edges.csv")
+    # bodies_path = os.path.join(working_directory, "source-graph-bodies.csv")
 
-    node = pd.read_csv(node_path, sep=",", dtype={"id": int, "type": int, "serialized_name": str})
-    edge = pd.read_csv(edge_path, sep=",", dtype={'id': int, 'type': int, 'source_node_id': int, 'target_node_id': int})
-    bodies = pd.read_csv(bodies_path, sep=",", dtype={"id": int, "body": str, "docstring": str, "normalized_body": str})
+    nodes = read_nodes(working_directory)
+    edges = read_edges(working_directory)
+    bodies = read_processed_bodies(working_directory)
 
-    node['type'] = node['type'].apply(lambda type: node_types[type])
-    edge['type'] = edge['type'].apply(lambda type: edge_types[type])
-    edge = add_reverse_edges(edge)
+    # node = pd.read_csv(node_path, sep=",", dtype={"id": int, "type": int, "serialized_name": str})
+    # edge = pd.read_csv(edge_path, sep=",", dtype={'id': int, 'type': int, 'source_node_id': int, 'target_node_id': int})
+    # bodies = pd.read_csv(bodies_path, sep=",", dtype={"id": int, "body": str, "docstring": str, "normalized_body": str})
 
-    node_resolver = NodeResolver(node)
-    edges_with_ast_name = os.path.join(working_directory, "edges_with_ast.csv")
-    nodes_with_ast_name = os.path.join(working_directory, "nodes_with_ast.csv")
+    node_resolver = NodeResolver(nodes)
+    edges_with_ast_name = os.path.join(working_directory, "edges_with_ast.bz2")
+    edges_with_ast_name_temp = os.path.join(working_directory, "edges_with_ast_temp.csv")
+    nodes_with_ast_name = os.path.join(working_directory, "nodes_with_ast.bz2")
 
-    edge.to_csv(edges_with_ast_name, index=False, quoting=QUOTE_NONNUMERIC)
+    write_csv(edges, edges_with_ast_name_temp)
 
     # write_edges_v1(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name)
-    write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name, n_subwords=n_subwords)
+    write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name_temp, n_subwords=n_subwords)
+
+    write_processed_bodies(bodies, working_directory)
+    persist(read_csv(edges_with_ast_name_temp), edges_with_ast_name)
 
 
 if __name__ == "__main__":
