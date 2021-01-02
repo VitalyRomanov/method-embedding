@@ -275,6 +275,10 @@ def main(args):
 
                 norm_body = "\n".join(body_normalized)
                 body_with_random_replacements = "\n".join(body_with_random_replacements)
+
+                if not has_valid_syntax(body_with_random_replacements):
+                    raise RandomReplacementException("Syntax error after replacements")
+
                 bodies.append({
                     "id": f_def.element_id,
                     "body": body,
