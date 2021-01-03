@@ -1,11 +1,8 @@
 import ast
-import os
 import re
 import sys
 from copy import copy
-from csv import QUOTE_NONNUMERIC
 
-import pandas as pd
 from nltk import RegexpTokenizer
 
 from SourceCodeTools.graph.python_ast import AstGraphGenerator
@@ -16,26 +13,7 @@ from SourceCodeTools.data.sourcetrail.file_utils import *
 pd.options.mode.chained_assignment = None
 
 
-def create_subword_tokenizer(lang, vs):
-    from pathlib import Path
-    from bpemb.util import sentencepiece_load, http_get
-    import re
-
-    def _load_file(file, archive=False):
-        cache_dir = Path.home() / Path(".cache/bpemb")
-        archive_suffix = ".tar.gz"
-        base_url = "https://nlp.h-its.org/bpemb/"
-        cached_file = Path(cache_dir) / file
-        if cached_file.exists():
-            return cached_file
-        suffix = archive_suffix if archive else ""
-        file_url = base_url + file + suffix
-        print("downloading", file_url)
-        return http_get(file_url, cached_file, ignore_tardir=True)
-    model_file = "{lang}/{lang}.wiki.bpe.vs{vs}.model".format(lang=lang, vs=vs)
-    model_file = _load_file(model_file)
-    spm = sentencepiece_load(model_file)
-    return lambda text: spm.EncodeAsPieces(re.sub(r"\d", "0", text.lower()))
+from SourceCodeTools.embed.bpe import create_subword_tokenizer
 
 
 class NodeResolver:
