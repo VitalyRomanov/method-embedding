@@ -9,8 +9,9 @@ from SourceCodeTools.data.sourcetrail.common import create_node_repr, \
 # TODO
 # sometimes ast nodes are preferred
 
-all_nodes = unpersist(sys.argv[1])
-orig_nodes = unpersist(sys.argv[2])
+all_nodes = unpersist_or_exit(sys.argv[1], "Global nodes no not exist!")
+orig_nodes = unpersist_or_exit(sys.argv[2], "No processed nodes, skipping")
+
 # all_nodes = pd.read_csv(sys.argv[1], dtype={"id": int, "type": str, "serialized_name": str})
 # orig_nodes = pd.read_csv(sys.argv[2], dtype={"id": int, "type": str, "serialized_name": str})
 local_map_path = sys.argv[3]

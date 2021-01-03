@@ -11,17 +11,15 @@ def read_global_nodes(path):
         common_nodes = unpersist(path)
         add_node_repr(common_nodes)
         existing_nodes = set(common_nodes['node_repr'].to_list())
-        records = common_nodes
         next_valid_id = common_nodes['id'].max() + 1
     else:
         existing_nodes = set()
-        records = None
         next_valid_id = 0
     return existing_nodes, next_valid_id
 
 
 def read_local_nodes(path):
-    batch_nodes = unpersist(path)
+    batch_nodes = unpersist_or_exit(path)
     add_node_repr(batch_nodes)
     return batch_nodes
 
@@ -82,6 +80,9 @@ def main():
 
     existing_nodes, next_valid_id = read_global_nodes(common_nodes_path)
     local_nodes = read_local_nodes(batch_nodes_path)
+
+    if local_nodes is None:
+        sys.exit()
 
     local_id_mapped = merge_global_with_local(existing_nodes, next_valid_id, local_nodes)
 

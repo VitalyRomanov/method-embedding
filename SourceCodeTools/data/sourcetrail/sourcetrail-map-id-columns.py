@@ -7,8 +7,8 @@ from SourceCodeTools.data.sourcetrail.file_utils import *
 # all_nodes = pd.read_csv(sys.argv[1], dtype={"id": int, "type": str, "serialized_name": str})
 # orig_nodes = pd.read_csv(sys.argv[2], dtype={"id": int, "type": str, "serialized_name": str})
 
-all_nodes = unpersist(sys.argv[1])
-orig_nodes = unpersist(sys.argv[2])
+all_nodes = unpersist_or_exit(sys.argv[1], exit_message="Error: global nodes do not exist!")
+orig_nodes = unpersist_or_exit(sys.argv[2])
 
 input_path = sys.argv[3]
 output_path = sys.argv[4]
@@ -21,16 +21,14 @@ id_map = create_local_to_global_id_map(local_nodes=orig_nodes, global_nodes=all_
 # rev_id_map = dict(zip(all_nodes['node_repr'].tolist(), all_nodes['id'].tolist()))
 # id_map = dict(zip(orig_nodes["id"].tolist(), map(lambda x: rev_id_map[x], orig_nodes["node_repr"].tolist())))
 
-if os.path.isfile(input_path):
-    input_table = unpersist(input_path)
 
-    input_table = map_id_columns(input_table, columns, id_map)
+input_table = unpersist_or_exit(input_path)
 
-    if len(input_table) == 0:
-        sys.exit()
+input_table = map_id_columns(input_table, columns, id_map)
 
-    data = merge_with_file_if_exists(df=input_table, merge_with_file=output_path)
+if len(input_table) == 0:
+    sys.exit()
 
-    persist(data, output_path)
-else:
-    print(f"File does not exist, skipping: {input_path}")
+data = merge_with_file_if_exists(df=input_table, merge_with_file=output_path)
+
+persist(data, output_path)

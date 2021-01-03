@@ -4,8 +4,8 @@ from SourceCodeTools.data.sourcetrail.common import create_node_repr, \
     map_id_columns, merge_with_file_if_exists, create_local_to_global_id_map
 from SourceCodeTools.data.sourcetrail.file_utils import *
 
-all_nodes = unpersist(sys.argv[1])
-orig_nodes = unpersist(sys.argv[2])
+all_nodes = unpersist_or_exit(sys.argv[1], exit_message="Error: global nodes do not exist!")
+orig_nodes = unpersist_or_exit(sys.argv[2])
 # all_nodes = pd.read_csv(sys.argv[1], dtype={"id": int, "type": str, "serialized_name": str})
 # orig_nodes = pd.read_csv(sys.argv[2], dtype={"id": int, "type": str, "serialized_name": str})
 
@@ -13,7 +13,7 @@ input_path = sys.argv[3]
 output_path = sys.argv[4]
 columns = sys.argv[5:]
 
-input_table = unpersist(input_path)
+input_table = unpersist_or_exit(input_path)
 
 if len(input_table.query("type == 'annotation_for' or type == 'returned_by'")) > 0:
     id_map = create_local_to_global_id_map(local_nodes=orig_nodes, global_nodes=all_nodes)

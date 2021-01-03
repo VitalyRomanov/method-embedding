@@ -17,7 +17,7 @@ def add_reverse_edges(edges):
 
 edges_path = sys.argv[1]
 
-edges = unpersist(edges_path)
+edges = unpersist_or_exit(edges_path)
 edges = add_reverse_edges(edges)
 
 persist(edges, edges_path)

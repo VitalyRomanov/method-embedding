@@ -49,7 +49,9 @@ for dir in "$ENVS_DIR"/*; do
       sourcetrail-ast-edges.py "$dir"
       sourcetrail-extract-variable-names.py py "$dir"
 
-      rm "$dir"/edges_with_ast_temp.csv
+      if [ -f "$dir"/edges_with_ast_temp.csv ]; then
+        rm "$dir"/edges_with_ast_temp.csv
+      fi
 
     else
       echo "Package not indexed"

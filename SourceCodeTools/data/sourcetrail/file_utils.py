@@ -1,3 +1,4 @@
+import logging
 from csv import QUOTE_NONNUMERIC
 import pandas as pd
 import os
@@ -41,29 +42,49 @@ def read_parquet(path, **kwargs):
 
 
 def read_source_location(base_path):
-    source_location_path = os.path.join(base_path, "source_location.csv")
-    source_location = unpersist(source_location_path, sep=",",
-                                  dtype={'id': int, 'file_node_id': int, 'start_line': int, 'start_column': int,
-                                         'end_line': int, 'end_column': int, 'type': int}
-                               )
+    source_location_path = os.path.join(base_path, filenames["source_location"])
+
+    source_location = unpersist_or_exit(
+        source_location_path,
+        exit_message=f"Does not exist or empty: {filenames['source_location']}",
+        sep=",",
+        dtype={
+            'id': int, 'file_node_id': int, 'start_line': int, 'start_column': int,
+            'end_line': int, 'end_column': int, 'type': int
+        }
+    )
     return source_location
 
 
 def read_occurrence(base_path):
-    occurrence_path = os.path.join(base_path, "occurrence.csv")
-    occurrence = unpersist(occurrence_path, sep=",", dtype={'element_id': int, 'source_location_id': int})
+    occurrence_path = os.path.join(base_path, filenames["occurrence"])
+
+    occurrence = unpersist_or_exit(
+        occurrence_path,
+        exit_message=f"Does not exist or empty: {filenames['occurrence']}",
+        sep=",", dtype={'element_id': int, 'source_location_id': int}
+    )
     return occurrence
 
 
 def read_filecontent(base_path):
-    filecontent_path = os.path.join(base_path, "filecontent.csv")
-    filecontent = unpersist(filecontent_path, sep=",", dtype={'id': int, 'content': str})
+    filecontent_path = os.path.join(base_path, filenames["filecontent"])
+
+    filecontent = unpersist_or_exit(
+        filecontent_path,
+        exit_message=f"Does not exist or empty: {filenames['filecontent']}",
+        sep=",", dtype={'id': int, 'content': str}
+    )
     return filecontent
 
 
 def read_nodes(base_path):
     node_path = os.path.join(base_path, filenames["nodes"])
-    nodes = unpersist(node_path)
+
+    nodes = unpersist_or_exit(
+        node_path,
+        exit_message=f"Does not exist or empty: {filenames['nodes']}"
+    )
     # pd.read_csv(node_path, sep=",", dtype={"id": int, "type": int, "serialized_name": str})
     return nodes
 
@@ -75,7 +96,11 @@ def write_nodes(nodes, base_path):
 
 def read_edges(base_path):
     edge_path = os.path.join(base_path, filenames["edges"])
-    edge = unpersist(edge_path)
+
+    edge = unpersist_or_exit(
+        edge_path,
+        exit_message=f"Does not exist or empty: {filenames['edges']}"
+    )
     # pd.read_csv(edge_path, sep=",", dtype={'id': int, 'type': int, 'source_node_id': int, 'target_node_id': int})
     return edge
 
@@ -87,7 +112,11 @@ def write_edges(edges, base_path):
 
 def read_processed_bodies(base_path):
     bodies_path = os.path.join(base_path, filenames["source-graph-bodies"])
-    bodies = unpersist(bodies_path)
+
+    bodies = unpersist_or_exit(
+        bodies_path,
+        exit_message=f"Does not exist or empty: {filenames['source-graph-bodies']}"
+    )
     return bodies
 
 
@@ -117,3 +146,23 @@ def unpersist(path: str, **kwargs) -> pd.DataFrame:
     else:
         raise NotImplementedError("supported exrensions: csv, bz2, pkl, parquet")
     return data
+
+
+def unpersist_if_present(path, **kwargs):
+    if os.path.isfile(path):
+        return unpersist(path, **kwargs)
+    else:
+        return None
+
+
+def unpersist_or_exit(path, exit_message=None, **kwargs):
+
+    data = unpersist_if_present(path, **kwargs)
+    if data is None or len(data) == 0:
+        if exit_message:
+            logging.warn(exit_message)
+            # print(exit_message)
+        import sys
+        sys.exit()
+    else:
+        return data

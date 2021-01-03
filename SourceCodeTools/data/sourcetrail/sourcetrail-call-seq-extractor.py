@@ -14,11 +14,11 @@ def get_function_calls(occurrences):
 
 def main(working_directory):
 
-    occurrence_group = get_occurrence_groups(working_directory)
+    occurrence_groups = get_occurrence_groups(working_directory)
 
     call_seq = []
 
-    for grp_ind, (file_id, occurrences) in enumerate(occurrence_group):
+    for grp_ind, (file_id, occurrences) in enumerate(occurrence_groups):
 
         function_definitions = get_function_definitions(occurrences)
 
@@ -35,7 +35,7 @@ def main(working_directory):
                         'dst': all_calls[i+1]
                     })
 
-        print(f"\r{grp_ind}/{len(occurrence_group)}", end="")
+        print(f"\r{grp_ind}/{len(occurrence_groups)}", end="")
     print(" " * 30, end="\r")
 
     call_seq = pd.DataFrame(call_seq).astype({

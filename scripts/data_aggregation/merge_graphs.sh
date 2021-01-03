@@ -29,10 +29,8 @@ fi
 echo "Merging nodes"
 for dir in "$ENVS_DIR"/*; do
   if [ -d "$dir" ]; then
-    if [ -f "$dir/nodes.bz2" ]; then
-      sourcetrail-merge-graphs.py "$OUT_DIR/no_ast/common_nodes.bz2" "$dir/nodes.bz2"
-      sourcetrail-merge-graphs.py "$OUT_DIR/with_ast/common_nodes.bz2" "$dir/nodes_with_ast.bz2"
-    fi
+    sourcetrail-merge-graphs.py "$OUT_DIR/no_ast/common_nodes.bz2" "$dir/nodes.bz2"
+    sourcetrail-merge-graphs.py "$OUT_DIR/with_ast/common_nodes.bz2" "$dir/nodes_with_ast.bz2"
   fi
 done
 
@@ -41,7 +39,7 @@ for dir in "$ENVS_DIR"/*; do
     package_name="$(basename "$dir")"
 
     echo "Process $package_name"
-    if [ -f "$dir/nodes.bz2" ]; then
+#    if [ -f "$dir/nodes.bz2" ]; then
 
       sourcetrail-node-local2global.py "$OUT_DIR/no_ast/common_nodes.bz2" "$dir/nodes.bz2" "$dir/local2global.bz2"
       sourcetrail-node-local2global.py "$OUT_DIR/with_ast/common_nodes.bz2" "$dir/nodes_with_ast.bz2" "$dir/local2global_with_ast.bz2"
@@ -56,7 +54,7 @@ for dir in "$ENVS_DIR"/*; do
       sourcetrail-map-id-columns.py "$OUT_DIR/with_ast/common_nodes.bz2" "$dir/nodes_with_ast.bz2" "$dir/function-variable-pairs.bz2" "$OUT_DIR/with_ast/common-function-variable-pairs.bz2" src
       sourcetrail-map-id-columns.py "$OUT_DIR/with_ast/common_nodes.bz2" "$dir/nodes_with_ast.bz2" "$dir/call-seq.bz2" "$OUT_DIR/with_ast/common-call-seq.bz2" src dst
 
-    fi
+#    fi
   fi
 done
 

@@ -12,7 +12,7 @@ def get_node_name(full_name):
 
 def extract_and_write_node_names(nodes_path, out_path, min_count):
 
-    data = unpersist(nodes_path)
+    data = unpersist_or_exit(nodes_path)
     # some cells are empty, probably because of empty strings in AST
     data = data.dropna(axis=0)
     data = data[data['type'] != 262144]
