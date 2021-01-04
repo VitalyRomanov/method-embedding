@@ -1,24 +1,26 @@
 import pandas
-# import dgl
 import numpy
 import pickle
-# import torch
 
 from os.path import join
 
+from SourceCodeTools.data.sourcetrail.file_utils import *
+from SourceCodeTools.common import compact_property
+
+
 def load_data(node_path, edge_path):
-    # dtype = {'id': int, 'type': int, 'serialized_name': str}
-    nodes = pandas.read_csv(node_path, dtype={'id': int, 'type': str, 'serialized_name': str}, escapechar='\\')
-    edges = pandas.read_csv(edge_path, dtype={'id': int, 'type': str, 'source_node_id': int, 'target_node_id': int})
+
+    nodes = unpersist(node_path)
+    edges = unpersist(edge_path)
 
     nodes_ = nodes.rename(mapper={
         'serialized_name': 'name'
-    }, axis=1)#.astype({"name":str, "id": int, "type": int})
+    }, axis=1)
 
     edges_ = edges.rename(mapper={
         'source_node_id': 'src',
         'target_node_id': 'dst'
-    }, axis=1)#.astype({'id': int, 'type': int, 'src': int, 'dst': int})
+    }, axis=1)
 
     nodes_['libname'] = nodes_['name'].apply(lambda name: name.split(".")[0])
 
@@ -38,11 +40,11 @@ def create_mask(size, idx):
 #     df['compact_' + prop] = df[prop].apply(compactor)
 #     return df
 
-def compact_property(values):
-    uniq = numpy.unique(values)
-    prop2pid = dict(zip(uniq, range(uniq.size)))
-    # prop2pid = dict(list(zip(uniq, list(range(uniq.size)))))
-    return prop2pid
+# def compact_property(values):
+#     uniq = numpy.unique(values)
+#     prop2pid = dict(zip(uniq, range(uniq.size)))
+#     # prop2pid = dict(list(zip(uniq, list(range(uniq.size)))))
+#     return prop2pid
 
 
 def get_train_test_val_indices(labels, train_frac=0.6):
@@ -62,7 +64,7 @@ def get_train_test_val_indices(labels, train_frac=0.6):
 class SourceGraphDataset:
     def __init__(self, nodes_path, edges_path,
                  label_from, node_types=False,
-                 edge_types=False, filter=None, holdout_frac=0.001, restore_state=False, self_loops=False,
+                 edge_types=False, filter=None, holdout_frac=0.001, self_loops=False,
                  holdout=None, train_frac=0.6):
         """
         Prepares the data for training GNN model. The graph is prepared in the following way:
@@ -95,9 +97,6 @@ class SourceGraphDataset:
         # 4. create model where variable names are in the graph. This way we can feed
         #       information about ast inside he function embedding
 
-        # self.nodes = pandas.read_csv(nodes_path)
-        # self.edges = pandas.read_csv(edges_path)
-
         self.holdout_frac = holdout_frac
 
         self.nodes, self.edges = load_data(nodes_path, edges_path)
@@ -105,16 +104,10 @@ class SourceGraphDataset:
         if self_loops:
             self.nodes, self.edges = SourceGraphDataset.assess_need_for_self_loops(self.nodes, self.edges)
 
-        # if restore_state:
-        #     self.nodes, self.edges, self.held = pickle.load(open("../../../graph-network/tmp_edgesplits.pkl", "rb"))
-        #     print("Restored graph from saved state")
-        # else:
-        # the next line will delete isolated nodes
         if holdout is None:
             self.nodes, self.edges, self.held = SourceGraphDataset.holdout(self.nodes, self.edges, self.holdout_frac)
         else:
-            self.held = pandas.read_csv(holdout)
-        # pickle.dump((self.nodes, self.edges, self.held), open("../../../graph-network/tmp_edgesplits.pkl", "wb"))
+            self.held = unpersist(holdout)
 
         # # ablation
         # print("Edges before filtering", self.edges.shape[0])

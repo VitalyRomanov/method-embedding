@@ -1,6 +1,8 @@
 import numpy as np
 import random as rnd
 
+from SourceCodeTools.common import compact_property
+
 def create_idx_pools(splits, pool):
     train_idx, test_idx, val_idx = splits
     train_idx = np.fromiter(pool.intersection(train_idx.tolist()), dtype=np.int64)
@@ -8,11 +10,13 @@ def create_idx_pools(splits, pool):
     val_idx = np.fromiter(pool.intersection(val_idx.tolist()), dtype=np.int64)
     return train_idx, test_idx, val_idx
 
-def compact_property(values):
-    uniq = np.unique(values)
-    prop2pid = dict(zip(uniq, range(uniq.size)))
-    # prop2pid = dict(list(zip(uniq, list(range(uniq.size)))))
-    return prop2pid
+
+# def compact_property(values):
+#     uniq = np.unique(values)
+#     prop2pid = dict(zip(uniq, range(uniq.size)))
+#     # prop2pid = dict(list(zip(uniq, list(range(uniq.size)))))
+#     return prop2pid
+
 
 class ElementEmbedderBase:
     def __init__(self, elements, compact_dst=True):

@@ -12,6 +12,7 @@ import random as rnd
 import torch
 import os
 
+from SourceCodeTools.common import compact_property
 
 def keep_from_set(table, pool):
     table['src'] = table['src'].apply(lambda nid: nid if nid in pool else None)
@@ -542,10 +543,10 @@ class Experiment_tt(Experiment):
             raise ValueError("Unsupported split mode:", self.split_on)
 
 
-def compact_property(values):
-    uniq = np.unique(values)
-    prop2pid = dict(zip(uniq, range(uniq.size)))
-    return prop2pid
+# def compact_property(values):
+#     uniq = np.unique(values)
+#     prop2pid = dict(zip(uniq, range(uniq.size)))
+#     return prop2pid
 
 
 class Experiment2(Experiment):

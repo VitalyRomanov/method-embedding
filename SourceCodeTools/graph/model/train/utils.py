@@ -26,7 +26,6 @@ def get_model_base(args, model_attempt):
     return MODEL_BASE
 
 
-
 def create_idx_pools(splits, pool):
     train_idx, test_idx, val_idx = splits
     train_idx = np.fromiter(pool.intersection(train_idx), dtype=np.int64)
