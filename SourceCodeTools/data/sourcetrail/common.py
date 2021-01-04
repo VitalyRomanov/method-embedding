@@ -2,7 +2,7 @@ from SourceCodeTools.data.sourcetrail.file_utils import *
 
 
 DEFINITION_TYPE = 1
-UNRESOLVED_SYMBOL = 1
+UNRESOLVED_SYMBOL = "unsolved_symbol"
 
 
 def get_occurrence_groups(working_directory):
