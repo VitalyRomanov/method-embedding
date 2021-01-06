@@ -12,6 +12,7 @@ import random as rnd
 import torch
 import os
 
+from SourceCodeTools.common import compact_property
 
 def keep_from_set(table, pool):
     table['src'] = table['src'].apply(lambda nid: nid if nid in pool else None)
@@ -117,12 +118,15 @@ class Experiments:
         nodes = pandas.read_csv(join(self.base_path, "nodes.csv"))
         edges = pandas.read_csv(join(self.base_path, "held.csv")).astype({"src": "int32", "dst": "int32"})
 
-        global_ids = nodes['global_graph_id'].values
-        self.splits = (
-            global_ids[nodes['train_mask'].values],
-            global_ids[nodes['val_mask'].values],
-            global_ids[nodes['test_mask'].values],
-        )
+        from SourceCodeTools.data.sourcetrail.Dataset import SourceGraphDataset
+
+        self.splits = SourceGraphDataset.get_global_graph_id_splits(nodes)
+        # global_ids = nodes['global_graph_id'].values
+        # self.splits = (
+        #     global_ids[nodes['train_mask'].values],
+        #     global_ids[nodes['val_mask'].values],
+        #     global_ids[nodes['test_mask'].values],
+        # )
         if type == "link":
             # nodes = pandas.read_csv(join(self.base_path, "nodes.csv"))
             held = pandas.read_csv(join(self.base_path, "held.csv")).astype({"src": "int32", "dst": "int32"})
@@ -248,7 +252,7 @@ class Experiments:
 
             # fname = pandas.read_csv(self.experiments['fname'])
             functions = nodes.query('label == 4096')
-            functions['fname'] = functions['name'].apply(lambda name: name.split(".")[-1])
+            functions['fname'] = functions['name'].apply(lambda name: name.split(".", )[-1])
 
             functions['src'] = functions['id']
             functions['dst'] = functions['fname']
@@ -542,10 +546,10 @@ class Experiment_tt(Experiment):
             raise ValueError("Unsupported split mode:", self.split_on)
 
 
-def compact_property(values):
-    uniq = np.unique(values)
-    prop2pid = dict(zip(uniq, range(uniq.size)))
-    return prop2pid
+# def compact_property(values):
+#     uniq = np.unique(values)
+#     prop2pid = dict(zip(uniq, range(uniq.size)))
+#     return prop2pid
 
 
 class Experiment2(Experiment):
