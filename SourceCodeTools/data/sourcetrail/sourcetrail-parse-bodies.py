@@ -83,16 +83,16 @@ def generate_random_replacement(len: int, source: List[str]):
 def get_function_body(file_content, file_id, start, end) -> str:
     source_lines = file_content.query(f"id == {file_id}").iloc[0]['content'].split("\n")
 
-    body_lines = source_lines[start: end + 1]
+    body_lines = source_lines[start: end]
 
     body_num_lines = len(body_lines)
 
     trim = 0
 
-    if body_num_lines > 1:
+    if body_num_lines > 2: # assume one line function, or signaure and return statement
         initial_indent = len(body_lines[0]) - len(body_lines[0].lstrip())
 
-        while True:
+        while trim < body_num_lines:
             # print("body_num_lines - 1 > 1", body_num_lines - 1 > 1)
             # print("""body_lines[body_num_lines - trim - 1].strip() == """"", body_lines[body_num_lines - trim - 1].strip() == "")
             # print("< < initial_indent", len(body_lines[body_num_lines - trim - 1]) - \
@@ -109,21 +109,24 @@ def get_function_body(file_content, file_id, start, end) -> str:
             else:
                 break
 
-    return "\n".join(source_lines[start: end + 1 - trim])
+        if trim == body_num_lines:
+            trim = 0
+
+    return "\n".join(source_lines[start: end - trim])
 
 
 def has_valid_syntax(function_body):
-    body_lines = function_body.split("\n")
-
-    initial_indent = len(body_lines[0]) - len(body_lines[0].lstrip())
-    final_indent = len(body_lines[-1]) - len(body_lines[-1].lstrip())
-
-    if body_lines[-1].strip() != "" and initial_indent >= final_indent:
-        # will also skip functions like this:
-        # '    def func(ax, x, y): pass
-        #     def func_args(ax, x, y, *args): pass'
-        # but this is probably not a big deal
-        return False
+    # body_lines = function_body.rstrip().split("\n")
+    #
+    # initial_indent = len(body_lines[0]) - len(body_lines[0].lstrip())
+    # final_indent = len(body_lines[-1]) - len(body_lines[-1].lstrip())
+    #
+    # if body_lines[-1].strip() != "" and len(body_lines) > 1 and initial_indent >= final_indent:
+    #     # will also skip functions like this:
+    #     # '    def func(ax, x, y): pass
+    #     #     def func_args(ax, x, y, *args): pass'
+    #     # but this is probably not a big deal
+    #     return False
 
     try:
         ast.parse(function_body.lstrip())
