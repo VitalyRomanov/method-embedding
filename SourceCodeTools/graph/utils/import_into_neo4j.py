@@ -16,13 +16,8 @@ def read_type_map(path):
 
 
 def main(args):
-    # node_map = node_types
-    # edge_map = edge_types
-    # edge_map.update(read_type_map(args.ast_edges))
 
     nodes, edges = load_data(args.node_path, args.edge_path)
-    # nodes['type'] = nodes['type'].map(lambda x: node_map[x])
-    # edges['type'] = edges['type'].map(lambda x: edge_map[x])
 
     print()
 
@@ -46,26 +41,26 @@ def main(args):
     with driver.session() as session:
         # https://neo4j.com/docs/api/python-driver/current/api.html#explicit-transactions
 
-        # print("Importing nodes")
-        #
-        # tx = session.begin_transaction()
-        # for ind, row in nodes.iterrows():
-        #     create_node(tx, row['id'], row['name'], row['type'])
-        #     if (ind + 1) % args.batch_size == 0:
-        #         print(f"{ind}/{len(nodes)}", end="\r")
-        #         tx.commit()
-        #         tx.close()
-        #         tx = session.begin_transaction()
-        # tx.commit()
-        # tx.close()
-        #
-        # print()
-        #
-        # print("Creating indexes")
-        # tx = session.begin_transaction()
-        # create_indexes(tx, types=nodes['type'].unique().tolist())
-        # tx.commit()
-        # tx.close()
+        print("Importing nodes")
+
+        tx = session.begin_transaction()
+        for ind, row in nodes.iterrows():
+            create_node(tx, row['id'], row['name'], row['type'])
+            if (ind + 1) % args.batch_size == 0:
+                print(f"{ind}/{len(nodes)}", end="\r")
+                tx.commit()
+                tx.close()
+                tx = session.begin_transaction()
+        tx.commit()
+        tx.close()
+
+        print()
+
+        print("Creating indexes")
+        tx = session.begin_transaction()
+        create_indexes(tx, types=nodes['type'].unique().tolist())
+        tx.commit()
+        tx.close()
 
         print("Importing edges")
 
@@ -95,11 +90,9 @@ if __name__ == "__main__":
                         help='')
     parser.add_argument('--password', "-p", dest='password', default=None,
                         help='')
-    parser.add_argument('--node_path', "-n", dest='node_path', default=None,
+    parser.add_argument('node_path',
                         help='')
-    parser.add_argument('--edge_path', "-e", dest='edge_path', default=None,
-                        help='')
-    parser.add_argument('--ast_edges', "-ae", dest='ast_edges', default=None,
+    parser.add_argument('edge_path',
                         help='')
     parser.add_argument('--batch_size', "-b", dest='batch_size', default=1000, type=int,
                         help='')
