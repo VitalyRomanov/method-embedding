@@ -1,5 +1,6 @@
 conda activate SourceCodeTools
 
+BPE_PATH="$2"
 ENVS_DIR=$(realpath "$1")
 RUN_DIR=$(realpath "$(dirname "$0")")
 SQL_Q=$(realpath "$RUN_DIR/extract.sql")
@@ -46,7 +47,12 @@ for dir in "$ENVS_DIR"/*; do
 
 
       sourcetrail-add-reverse-edges.py "$dir/edges.bz2"
-      sourcetrail-ast-edges.py "$dir"
+      if [ -n "$BPE_PATH" ]; then
+        BPE_PATH=$(realpath "$BPE_PATH")
+        sourcetrail-ast-edges.py "$dir" -bpe $BPE_PATH --create_subword_instances
+      else
+        sourcetrail-ast-edges.py "$dir"
+      fi
       sourcetrail-extract-variable-names.py py "$dir"
 
       if [ -f "$dir"/edges_with_ast_temp.csv ]; then

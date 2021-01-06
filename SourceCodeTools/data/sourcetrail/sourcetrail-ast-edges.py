@@ -9,11 +9,9 @@ from SourceCodeTools.graph.python_ast import AstGraphGenerator
 from SourceCodeTools.graph.python_ast import GNode
 from SourceCodeTools.proc.entity.annotator.annotator_utils import to_offsets, overlap, resolve_self_collision
 from SourceCodeTools.data.sourcetrail.file_utils import *
+from SourceCodeTools.embed.bpe import load_bpe_model, make_tokenizer
 
 pd.options.mode.chained_assignment = None
-
-
-from SourceCodeTools.embed.bpe import create_subword_tokenizer
 
 
 class NodeResolver:
@@ -143,7 +141,7 @@ def format_replacement_offsets(offsets):
 def keep_node(node_string):
     if "(" in node_string or ")" in node_string or "[" in node_string or "]" in node_string or \
             "{" in node_string or "}" in node_string or " " in node_string or "," in node_string:
-            return False
+        return False
     return True
 
 
@@ -220,51 +218,46 @@ def filter_out_mentions_for_srctrl_nodes(edges):
     return edges
 
 
-def replace_mentions_with_subwords(edges, bpe):
-    edges = edges.to_dict(orient="records")
-
+def produce_subword_edges(subwords, dst, connect_subwords=False):
     new_edges = []
-    for edge in edges:
-        if edge['type'] == "local_mention":
-            dst = edge['dst']
-            subwords = bpe(edge['src'])
-            for ind, subword in enumerate(subwords):
+
+    subwords = list(map(lambda x: GNode(name=x, type="subword"), subwords))
+    for ind, subword in enumerate(subwords):
+        new_edges.append({
+            'src': subword,
+            'dst': dst,
+            'type': 'subword',
+            'line': pd.NA,
+            'end_line': pd.NA,
+            'col_offset': pd.NA,
+            'end_col_offset': pd.NA,
+        })
+        if connect_subwords:
+            if ind < len(subwords) - 1:
                 new_edges.append({
                     'src': subword,
-                    'dst': dst,
-                    'type': 'subword',
+                    'dst': subwords[ind + 1],
+                    'type': 'next_subword',
                     'line': pd.NA,
                     'end_line': pd.NA,
                     'col_offset': pd.NA,
                     'end_col_offset': pd.NA,
                 })
-                # if ind < len(subwords) - 1:
-                #     new_edges.append({
-                #         'src': subword,
-                #         'dst': subwords[ind + 1],
-                #         'type': 'next_subword',
-                #         'line': pd.NA,
-                #         'end_line': pd.NA,
-                #         'col_offset': pd.NA,
-                #         'end_col_offset': pd.NA,
-                #     })
-                # if ind > 0:
-                #     new_edges.append({
-                #         'src': subword,
-                #         'dst': subwords[ind - 1],
-                #         'type': 'prev_subword',
-                #         'line': pd.NA,
-                #         'end_line': pd.NA,
-                #         'col_offset': pd.NA,
-                #         'end_col_offset': pd.NA,
-                #     })
-        else:
-            new_edges.append(edge)
+            if ind > 0:
+                new_edges.append({
+                    'src': subword,
+                    'dst': subwords[ind - 1],
+                    'type': 'prev_subword',
+                    'line': pd.NA,
+                    'end_line': pd.NA,
+                    'col_offset': pd.NA,
+                    'end_col_offset': pd.NA,
+                })
 
-    return pd.DataFrame(new_edges)
+    return new_edges
 
 
-def produce_subword_edges(subwords, dst):
+def produce_subword_edges_with_instances(subwords, dst):
     new_edges = []
 
     subwords = list(map(lambda x: GNode(name=x, type="subword"), subwords))
@@ -326,8 +319,13 @@ def make_reverse_edge(edge):
     return rev_edge
 
 
-def replace_mentions_with_subword_instances(edges, bpe):
+def replace_mentions_with_subword_instances(edges, bpe, create_subword_instances, connect_subwords):
     edges = edges.to_dict(orient="records")
+
+    if create_subword_instances:
+        produce_subw_edges = lambda subwords, dst: produce_subword_edges_with_instances(subwords, dst)
+    else:
+        produce_subw_edges = lambda subwords, dst: produce_subword_edges(subwords, dst, connect_subwords)
 
     new_edges = []
     for edge in edges:
@@ -336,39 +334,32 @@ def replace_mentions_with_subword_instances(edges, bpe):
                 # this edge connects sourcetrail node need to add couple of links
                 # to ensure global information flow
                 new_edges.extend(global_mention_edges(edge))
-                # edge['type'] = "global_mention"
-                # rev_edge = copy(edge)
-                # rev_edge['src'] = edge['dst']
-                # rev_edge['dst'] = edge['src']
-                # rev_edge['type'] = "global_mention_rev"
-                # new_edges.append(edge)
-                # new_edges.append(rev_edge)
 
             dst = edge['dst']
 
-            # this is
-            if hasattr(dst, "name_scope") and dst.name_scope == "local":
-                subwords = bpe(dst.name.split("@")[0])
-            else:
-                subwords = bpe(edge['src'].name)
+            if bpe is not None:
+                if hasattr(dst, "name_scope") and dst.name_scope == "local":
+                    subwords = bpe(dst.name.split("@")[0])
+                else:
+                    subwords = bpe(edge['src'].name)
 
-            new_edges.extend(produce_subword_edges(subwords, dst))
+                new_edges.extend(produce_subw_edges(subwords, dst))
 
-        elif edge['type'] == "attr":
+        elif bpe is not None and edge['type'] == "attr":
             new_edges.append(edge)
             new_edges.append(make_reverse_edge(edge))
 
             dst = edge['src']
             subwords = bpe(dst.name)
-            new_edges.extend(produce_subword_edges(subwords, dst))
+            new_edges.extend(produce_subw_edges(subwords, dst))
 
-        elif edge['type'] == "name" or edge['type'] == "names":
+        elif bpe is not None and (edge['type'] == "name" or edge['type'] == "names"):
             if hasattr(edge['src'], "id"):
                 new_edges.extend(global_mention_edges(edge))
 
             dst = edge['dst']
             subwords = bpe(edge['src'].name.split(".")[-1])
-            new_edges.extend(produce_subword_edges(subwords, dst))
+            new_edges.extend(produce_subw_edges(subwords, dst))
         else:
             new_edges.append(edge)
 
@@ -391,20 +382,19 @@ def write_bodies(path, bodies):
 
 
 def write_nodes(path, node_resolver):
-    new_nodes = pd.concat([node_resolver.old_nodes, pd.DataFrame(node_resolver.new_nodes)])\
-        [['id', 'type', 'serialized_name', 'mentioned_in']]
+    new_nodes = pd.concat([node_resolver.old_nodes, pd.DataFrame(node_resolver.new_nodes)])[
+        ['id', 'type', 'serialized_name', 'mentioned_in']
+    ]
     write_pickle(new_nodes, path)
-    # with open(path, 'w', encoding='utf8', errors='replace') as f:
-    #     pd.concat([node_resolver.old_nodes, pd.DataFrame(node_resolver.new_nodes)])\
-    #         [['id', 'type', 'serialized_name', 'mentioned_in']].to_csv(f, index=False, quoting=QUOTE_NONNUMERIC)
 
 
-def write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name, n_subwords=1000000):
+def write_edges(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name,
+                   bpe_tokenizer_path=None, create_subword_instances=True, connect_subwords=False):
     bodies_with_replacements = {}
-    # with open(os.path.join(os.path.dirname(nodes_with_ast_name), "bodies_with_replacements.csv"), "w") as sink:
-    #     sink.write("id,body,replacement_list\n")
 
-    subword_tokenizer = create_subword_tokenizer(lang="multi", vs=n_subwords)
+    subword_tokenizer = make_tokenizer(load_bpe_model((bpe_tokenizer_path))) \
+        if bpe_tokenizer_path else None
+
     tokenizer = RegexpTokenizer("\w+|[^\w\s]")
 
     for ind_bodies, (_, row) in enumerate(bodies.iterrows()):
@@ -435,21 +425,22 @@ def write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_na
         replacements_lookup = lambda x: \
             GNode(name=random_replacement_lookup(x.name, replacements, tokenizer),
                   type=x.type) if "@" not in x.name else \
-            GNode(name=random_replacement_lookup(x.name.split("@")[0], replacements, tokenizer) +
-                  "@" + x.name.split("@")[1],
-                  type=x.type)
+                GNode(name=random_replacement_lookup(x.name.split("@")[0], replacements, tokenizer) +
+                           "@" + x.name.split("@")[1],
+                      type=x.type)
 
         edges['src'] = edges['src'].apply(replacements_lookup)
         edges['dst'] = edges['dst'].apply(replacements_lookup)
-
-        # edges = filter_out_mentions_for_srctrl_nodes(edges)
 
         resolve = lambda node: node_resolver.resolve(node, srctrl2original)
 
         edges['src'] = edges['src'].apply(resolve)
         edges['dst'] = edges['dst'].apply(resolve)
 
-        edges = replace_mentions_with_subword_instances(edges, subword_tokenizer)
+        edges = replace_mentions_with_subword_instances(
+            edges, subword_tokenizer, create_subword_instances=create_subword_instances,
+            connect_subwords=connect_subwords
+        )
         edges['id'] = 0
 
         resolve_node_id = lambda node: node_resolver.resolve_node_id(node, row['id'])
@@ -484,31 +475,28 @@ def write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_na
 
     bodies['graph_node_replacements'] = bodies['id'].apply(lambda id_: bodies_with_replacements.get(id_, None))
 
-    # write_bodies(path=os.path.join(os.path.dirname(nodes_with_ast_name), "bodies_with_replacements.bz2"),
-    #              bodies=bodies_with_replacements)
-    #
     write_nodes(path=nodes_with_ast_name, node_resolver=node_resolver)
 
 
+def main():
+    import argparse
 
-def main(argv):
-    working_directory = argv[1]
-    try:
-        n_subwords = int(argv[2])
-    except:
-        n_subwords = 1000000
+    parser = argparse.ArgumentParser(description='Convert python funcitons to graphs. Include subwords for names.')
+    parser.add_argument('working_directory', type=str,
+                        help='Path to ')
+    parser.add_argument('--bpe_tokenizer', '-bpe', dest='bpe_tokenizer', type=str,
+                        help='')
+    parser.add_argument('--create_subword_instances', action='store_true', default=False, help="")
+    parser.add_argument('--connect_subwords', action='store_true', default=False,
+                        help="Takes effect only when `create_subword_instances` is False")
 
-    # node_path = os.path.join(working_directory, "normalized_sourcetrail_nodes.csv")
-    # edge_path = os.path.join(working_directory, "edges.csv")
-    # bodies_path = os.path.join(working_directory, "source-graph-bodies.csv")
+    args = parser.parse_args()
+
+    working_directory = args.working_directory
 
     nodes = read_nodes(working_directory)
     edges = read_edges(working_directory)
     bodies = read_processed_bodies(working_directory)
-
-    # node = pd.read_csv(node_path, sep=",", dtype={"id": int, "type": int, "serialized_name": str})
-    # edge = pd.read_csv(edge_path, sep=",", dtype={'id': int, 'type': int, 'source_node_id': int, 'target_node_id': int})
-    # bodies = pd.read_csv(bodies_path, sep=",", dtype={"id": int, "body": str, "docstring": str, "normalized_body": str})
 
     node_resolver = NodeResolver(nodes)
     edges_with_ast_name = os.path.join(working_directory, "edges_with_ast.bz2")
@@ -517,12 +505,14 @@ def main(argv):
 
     write_csv(edges, edges_with_ast_name_temp)
 
-    # write_edges_v1(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name)
-    write_edges_v2(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name_temp, n_subwords=n_subwords)
+    write_edges(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name_temp,
+                bpe_tokenizer_path=args.bpe_tokenizer,
+                create_subword_instances=args.create_subword_instances,
+                connect_subwords=args.connect_subwords)
 
     write_processed_bodies(bodies, working_directory)
     persist(read_csv(edges_with_ast_name_temp), edges_with_ast_name)
 
 
 if __name__ == "__main__":
-    main(sys.argv)
+    main()
