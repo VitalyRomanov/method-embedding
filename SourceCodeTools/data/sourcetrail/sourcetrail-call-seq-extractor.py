@@ -38,12 +38,14 @@ def main(working_directory):
         print(f"\r{grp_ind}/{len(occurrence_groups)}", end="")
     print(" " * 30, end="\r")
 
-    call_seq = pd.DataFrame(call_seq).astype({
-        'src': 'int',
-        'dst': 'int'
-    })
+    if len(call_seq) > 0:
 
-    persist(call_seq, os.path.join(working_directory, filenames["call-seq"]))
+        call_seq = pd.DataFrame(call_seq).astype({
+            'src': 'int',
+            'dst': 'int'
+        })
+
+        persist(call_seq, os.path.join(working_directory, filenames["call-seq"]))
 
 
 if __name__ == "__main__":
