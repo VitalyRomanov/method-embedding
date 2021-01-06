@@ -10,7 +10,7 @@ type_ann = pd.read_csv(type_annotations_path).rename({
     "target_node_id": "src"
 }, axis=1)
 
-train, test = split(type_ann, HOLDOUT_FRAC=0.4)
+train, test = split(type_ann, holdout_frac=0.4)
 
 nodes = pd.DataFrame()
 

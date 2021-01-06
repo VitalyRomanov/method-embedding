@@ -9,7 +9,6 @@ from SourceCodeTools.common import compact_property
 
 
 def load_data(node_path, edge_path):
-
     nodes = unpersist(node_path)
     edges = unpersist(edge_path)
 
@@ -22,8 +21,6 @@ def load_data(node_path, edge_path):
         'target_node_id': 'dst'
     }, axis=1)
 
-    nodes_['libname'] = nodes_['name'].apply(lambda name: name.split(".")[0])
-
     return nodes_, edges_
 
 
@@ -33,39 +30,43 @@ def create_mask(size, idx):
     return mask
 
 
-# def compact_prop(df, prop):
-#     uniq = df[prop].unique()
-#     prop2pid = dict(zip(uniq, range(uniq.size)))
-#     compactor = lambda type: prop2pid[type]
-#     df['compact_' + prop] = df[prop].apply(compactor)
-#     return df
-
-# def compact_property(values):
-#     uniq = numpy.unique(values)
-#     prop2pid = dict(zip(uniq, range(uniq.size)))
-#     # prop2pid = dict(list(zip(uniq, list(range(uniq.size)))))
-#     return prop2pid
-
-
-def get_train_test_val_indices(labels, train_frac=0.6):
-    numpy.random.seed(42)
+def get_train_test_val_indices(labels, train_frac=0.6, random_seed=None):
+    if random_seed is not None:
+        numpy.random.seed(random_seed)
+        logging.warning("Random state for splitting dataset is fixed")
 
     indices = numpy.arange(start=0, stop=labels.size)
     numpy.random.shuffle(indices)
 
     train = int(indices.size * train_frac)
-    test = int(indices.size * (train_frac + (1 - train_frac)/2))
+    test = int(indices.size * (train_frac + (1 - train_frac) / 2))
 
-    print("Splitting into train {}, test {}, and validation {} sets".format(train, test - train, indices.size - test))
+    logging.info(
+        f"Splitting into train {train}, test {test - train}, and validation {indices.size - test} sets"
+    )
 
     return indices[:train], indices[train: test], indices[test:]
 
 
 class SourceGraphDataset:
+    g = None
+    nodes = None
+    edges = None
+    node_types = None
+    edge_types = None
+
+    train_frac = None
+    random_seed = None
+    labels_from = None
+    use_node_types = None
+    use_edge_types = None
+    filter = None
+    self_loops = None
+
     def __init__(self, nodes_path, edges_path,
-                 label_from, node_types=False,
-                 edge_types=False, filter=None, holdout_frac=0.001, self_loops=False,
-                 holdout=None, train_frac=0.6):
+                 label_from, use_node_types=False,
+                 use_edge_types=False, filter=None, self_loops=False,
+                 train_frac=0.6, random_seed=None):
         """
         Prepares the data for training GNN model. The graph is prepared in the following way:
             1. Edges are split into the train set and holdout set. Holdout set is used in the future experiments.
@@ -83,48 +84,32 @@ class SourceGraphDataset:
         :param edges_path: path to csv or compressed csv for edges with columns
                 "id", "type", {"source_node_id", "src"}, {"target_node_id", "dst"}
         :param label_from: the column where the labels are taken from
-        :param node_types: boolean value, whether to use node types or not
+        :param use_node_types: boolean value, whether to use node types or not
                 (node-heterogeneous graph}
-        :param edge_types: boolean value, whether to use edge types or not
+        :param use_edge_types: boolean value, whether to use edge types or not
                 (edge-heterogeneous graph}
         :param filter: list[str], the types of edges to filter from graph
-        :param holdout_frac: float in [0, 1]
         """
         # TODO
-        # 1. test with node types and RGCN
-        # 2. GAT RGCN model
-        # 3. GGNN model
-        # 4. create model where variable names are in the graph. This way we can feed
-        #       information about ast inside he function embedding
+        # 1. GGNN model
 
-        self.holdout_frac = holdout_frac
+        self.random_seed = random_seed
 
         self.nodes, self.edges = load_data(nodes_path, edges_path)
+
+        self.compress_node_types()
+        self.compress_edge_types()
 
         if self_loops:
             self.nodes, self.edges = SourceGraphDataset.assess_need_for_self_loops(self.nodes, self.edges)
 
-        if holdout is None:
-            self.nodes, self.edges, self.held = SourceGraphDataset.holdout(self.nodes, self.edges, self.holdout_frac)
-        else:
-            self.held = unpersist(holdout)
-
-        # # ablation
-        # print("Edges before filtering", self.edges.shape[0])
-        # # 16 inheritance *
-        # # 512 import *
-        # # 4 use 
-        # # 2 typeuse *
-        # # 8 call *
-        # # 1 contain *
-        # self.edges = self.edges.query("type != 512")
-        # print("Edges after filtering", self.edges.shape[0])
         if filter is not None:
             for e_type in filter:
+                logging.info(f"Filtering edge type {e_type}")
                 self.edges = self.edges.query(f"type != {e_type}")
 
-        self.nodes_have_types = node_types
-        self.edges_have_types = edge_types
+        self.nodes_have_types = use_node_types
+        self.edges_have_types = use_edge_types
         self.labels_from = label_from
 
         self.g = None
@@ -132,75 +117,97 @@ class SourceGraphDataset:
         # compact labels
         self.nodes['label'] = self.nodes[label_from]
         self.label_map = compact_property(self.nodes['label'])
-        # self.nodes['label_comp']
 
-        assert any(pandas.isna(self.nodes['label'])) == False
+        assert any(pandas.isna(self.nodes['label'])) is False
 
         self.nodes['type_backup'] = self.nodes['type']
         if not self.nodes_have_types:
-            self.nodes['type'] = 0
+            self.nodes['type'] = "node_"
+
+        self.edges['type_backup'] = self.edges['type']
+        if not self.edges_have_types:
+            self.edges['type'] = "edge_"
+
+        logging.info(f"Unique node types in the graph: {len(self.nodes['type'].unique())}")
+        logging.info(f"Unique edge types in the graph: {len(self.edges['type'].unique())}")
 
         self.nodes, self.label_map = self.add_compact_labels()
-        self.nodes, self.id_map = self.add_graph_ids()
         self.nodes, self.typed_id_map = self.add_typed_ids()
-        self.edges = self.add_compact_edges()
+        self.edges = self.add_node_types_to_edges()
 
-        # if restore_state:
-        #     self.splits = pickle.load(open("../../../graph-network/tmp_splits.pkl", "rb"))
-        #     print("Restored node splits from saved state")
-        # else:
-        self.splits = get_train_test_val_indices(self.nodes.index, train_frac=train_frac)
-        # pickle.dump(self.splits, open("../../../graph-network/tmp_splits.pkl", "wb"))
+        self.add_splits(train_frac=train_frac)
 
-        self.add_splits()
-
-        self.create_graph()
+        self.create_hetero_graph()
 
         self.update_global_id()
 
         self.nodes.sort_values('global_graph_id', inplace=True)
 
-        v = self.nodes['global_graph_id'].values
+        self.splits = SourceGraphDataset.get_global_graph_id_splits(self.nodes)
 
-        self.splits = (
-            v[self.nodes['train_mask'].values],
-            v[self.nodes['test_mask'].values],
-            v[self.nodes['val_mask'].values]
+    @classmethod
+    def get_global_graph_id_splits(cls, nodes):
+
+        splits = (
+            nodes.query("train_mask == True")['global_graph_id'].values,
+            nodes.query("val_mask == True")['global_graph_id'].values,
+            nodes.query("test_mask == True")['global_graph_id'].values,
         )
 
-    def add_splits(self):
+        return splits
+
+    def compress_node_types(self):
+        node_type_map = compact_property(self.nodes['type'])
+        self.node_types = pd.DataFrame(
+            {"str_type": k, "int_type": v} for k, v in compact_property(self.nodes['type']).items()
+        )
+
+        self.nodes['type'] = self.nodes['type'].apply(lambda x: node_type_map[x])
+
+    def compress_edge_types(self):
+        edge_type_map = compact_property(self.edges['type'])
+        self.edge_types = pd.DataFrame(
+            {"str_type": k, "int_type": v} for k, v in compact_property(self.edges['type']).items()
+        )
+
+        self.edges['type'] = self.edges['type'].apply(lambda x: edge_type_map[x])
+
+    def add_splits(self, train_frac):
+
+        splits = get_train_test_val_indices(
+            self.nodes.index,
+            train_frac=train_frac,
+            random_seed=self.random_seed
+        )
+
         self.nodes['train_mask'] = False
-        self.nodes.loc[self.nodes.index[self.splits[0]], 'train_mask'] = True
+        self.nodes.loc[self.nodes.index[splits[0]], 'train_mask'] = True
         self.nodes['test_mask'] = False
-        self.nodes.loc[self.nodes.index[self.splits[1]], 'test_mask'] = True
+        self.nodes.loc[self.nodes.index[splits[1]], 'test_mask'] = True
         self.nodes['val_mask'] = False
-        self.nodes.loc[self.nodes.index[self.splits[2]], 'val_mask'] = True
-
-    def add_graph_ids(self):
-
-        nodes = self.nodes.copy()
-
-        id_map = compact_property(nodes['id'])
-
-        nodes['graph_id'] = nodes['id'].apply(lambda old_id: id_map[old_id])
-
-        return nodes, id_map
+        self.nodes.loc[self.nodes.index[splits[2]], 'val_mask'] = True
 
     def add_typed_ids(self):
         nodes = self.nodes.copy()
 
         typed_id_map = {}
 
+        node_types = dict(zip(self.node_types['int_type'], self.node_types['str_type']))
+
         for type in nodes['type'].unique():
+            # need to use indexes because will need to reference
+            # the original table
             type_ind = nodes[nodes['type'] == type].index
 
             id_map = compact_property(nodes.loc[type_ind, 'id'])
 
             nodes.loc[type_ind, 'typed_id'] = nodes.loc[type_ind, 'id'].apply(lambda old_id: id_map[old_id])
 
-            typed_id_map[str(type)] = id_map
+            typed_id_map[node_types[type]] = id_map
 
-        assert any(pandas.isna(nodes['typed_id'])) == False
+        assert any(pandas.isna(nodes['typed_id'])) is False
+
+        nodes = nodes.astype({"typed_id": "int"})
 
         return nodes, typed_id_map
 
@@ -214,7 +221,7 @@ class SourceGraphDataset:
 
         return nodes, label_map
 
-    def add_compact_edges(self):
+    def add_node_types_to_edges(self):
 
         edges = self.edges.copy()
 
@@ -223,146 +230,24 @@ class SourceGraphDataset:
         edges['src_type'] = edges['src'].apply(lambda src_id: node_type_map[src_id])
         edges['dst_type'] = edges['dst'].apply(lambda dst_id: node_type_map[dst_id])
 
-        typed_map = dict(zip(self.nodes['id'].values, self.nodes['typed_id']))
-
-        edges['src_type_graph_id'] = edges['src'].apply(lambda src_id: self.id_map[src_id])
-        edges['dst_type_graph_id'] = edges['dst'].apply(lambda dst_id: self.id_map[dst_id])
-        edges['src_type_typed_id'] = edges['src'].apply(lambda src_id: typed_map[src_id])
-        edges['dst_type_typed_id'] = edges['dst'].apply(lambda dst_id: typed_map[dst_id])
-
         return edges
 
     def update_global_id(self):
-        if self.edges_have_types:
-            orig_id = [];
-            graph_id = [];
-            prev_offset = 0
+        orig_id = []
+        graph_id = []
+        prev_offset = 0
 
-            # typed_node_id_maps = self.typed_node_id_maps
-            typed_node_id_maps = self.typed_id_map
+        typed_node_id_maps = self.typed_id_map
 
-            for type in self.g.ntypes:
-                from_id, to_id = zip(*typed_node_id_maps[type].items())
-                orig_id.extend(from_id)
-                graph_id.extend([t + prev_offset for t in to_id])
-                prev_offset += self.g.number_of_nodes(type)
+        for type in self.g.ntypes:
+            from_id, to_id = zip(*typed_node_id_maps[type].items())
+            orig_id.extend(from_id)
+            graph_id.extend([t + prev_offset for t in to_id])
+            prev_offset += self.g.number_of_nodes(type)
 
-            global_map = dict(zip(orig_id, graph_id))
-        else:
-            global_map = self.id_map
+        global_map = dict(zip(orig_id, graph_id))
 
         self.nodes['global_graph_id'] = self.nodes['id'].apply(lambda old_id: global_map[old_id])
-
-    @property
-    def global_id_map(self):
-        self.update_global_id()
-        self.nodes.sort_values('global_graph_id', inplace=True)
-        return dict(zip(self.nodes['id'].values, self.nodes['global_graph_id'].values))
-
-    @property
-    def labels(self):
-        self.update_global_id()
-        self.nodes.sort_values('global_graph_id', inplace=True)
-        return self.nodes['compact_label'].values
-        # compact_label = lambda lbl: self.label_map[lbl]
-        #
-        # if self.edges_have_types:
-        #     # typed_labels = self.typed_labels
-        #     typed_labels = self.het_labels
-        #     return numpy.concatenate(
-        #         [
-        #             numpy.array([compact_label(lbl) for lbl in typed_labels[ntype]])
-        #             for ntype in self.g.ntypes
-        #         ]
-        #     )
-        # else:
-        #     return self.nodes['compact_label'].values
-        #     # return self.nodes['label'].apply(compact_label).values
-
-    # @property
-    # def typed_labels(self):
-    #     typed_labels = dict()
-    #
-    #     unique_types = self.nodes['type'].unique()
-    #
-    #     for type_id, type in enumerate(unique_types):
-    #         nodes_of_type = self.nodes[self.nodes['type'] == type]
-    #
-    #         typed_labels[str(type)] = self.nodes.loc[
-    #             nodes_of_type.index, 'label'
-    #         ].values
-    #
-    #     return typed_labels
-
-    # @property
-    # def node_id_maps(self):
-    #     if self.node_id_map_ is not None:
-    #         if self.edges_have_types:
-    #             orig_id = []
-    #             graph_id = []
-    #             prev_offset = 0
-    #
-    #             for type in self.g.ntypes:
-    #                 from_id, to_id = zip(*self.node_id_map_[type].items())
-    #                 orig_id.extend(from_id)
-    #                 graph_id.extend([t + prev_offset for t in to_id])
-    #                 prev_offset += self.g.number_of_nodes(type)
-    #
-    #             return dict(zip(orig_id, graph_id))
-    #         else:
-    #             return self.node_id_map_
-    #     else:
-    #         return None
-
-    @property
-    def num_classes(self):
-        return numpy.unique(self.labels).size
-
-    def create_graph(self):
-        if not self.nodes_have_types and not self.edges_have_types:
-            self.create_directed_graph()
-        elif self.edges_have_types:
-            self.create_hetero_graph(
-                node_types=self.nodes_have_types
-            )
-        else:
-            raise NotImplemented("Edges should have type")
-
-    # @property
-    # def typed_node_id_maps(self):
-    #     typed_id_maps = dict()
-    #
-    #     unique_types = self.nodes['type'].unique()
-    #
-    #     for type_id, type in enumerate(unique_types):
-    #         nodes_of_type = self.nodes[self.nodes['type'] == type]
-    #         typed_node_id2graph_id = compact_property(
-    #             self.nodes.loc[nodes_of_type.index, 'id'].values
-    #         )
-    #
-    #         typed_id_maps[str(type)] = typed_node_id2graph_id
-    #
-    #     return typed_id_maps
-    #
-    # @property
-    # def node_id_map(self):
-    #     if self.edges_have_types:
-    #         orig_id = []; graph_id = []; prev_offset = 0
-    #
-    #         # typed_node_id_maps = self.typed_node_id_maps
-    #         typed_node_id_maps = self.het_id_maps
-    #
-    #         for type in self.g.ntypes:
-    #             from_id, to_id = zip(*typed_node_id_maps[type].items())
-    #             orig_id.extend(from_id)
-    #             graph_id.extend([t + prev_offset for t in to_id])
-    #             prev_offset += self.g.number_of_nodes(type)
-    #
-    #         return dict(zip(orig_id, graph_id))
-    #
-    #     else:
-    #         # return self.dg_id_maps
-    #         return compact_property(self.nodes['id'])
 
     @property
     def typed_node_counts(self):
@@ -371,177 +256,72 @@ class SourceGraphDataset:
 
         unique_types = self.nodes['type'].unique()
 
+        node_types = dict(zip(self.node_types['int_type'], self.node_types['str_type']))
+
         for type_id, type in enumerate(unique_types):
-            nodes_of_type = self.nodes[self.nodes['type'] == type]
-            typed_node_counts[str(type)] = nodes_of_type.shape[0]
+            nodes_of_type = len(self.nodes.query(f"type == {type}"))
+            typed_node_counts[node_types[type]] = nodes_of_type
 
         return typed_node_counts
 
-    def create_directed_graph(self):
-        # nodes = self.nodes.copy()
-        # edges = self.edges.copy()
-
-        # from graphtools import create_graph
-        # g, labels, id_maps = create_graph(nodes, edges)
-        # self.dg_labels = labels
-        # self.dg_id_maps = id_maps
-        # self.g = g
-        # return
-
-        # node_id2graph_id = self.node_id_map
-
-        # assert nodes.shape[0] == len(node_id2graph_id)
-
-        # id2new = lambda id: node_id2graph_id[id]
-
-        # graph_src = edges['src'].apply(id2new).values.tolist()
-        # graph_dst = edges['dst'].apply(id2new).values.tolist()
-
-        type2id = compact_property(self.edges['type'])
-        edge_types = self.edges['type'].apply(lambda x: type2id[x]).values
-
-        import dgl, torch
-        g = dgl.DGLGraph()
-        g.add_nodes(self.nodes.shape[0])
-        g.add_edges(self.edges['src_type_graph_id'].values.tolist(), self.edges['dst_type_graph_id'].values.tolist())
-
-        g.ndata['labels'] = torch.tensor(self.nodes['compact_label'].values, dtype=torch.int64)
-        g.edata['etypes'] = torch.tensor(edge_types, dtype=torch.int64)
-
-        masks = self.nodes[['typed_id', 'train_mask', 'test_mask', 'val_mask']].sort_values('typed_id')
-        g.ndata['train_mask'] = torch.tensor(masks['train_mask'].values, dtype=bool)
-        g.ndata['test_mask'] = torch.tensor(masks['test_mask'].values, dtype=bool)
-        g.ndata['val_mask'] = torch.tensor(masks['val_mask'].values, dtype=bool)
-
-        self.g = g
-
-    def create_hetero_graph(self, node_types=False, edge_types=False):
-        # TODO
-        # arguments are still not used
+    def create_hetero_graph(self):
 
         nodes = self.nodes.copy()
         edges = self.edges.copy()
 
-        # from graphtools import create_hetero_graph
-        # g, labels, id_maps = create_hetero_graph(nodes, edges)
-        # self.g = g
-        # self.het_labels = labels
-        # self.het_id_maps = id_maps
-        # return
-
-        # TODO
-        # this is a hack when where are only outgoing connections from this node type
-        # nodes, edges = Dataset.assess_need_for_self_loops(nodes, edges)
-
         typed_node_id = dict(zip(nodes['id'], nodes['typed_id']))
-
-        # typed_node_id_maps = self.typed_node_id_maps
-        # typed_node_id_maps = self.typed_id_map
-
-        # node2type = dict(zip(nodes['id'].values, nodes['type'].values))
-
-        # def graphid_lookup(nid):
-        #     for type, maps in typed_node_id_maps.items():
-        #         if nid in maps:
-        #             return maps[nid]
-        #
-        # type_lookup = lambda id: node2type[id]
-
-        # edges['src_type'] = edges['src'].apply(type_lookup)
-        # edges['dst_type'] = edges['dst'].apply(type_lookup)
 
         possible_edge_signatures = edges[['src_type', 'type', 'dst_type']].drop_duplicates(
             ['src_type', 'type', 'dst_type']
         )
+
+        node_types = dict(zip(self.node_types['int_type'], self.node_types['str_type']))
+        edge_types = dict(zip(self.edge_types['int_type'], self.edge_types['str_type']))
 
         # typed_subgraphs is a dictionary with subset_signature as a key,
         # the dictionary stores directed edge lists
         typed_subgraphs = {}
 
         for ind, row in possible_edge_signatures.iterrows():
-            subgraph_signature = (str(row.src_type), str(row.type), str(row.dst_type))
+            subgraph_signature = (node_types[row['src_type']], edge_types[row['type']], node_types[row['dst_type']])
 
-            subset = edges.query('src_type == %s and type==%s and dst_type==%s' % subgraph_signature)
+            subset = edges.query(
+                f"src_type == {row['src_type']} and type=={row['type']} and dst_type=={row['dst_type']}"
+            )
 
-            typed_subgraphs[(subgraph_signature)] = list(
+            typed_subgraphs[subgraph_signature] = list(
                 zip(
-                    map(lambda old_id: typed_node_id[old_id], subset['src'].values),
-                    map(lambda old_id: typed_node_id[old_id], subset['dst'].values)
+                    subset['src'].map(lambda old_id: typed_node_id[old_id]),
+                    subset['dst'].map(lambda old_id: typed_node_id[old_id])
                 )
             )
+
+        logging.info(
+            f"Unique triplet types in the graph: {len(typed_subgraphs.keys())}"
+        )
 
         import dgl, torch
         self.g = dgl.heterograph(typed_subgraphs, self.typed_node_counts)
 
-        # self_loop_signatures = edges[['type', 'dst_type']].drop_duplicates(['type', 'dst_type'])
-        # for ind, row in self_loop_signatures.iterrows():
-        #     subgraph_signature = (str(row.dst_type), str(row.type), str(row.dst_type))
-        #     self.g = dgl.add_self_loop(self.g, etype=subgraph_signature)
+        node_types = dict(zip(self.node_types['str_type'], self.node_types['int_type']))
 
         for ntype in self.g.ntypes:
-            masks = self.nodes.query(f"type == {ntype}")[['typed_id', 'train_mask', 'test_mask', 'val_mask', 'compact_label']].sort_values('typed_id')
-            self.g.nodes[ntype].data['train_mask'] = torch.tensor(masks['train_mask'].values, dtype=bool)
-            self.g.nodes[ntype].data['test_mask'] = torch.tensor(masks['test_mask'].values, dtype=bool)
-            self.g.nodes[ntype].data['val_mask'] = torch.tensor(masks['val_mask'].values, dtype=bool)
+            int_type = node_types[ntype]
+
+            masks = self.nodes.query(
+                f"type == {int_type}"
+            )[[
+                'typed_id', 'train_mask', 'test_mask', 'val_mask', 'compact_label'
+            ]].sort_values('typed_id')
+
+            self.g.nodes[ntype].data['train_mask'] = torch.tensor(masks['train_mask'].values, dtype=torch.bool)
+            self.g.nodes[ntype].data['test_mask'] = torch.tensor(masks['test_mask'].values, dtype=torch.bool)
+            self.g.nodes[ntype].data['val_mask'] = torch.tensor(masks['val_mask'].values, dtype=torch.bool)
             self.g.nodes[ntype].data['labels'] = torch.tensor(masks['compact_label'].values, dtype=torch.int64)
-
-        # self.typed_labels_ = typed_labels
-        # self.typed_id_maps_ = typed_id_maps
-
-        # self.labels_ = numpy.concatenate([typed_labels[ntype] for ntype in self.g.ntypes])
-        #
-        # orig_id = []
-        # graph_id = []
-        # prev_offset = 0
-        #
-        # for type in self.g.ntypes:
-        #     from_id, to_id = zip(*typed_id_maps[type].items())
-        #     orig_id.extend(from_id)
-        #     graph_id.extend([t + prev_offset for t in to_id])
-        #     prev_offset += self.g.number_of_nodes(type)
-        #
-        # self.node_id_map = dict(zip(orig_id, graph_id))
-
-    # def add_typed_ids(self, nodes):
-    #     nodes = nodes.copy()
-    #
-    #     nodes = compact_prop(nodes, 'type')
-    #     nodes['type'] = 0
-    #
-    #     nodes['typed_id'] = None
-    #     uniq_types = nodes['type'].unique()
-    #     type_counts = dict()
-    #
-    #     typed_labels = {}
-    #
-    #     typed_id_maps = {}
-    #
-    #     for type_id, type in enumerate(uniq_types):
-    #         nodes_of_type = nodes[nodes['type'] == type].shape[0]
-    #         nodes.loc[nodes[nodes['type'] == type].index, 'typed_id'] = list(range(nodes_of_type))
-    #         type_counts[str(type)] = nodes_of_type
-    #
-    #         typed_id_maps[str(type)] = dict(
-    #             zip(
-    #                 nodes.loc[nodes[nodes['type'] == type].index, 'id'].values,
-    #                 nodes.loc[nodes[nodes['type'] == type].index, 'typed_id'].values
-    #             )
-    #         )
-    #
-    #         # TODO
-    #         # node types as labels
-    #         typed_labels[str(type)] = nodes.loc[
-    #             nodes[nodes['type'] == type].index, 'label'
-    #         ].apply(
-    #             lambda type: self.label_map[type]
-    #         ).values
-    #
-    #     assert any(nodes['typed_id'].isna()) == False
-    #
-    #     return nodes, type_counts, typed_labels, typed_id_maps
 
     @classmethod
     def assess_need_for_self_loops(cls, nodes, edges):
+        # this is a hack when where are only outgoing connections from this node type
         need_self_loop = set(edges['src'].values.tolist()) - set(edges['dst'].values.tolist())
         for nid in need_self_loop:
             edges = edges.append({
@@ -554,8 +334,17 @@ class SourceGraphDataset:
         return nodes, edges
 
     @classmethod
-    def holdout(cls, nodes, edges, HOLDOUT_FRAC):
-        train, test = split(edges, HOLDOUT_FRAC)
+    def holdout(cls, nodes, edges, holdout_frac, random_seed):
+        """
+        Create a set of holdout edges, ensure that there are no orphan nodes after these edges are removed.
+        :param nodes:
+        :param edges:
+        :param holdout_frac:
+        :param random_seed:
+        :return:
+        """
+
+        train, test = split(edges, holdout_frac, random_seed=random_seed)
 
         nodes, train_edges = ensure_connectedness(nodes, train)
 
@@ -564,17 +353,21 @@ class SourceGraphDataset:
         return nodes, train_edges, test_edges
 
 
-def split(edges, HOLDOUT_FRAC):
-    edges_shuffled = edges.sample(frac=1., random_state=42)
+def split(edges, holdout_frac, random_seed=None):
+    if random_seed is not None:
+        edges_shuffled = edges.sample(frac=1., random_state=42)
+        logging.warning("Random state for splitting edges is fixed")
+    else:
+        edges_shuffled = edges.sample(frac=1.)
 
-    train_frac = int(edges_shuffled.shape[0] * (1. - HOLDOUT_FRAC))
+    train_frac = int(edges_shuffled.shape[0] * (1. - holdout_frac))
 
-    train = edges_shuffled \
-                .iloc[:train_frac]
-    test = edges_shuffled \
-               .iloc[train_frac:]
-    print("Splitting edges into train and test set. Train: {}. Test: {}. Fraction: {}". \
-          format(train.shape[0], test.shape[0], HOLDOUT_FRAC))
+    train = edges_shuffled.iloc[:train_frac]
+    test = edges_shuffled.iloc[train_frac:]
+    logging.info(
+        f"Splitting edges into train and test set. "
+        f"Train: {train.shape[0]}. Test: {test.shape[0]}. Fraction: {holdout_frac}"
+    )
     return train, test
 
 
@@ -586,8 +379,10 @@ def ensure_connectedness(nodes: pandas.DataFrame, edges: pandas.DataFrame):
     :return:
     """
 
-    print("Filtering isolated nodes. Starting from {} nodes and {} edges...".format(nodes.shape[0], edges.shape[0]),
-          end="")
+    logging.info(
+        f"Filtering isolated nodes. "
+        f"Starting from {nodes.shape[0]} nodes and {edges.shape[0]} edges...",
+    )
     unique_nodes = set(edges['src'].values.tolist() +
                        edges['dst'].values.tolist())
 
@@ -595,7 +390,9 @@ def ensure_connectedness(nodes: pandas.DataFrame, edges: pandas.DataFrame):
         nodes['id'].apply(lambda nid: nid in unique_nodes)
     ]
 
-    print("ending up with {} nodes and {} edges".format(nodes.shape[0], edges.shape[0]))
+    logging.info(
+        f"Ending up with {nodes.shape[0]} nodes and {edges.shape[0]} edges"
+    )
 
     return nodes, edges
 
@@ -605,11 +402,14 @@ def ensure_valid_edges(nodes, edges, ignore_src=False):
     Filter edges that link to nodes that do not exist
     :param nodes:
     :param edges:
+    :param ignore_src:
     :return:
     """
-    print("Filtering edges to invalid nodes. Starting from {} nodes and {} edges...".format(nodes.shape[0],
-                                                                                            edges.shape[0]),
-          end="")
+    print(
+        f"Filtering edges to invalid nodes. "
+        f"Starting from {nodes.shape[0]} nodes and {edges.shape[0]} edges...",
+        end=""
+    )
 
     unique_nodes = set(nodes['id'].values.tolist())
 
@@ -622,38 +422,50 @@ def ensure_valid_edges(nodes, edges, ignore_src=False):
         edges['dst'].apply(lambda nid: nid in unique_nodes)
     ]
 
-    print("ending up with {} nodes and {} edges".format(nodes.shape[0], edges.shape[0]))
+    print(
+        f"ending up with {nodes.shape[0]} nodes and {edges.shape[0]} edges"
+    )
 
     return nodes, edges
 
 
-def read_or_create_dataset(args, model_base, model_name, LABELS_FROM="type"):
+def read_or_create_dataset(args, model_base, labels_from="type"):
     if args.restore_state:
         # i'm not happy with this behaviour that differs based on the flag status
         dataset = pickle.load(open(join(model_base, "dataset.pkl"), "rb"))
     else:
-
-        if model_name == "GCNSampling" or model_name == "GATSampler" or model_name == "GAT" or model_name == "GGNN":
-            dataset = SourceGraphDataset(args.node_path, args.edge_path, label_from=LABELS_FROM,
-                                         restore_state=args.restore_state, filter=args.filter_edges,
-                                         self_loops=args.self_loops,
-                                         holdout=args.holdout, train_frac=args.train_frac)
-        elif model_name == "RGCNSampling" or model_name == "RGCN":
-            dataset = SourceGraphDataset(args.node_path,
-                                         args.edge_path,
-                                         label_from=LABELS_FROM,
-                                         node_types=args.use_node_types,
-                                         edge_types=True,
-                                         restore_state=args.restore_state,
-                                         filter=args.filter_edges,
-                                         self_loops=args.self_loops,
-                                         holdout=args.holdout,
-                                         train_frac=args.train_frac
-                                         )
-        else:
-            raise Exception(f"Unknown model: {model_name}")
+        dataset = SourceGraphDataset(
+            args.node_path, args.edge_path,
+            label_from=labels_from,
+            use_node_types=args.use_node_types,
+            use_edge_types=True,
+            filter=args.filter_edges,
+            self_loops=args.self_loops,
+            train_frac=args.train_frac
+        )
 
         # save dataset state for recovery
         pickle.dump(dataset, open(join(model_base, "dataset.pkl"), "wb"))
 
     return dataset
+
+
+def test_dataset():
+    import sys
+
+    nodes_path = sys.argv[1]
+    edges_path = sys.argv[2]
+
+    dataset = SourceGraphDataset(
+        nodes_path, edges_path,
+        label_from='type',
+        use_node_types=True,
+        use_edge_types=True,
+    )
+
+    print(dataset)
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(module)s:%(lineno)d:%(message)s")
+    test_dataset()
