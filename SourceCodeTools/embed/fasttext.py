@@ -101,6 +101,17 @@ def train_wor2vec(corpus_path, output_path, tokenizer=None):
     train_embedding_model(Word2Vec, params, corpus_path, output_path, tokenizer)
 
 
+def export_w2v_for_tensorboard(embs_path, tb_meta_path, tb_embs_path, sep = "\t"):
+    with open(embs_path) as embeddings:
+        embeddings.readline()
+        with open(tb_meta_path, "w") as tb_meta:
+            with open(tb_embs_path, "w") as tb_embs:
+                for line in embeddings:
+                    e_ = line.split(" ")
+                    tb_meta.write(f"{e_[0]}\n")
+                    tb_embs.write(f"{sep.join(e_[1:])}")
+
+
 def main():
     parser = argparse.ArgumentParser(description='Train word vectors')
     parser.add_argument('input_file', type=str, default=150, help='Path to text file')
