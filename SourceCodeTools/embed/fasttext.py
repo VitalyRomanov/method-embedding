@@ -3,7 +3,6 @@ import os
 import time
 import logging
 
-from gensim.models import FastText
 from nltk import RegexpTokenizer
 
 _tokenizer = RegexpTokenizer("[\w]+|[^\w\s]|[0-9]+")
@@ -34,31 +33,14 @@ class Corpus(object):
 
 # logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
 
-def train_fasttext(corpus_path, output_path, tokenizer=None):
+def train_embedding_model(model, params, corpus_path, output_path, tokenizer=None):
 
     sentences = Corpus(corpus_path, tokenizer=tokenizer)
 
     logging.basicConfig(format='%(asctime)s : %(message)s', level=logging.INFO)
 
     print("FastText training started, ", time.strftime("%Y-%m-%d %H:%M"))
-    model = FastText(sentences,
-                     size=100,
-                     window=15,
-                     min_count=1,
-                     workers=4,
-                     sg=1,
-                     negative=15,
-                     ns_exponent=0.75,
-                     sample=1e-4,
-                     iter=20,
-                     alpha=0.1,
-                     min_alpha=5e-3,
-                     sorted_vocab=1,
-                     max_vocab_size=2000000,
-                     word_ngrams=1,
-                     bucket=200000,
-                     min_n=3,
-                     max_n=5)
+    model = model(sentences, **params)
 
     print("FastText training finished, ", time.strftime("%Y-%m-%d %H:%M"))
 
@@ -69,6 +51,54 @@ def train_fasttext(corpus_path, output_path, tokenizer=None):
     print("Embeddings saved, ", time.strftime("%Y-%m-%d %H:%M"))
     model.save(output_path + "/" + 'model')
     print("Model saved, ", time.strftime("%Y-%m-%d %H:%M"))
+
+
+def train_fasttext(corpus_path, output_path, tokenizer=None):
+    from gensim.models import FastText
+    
+    params = {
+        'size': 100,
+        'window': 15,
+        'min_count': 1,
+        'workers': 4,
+        'sg': 1,
+        'negative': 15,
+        'ns_exponent': 0.75,
+        'sample': 1e-4,
+        'iter': 20,
+        'alpha': 0.1,
+        'min_alpha': 5e-3,
+        'sorted_vocab': 1,
+        'max_vocab_size': 2000000,
+        'word_ngrams': 1,
+        'bucket': 200000,
+        'min_n': 3,
+        'max_n': 5
+    }
+
+    train_embedding_model(FastText, params, corpus_path, output_path, tokenizer)
+
+
+def train_wor2vec(corpus_path, output_path, tokenizer=None):
+    from gensim.models import Word2Vec
+
+    params = {
+        'size': 100,
+        'window': 15,
+        'min_count': 1,
+        'workers': 4,
+        'sg': 1,
+        'negative': 15,
+        'ns_exponent': 0.75,
+        'sample': 1e-4,
+        'iter': 20,
+        'alpha': 0.1,
+        'min_alpha': 5e-3,
+        'sorted_vocab': 1,
+        'max_vocab_size': 2000000,
+    }
+
+    train_embedding_model(Word2Vec, params, corpus_path, output_path, tokenizer)
 
 
 def main():
