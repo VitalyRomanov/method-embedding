@@ -82,10 +82,49 @@ def generate_random_replacement(len: int, source: List[str]):
 
 def get_function_body(file_content, file_id, start, end) -> str:
     source_lines = file_content.query(f"id == {file_id}").iloc[0]['content'].split("\n")
-    return "\n".join(source_lines[start: end + 1])
+
+    body_lines = source_lines[start: end + 1]
+
+    body_num_lines = len(body_lines)
+
+    trim = 0
+
+    if body_num_lines > 1:
+        initial_indent = len(body_lines[0]) - len(body_lines[0].lstrip())
+
+        while True:
+            # print("body_num_lines - 1 > 1", body_num_lines - 1 > 1)
+            # print("""body_lines[body_num_lines - trim - 1].strip() == """"", body_lines[body_num_lines - trim - 1].strip() == "")
+            # print("< < initial_indent", len(body_lines[body_num_lines - trim - 1]) - \
+            #         len(body_lines[body_num_lines - trim - 1].lstrip()), initial_indent, len(body_lines[body_num_lines - trim - 1]) - \
+            #         len(body_lines[body_num_lines - trim - 1].lstrip()) <= initial_indent)
+            cline = body_lines[body_num_lines - trim - 1]
+            if body_num_lines - 1 > 1:
+                if cline.strip() == "":
+                    trim += 1
+                elif len(cline) - len(cline.lstrip()) <= initial_indent:
+                    trim += 1
+                else:
+                    break
+            else:
+                break
+
+    return "\n".join(source_lines[start: end + 1 - trim])
 
 
 def has_valid_syntax(function_body):
+    body_lines = function_body.split("\n")
+
+    initial_indent = len(body_lines[0]) - len(body_lines[0].lstrip())
+    final_indent = len(body_lines[-1]) - len(body_lines[-1].lstrip())
+
+    if body_lines[-1].strip() != "" and initial_indent >= final_indent:
+        # will also skip functions like this:
+        # '    def func(ax, x, y): pass
+        #     def func_args(ax, x, y, *args): pass'
+        # but this is probably not a big deal
+        return False
+
     try:
         ast.parse(function_body.lstrip())
         return True
@@ -138,6 +177,10 @@ def process_body(body, local_occurrences, nodes, f_id, f_start):
         if occurrence.start_line == occurrence.end_line:
 
             curr_line = occurrence.start_line - 1 - f_start
+
+            if curr_line >= len(body_normalized):
+                continue
+
             if prev_line != curr_line:
                 replaced_ranges = []
                 # assert body_with_random_replacements[curr_line - f_start] == source_lines[curr_line]
