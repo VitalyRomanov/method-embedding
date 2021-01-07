@@ -9,7 +9,11 @@ pd.options.mode.chained_assignment = None
 
 
 def get_function_calls(occurrences):
-    return list(map(lambda x: not pd.isna, occurrences['target_node_id'].tolist()))
+    return occurrences['target_node_id'].dropna().tolist()
+
+
+def get_function_calls_from_range(occurrences, start, end):
+    return occurrences.query(f"start_line >= {start} and end_line <= {end} and occ_type != {DEFINITION_TYPE} and e_type == 'calls'")
 
 
 def main(working_directory):
@@ -24,7 +28,7 @@ def main(working_directory):
 
         if len(function_definitions):
             for ind, f_def in function_definitions.iterrows():
-                local_occurrences = get_occurrences_from_range(occurrences, start=f_def.start_line, end=f_def.end_line)
+                local_occurrences = get_function_calls_from_range(occurrences, start=f_def.start_line, end=f_def.end_line)
                 local_occurrences = sort_occurrences(local_occurrences)
 
                 all_calls = get_function_calls(local_occurrences)
