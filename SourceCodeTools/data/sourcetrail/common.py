@@ -9,7 +9,7 @@ def get_occurrence_groups(working_directory):
     source_location = read_source_location(working_directory)
     occurrence = read_occurrence(working_directory)
     nodes = read_nodes(working_directory)
-    edges = read_edges(working_directory)
+    edges = read_edges(working_directory).rename(columns={'type':'e_type'})
 
     # merge nodes and edges, some references in code point to edges, not to nodes
     node_edge = pd.concat([nodes, edges], sort=False).astype({"target_node_id": "Int32", "source_node_id": "Int32"})
