@@ -14,12 +14,16 @@ def load_data(node_path, edge_path):
 
     nodes_ = nodes.rename(mapper={
         'serialized_name': 'name'
-    }, axis=1)
+    }, axis=1).astype({
+        'type': 'category'
+    })
 
     edges_ = edges.rename(mapper={
         'source_node_id': 'src',
         'target_node_id': 'dst'
-    }, axis=1)
+    }, axis=1).astype({
+        'type': 'category'
+    })
 
     return nodes_, edges_
 
@@ -94,11 +98,14 @@ class SourceGraphDataset:
         # 1. GGNN model
 
         self.random_seed = random_seed
+        self.nodes_have_types = use_node_types
+        self.edges_have_types = use_edge_types
+        self.labels_from = label_from
 
         self.nodes, self.edges = load_data(nodes_path, edges_path)
 
-        self.compress_node_types()
-        self.compress_edge_types()
+        # self.compress_node_types()
+        # self.compress_edge_types()
 
         if self_loops:
             self.nodes, self.edges = SourceGraphDataset.assess_need_for_self_loops(self.nodes, self.edges)
@@ -108,25 +115,22 @@ class SourceGraphDataset:
                 logging.info(f"Filtering edge type {e_type}")
                 self.edges = self.edges.query(f"type != {e_type}")
 
-        self.nodes_have_types = use_node_types
-        self.edges_have_types = use_edge_types
-        self.labels_from = label_from
-
-        self.g = None
-
-        # compact labels
-        self.nodes['label'] = self.nodes[label_from]
-        self.label_map = compact_property(self.nodes['label'])
-
-        assert any(pandas.isna(self.nodes['label'])) is False
-
         self.nodes['type_backup'] = self.nodes['type']
         if not self.nodes_have_types:
             self.nodes['type'] = "node_"
+            self.nodes = self.nodes.astype({'type': 'category'})
 
         self.edges['type_backup'] = self.edges['type']
         if not self.edges_have_types:
             self.edges['type'] = "edge_"
+            self.edges = self.edges.astype({'type': 'category'})
+
+        # compact labels
+        self.nodes['label'] = self.nodes[label_from]
+        self.nodes = self.nodes.astype({'label': 'category'})
+        self.label_map = compact_property(self.nodes['label'])
+
+        assert any(pandas.isna(self.nodes['label'])) is False
 
         logging.info(f"Unique node types in the graph: {len(self.nodes['type'].unique())}")
         logging.info(f"Unique edge types in the graph: {len(self.edges['type'].unique())}")
@@ -192,7 +196,7 @@ class SourceGraphDataset:
 
         typed_id_map = {}
 
-        node_types = dict(zip(self.node_types['int_type'], self.node_types['str_type']))
+        # node_types = dict(zip(self.node_types['int_type'], self.node_types['str_type']))
 
         for type in nodes['type'].unique():
             # need to use indexes because will need to reference
@@ -203,7 +207,8 @@ class SourceGraphDataset:
 
             nodes.loc[type_ind, 'typed_id'] = nodes.loc[type_ind, 'id'].apply(lambda old_id: id_map[old_id])
 
-            typed_id_map[node_types[type]] = id_map
+            # typed_id_map[node_types[type]] = id_map
+            typed_id_map[type] = id_map
 
         assert any(pandas.isna(nodes['typed_id'])) is False
 
@@ -229,6 +234,7 @@ class SourceGraphDataset:
 
         edges['src_type'] = edges['src'].apply(lambda src_id: node_type_map[src_id])
         edges['dst_type'] = edges['dst'].apply(lambda dst_id: node_type_map[dst_id])
+        edges = edges.astype({'src_type': 'category', 'dst_type': 'category'})
 
         return edges
 
@@ -256,11 +262,12 @@ class SourceGraphDataset:
 
         unique_types = self.nodes['type'].unique()
 
-        node_types = dict(zip(self.node_types['int_type'], self.node_types['str_type']))
+        # node_types = dict(zip(self.node_types['int_type'], self.node_types['str_type']))
 
         for type_id, type in enumerate(unique_types):
-            nodes_of_type = len(self.nodes.query(f"type == {type}"))
-            typed_node_counts[node_types[type]] = nodes_of_type
+            nodes_of_type = len(self.nodes.query(f"type == '{type}'"))
+            # typed_node_counts[node_types[type]] = nodes_of_type
+            typed_node_counts[type] = nodes_of_type
 
         return typed_node_counts
 
@@ -275,18 +282,19 @@ class SourceGraphDataset:
             ['src_type', 'type', 'dst_type']
         )
 
-        node_types = dict(zip(self.node_types['int_type'], self.node_types['str_type']))
-        edge_types = dict(zip(self.edge_types['int_type'], self.edge_types['str_type']))
+        # node_types = dict(zip(self.node_types['int_type'], self.node_types['str_type']))
+        # edge_types = dict(zip(self.edge_types['int_type'], self.edge_types['str_type']))
 
         # typed_subgraphs is a dictionary with subset_signature as a key,
         # the dictionary stores directed edge lists
         typed_subgraphs = {}
 
         for ind, row in possible_edge_signatures.iterrows():
-            subgraph_signature = (node_types[row['src_type']], edge_types[row['type']], node_types[row['dst_type']])
+            # subgraph_signature = (node_types[row['src_type']], edge_types[row['type']], node_types[row['dst_type']])
+            subgraph_signature = (row['src_type'], row['type'], row['dst_type'])
 
             subset = edges.query(
-                f"src_type == {row['src_type']} and type=={row['type']} and dst_type=={row['dst_type']}"
+                f"src_type == '{row['src_type']}' and type == '{row['type']}' and dst_type == '{row['dst_type']}'"
             )
 
             typed_subgraphs[subgraph_signature] = list(
@@ -303,13 +311,13 @@ class SourceGraphDataset:
         import dgl, torch
         self.g = dgl.heterograph(typed_subgraphs, self.typed_node_counts)
 
-        node_types = dict(zip(self.node_types['str_type'], self.node_types['int_type']))
+        # node_types = dict(zip(self.node_types['str_type'], self.node_types['int_type']))
 
         for ntype in self.g.ntypes:
-            int_type = node_types[ntype]
+            # int_type = node_types[ntype]
 
             masks = self.nodes.query(
-                f"type == {int_type}"
+                f"type == '{ntype}'"
             )[[
                 'typed_id', 'train_mask', 'test_mask', 'val_mask', 'compact_label'
             ]].sort_values('typed_id')
@@ -438,7 +446,7 @@ def read_or_create_dataset(args, model_base, labels_from="type"):
             args.node_path, args.edge_path,
             label_from=labels_from,
             use_node_types=args.use_node_types,
-            use_edge_types=True,
+            use_edge_types=args.use_edge_types,
             filter=args.filter_edges,
             self_loops=args.self_loops,
             train_frac=args.train_frac
