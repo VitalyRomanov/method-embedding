@@ -323,14 +323,17 @@ def replace_mentions_with_subword_instances(edges, bpe, create_subword_instances
     edges = edges.to_dict(orient="records")
 
     if create_subword_instances:
-        produce_subw_edges = lambda subwords, dst: produce_subword_edges_with_instances(subwords, dst)
+        def produce_subw_edges(subwords, dst):
+            return produce_subword_edges_with_instances(subwords, dst)
     else:
-        produce_subw_edges = lambda subwords, dst: produce_subword_edges(subwords, dst, connect_subwords)
+        def produce_subw_edges(subwords, dst):
+            return produce_subword_edges(subwords, dst, connect_subwords)
 
     new_edges = []
     for edge in edges:
         if edge['type'] == "local_mention":
-            if hasattr(edge['src'], "id"):
+            is_global_mention = hasattr(edge['src'], "id")
+            if is_global_mention:
                 # this edge connects sourcetrail node need to add couple of links
                 # to ensure global information flow
                 new_edges.extend(global_mention_edges(edge))
@@ -344,6 +347,9 @@ def replace_mentions_with_subword_instances(edges, bpe, create_subword_instances
                     subwords = bpe(edge['src'].name)
 
                 new_edges.extend(produce_subw_edges(subwords, dst))
+            else:
+                if not is_global_mention:
+                    new_edges.append(edge)
 
         elif bpe is not None and edge['type'] == "attr":
             new_edges.append(edge)
