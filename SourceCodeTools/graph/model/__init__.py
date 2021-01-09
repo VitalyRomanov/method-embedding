@@ -10,4 +10,3 @@ from SourceCodeTools.graph.model.gat import GAT
 from SourceCodeTools.graph.model.rgcn_hetero import RGCN
 from SourceCodeTools.graph.model.rgcn_sampling import RGCNSampling
 from SourceCodeTools.graph.model.ggnn import GGNN
-from SourceCodeTools.graph.model.NodeSampler import GCNSampling, GATSampler
