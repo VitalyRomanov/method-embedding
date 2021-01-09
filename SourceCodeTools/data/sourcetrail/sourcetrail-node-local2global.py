@@ -6,8 +6,6 @@ from SourceCodeTools.data.sourcetrail.file_utils import *
 from SourceCodeTools.data.sourcetrail.common import create_node_repr, \
     create_local_to_global_id_map
 
-# TODO
-# sometimes ast nodes are preferred
 
 all_nodes = unpersist_or_exit(sys.argv[1], "Global nodes no not exist!")
 orig_nodes = unpersist_or_exit(sys.argv[2], "No processed nodes, skipping")

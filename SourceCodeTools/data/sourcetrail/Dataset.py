@@ -103,8 +103,6 @@ class SourceGraphDataset:
                 (edge-heterogeneous graph}
         :param filter: list[str], the types of edges to filter from graph
         """
-        # TODO
-        # 1. GGNN model
 
         self.random_seed = random_seed
         self.nodes_have_types = use_node_types

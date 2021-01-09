@@ -12,9 +12,6 @@ occurrence_path = os.path.join(working_directory, "occurrence.csv")
 node_path = os.path.join(working_directory, "normalized_sourcetrail_nodes.csv")
 filecontent_path = os.path.join(working_directory, "filecontent.csv")
 
-# TODO:
-# 1. Account for missing files
-
 #%%
 
 source_location = pd.read_csv(source_location_path, sep=",")

@@ -96,8 +96,6 @@ class BestScoreTracker:
             train_acc_apicall=0., val_acc_apicall=0., test_acc_apicall=0.,
             time=0
     ):
-        # TODO
-        # does not really track now
         if val_acc_fname is not None:
             if self.best_val_acc_fname < val_acc_fname:
                 self.best_val_acc_fname = val_acc_fname
