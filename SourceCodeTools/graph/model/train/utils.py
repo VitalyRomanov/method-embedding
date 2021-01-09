@@ -10,7 +10,7 @@ from SourceCodeTools.graph.model.ElementEmbedder import ElementEmbedder
 def get_num_batches(length, batch_size_suggestion):
     batch_size = min(batch_size_suggestion, length)
 
-    num_batches = length // batch_size  # +1 when len(elem_embeder) < batch_size
+    num_batches = length // batch_size  # +1 when len(elem_embedder) < batch_size
     return num_batches, batch_size
 
 
@@ -20,13 +20,13 @@ def get_name(model, timestamp):
 
 def get_model_base(args, model_attempt):
     if args.restore_state:
-        MODEL_BASE = args.model_output_dir
+        model_base = args.model_output_dir
     else:
-        MODEL_BASE = join(args.model_output_dir, model_attempt)
-        if not isdir(MODEL_BASE):
-            mkdir(MODEL_BASE)
+        model_base = join(args.model_output_dir, model_attempt)
+        if not isdir(model_base):
+            mkdir(model_base)
 
-    return MODEL_BASE
+    return model_base
 
 
 # def create_idx_pools(splits, pool):
@@ -63,12 +63,12 @@ def create_elem_embedder(element_data, nodes, emb_size, compact_dst):
         'src_typed_id': 'Int32',
     })
 
-    if compact_dst is False: # creating api call embedder
+    if compact_dst is False:  # creating api call embedder
         element_data = element_data.rename({'dst': 'dst_orig'}, axis=1)
         element_data['dst'] = element_data['dst_orig'].apply(lambda x: id2nodeid.get(x, None))
         element_data['dst_type'] = element_data['dst_orig'].apply(lambda x: id2type.get(x, None))
         element_data['dst_typed_id'] = element_data['dst_orig'].apply(lambda x: id2typedid.get(x, None))
-        element_data.drop_duplicates(['id', 'dst'], inplace=True, ignore_index=True) # this line apparenly filters parallel edges
+        element_data.drop_duplicates(['id', 'dst'], inplace=True, ignore_index=True)  # this line apparenly filters parallel edges
         element_data = element_data.astype({
             'dst': 'Int32',
             'dst_type': 'category',
@@ -82,46 +82,49 @@ def create_elem_embedder(element_data, nodes, emb_size, compact_dst):
 
 class BestScoreTracker:
     def __init__(self):
-        self.best_val_acc_fname = 0.
-        self.best_test_acc_fname = 0.
-        self.best_val_acc_varuse = 0.
-        self.best_test_acc_varuse = 0.
-        self.best_val_acc_apicall = 0.
-        self.best_test_acc_apicall = 0.
+        self.best_val_acc_node_name = 0.
+        self.best_test_acc_node_name = 0.
+        self.best_val_acc_var_use = 0.
+        self.best_test_acc_var_use = 0.
+        self.best_val_acc_api_call = 0.
+        self.best_test_acc_api_call = 0.
 
     def track_best(
             self, epoch, loss,
-            train_acc_fname=0., val_acc_fname=0., test_acc_fname=0.,
-            train_acc_varuse=0., val_acc_varuse=0., test_acc_varuse=0.,
-            train_acc_apicall=0., val_acc_apicall=0., test_acc_apicall=0.,
+            train_acc_node_name=0., val_acc_node_name=0., test_acc_node_name=0.,
+            train_acc_var_use=0., val_acc_var_use=0., test_acc_var_use=0.,
+            train_acc_api_call=0., val_acc_api_call=0., test_acc_api_call=0.,
             time=0
     ):
-        if val_acc_fname is not None:
-            if self.best_val_acc_fname < val_acc_fname:
-                self.best_val_acc_fname = val_acc_fname
-                self.best_test_acc_fname = test_acc_fname
+        if val_acc_node_name is not None:
+            if self.best_val_acc_node_name < val_acc_node_name:
+                self.best_val_acc_node_name = val_acc_node_name
+                self.best_test_acc_node_name = test_acc_node_name
 
-        if val_acc_varuse is not None:
-            if self.best_val_acc_varuse < val_acc_varuse:
-                self.best_val_acc_varuse = val_acc_varuse
-                self.best_test_acc_varuse = test_acc_varuse
+        if val_acc_var_use is not None:
+            if self.best_val_acc_var_use < val_acc_var_use:
+                self.best_val_acc_var_use = val_acc_var_use
+                self.best_test_acc_var_use = test_acc_var_use
 
-        if val_acc_apicall is not None:
-            if self.best_val_acc_apicall < val_acc_apicall:
-                self.best_val_acc_apicall = val_acc_apicall
-                self.best_test_acc_apicall = test_acc_apicall
+        if val_acc_api_call is not None:
+            if self.best_val_acc_api_call < val_acc_api_call:
+                self.best_val_acc_api_call = val_acc_api_call
+                self.best_test_acc_api_call = test_acc_api_call
 
         epoch_info = "'Epoch %d, Time: %d s, Loss %.4f, " % (
             epoch, time, loss
         )
 
         score_info = \
-            'fname Train Acc %.4f, fname Val Acc %.4f (Best %.4f), fname Test Acc %.4f (Best %.4f), ' \
-            'varuse Train Acc %.4f, varuse Val Acc %.4f (Best %.4f), varuse Test Acc %.4f (Best %.4f), ' \
-            'apicall Train Acc %.4f, apicall Val Acc %.4f (Best %.4f), apicall Test Acc %.4f (Best %.4f)' % (
-                train_acc_fname, val_acc_fname, self.best_val_acc_fname, test_acc_fname, self.best_test_acc_fname,
-                train_acc_varuse, val_acc_varuse, self.best_val_acc_varuse, test_acc_varuse, self.best_test_acc_varuse,
-                train_acc_apicall, val_acc_apicall, self.best_val_acc_apicall, test_acc_apicall, self.best_test_acc_apicall,
+            'node name Train Acc %.4f, node name Val Acc %.4f (Best %.4f), node name Test Acc %.4f (Best %.4f), ' \
+            'var use Train Acc %.4f, var use Val Acc %.4f (Best %.4f), var use Test Acc %.4f (Best %.4f), ' \
+            'api call Train Acc %.4f, api call Val Acc %.4f (Best %.4f), api call Test Acc %.4f (Best %.4f)' % (
+                train_acc_node_name, val_acc_node_name,
+                self.best_val_acc_node_name, test_acc_node_name, self.best_test_acc_node_name,
+                train_acc_var_use, val_acc_var_use,
+                self.best_val_acc_var_use, test_acc_var_use, self.best_test_acc_var_use,
+                train_acc_api_call, val_acc_api_call,
+                self.best_val_acc_api_call, test_acc_api_call, self.best_test_acc_api_call,
             )
 
         logging.info(epoch_info + score_info)

@@ -493,14 +493,12 @@ class SamplingMultitaskTrainer:
 
             end = time()
 
-            self.best_score.track_best(
-                epoch=epoch, loss=loss.item(),
-                train_acc_fname=train_acc_node_name, val_acc_fname=val_acc_node_name, test_acc_fname=test_acc_node_name,
-                train_acc_varuse=train_acc_var_use, val_acc_varuse=val_acc_var_use, test_acc_varuse=test_acc_var_use,
-                train_acc_apicall=train_acc_api_call, val_acc_apicall=val_acc_api_call,
-                test_acc_apicall=test_acc_api_call,
-                time=end - start
-            )
+            self.best_score.track_best(epoch=epoch, loss=loss.item(), train_acc_node_name=train_acc_node_name,
+                                       val_acc_node_name=val_acc_node_name, test_acc_node_name=test_acc_node_name,
+                                       train_acc_var_use=train_acc_var_use, val_acc_var_use=val_acc_var_use,
+                                       test_acc_var_use=test_acc_var_use, train_acc_api_call=train_acc_api_call,
+                                       val_acc_api_call=val_acc_api_call, test_acc_api_call=test_acc_api_call,
+                                       time=end - start)
 
             self.save_checkpoint(self.model_base_path)
 
