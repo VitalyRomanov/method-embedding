@@ -34,7 +34,16 @@ def create_mask(size, idx):
     return mask
 
 
-def get_train_test_val_indices(labels, train_frac=0.6, random_seed=None):
+def create_train_val_test_masks(nodes, train_idx, val_idx, test_idx):
+    nodes['train_mask'] = False
+    nodes.loc[nodes.index[train_idx], 'train_mask'] = True
+    nodes['val_mask'] = False
+    nodes.loc[nodes.index[val_idx], 'val_mask'] = True
+    nodes['test_mask'] = False
+    nodes.loc[nodes.index[test_idx], 'test_mask'] = True
+
+
+def get_train_val_test_indices(labels, train_frac=0.6, random_seed=None):
     if random_seed is not None:
         numpy.random.seed(random_seed)
         logging.warning("Random state for splitting dataset is fixed")
@@ -46,7 +55,7 @@ def get_train_test_val_indices(labels, train_frac=0.6, random_seed=None):
     test = int(indices.size * (train_frac + (1 - train_frac) / 2))
 
     logging.info(
-        f"Splitting into train {train}, test {test - train}, and validation {indices.size - test} sets"
+        f"Splitting into train {train}, validation {test - train}, and test {indices.size - test} sets"
     )
 
     return indices[:train], indices[train: test], indices[test:]
@@ -67,7 +76,7 @@ class SourceGraphDataset:
     filter = None
     self_loops = None
 
-    def __init__(self, nodes_path, edges_path,
+    def __init__(self, data_path,
                  label_from, use_node_types=False,
                  use_edge_types=False, filter=None, self_loops=False,
                  train_frac=0.6, random_seed=None):
@@ -101,6 +110,10 @@ class SourceGraphDataset:
         self.nodes_have_types = use_node_types
         self.edges_have_types = use_edge_types
         self.labels_from = label_from
+        self.data_path = data_path
+
+        nodes_path = join(data_path, "nodes.bz2")
+        edges_path = join(data_path, "edges.bz2")
 
         self.nodes, self.edges = load_data(nodes_path, edges_path)
 
@@ -178,18 +191,9 @@ class SourceGraphDataset:
 
     def add_splits(self, train_frac):
 
-        splits = get_train_test_val_indices(
-            self.nodes.index,
-            train_frac=train_frac,
-            random_seed=self.random_seed
-        )
+        splits = get_train_val_test_indices(self.nodes.index, train_frac=train_frac, random_seed=self.random_seed)
 
-        self.nodes['train_mask'] = False
-        self.nodes.loc[self.nodes.index[splits[0]], 'train_mask'] = True
-        self.nodes['test_mask'] = False
-        self.nodes.loc[self.nodes.index[splits[1]], 'test_mask'] = True
-        self.nodes['val_mask'] = False
-        self.nodes.loc[self.nodes.index[splits[2]], 'val_mask'] = True
+        create_train_val_test_masks(self.nodes, *splits)
 
     def add_typed_ids(self):
         nodes = self.nodes.copy()
@@ -360,6 +364,18 @@ class SourceGraphDataset:
 
         return nodes, train_edges, test_edges
 
+    def load_node_names(self):
+        path = join(self.data_path, "node_names.bz2")
+        return unpersist(path)
+
+    def load_var_use(self):
+        path = join(self.data_path, "common-function-variable-pairs.bz2")
+        return unpersist(path)
+
+    def load_api_call(self):
+        path = join(self.data_path, "common-call-seq.bz2")
+        return unpersist(path)
+
 
 def split(edges, holdout_frac, random_seed=None):
     if random_seed is not None:
@@ -443,7 +459,8 @@ def read_or_create_dataset(args, model_base, labels_from="type"):
         dataset = pickle.load(open(join(model_base, "dataset.pkl"), "rb"))
     else:
         dataset = SourceGraphDataset(
-            args.node_path, args.edge_path,
+            # args.node_path, args.edge_path,
+            args.data_path,
             label_from=labels_from,
             use_node_types=args.use_node_types,
             use_edge_types=args.use_edge_types,
@@ -461,11 +478,13 @@ def read_or_create_dataset(args, model_base, labels_from="type"):
 def test_dataset():
     import sys
 
-    nodes_path = sys.argv[1]
-    edges_path = sys.argv[2]
+    data_path = sys.argv[1]
+    # nodes_path = sys.argv[1]
+    # edges_path = sys.argv[2]
 
     dataset = SourceGraphDataset(
-        nodes_path, edges_path,
+        data_path,
+        # nodes_path, edges_path,
         label_from='type',
         use_node_types=True,
         use_edge_types=True,

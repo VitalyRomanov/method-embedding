@@ -1,9 +1,11 @@
-import numpy as np
-import pandas as pd
+import logging
+import sys
+
 from os.path import join, isdir
 from os import mkdir
 
 from SourceCodeTools.graph.model.ElementEmbedder import ElementEmbedder
+
 
 def get_num_batches(length, batch_size_suggestion):
     batch_size = min(batch_size_suggestion, length)
@@ -14,6 +16,7 @@ def get_num_batches(length, batch_size_suggestion):
 
 def get_name(model, timestamp):
     return "{} {}".format(model.__name__, timestamp).replace(":", "-").replace(" ", "-").replace(".", "-")
+
 
 def get_model_base(args, model_attempt):
     if args.restore_state:
@@ -26,12 +29,12 @@ def get_model_base(args, model_attempt):
     return MODEL_BASE
 
 
-def create_idx_pools(splits, pool):
-    train_idx, test_idx, val_idx = splits
-    train_idx = np.fromiter(pool.intersection(train_idx), dtype=np.int64)
-    test_idx = np.fromiter(pool.intersection(test_idx), dtype=np.int64)
-    val_idx = np.fromiter(pool.intersection(val_idx), dtype=np.int64)
-    return train_idx, test_idx, val_idx
+# def create_idx_pools(splits, pool):
+#     train_idx, val_idx, test_idx = splits
+#     train_idx = np.fromiter(pool.intersection(train_idx), dtype=np.int64)
+#     val_idx = np.fromiter(pool.intersection(val_idx), dtype=np.int64)
+#     test_idx = np.fromiter(pool.intersection(test_idx), dtype=np.int64)
+#     return train_idx, val_idx, test_idx
 
 
 def evaluate_no_classes(logits, labels):
@@ -40,8 +43,12 @@ def evaluate_no_classes(logits, labels):
     return acc
 
 
-def create_elem_embedder(file_path, nodes, emb_size, compact_dst):
-    element_data = pd.read_csv(file_path)
+def create_elem_embedder(element_data, nodes, emb_size, compact_dst):
+    # element_data = unpersist(file_path)
+
+    if len(element_data) == 0:
+        logging.error(f"Not enough data for the embedder: {len(element_data)}. Exiting...")
+        sys.exit()
 
     id2nodeid = dict(zip(nodes['id'].tolist(), nodes['global_graph_id'].tolist()))
     id2typedid = dict(zip(nodes['id'].tolist(), nodes['typed_id'].tolist()))
@@ -52,7 +59,7 @@ def create_elem_embedder(file_path, nodes, emb_size, compact_dst):
     element_data['src_typed_id'] = element_data['src'].apply(lambda x: id2typedid.get(x, None))
     element_data = element_data.astype({
         'id': 'Int32',
-        'src_type': 'Int32',
+        'src_type': 'category',
         'src_typed_id': 'Int32',
     })
 
@@ -64,7 +71,7 @@ def create_elem_embedder(file_path, nodes, emb_size, compact_dst):
         element_data.drop_duplicates(['id', 'dst'], inplace=True, ignore_index=True) # this line apparenly filters parallel edges
         element_data = element_data.astype({
             'dst': 'Int32',
-            'dst_type': 'Int32',
+            'dst_type': 'category',
             'dst_typed_id': 'Int32',
         })
 
@@ -73,45 +80,50 @@ def create_elem_embedder(file_path, nodes, emb_size, compact_dst):
     return ee
 
 
-def track_best_multitask(epoch, loss,
-               train_acc_fname, val_acc_fname, test_acc_fname,
-               train_acc_varuse, val_acc_varuse, test_acc_varuse,
-               train_acc_apicall, val_acc_apicall, test_acc_apicall,
-               best_val_acc_fname, best_test_acc_fname,
-               best_val_acc_varuse, best_test_acc_varuse,
-               best_val_acc_apicall, best_test_acc_apicall, time=0):
-    # TODO
-    # does not really track now
-    if best_val_acc_fname < val_acc_fname:
-        best_val_acc_fname = val_acc_fname
-        best_test_acc_fname = test_acc_fname
+class BestScoreTracker:
+    def __init__(self):
+        self.best_val_acc_fname = 0.
+        self.best_test_acc_fname = 0.
+        self.best_val_acc_varuse = 0.
+        self.best_test_acc_varuse = 0.
+        self.best_val_acc_apicall = 0.
+        self.best_test_acc_apicall = 0.
 
-    if best_val_acc_varuse < val_acc_varuse:
-        best_val_acc_varuse = val_acc_varuse
-        best_test_acc_varuse = test_acc_varuse
+    def track_best(
+            self, epoch, loss,
+            train_acc_fname=0., val_acc_fname=0., test_acc_fname=0.,
+            train_acc_varuse=0., val_acc_varuse=0., test_acc_varuse=0.,
+            train_acc_apicall=0., val_acc_apicall=0., test_acc_apicall=0.,
+            time=0
+    ):
+        # TODO
+        # does not really track now
+        if val_acc_fname is not None:
+            if self.best_val_acc_fname < val_acc_fname:
+                self.best_val_acc_fname = val_acc_fname
+                self.best_test_acc_fname = test_acc_fname
 
-    if best_val_acc_apicall < val_acc_apicall:
-        best_val_acc_apicall = val_acc_apicall
-        best_test_acc_apicall = test_acc_apicall
+        if val_acc_varuse is not None:
+            if self.best_val_acc_varuse < val_acc_varuse:
+                self.best_val_acc_varuse = val_acc_varuse
+                self.best_test_acc_varuse = test_acc_varuse
 
-    print(
-        'Epoch %d, Time: %d s, Loss %.4f, fname Train Acc %.4f, fname Val Acc %.4f (Best %.4f), fname Test Acc %.4f (Best %.4f), varuse Train Acc %.4f, varuse Val Acc %.4f (Best %.4f), varuse Test Acc %.4f (Best %.4f), apicall Train Acc %.4f, apicall Val Acc %.4f (Best %.4f), apicall Test Acc %.4f (Best %.4f)' % (
-            epoch,
-            time,
-            loss,
-            train_acc_fname,
-            val_acc_fname,
-            best_val_acc_fname,
-            test_acc_fname,
-            best_test_acc_fname,
-            train_acc_varuse,
-            val_acc_varuse,
-            best_val_acc_varuse,
-            test_acc_varuse,
-            best_test_acc_varuse,
-            train_acc_apicall,
-            val_acc_apicall,
-            best_val_acc_apicall,
-            test_acc_apicall,
-            best_test_acc_apicall,
-        ))
+        if val_acc_apicall is not None:
+            if self.best_val_acc_apicall < val_acc_apicall:
+                self.best_val_acc_apicall = val_acc_apicall
+                self.best_test_acc_apicall = test_acc_apicall
+
+        epoch_info = "'Epoch %d, Time: %d s, Loss %.4f, " % (
+            epoch, time, loss
+        )
+
+        score_info = \
+            'fname Train Acc %.4f, fname Val Acc %.4f (Best %.4f), fname Test Acc %.4f (Best %.4f), ' \
+            'varuse Train Acc %.4f, varuse Val Acc %.4f (Best %.4f), varuse Test Acc %.4f (Best %.4f), ' \
+            'apicall Train Acc %.4f, apicall Val Acc %.4f (Best %.4f), apicall Test Acc %.4f (Best %.4f)' % (
+                train_acc_fname, val_acc_fname, self.best_val_acc_fname, test_acc_fname, self.best_test_acc_fname,
+                train_acc_varuse, val_acc_varuse, self.best_val_acc_varuse, test_acc_varuse, self.best_test_acc_varuse,
+                train_acc_apicall, val_acc_apicall, self.best_val_acc_apicall, test_acc_apicall, self.best_test_acc_apicall,
+            )
+
+        logging.info(epoch_info + score_info)
