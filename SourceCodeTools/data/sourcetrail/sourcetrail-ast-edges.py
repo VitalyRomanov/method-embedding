@@ -478,7 +478,26 @@ def write_edges(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name,
     write_nodes(path=nodes_with_ast_name, node_resolver=node_resolver)
 
 
-def main():
+def create_files_with_ast(nodes, edges, bodies, working_directory, bpe_tokenizer_path,
+                          create_subword_instances, connect_subwords):
+
+    node_resolver = NodeResolver(nodes)
+    edges_with_ast_name = os.path.join(working_directory, "edges_with_ast.bz2")
+    edges_with_ast_name_temp = os.path.join(working_directory, "edges_with_ast_temp.csv")
+    nodes_with_ast_name = os.path.join(working_directory, "nodes_with_ast.bz2")
+
+    write_csv(edges, edges_with_ast_name_temp)
+
+    write_edges(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name_temp,
+                bpe_tokenizer_path=bpe_tokenizer_path,
+                create_subword_instances=create_subword_instances,
+                connect_subwords=connect_subwords)
+
+    write_processed_bodies(bodies, working_directory)
+    persist(read_csv(edges_with_ast_name_temp), edges_with_ast_name)
+
+
+if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description='Convert python funcitons to graphs. Include subwords for names.')
@@ -493,26 +512,9 @@ def main():
     args = parser.parse_args()
 
     working_directory = args.working_directory
-
     nodes = read_nodes(working_directory)
     edges = read_edges(working_directory)
     bodies = read_processed_bodies(working_directory)
 
-    node_resolver = NodeResolver(nodes)
-    edges_with_ast_name = os.path.join(working_directory, "edges_with_ast.bz2")
-    edges_with_ast_name_temp = os.path.join(working_directory, "edges_with_ast_temp.csv")
-    nodes_with_ast_name = os.path.join(working_directory, "nodes_with_ast.bz2")
-
-    write_csv(edges, edges_with_ast_name_temp)
-
-    write_edges(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name_temp,
-                bpe_tokenizer_path=args.bpe_tokenizer,
-                create_subword_instances=args.create_subword_instances,
-                connect_subwords=args.connect_subwords)
-
-    write_processed_bodies(bodies, working_directory)
-    persist(read_csv(edges_with_ast_name_temp), edges_with_ast_name)
-
-
-if __name__ == "__main__":
-    main()
+    create_files_with_ast(nodes, edges, bodies, working_directory, args.bpe_tokenizer,
+                          args.create_subword_instances, args.connect_subwords)

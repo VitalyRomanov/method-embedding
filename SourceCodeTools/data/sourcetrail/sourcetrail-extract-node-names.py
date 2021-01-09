@@ -10,11 +10,11 @@ def get_node_name(full_name):
     return full_name.split(".")[-1].split("___")[0]
 
 
-def extract_and_write_node_names(nodes_path, out_path, min_count):
+def extract_node_names(nodes, min_count):
 
-    data = unpersist_or_exit(nodes_path)
+
     # some cells are empty, probably because of empty strings in AST
-    data = data.dropna(axis=0)
+    data = nodes.dropna(axis=0)
     data = data[data['type'] != 262144]
     data['src'] = data['id']
     data['dst'] = data['serialized_name'].apply(get_node_name)
@@ -24,8 +24,10 @@ def extract_and_write_node_names(nodes_path, out_path, min_count):
     data['counts'] = data['dst'].apply(lambda x: counts[x])
     data = data.query(f"counts > {min_count}")
 
-    persist(data[['src', 'dst']], out_path)
-    # data[['src', 'dst']].to_csv(out_path, index=False, quoting=QUOTE_NONNUMERIC)
+    if len(data) > 0:
+        return data[['src', 'dst']]
+    else:
+        return None
 
 
 if __name__ == "__main__":
@@ -36,5 +38,9 @@ if __name__ == "__main__":
     except:
         min_count = 1
 
-    extract_and_write_node_names(nodes_path, out_path, min_count)
+    nodes = unpersist_or_exit(nodes_path)
 
+    names = extract_node_names(nodes, min_count)
+
+    if names is not None:
+        persist(names, out_path)

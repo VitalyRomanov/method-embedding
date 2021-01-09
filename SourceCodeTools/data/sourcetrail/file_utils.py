@@ -160,8 +160,7 @@ def unpersist_or_exit(path, exit_message=None, **kwargs):
     data = unpersist_if_present(path, **kwargs)
     if data is None or len(data) == 0:
         if exit_message:
-            logging.warn(exit_message)
-            # print(exit_message)
+            logging.warning(exit_message)
         import sys
         sys.exit()
     else:

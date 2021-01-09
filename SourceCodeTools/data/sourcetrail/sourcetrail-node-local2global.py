@@ -7,21 +7,17 @@ from SourceCodeTools.data.sourcetrail.common import create_node_repr, \
     create_local_to_global_id_map
 
 
-all_nodes = unpersist_or_exit(sys.argv[1], "Global nodes no not exist!")
-orig_nodes = unpersist_or_exit(sys.argv[2], "No processed nodes, skipping")
+def add_global_ids(global_nodes, local_nodes):
+    id_map = create_local_to_global_id_map(local_nodes=local_nodes, global_nodes=global_nodes)
 
-# all_nodes = pd.read_csv(sys.argv[1], dtype={"id": int, "type": str, "serialized_name": str})
-# orig_nodes = pd.read_csv(sys.argv[2], dtype={"id": int, "type": str, "serialized_name": str})
-local_map_path = sys.argv[3]
+    local_nodes['global_id'] = local_nodes['id'].apply(lambda x: id_map.get(x, -1))
 
-id_map = create_local_to_global_id_map(local_nodes=orig_nodes, global_nodes=all_nodes)
-# all_nodes['node_repr'] = create_node_repr(all_nodes)
-# orig_nodes['node_repr'] = create_node_repr(orig_nodes)
-#
-# rev_id_map = dict(zip(all_nodes['node_repr'].tolist(), all_nodes['id'].tolist()))
-# id_map = dict(zip(orig_nodes["id"].tolist(), map(lambda x: rev_id_map[x], orig_nodes["node_repr"].tolist())))
 
-orig_nodes['global_id'] = orig_nodes['id'].apply(lambda x: id_map.get(x, -1))
+if __name__ == "__main__":
+    global_nodes = unpersist_or_exit(sys.argv[1], "Global nodes do not exist!")
+    local_nodes = unpersist_or_exit(sys.argv[2], "No processed nodes, skipping")
+    local_map_path = sys.argv[3]
 
-# orig_nodes[['id', 'global_id']].to_csv(local_map_path, index=False)
-persist(orig_nodes[['id', 'global_id']], local_map_path)
+    add_global_ids(global_nodes, local_nodes)
+
+    persist(local_nodes[['id', 'global_id']], local_map_path)

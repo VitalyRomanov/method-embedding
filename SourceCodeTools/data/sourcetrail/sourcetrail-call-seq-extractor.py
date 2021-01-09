@@ -16,9 +16,9 @@ def get_function_calls_from_range(occurrences, start, end):
     return occurrences.query(f"start_line >= {start} and end_line <= {end} and occ_type != {DEFINITION_TYPE} and e_type == 'calls'")
 
 
-def main(working_directory):
+def extract_call_seq(nodes, edges, source_location, occurrence):
 
-    occurrence_groups = get_occurrence_groups(working_directory)
+    occurrence_groups = get_occurrence_groups(nodes, edges, source_location, occurrence)
 
     call_seq = []
 
@@ -43,14 +43,23 @@ def main(working_directory):
     print(" " * 30, end="\r")
 
     if len(call_seq) > 0:
-
         call_seq = pd.DataFrame(call_seq).astype({
             'src': 'int',
             'dst': 'int'
         })
-
-        persist(call_seq, os.path.join(working_directory, filenames["call-seq"]))
+        return call_seq
+    else:
+        return None
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    working_directory = sys.argv[1]
+    source_location = read_source_location(working_directory)
+    occurrence = read_occurrence(working_directory)
+    nodes = read_nodes(working_directory)
+    edges = read_edges(working_directory)
+
+    call_seq = extract_call_seq(nodes, edges, source_location, occurrence)
+
+    if call_seq is not None:
+        persist(call_seq, os.path.join(working_directory, filenames["call-seq"]))

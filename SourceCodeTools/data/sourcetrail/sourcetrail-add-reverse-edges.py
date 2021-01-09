@@ -1,9 +1,7 @@
-from SourceCodeTools.data.sourcetrail.sourcetrail_types import edge_types
 from SourceCodeTools.data.sourcetrail.file_utils import *
 
 import pandas as p
 import sys
-import os
 
 
 def add_reverse_edges(edges):
@@ -15,9 +13,10 @@ def add_reverse_edges(edges):
     return p.concat([edges, rev_edges], axis=0)
 
 
-edges_path = sys.argv[1]
+if __name__ == "__main__":
+    edges_path = sys.argv[1]
 
-edges = unpersist_or_exit(edges_path)
-edges = add_reverse_edges(edges)
+    edges = unpersist_or_exit(edges_path)
+    edges = add_reverse_edges(edges)
 
-persist(edges, edges_path)
+    persist(edges, edges_path)

@@ -239,18 +239,9 @@ def process_body(body, local_occurrences, nodes, f_id, f_start):
         "random_2_srctrl": random_2_srctrl
     }
 
-def main(args):
+def process_bodies(nodes, edges, source_location, occurrence, file_content, lang):
 
-    working_directory = args[1]
-    try:
-        lang = args[2]
-    except:
-        lang = "python"
-
-    nodes = read_nodes(working_directory)
-    file_content = read_filecontent(working_directory)
-
-    occurrence_groups = get_occurrence_groups(working_directory)
+    occurrence_groups = get_occurrence_groups(nodes, edges, source_location, occurrence)
 
     bodies = []
 
@@ -294,20 +285,24 @@ def main(args):
 
     if len(bodies) > 0:
         bodies_processed = pd.DataFrame(bodies)
-        write_processed_bodies(bodies_processed, working_directory)
+        return bodies_processed
+    else:
+        return None
 
 
 if __name__ == "__main__":
-    # replacement_attempts = 100
+    working_directory = sys.argv[1]
+    try:
+        lang = sys.argv[2]
+    except:
+        lang = "python"
 
-    main(sys.argv)
+    source_location = read_source_location(working_directory)
+    occurrence = read_occurrence(working_directory)
+    nodes = read_nodes(working_directory)
+    edges = read_edges(working_directory)
+    file_content = read_filecontent(working_directory)
+    bodies_processed = process_bodies(nodes, edges, source_location, occurrence, file_content, lang)
 
-    # while replacement_attempts >= 0:
-    #     try:
-    #         main(sys.argv)
-    #     except RandomReplacementException:
-    #         if replacement_attempts == 0:
-    #             raise Exception("Could not replace with random names")
-    #         replacement_attempts -= 1
-    #     else:
-    #         break
+    if bodies_processed is not None:
+        write_processed_bodies(bodies_processed, working_directory)

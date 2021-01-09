@@ -39,21 +39,23 @@ def normalize(line):
     #     line = line[:-3]
     return line
 
-nodes_path = sys.argv[1]
 
-# try:
-data = unpersist_or_exit(nodes_path, exit_message="Sourcetrail nodes are empty", dtype={"id": int, "type": int, "serialized_name": str})
-data = data[data['type'] != 262144] # filter nodes for files
-data['serialized_name'] = data['serialized_name'].apply(normalize)
-data['type'] = data['type'].apply(lambda x: node_types[x])
+def merge_names(nodes_path):
+    data = unpersist_or_exit(nodes_path, exit_message="Sourcetrail nodes are empty",
+                             dtype={"id": int, "type": int, "serialized_name": str})
+    data = data[data['type'] != 262144] # filter nodes for files
+    data['serialized_name'] = data['serialized_name'].apply(normalize)
+    data['type'] = data['type'].apply(lambda x: node_types[x])
 
-if len(data) > 0:
-    data = data.astype({"id": int, "type": str, "serialized_name": str})
-    persist(data, os.path.join(os.path.dirname(nodes_path), filenames["nodes"]))
+    if len(data) > 0:
+        return data.astype({"id": int, "type": str, "serialized_name": str})
+    else:
+        return None
 
-# data.to_csv(os.path.join(os.path.dirname(nodes_path), "normalized_sourcetrail_nodes.csv"), index=False, quoting=QUOTE_NONNUMERIC)
-# except p.errors.EmptyDataError:
-#     with open(os.path.join(os.path.dirname(nodes_path), "normalized_sourcetrail_nodes.csv"), "w") as sink:
-#         sink.write("id,type,serialized_name\n")
-# except:
-#     print("Error during merging")
+
+if __name__ == "__main__":
+    nodes_path = sys.argv[1]
+    nodes = merge_names(nodes_path)
+
+    if nodes is not None:
+        persist(nodes, os.path.join(os.path.dirname(nodes_path), filenames["nodes"]))
