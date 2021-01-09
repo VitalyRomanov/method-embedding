@@ -3,7 +3,7 @@ import torch
 import os, sys
 import pandas as pd
 import numpy as np
-from SourceCodeTools.data.sourcetrail.Dataset import get_train_test_val_indices, SourceGraphDataset, load_data
+from SourceCodeTools.data.sourcetrail.Dataset import get_train_val_test_indices, SourceGraphDataset, load_data
 import pickle
 import argparse
 
@@ -64,19 +64,19 @@ pd.read_csv(args.held_path).to_csv(os.path.join(args.out_path, "held.csv"), inde
 
 nodes['global_graph_id'] = nodes['id'].apply(lambda x: ent_map[x])
 
-splits = get_train_test_val_indices(nodes.index)
+splits = get_train_val_test_indices(nodes.index)
 
 # nodes, edges, held = SourceGraphDataset.holdout(nodes, edges, 0.001)
 # nodes['label'] = nodes['type']
 
-
-def add_splits(nodes, splits):
-    nodes['train_mask'] = False
-    nodes.loc[nodes.index[splits[0]], 'train_mask'] = True
-    nodes['test_mask'] = False
-    nodes.loc[nodes.index[splits[1]], 'test_mask'] = True
-    nodes['val_mask'] = False
-    nodes.loc[nodes.index[splits[2]], 'val_mask'] = True
+from SourceCodeTools.data.sourcetrail.Dataset import create_train_val_test_masks as add_splits
+# def add_splits(nodes, splits):
+#     nodes['train_mask'] = False
+#     nodes.loc[nodes.index[splits[0]], 'train_mask'] = True
+#     nodes['val_mask'] = False
+#     nodes.loc[nodes.index[splits[1]], 'val_mask'] = True
+#     nodes['test_mask'] = False
+#     nodes.loc[nodes.index[splits[2]], 'test_mask'] = True
 
 
 emb = Embedder(ent_map, new_embs)
@@ -91,7 +91,7 @@ torch.save(
     os.path.join(args.out_path, "state_dict.pt")
 )
 
-add_splits(nodes, splits)
+add_splits(nodes, *splits)
 
 nodes.to_csv(os.path.join(args.out_path, "nodes.csv"), index=False)
 edges.to_csv(os.path.join(args.out_path, "edges.csv"), index=False)

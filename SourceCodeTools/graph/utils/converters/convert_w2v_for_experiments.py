@@ -3,7 +3,7 @@ import torch
 import os, sys
 import pandas as pd
 import numpy as np
-from SourceCodeTools.data.sourcetrail.Dataset import get_train_test_val_indices, SourceGraphDataset, load_data
+from SourceCodeTools.data.sourcetrail.Dataset import get_train_val_test_indices, SourceGraphDataset, load_data
 import pickle
 
 
@@ -42,7 +42,7 @@ out_path = sys.argv[4]
 
 nodes, edges = load_data(nodes_path, edges_path)
 
-splits = get_train_test_val_indices(nodes.index)
+splits = get_train_val_test_indices(nodes.index)
 
 id_map, vecs = load_w2v(emb_path)
 
