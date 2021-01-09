@@ -61,7 +61,7 @@ done
 sourcetrail-extract-node-names.py "$OUT_DIR/no_ast/common_nodes.bz2" "$OUT_DIR/no_ast/node_names.bz2"
 sourcetrail-extract-node-names.py "$OUT_DIR/with_ast/common_nodes.bz2" "$OUT_DIR/with_ast/node_names.bz2"
 
-#sourcetrail-edge-types-to-int.py "$OUT_DIR/with_ast/common_edges_ast_type_as_str.csv" "$OUT_DIR/with_ast/common_edges_ast_type_as_int.csv" "$OUT_DIR/with_ast/ast_types_int_to_str.csv"
+#sourcetrail_edge_types_to_int.py "$OUT_DIR/with_ast/common_edges_ast_type_as_str.csv" "$OUT_DIR/with_ast/common_edges_ast_type_as_int.csv" "$OUT_DIR/with_ast/ast_types_int_to_str.csv"
 #cp "$OUT_DIR/with_ast/common_edges_ast_type_as_int.csv" "$OUT_DIR/with_ast/common_edges.csv"
 
 

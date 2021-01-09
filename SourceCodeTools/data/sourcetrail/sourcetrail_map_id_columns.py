@@ -12,7 +12,6 @@ def map_columns(input_table, id_map, columns):
     if len(input_table) == 0:
         return None
     else:
-        data = merge_with_file_if_exists(df=input_table, merge_with_file=output_path)
         return data
 
 
@@ -32,4 +31,5 @@ if __name__ == "__main__":
     data = map_columns(input_table, id_map, columns)
 
     if data is not None:
+        data = merge_with_file_if_exists(df=input_table, merge_with_file=output_path)
         persist(data, output_path)
