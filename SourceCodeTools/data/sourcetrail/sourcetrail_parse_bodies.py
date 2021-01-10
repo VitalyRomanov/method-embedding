@@ -162,7 +162,7 @@ def get_occurrence_string(line, col_start, col_end):
     return line[col_start: col_end]
 
 
-def process_body(body, local_occurrences, nodes, f_id, f_start):
+def _process_body(body, local_occurrences, nodes, f_id, f_start):
     body_normalized = body.split("\n")
     body_with_random_replacements = body.split("\n")
     random_2_original = {}
@@ -239,13 +239,28 @@ def process_body(body, local_occurrences, nodes, f_id, f_start):
         "random_2_srctrl": random_2_srctrl
     }
 
+
+def process_body(body, local_occurrences, nodes, f_id, f_start):
+    replacement_attempts = 100
+
+    while replacement_attempts > 0:
+        try:
+            return _process_body(body, local_occurrences, nodes, f_id, f_start)
+        except RandomReplacementException:
+            replacement_attempts -= 1
+
+    return None
+
+
 def process_bodies(nodes, edges, source_location, occurrence, file_content, lang):
 
     occurrence_groups = get_occurrence_groups(nodes, edges, source_location, occurrence)
 
     bodies = []
 
-    for group_ind, (file_id, occurrences) in enumerate(occurrence_groups):
+    for group_ind, (file_id, occurrences) in custom_tqdm(
+            enumerate(occurrence_groups), message="Processing function bodies", total=len(occurrence_groups)
+    ):
 
         function_definitions = get_function_definitions(occurrences)
 
@@ -265,23 +280,14 @@ def process_bodies(nodes, edges, source_location, occurrence, file_content, lang
                 if not has_valid_syntax(body):
                     continue
 
-                replacement_attempts = 100
+                processed = process_body(body, local_occurrences, nodes, f_def.element_id, f_start)
 
-                while replacement_attempts > 0:
-                    try:
-                        bodies.append(
-                            process_body(body, local_occurrences, nodes, f_def.element_id, f_start)
-                        )
-                        replacement_attempts = -1
-                    except RandomReplacementException:
-                        if replacement_attempts == 0:
-                            continue
-                        #     raise Exception("Could not replace with random names")
-                        replacement_attempts -= 1
+                if processed is not None:
+                    bodies.append(processed)
 
-        print(f"\r{group_ind}/{len(occurrence_groups)}", end="")
+        # print(f"\r{group_ind}/{len(occurrence_groups)}", end="")
 
-    print(" " * 30, end="\r")
+    # print(" " * 30, end="\r")
 
     if len(bodies) > 0:
         bodies_processed = pd.DataFrame(bodies)

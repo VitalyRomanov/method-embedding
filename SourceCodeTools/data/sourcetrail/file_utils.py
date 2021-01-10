@@ -5,14 +5,17 @@ import os
 
 
 filenames = {
+    "nodes_csv": "nodes.csv",
+    "edges_csv": "edges.csv",
     "nodes": "nodes.bz2",
     "edges": "edges.bz2",
     "source_location": "source_location.csv",
     "occurrence": "occurrence.csv",
     "filecontent": "filecontent.csv",
-    "source-graph-bodies": "source-graph-bodies.bz2",
-    "call-seq": "call-seq.bz2",
-    "function-variable-pairs": "function-variable-pairs.bz2"
+    "source_graph_bodies": "source_graph_bodies.bz2",
+    "call_seq": "call_seq.bz2",
+    "function_variable_pairs": "function_variable_pairs.bz2",
+    "element_component": "element_component.csv"
 }
 
 
@@ -67,6 +70,16 @@ def read_occurrence(base_path):
     return occurrence
 
 
+def read_element_component(base_path):
+    occurrence_path = os.path.join(base_path, filenames["element_component"])
+
+    # this file is not essential, hence it is okay if it is not there
+    occurrence = unpersist_if_present(
+        occurrence_path, dtype={'element_id': int, 'id': int, 'type': int}
+    )
+    return occurrence
+
+
 def read_filecontent(base_path):
     filecontent_path = os.path.join(base_path, filenames["filecontent"])
 
@@ -111,21 +124,21 @@ def write_edges(edges, base_path):
 
 
 def read_processed_bodies(base_path):
-    bodies_path = os.path.join(base_path, filenames["source-graph-bodies"])
+    bodies_path = os.path.join(base_path, filenames["source_graph_bodies"])
 
     bodies = unpersist_or_exit(
         bodies_path,
-        exit_message=f"Does not exist or empty: {filenames['source-graph-bodies']}"
+        exit_message=f"Does not exist or empty: {filenames['source_graph_bodies']}"
     )
     return bodies
 
 
 def write_processed_bodies(df, base_path):
-    bodies_path = os.path.join(base_path, filenames["source-graph-bodies"])
+    bodies_path = os.path.join(base_path, filenames["source_graph_bodies"])
     persist(df, bodies_path)
 
 
-def persist(df:pd.DataFrame, path: str, **kwargs):
+def persist(df: pd.DataFrame, path: str, **kwargs):
     if path.endswith(".csv"):
         write_csv(df, path, **kwargs)
     elif path.endswith(".pkl") or path.endswith(".bz2"):
@@ -133,7 +146,7 @@ def persist(df:pd.DataFrame, path: str, **kwargs):
     elif path.endswith(".parquet"):
         write_parquet(df, path, **kwargs)
     else:
-        raise NotImplementedError("supported exrensions: csv, bz2, pkl, parquet")
+        raise NotImplementedError("supported extensions: csv, bz2, pkl, parquet")
 
 
 def unpersist(path: str, **kwargs) -> pd.DataFrame:
@@ -144,7 +157,7 @@ def unpersist(path: str, **kwargs) -> pd.DataFrame:
     elif path.endswith(".parquet"):
         data = read_parquet(path, **kwargs)
     else:
-        raise NotImplementedError("supported exrensions: csv, bz2, pkl, parquet")
+        raise NotImplementedError("supported extensions: csv, bz2, pkl, parquet")
     return data
 
 

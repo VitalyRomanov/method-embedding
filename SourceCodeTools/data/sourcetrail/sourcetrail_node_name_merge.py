@@ -40,9 +40,16 @@ def normalize(line):
     return line
 
 
-def merge_names(nodes_path):
-    data = unpersist_or_exit(nodes_path, exit_message="Sourcetrail nodes are empty",
-                             dtype={"id": int, "type": int, "serialized_name": str})
+def merge_names(nodes_path, exit_if_empty=True):
+    if exit_if_empty:
+        data = unpersist_or_exit(nodes_path, exit_message="Sourcetrail nodes are empty",
+                                 dtype={"id": int, "type": int, "serialized_name": str})
+    else:
+        data = unpersist_if_present(nodes_path, dtype={"id": int, "type": int, "serialized_name": str})
+
+    if data is None:
+        return None
+
     data = data[data['type'] != 262144] # filter nodes for files
     data['serialized_name'] = data['serialized_name'].apply(normalize)
     data['type'] = data['type'].apply(lambda x: node_types[x])

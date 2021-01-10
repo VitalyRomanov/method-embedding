@@ -10,6 +10,7 @@ from SourceCodeTools.graph.python_ast import GNode
 from SourceCodeTools.proc.entity.annotator.annotator_utils import to_offsets, overlap, resolve_self_collision
 from SourceCodeTools.data.sourcetrail.file_utils import *
 from SourceCodeTools.embed.bpe import load_bpe_model, make_tokenizer
+from SourceCodeTools.data.sourcetrail.common import custom_tqdm
 
 pd.options.mode.chained_assignment = None
 
@@ -379,8 +380,14 @@ def get_srctrl2original_replacements(record):
     return {random2srctrl[key]: random2original[key] for key in random2original}
 
 
-def append_edges(path, edges):
-    edges[['id', 'type', 'src', 'dst']].to_csv(path, mode="a", index=False, header=False)
+# def append_edges(path, edges):
+#     edges[['id', 'type', 'src', 'dst']].to_csv(path, mode="a", index=False, header=False)
+
+def append_edges(ast_edges, new_edges):
+    if ast_edges is None:
+        return new_edges[['id', 'type', 'src', 'dst']]
+    else:
+        return ast_edges.append(new_edges[['id', 'type', 'src', 'dst']])
 
 
 def write_bodies(path, bodies):
@@ -394,8 +401,10 @@ def write_nodes(path, node_resolver):
     write_pickle(new_nodes, path)
 
 
-def write_edges(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name,
+def _get_from_ast(bodies, node_resolver,
                    bpe_tokenizer_path=None, create_subword_instances=True, connect_subwords=False):
+    ast_edges = None
+
     bodies_with_replacements = {}
 
     subword_tokenizer = make_tokenizer(load_bpe_model((bpe_tokenizer_path))) \
@@ -403,7 +412,9 @@ def write_edges(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name,
 
     tokenizer = RegexpTokenizer("\w+|[^\w\s]")
 
-    for ind_bodies, (_, row) in enumerate(bodies.iterrows()):
+    for ind_bodies, (_, row) in custom_tqdm(
+            enumerate(bodies.iterrows()), message="Extracting AST edges", total=len(bodies)
+    ):
         orig_body = row['body_with_random_replacements']
         if not isinstance(orig_body, str):
             continue
@@ -474,33 +485,32 @@ def write_edges(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name,
 
         bodies_with_replacements[row['id']] = all_offsets
 
-        append_edges(path=edges_with_ast_name, edges=edges)
-        print("\r%d/%d" % (ind_bodies, len(bodies['body_normalized'])), end="")
+        # append_edges(path=edges_with_ast_name, edges=edges)
+        ast_edges = append_edges(ast_edges=ast_edges, new_edges=edges)
+        # print("\r%d/%d" % (ind_bodies, len(bodies['body_normalized'])), end="")
 
-    print(" " * 30, end="\r")
+    # print(" " * 30, end="\r")
 
     bodies['graph_node_replacements'] = bodies['id'].apply(lambda id_: bodies_with_replacements.get(id_, None))
 
-    write_nodes(path=nodes_with_ast_name, node_resolver=node_resolver)
+    # write_nodes(path=nodes_with_ast_name, node_resolver=node_resolver)
+
+    ast_nodes = pd.DataFrame(node_resolver.new_nodes)[['id', 'type', 'serialized_name', 'mentioned_in']].astype(
+        {'mentioned_in': 'Int32'}
+    )
+    ast_edges = ast_edges.rename({'src': 'source_node_id', 'dst': 'target_node_id'}, axis=1)
+    return ast_nodes, ast_edges, bodies
 
 
-def create_files_with_ast(nodes, edges, bodies, working_directory, bpe_tokenizer_path,
+def get_from_ast(nodes, bodies, bpe_tokenizer_path,
                           create_subword_instances, connect_subwords):
 
     node_resolver = NodeResolver(nodes)
-    edges_with_ast_name = os.path.join(working_directory, "edges_with_ast.bz2")
-    edges_with_ast_name_temp = os.path.join(working_directory, "edges_with_ast_temp.csv")
-    nodes_with_ast_name = os.path.join(working_directory, "nodes_with_ast.bz2")
 
-    write_csv(edges, edges_with_ast_name_temp)
-
-    write_edges(bodies, node_resolver, nodes_with_ast_name, edges_with_ast_name_temp,
+    return _get_from_ast(bodies, node_resolver,
                 bpe_tokenizer_path=bpe_tokenizer_path,
                 create_subword_instances=create_subword_instances,
                 connect_subwords=connect_subwords)
-
-    write_processed_bodies(bodies, working_directory)
-    persist(read_csv(edges_with_ast_name_temp), edges_with_ast_name)
 
 
 if __name__ == "__main__":
@@ -522,5 +532,14 @@ if __name__ == "__main__":
     edges = read_edges(working_directory)
     bodies = read_processed_bodies(working_directory)
 
-    create_files_with_ast(nodes, edges, bodies, working_directory, args.bpe_tokenizer,
-                          args.create_subword_instances, args.connect_subwords)
+    ast_nodes, ast_edges, bodies = get_from_ast(nodes, bodies, args.bpe_tokenizer,
+                                                args.create_subword_instances, args.connect_subwords)
+
+    edges_with_ast_name = os.path.join(working_directory, "edges_with_ast.bz2")
+    nodes_with_ast_name = os.path.join(working_directory, "nodes_with_ast.bz2")
+
+    persist(nodes.append(ast_nodes), nodes_with_ast_name)
+    persist(edges.append(ast_edges), edges_with_ast_name)
+    write_processed_bodies(bodies, working_directory)
+
+

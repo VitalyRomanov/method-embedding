@@ -12,7 +12,7 @@ def map_columns(input_table, id_map, columns):
     if len(input_table) == 0:
         return None
     else:
-        return data
+        return input_table
 
 
 if __name__ == "__main__":

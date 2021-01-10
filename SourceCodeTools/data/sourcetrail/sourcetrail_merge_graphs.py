@@ -6,12 +6,18 @@ from SourceCodeTools.data.sourcetrail.common import merge_with_file_if_exists
 pd.options.mode.chained_assignment = None
 
 
+def get_global_node_info(global_nodes):
+    global_nodes = global_nodes.copy()
+    add_node_repr(global_nodes)
+    existing_nodes = set(global_nodes['node_repr'].to_list())
+    next_valid_id = global_nodes['id'].max() + 1
+    return existing_nodes, next_valid_id
+
+
 def read_global_nodes(path):
     if os.path.isfile(path):
         common_nodes = unpersist(path)
-        add_node_repr(common_nodes)
-        existing_nodes = set(common_nodes['node_repr'].to_list())
-        next_valid_id = common_nodes['id'].max() + 1
+        existing_nodes, next_valid_id = get_global_node_info(common_nodes)
     else:
         existing_nodes = set()
         next_valid_id = 0
@@ -20,7 +26,6 @@ def read_global_nodes(path):
 
 def read_local_nodes(path):
     batch_nodes = unpersist_or_exit(path)
-    add_node_repr(batch_nodes)
     return batch_nodes
 
 
@@ -29,6 +34,9 @@ def add_node_repr(nodes):
 
 
 def merge_global_with_local(existing_nodes, next_valid_id, local_nodes):
+    local_nodes = local_nodes.copy()
+    add_node_repr(local_nodes)
+
     new_nodes = local_nodes[
         local_nodes['node_repr'].apply(lambda x: x not in existing_nodes)
     ]

@@ -22,7 +22,9 @@ def extract_call_seq(nodes, edges, source_location, occurrence):
 
     call_seq = []
 
-    for grp_ind, (file_id, occurrences) in enumerate(occurrence_groups):
+    for grp_ind, (file_id, occurrences) in custom_tqdm(
+            enumerate(occurrence_groups), message="Extracting call sequences", total=len(occurrence_groups)
+    ):
 
         function_definitions = get_function_definitions(occurrences)
 
@@ -39,8 +41,8 @@ def extract_call_seq(nodes, edges, source_location, occurrence):
                         'dst': all_calls[i+1]
                     })
 
-        print(f"\r{grp_ind}/{len(occurrence_groups)}", end="")
-    print(" " * 30, end="\r")
+        # print(f"\r{grp_ind}/{len(occurrence_groups)}", end="")
+    # print(" " * 30, end="\r")
 
     if len(call_seq) > 0:
         call_seq = pd.DataFrame(call_seq).astype({

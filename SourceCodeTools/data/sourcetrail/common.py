@@ -1,5 +1,5 @@
 from SourceCodeTools.data.sourcetrail.file_utils import *
-
+from tqdm import tqdm
 
 DEFINITION_TYPE = 1
 UNRESOLVED_SYMBOL = "unsolved_symbol"
@@ -76,3 +76,7 @@ def create_local_to_global_id_map(local_nodes, global_nodes):
     ))
 
     return id_map
+
+
+def custom_tqdm(iterable, total, message):
+    return tqdm(iterable, total=total, desc=message, leave=False, dynamic_ncols=True)
