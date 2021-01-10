@@ -18,8 +18,8 @@ for dir in "$ENVS_DIR"/*; do
 
     echo "Found package $package_name"
 
-    if [ -f "$dir/source-graph-bodies.csv" ]; then
-      rm "$dir/source-graph-bodies.csv"
+    if [ -f "$dir/source_graph_bodies.csv" ]; then
+      rm "$dir/source_graph_bodies.csv"
     fi
     if [ -f "$dir/nodes_with_ast.csv" ]; then
       rm "$dir/nodes_with_ast.csv"
@@ -30,8 +30,8 @@ for dir in "$ENVS_DIR"/*; do
     if [ -f "$dir/call_seq.csv" ]; then
       rm "$dir/call_seq.csv"
     fi
-    if [ -f "$dir/source-graph-function-variable-pairs.csv" ]; then
-      rm "$dir/source-graph-function-variable-pairs.csv"
+    if [ -f "$dir/source_graph_function_variable_pairs.csv" ]; then
+      rm "$dir/source_graph_function_variable_pairs.csv"
     fi
 
 
@@ -39,21 +39,22 @@ for dir in "$ENVS_DIR"/*; do
       cd "$dir"
       sqlite3 "$dir/$package_name.srctrldb" < "$SQL_Q"
       cd "$RUN_DIR"
-      sourcetrail-verify-files.py "$dir"
-      sourcetrail-node-name-merge.py "$dir/nodes.csv"
-      sourcetrail-decode-edge-types.py "$dir/edges.csv"
-      sourcetrail-parse-bodies.py "$dir"
-      sourcetrail-call-seq-extractor.py "$dir"
+      sourcetrail_verify_files.py "$dir"
+      sourcetrail_node_name_merge.py "$dir/nodes.csv"
+      sourcetrail_decode_edge_types.py "$dir/edges.csv"
+      sourcetrail_filter_ambiguous_edges.py $dir
+      sourcetrail_parse_bodies.py "$dir"
+      sourcetrail_call_seq_extractor.py "$dir"
 
 
-      sourcetrail-add-reverse-edges.py "$dir/edges.bz2"
+      sourcetrail_add_reverse_edges.py "$dir/edges.bz2"
       if [ -n "$BPE_PATH" ]; then
         BPE_PATH=$(realpath "$BPE_PATH")
-        sourcetrail-ast-edges.py "$dir" -bpe $BPE_PATH --create_subword_instances
+        sourcetrail_ast_edges.py "$dir" -bpe $BPE_PATH --create_subword_instances
       else
-        sourcetrail-ast-edges.py "$dir"
+        sourcetrail_ast_edges.py "$dir"
       fi
-      sourcetrail-extract-variable-names.py py "$dir"
+      sourcetrail_extract_variable_names.py python "$dir"
 
       if [ -f "$dir"/edges_with_ast_temp.csv ]; then
         rm "$dir"/edges_with_ast_temp.csv
