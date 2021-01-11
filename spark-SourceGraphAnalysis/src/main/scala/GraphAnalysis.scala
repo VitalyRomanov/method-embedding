@@ -52,7 +52,7 @@ object GraphAnalysis {
       .dropIsolatedVertices()
 
     println(s"In the largest component")
-    println(s"Nodes: ${g_cc.vertices.count()}, Edges: ${g_cc.edges.count()}")
+    println(s"Nodes: ${onlyConnected_g.vertices.count()}, Edges: ${onlyConnected_g.edges.count()}")
 
     onlyConnected_g.vertices//.drop("component")
       .repartition(1)
