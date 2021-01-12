@@ -21,7 +21,8 @@ class DatasetCreator:
     def __init__(
             self, path, lang,
             bpe_tokenizer, create_subword_instances,
-            connect_subwords, only_with_annotations
+            connect_subwords, only_with_annotations,
+            do_extraction=False
     ):
         self.indexed_path = path
         self.lang = lang
@@ -29,17 +30,67 @@ class DatasetCreator:
         self.create_subword_instances = create_subword_instances
         self.connect_subwords = connect_subwords
         self.only_with_annotations = only_with_annotations
+        self.extract = do_extraction
 
         paths = (os.path.join(path, dir) for dir in os.listdir(path))
         self.environments = list(filter(lambda path: os.path.isdir(path), paths))
 
-        self.global_nodes = None
-        self.global_nodes_with_ast = None
         self.local2global_cache = {}
 
     def merge(self, output_directory):
 
-        logging.info("Extracting...")
+        if self.extract:
+            logging.info("Extracting...")
+            # self.do_extraction()
+
+        no_ast_path, with_ast_path = self.create_output_dirs(output_directory)
+
+        if not self.only_with_annotations:
+            self.create_global_file("nodes.bz2", "local2global.bz2", ['id', 'mention_id'],
+                                    join(no_ast_path, "common_nodes.bz2"), message="Merging nodes")
+            self.create_global_file("edges.bz2", "local2global.bz2", ['target_node_id', 'source_node_id'],
+                                    join(no_ast_path, "common_edges.bz2"), message="Merging edges")
+            self.create_global_file("source_graph_bodies.bz2", "local2global.bz2", ['target_node_id', 'source_node_id'],
+                                    join(no_ast_path, "common_source_graph_bodies.bz2"), "Merging bodies")
+            self.create_global_file("function_variable_pairs.bz2", "local2global.bz2", ['target_node_id', 'source_node_id'],
+                                    join(no_ast_path, "common_function_variable_pairs.bz2"), "Merging variables")
+            self.create_global_file("call_seq.bz2", "local2global.bz2", ['target_node_id', 'source_node_id'],
+                                    join(no_ast_path, "common_call_seq.bz2"), "Merging call seq")
+
+            global_nodes = self.filter_orphaned_nodes(
+                unpersist(join(no_ast_path, "common_nodes.bz2")), no_ast_path
+            )
+            persist(global_nodes, join(no_ast_path, "common_nodes.bz2"))
+            node_names = extract_node_names(
+                global_nodes, min_count=2
+            )
+            persist(node_names, join(no_ast_path, "node_names.bz2"))
+
+        self.create_global_file("nodes_with_ast.bz2", "local2global_with_ast.bz2", ['id', 'mention_id'],
+                                join(with_ast_path, "common_nodes.bz2"), message="Merging nodes with ast")
+        self.create_global_file("edges_with_ast.bz2", "local2global_with_ast.bz2", ['target_node_id', 'source_node_id'],
+                                join(with_ast_path, "common_edges.bz2"), "Merging edges with ast")
+        self.create_global_file("source_graph_bodies.bz2", "local2global_with_ast.bz2", ['target_node_id', 'source_node_id'],
+                                join(with_ast_path, "common_source_graph_bodies.bz2"), "Merging bodies with ast")
+        self.create_global_file("function_variable_pairs.bz2", "local2global_with_ast.bz2", ['target_node_id', 'source_node_id'],
+                                join(with_ast_path, "common_function_variable_pairs.bz2"), "Merging variables with ast")
+        self.create_global_file("call_seq.bz2", "local2global_with_ast.bz2", ['target_node_id', 'source_node_id'],
+                                join(with_ast_path, "common_call_seq.bz2"), "Merging call seq with ast")
+
+        global_nodes = self.filter_orphaned_nodes(
+            unpersist(join(with_ast_path, "common_nodes.bz2")), with_ast_path
+        )
+        persist(global_nodes, join(with_ast_path, "common_nodes.bz2"))
+        node_names = extract_node_names(
+            global_nodes, min_count=2
+        )
+        persist(node_names, join(with_ast_path, "node_names.bz2"))
+
+
+    def do_extraction(self):
+        global_nodes = None
+        global_nodes_with_ast = None
+
         for env_path in self.environments:
             logging.info(f"Found {os.path.basename(env_path)}")
 
@@ -74,52 +125,19 @@ class DatasetCreator:
                 edges_with_ast = edges
                 vars = None
 
-            self.global_nodes = self.merge_with_global(self.global_nodes, nodes)
-            self.global_nodes_with_ast = self.merge_with_global(self.global_nodes_with_ast, nodes_with_ast)
+            global_nodes = self.merge_with_global(global_nodes, nodes)
+            global_nodes_with_ast = self.merge_with_global(global_nodes_with_ast, nodes_with_ast)
 
             local2global = get_local2global(
-                global_nodes=self.global_nodes, local_nodes=nodes
+                global_nodes=global_nodes, local_nodes=nodes
             )
             local2global_with_ast = get_local2global(
-                global_nodes=self.global_nodes_with_ast, local_nodes=nodes_with_ast
+                global_nodes=global_nodes_with_ast, local_nodes=nodes_with_ast
             )
 
             self.write_local(env_path, nodes, edges, bodies, call_seq, vars,
                              nodes_with_ast, edges_with_ast,
                              local2global, local2global_with_ast)
-
-        no_ast_path, with_ast_path = self.create_output_dirs(output_directory)
-
-        if not self.only_with_annotations:
-            persist(self.global_nodes, join(no_ast_path, "common_nodes.bz2"))
-            node_names = extract_node_names(self.global_nodes, min_count=2)
-            persist(node_names, join(no_ast_path, "node_names.bz2"))
-
-            self.create_global_file("edges.bz2", "local2global.bz2", ['target_node_id', 'source_node_id'],
-                                    join(no_ast_path, "common_edges.bz2"), message="Merging edges")
-            self.create_global_file("source_graph_bodies.bz2", "local2global.bz2", ['target_node_id', 'source_node_id'],
-                                    join(no_ast_path, "common_source_graph_bodies.bz2"), "Merging bodies")
-            self.create_global_file("function_variable_pairs.bz2", "local2global.bz2", ['target_node_id', 'source_node_id'],
-                                    join(no_ast_path, "common_function_variable_pairs.bz2"), "Merging variables")
-            self.create_global_file("call_seq.bz2", "local2global.bz2", ['target_node_id', 'source_node_id'],
-                                    join(no_ast_path, "common_call_seq.bz2"), "Merging call seq")
-
-        self.create_global_file("edges_with_ast.bz2", "local2global_with_ast.bz2", ['target_node_id', 'source_node_id'],
-                                join(with_ast_path, "common_edges.bz2"), "Merging edges with ast")
-        self.create_global_file("source_graph_bodies.bz2", "local2global_with_ast.bz2", ['target_node_id', 'source_node_id'],
-                                join(with_ast_path, "common_source_graph_bodies.bz2"), "Merging bodies with ast")
-        self.create_global_file("function_variable_pairs.bz2", "local2global_with_ast.bz2", ['target_node_id', 'source_node_id'],
-                                join(with_ast_path, "common_function_variable_pairs.bz2"), "Merging variables with ast")
-        self.create_global_file("call_seq.bz2", "local2global_with_ast.bz2", ['target_node_id', 'source_node_id'],
-                                join(with_ast_path, "common_call_seq.bz2"), "Merging call seq with ast")
-
-        if self.only_with_annotations:
-            self.global_nodes_with_ast = self.filter_orphaned_nodes(self.global_nodes_with_ast, with_ast_path)
-
-        persist(self.global_nodes_with_ast, join(with_ast_path, "common_nodes.bz2"))
-        node_names = extract_node_names(self.global_nodes, min_count=2)
-        persist(node_names, join(with_ast_path, "node_names.bz2"))
-
 
     def get_local2global(self, path):
         if path in self.local2global_cache:
@@ -207,13 +225,13 @@ class DatasetCreator:
 
         return global_nodes
 
-    def merge_files(self, env_path, filename, map_filename, columns_to_map, original):
+    def merge_files(self, env_path, filename, map_filename, columns_to_map, original, full_merge=False):
         input_table_path = join(env_path, filename)
         local2global = self.get_local2global(join(env_path, map_filename))
         if os.path.isfile(input_table_path) and local2global is not None:
             input_table = unpersist(input_table_path)
             if self.only_with_annotations:
-                if not os.path.isfile(join(env_path, "has_annotations")):
+                if not os.path.isfile(join(env_path, "has_annotations")) and not full_merge:
                     return original
             new_table = map_columns(input_table, local2global, columns_to_map)
             if original is None:
@@ -223,14 +241,14 @@ class DatasetCreator:
         else:
             return original
 
-    def create_global_file(self, local_file, local2global_file, columns, output_path, message):
+    def create_global_file(self, local_file, local2global_file, columns, output_path, message, full_merge=False):
         global_table = None
         for ind, env_path in tqdm(
                 enumerate(self.environments), desc=message, leave=True,
                 dynamic_ncols=True, total=len(self.environments)
         ):
             global_table = self.merge_files(
-                env_path, local_file, local2global_file, columns, global_table
+                env_path, local_file, local2global_file, columns, global_table, full_merge=full_merge
             )
             # print(f"{ind}/{len(self.environments)}", end="\r")
         # print(" "*30, end="\r")
@@ -260,6 +278,7 @@ if __name__ == "__main__":
     parser.add_argument('--connect_subwords', action='store_true', default=False,
                         help="Takes effect only when `create_subword_instances` is False")
     parser.add_argument('--only_with_annotations', action='store_true', default=False, help="")
+    parser.add_argument('--do_extraction', action='store_true', default=False, help="")
 
 
     args = parser.parse_args()
@@ -268,5 +287,6 @@ if __name__ == "__main__":
 
     dataset = DatasetCreator(args.indexed_environments, args.language,
                              args.bpe_tokenizer, args.create_subword_instances,
-                             args.connect_subwords, args.only_with_annotations)
+                             args.connect_subwords, args.only_with_annotations,
+                             args.do_extraction)
     dataset.merge(args.output_directory)
