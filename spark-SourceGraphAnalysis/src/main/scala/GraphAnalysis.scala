@@ -45,10 +45,17 @@ object GraphAnalysis {
     sc.setCheckpointDir("temp")
     val cc_result = g.connectedComponents.run()
 
+    val component_count = cc_result.groupBy("component").count().sort(desc("count")).collect()
+
+    println("Connected components")
+    component_count.foreach(row => println(s"Component: ${row.getAs[Long]("component")}, count: ${row.getAs[Long]("count")}"))
+
+    val largest_component = component_count(0).getAs[Long]("component")
+
     val g_cc = GraphFrame(cc_result, edges)
 
     val onlyConnected_g = g_cc
-      .filterVertices("component == 0")
+      .filterVertices(s"component == ${largest_component}")
       .dropIsolatedVertices()
 
     println(s"In the largest component")
