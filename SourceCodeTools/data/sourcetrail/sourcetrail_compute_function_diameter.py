@@ -10,18 +10,27 @@ def get_node2mention(nodes):
 
 
 def compute_edge_mentions(edges, node2mention):
+    edges = edges.copy()
+
+    edges['id'] = list(range(len(edges)))
     edges['src_mentioned_in'] = edges['source_node_id'].apply(lambda id_: node2mention[id_])
     edges['dst_mentioned_in'] = edges['target_node_id'].apply(lambda id_: node2mention[id_])
+    edges['mentioned_in'] = list(zip(edges['id'], edges['src_mentioned_in'] == edges['dst_mentioned_in']))
 
+    mention_map = dict(zip(edges['id'], edges['dst_mentioned_in']))
 
-def get_function_edges(edges, function_nodes):
-    function_edges = edges[
-        edges['source_node_id'].apply(lambda id_: id_ in function_nodes)
-    ]
-    function_edges = function_edges[
-        function_edges['target_node_id'].apply(lambda id_: id_ in function_nodes)
-    ]
-    return function_edges
+    edges['mentioned_in'] = edges['mentioned_in'].apply(lambda id_mentioned: mention_map[id_mentioned[0]] if id_mentioned[1] else pd.NA)
+
+    return edges
+
+# def get_function_edges(edges, function_nodes):
+#     function_edges = edges[
+#         edges['source_node_id'].apply(lambda id_: id_ in function_nodes)
+#     ]
+#     function_edges = function_edges[
+#         function_edges['target_node_id'].apply(lambda id_: id_ in function_nodes)
+#     ]
+#     return function_edges
 
 
 def get_function_edges(edges, func_id):
@@ -39,15 +48,17 @@ def compute_diameter(edges):
 
 def find_diameter_distribution(nodes, edges):
     diameters = []
-    function_nodes = nodes.groupby("mentioned_in")
     node2mention = get_node2mention(nodes)
-    compute_edge_mentions(edges, node2mention)
-    for func_id, func_nodes in custom_tqdm(function_nodes, total=len(function_nodes), message="Computing diameters"):
+    edges = compute_edge_mentions(edges, node2mention)
+    function_edges = edges.groupby("mentioned_in")
+    for func_id, func_edges in custom_tqdm(function_edges, total=len(function_edges), message="Computing diameters"):
         # nodes_in_function = set(nodes['id'].tolist())
-        function_edges = get_function_edges(edges, func_id)
-        if len(function_edges) == 0:
+        if func_id is pd.NA:
             continue
-        diameter = compute_diameter(function_edges)
+        # local_edges = get_function_edges(edges, func_id)
+        # if len(local_edges) == 0:
+        #     continue
+        diameter = compute_diameter(func_edges)
         diameters.append(diameter)
 
     diameters_dist = Counter(diameters)
