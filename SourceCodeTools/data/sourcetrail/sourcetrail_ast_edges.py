@@ -26,7 +26,8 @@ class NodeResolver:
         self.new_nodes = []
 
         self.old_nodes = nodes.copy()
-        self.old_nodes['mentioned_in'] = -1
+        self.old_nodes['mentioned_in'] = pd.NA
+        self.old_nodes = self.old_nodes.astype({'mentioned_in': 'Int32'})
 
     def get_new_node_id(self):
         new_id = self.valid_new_node
@@ -385,9 +386,9 @@ def get_srctrl2original_replacements(record):
 
 def append_edges(ast_edges, new_edges):
     if ast_edges is None:
-        return new_edges[['id', 'type', 'src', 'dst']]
+        return new_edges[['id', 'type', 'src', 'dst', 'mentioned_in']]
     else:
-        return ast_edges.append(new_edges[['id', 'type', 'src', 'dst']])
+        return ast_edges.append(new_edges[['id', 'type', 'src', 'dst', 'mentioned_in']])
 
 
 def write_bodies(path, bodies):
@@ -486,6 +487,7 @@ def _get_from_ast(bodies, node_resolver,
         bodies_with_replacements[row['id']] = all_offsets
 
         # append_edges(path=edges_with_ast_name, edges=edges)
+        edges['mentioned_in'] = row['id']
         ast_edges = append_edges(ast_edges=ast_edges, new_edges=edges)
         # print("\r%d/%d" % (ind_bodies, len(bodies['body_normalized'])), end="")
 
@@ -498,7 +500,9 @@ def _get_from_ast(bodies, node_resolver,
     ast_nodes = pd.DataFrame(node_resolver.new_nodes)[['id', 'type', 'serialized_name', 'mentioned_in']].astype(
         {'mentioned_in': 'Int32'}
     )
-    ast_edges = ast_edges.rename({'src': 'source_node_id', 'dst': 'target_node_id'}, axis=1)
+    ast_edges = ast_edges.rename({'src': 'source_node_id', 'dst': 'target_node_id'}, axis=1).astype(
+        {'mentioned_in': 'Int32'}
+    )
     return ast_nodes, ast_edges, bodies
 
 
