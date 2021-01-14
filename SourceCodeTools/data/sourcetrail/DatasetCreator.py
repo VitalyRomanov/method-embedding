@@ -41,20 +41,20 @@ class DatasetCreator:
 
         if self.extract:
             logging.info("Extracting...")
-            # self.do_extraction()
+            self.do_extraction()
 
         no_ast_path, with_ast_path = self.create_output_dirs(output_directory)
 
         if not self.only_with_annotations:
-            self.create_global_file("nodes.bz2", "local2global.bz2", ['id', 'mention_id'],
+            self.create_global_file("nodes.bz2", "local2global.bz2", ['id'],
                                     join(no_ast_path, "common_nodes.bz2"), message="Merging nodes")
             self.create_global_file("edges.bz2", "local2global.bz2", ['target_node_id', 'source_node_id'],
                                     join(no_ast_path, "common_edges.bz2"), message="Merging edges")
-            self.create_global_file("source_graph_bodies.bz2", "local2global.bz2", ['target_node_id', 'source_node_id'],
+            self.create_global_file("source_graph_bodies.bz2", "local2global.bz2", ['id'],
                                     join(no_ast_path, "common_source_graph_bodies.bz2"), "Merging bodies")
-            self.create_global_file("function_variable_pairs.bz2", "local2global.bz2", ['target_node_id', 'source_node_id'],
+            self.create_global_file("function_variable_pairs.bz2", "local2global.bz2", ['src'],
                                     join(no_ast_path, "common_function_variable_pairs.bz2"), "Merging variables")
-            self.create_global_file("call_seq.bz2", "local2global.bz2", ['target_node_id', 'source_node_id'],
+            self.create_global_file("call_seq.bz2", "local2global.bz2", ['src', 'dst'],
                                     join(no_ast_path, "common_call_seq.bz2"), "Merging call seq")
 
             global_nodes = self.filter_orphaned_nodes(
@@ -66,15 +66,15 @@ class DatasetCreator:
             )
             persist(node_names, join(no_ast_path, "node_names.bz2"))
 
-        self.create_global_file("nodes_with_ast.bz2", "local2global_with_ast.bz2", ['id', 'mention_id'],
+        self.create_global_file("nodes_with_ast.bz2", "local2global_with_ast.bz2", ['id', 'mentioned_in'],
                                 join(with_ast_path, "common_nodes.bz2"), message="Merging nodes with ast")
-        self.create_global_file("edges_with_ast.bz2", "local2global_with_ast.bz2", ['target_node_id', 'source_node_id'],
+        self.create_global_file("edges_with_ast.bz2", "local2global_with_ast.bz2", ['target_node_id', 'source_node_id', 'mentioned_in'],
                                 join(with_ast_path, "common_edges.bz2"), "Merging edges with ast")
-        self.create_global_file("source_graph_bodies.bz2", "local2global_with_ast.bz2", ['target_node_id', 'source_node_id'],
+        self.create_global_file("source_graph_bodies.bz2", "local2global_with_ast.bz2", ['id'],
                                 join(with_ast_path, "common_source_graph_bodies.bz2"), "Merging bodies with ast")
-        self.create_global_file("function_variable_pairs.bz2", "local2global_with_ast.bz2", ['target_node_id', 'source_node_id'],
+        self.create_global_file("function_variable_pairs.bz2", "local2global_with_ast.bz2", ['src'],
                                 join(with_ast_path, "common_function_variable_pairs.bz2"), "Merging variables with ast")
-        self.create_global_file("call_seq.bz2", "local2global_with_ast.bz2", ['target_node_id', 'source_node_id'],
+        self.create_global_file("call_seq.bz2", "local2global_with_ast.bz2", ['src', 'dst'],
                                 join(with_ast_path, "common_call_seq.bz2"), "Merging call seq with ast")
 
         global_nodes = self.filter_orphaned_nodes(
