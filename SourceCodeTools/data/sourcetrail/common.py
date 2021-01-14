@@ -46,7 +46,7 @@ def map_id_columns(df, column_names, mapper):
     df = df.copy()
     for col in column_names:
         if col in df.columns:
-            df[col] = df[col].apply(lambda x: mapper.get(x, -1))
+            df[col] = df[col].apply(lambda x: mapper.get(x, pd.NA))
     return df
 
 
