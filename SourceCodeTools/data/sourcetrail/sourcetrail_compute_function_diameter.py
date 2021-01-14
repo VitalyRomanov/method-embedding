@@ -38,9 +38,14 @@ def get_function_edges(edges, func_id):
     return function_edges
 
 
-def compute_diameter(edges):
+def compute_diameter(edges, func_id):
     try:
         g = nx.convert_matrix.from_pandas_edgelist(edges, source='source_node_id', target='target_node_id')
+        components = list(nx.connected_components(g))
+        if len(components) > 1:
+            logging.warning(f"There are more than one component in {func_id}")
+        largest_cc = max(components, key=len)
+        g = g.subgraph(largest_cc)
         return nx.algorithms.distance_measures.diameter(g)
     except nx.exception.NetworkXError:
         return "inf"
@@ -48,8 +53,8 @@ def compute_diameter(edges):
 
 def find_diameter_distribution(nodes, edges):
     diameters = []
-    node2mention = get_node2mention(nodes)
-    edges = compute_edge_mentions(edges, node2mention)
+    # node2mention = get_node2mention(nodes)
+    # edges = compute_edge_mentions(edges, node2mention)
     function_edges = edges.groupby("mentioned_in")
     for func_id, func_edges in custom_tqdm(function_edges, total=len(function_edges), message="Computing diameters"):
         # nodes_in_function = set(nodes['id'].tolist())
@@ -58,7 +63,7 @@ def find_diameter_distribution(nodes, edges):
         # local_edges = get_function_edges(edges, func_id)
         # if len(local_edges) == 0:
         #     continue
-        diameter = compute_diameter(func_edges)
+        diameter = compute_diameter(func_edges, func_id)
         diameters.append(diameter)
 
     diameters_dist = Counter(diameters)
@@ -84,7 +89,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    nodes = unpersist(args.nodes).astype({'mentioned_in': 'Int32'})
+    nodes = unpersist(args.nodes)
     edges = unpersist(args.edges)
 
     diameters = find_diameter_distribution(nodes, edges)
