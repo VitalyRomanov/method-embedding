@@ -80,10 +80,10 @@ class AstGraphGenerator(object):
         for node in nodes:
             s = self.parse(node)
             if isinstance(s, tuple):
-                # some parsers return edges and names. at this level, names are not needed
+                # some parsers return edges and names?
                 edges.extend(s[0])
 
-                if last_node:
+                if last_node is not None:
                     edges.append({"dst": s[1], "src": last_node, "type": "next"})
                     edges.append({"dst": last_node, "src": s[1], "type": "prev"})
 
@@ -275,7 +275,7 @@ class AstGraphGenerator(object):
     def parse_ClassDef(self, node):
         edges, class_name = self.generic_parse(node, ["name"])
 
-        self.parse_in_context(class_name, "True", edges, node.body)
+        self.parse_in_context(class_name, "class", edges, node.body)
         return edges, class_name
 
     def parse_ImportFrom(self, node):
@@ -412,7 +412,7 @@ class AstGraphGenerator(object):
         return self.generic_parse(node, ["type"])
 
     def parse_Call(self, node):
-        return self.generic_parse(node, ["func", "args","keywords"])
+        return self.generic_parse(node, ["func", "args", "keywords"])
         # edges = []
         # # print("\t\t", ast.dump(node))
         # call_name = self.get_name(node)
@@ -635,7 +635,7 @@ class AstGraphGenerator(object):
         
         # for cond_name, cons_stat in zip(self.current_condition, self.condition_status):
         #     edges.append({"src": expr_name, "dst": cond_name, "type": "depends_on_" + cons_stat})
-        return edges
+        return edges, expr_name
 
     def parse_control_flow(self, node):
         edges = []
@@ -754,8 +754,10 @@ if __name__ == "__main__":
     import sys
     f_bodies = pd.read_csv(sys.argv[1])
     failed = 0
-    for ind, c in enumerate(f_bodies['normalized_body']):
+    for ind, c in enumerate(f_bodies['body_normalized']):
         if isinstance(c, str):
+            c = """def g():
+            yield 1"""
             try:
                 g = AstGraphGenerator(c.lstrip())
             except SyntaxError as e:
