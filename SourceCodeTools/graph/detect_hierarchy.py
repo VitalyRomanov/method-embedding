@@ -72,6 +72,15 @@ class HierarchyDetector:
         self.call_edges = edges.query(f"type == '{edge_types[8]}'")
         self.max_cycle_depth = max_cycle_depth
         self.call_edges_cache = CallEdgesCache()
+        self.call_graph = nx.convert_matrix.from_pandas_edgelist(self.call_edges, source='src', target='dst', create_using=nx.DiGraph)
+        cycles = list(nx.simple_cycles(self.call_graph))
+        self.cycle_neighbours = {}
+        for c in cycles:
+            for n in c:
+                if n not in self.cycle_neighbours:
+                    self.cycle_neighbours[n] = set()
+                self.cycle_neighbours[n].update(c)
+
 
     def assign_initial_hierarchy_level(self):
         only_functions = self.nodes.query(
@@ -101,8 +110,33 @@ class HierarchyDetector:
 
         return local_edges
 
-    def get_cycles(self, edges, start):
-        g = nx.convert_matrix.from_pandas_edgelist(edges, source='src', target='dst', create_using=nx.DiGraph)
+    # def get_cycles(self, edges, start):
+    def get_cycles(self, start, cycle_depth):
+        subgraph_nodes = list(self.call_graph[start].keys()) + [start]
+
+        cycle_dsts = subgraph_nodes
+        for i in range(cycle_depth):
+            new_dsts = []
+            for dst in cycle_dsts:
+                new_dsts.extend(list(self.call_graph[dst].keys()))
+            cycle_dsts = new_dsts
+            subgraph_nodes.extend(new_dsts)
+
+        # g = nx.DiGraph()
+        # g.add_nodes_from((n, self.call_graph.nodes[n]) for n in subgraph_nodes)
+        # g.add_edges_from((n, nbr, d)
+        #       for n, nbrs in self.call_graph.adj.items() if n in subgraph_nodes
+        #       for nbr, d in nbrs.items() if nbr in subgraph_nodes)
+        # g.graph.update(self.call_graph.graph)
+
+        g = self.call_graph.subgraph(subgraph_nodes)
+
+        # if start in self.cycle_neighbours:
+        #     return self.cycle_neighbours[start]
+        # else:
+        #     return None
+
+        # g = nx.convert_matrix.from_pandas_edgelist(edges, source='src', target='dst', create_using=nx.DiGraph)
         try:
             cycle_edges = nx.algorithms.cycles.find_cycle(g, source=start)
             cycle_nodes = set(chain.from_iterable(cycle_edges))
@@ -132,10 +166,11 @@ class HierarchyDetector:
 
                 cycle_nodes = None
                 if detect_cycles:
-                    func_call_neighbourhood = self.get_edges_with_depth(start=func_id, depth=cycle_depth)
-                    cycle_nodes = self.get_cycles(func_call_neighbourhood, start=func_id)
+                    # func_call_neighbourhood = self.get_edges_with_depth(start=func_id, depth=cycle_depth)
+                    # cycle_nodes = self.get_cycles(func_call_neighbourhood, start=func_id)
+                    cycle_nodes = self.get_cycles(start=func_id, cycle_depth=cycle_depth)
 
-                if cycle_nodes is not None:
+                if cycle_nodes is not None:  # break cycles
                     dsts = [dst for dst in dsts if dst not in cycle_nodes]
 
                 destinations = list(dst in function_levels for dst in dsts if dst != func_id)
@@ -165,6 +200,8 @@ class HierarchyDetector:
                 f"\nIteration: {it}, unassigned functions: {len(call_groups)}, "
                 f"maximum level: {max(function_levels.values())}",
                 end="\n")
+
+            detect_cycles = False
 
             if unresolved == len(call_groups):
                 detect_cycles = True
