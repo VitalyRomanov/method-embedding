@@ -77,13 +77,65 @@ class HierarchyDetector:
         self.max_cycle_depth = max_cycle_depth
         self.call_edges_cache = CallEdgesCache()
         self.call_graph = nx.convert_matrix.from_pandas_edgelist(self.call_edges, source='src', target='dst', create_using=nx.DiGraph)
-        # cycles = list(nx.simple_cycles(self.call_graph))
+        self.detect_cycle_groups()
+        print()
         # self.cycle_neighbours = {}
         # for c in cycles:
         #     for n in c:
         #         if n not in self.cycle_neighbours:
         #             self.cycle_neighbours[n] = set()
         #         self.cycle_neighbours[n].update(c)
+
+    def detect_cycle_groups(self):
+        cycles = list(map(set, nx.simple_cycles(self.call_graph)))
+        keep_merging = True
+
+        while keep_merging:
+            merged_cycles = []
+            before_merging = len(cycles)
+
+            while len(cycles) > 1:
+                if cycles[0].isdisjoint(cycles[1]):
+                    merged_cycles.append(cycles.pop(0))
+                else:
+                    merged_cycles.append(cycles.pop(0) | cycles.pop(0))
+            if len(cycles) > 0:
+                merged_cycles.append(cycles.pop(0))
+
+            assert len(cycles) == 0
+
+            after_merging = len(merged_cycles)
+
+            if before_merging == after_merging:
+                keep_merging = False
+
+            cycles = merged_cycles
+
+        # run full overlap scan
+
+        cycle_groups = []
+
+        while len(cycles) > 0:
+
+            current_cycle_group = cycles.pop(0)
+
+            position = 0
+
+            while position < len(cycles):
+                if current_cycle_group.isdisjoint(cycles[position]):
+                    position += 1
+                else:
+                    current_cycle_group |= cycles.pop(position)
+
+            cycle_groups.append(current_cycle_group)
+
+        self.cycle_groups = cycle_groups
+        self.nodes_in_cycles = set()
+
+        for group in self.cycle_groups:
+            self.nodes_in_cycles |= group
+
+
 
 
     def assign_initial_hierarchy_level(self):
@@ -179,6 +231,24 @@ class HierarchyDetector:
             cycle_nodes = None
         return cycle_nodes
 
+    def get_cycle_dsts(self, start):
+        if start in self.nodes_in_cycles:
+            cycle_group = None
+            for group in self.cycle_groups:
+                if start in group:
+                    cycle_group = group
+                    break
+
+            dsts = set()
+            for n in cycle_group:
+                dsts.update(self.get_call_neighbours(n))
+
+            dsts -= cycle_group
+
+            return dsts, cycle_group
+        else:
+            return None, None
+
     def assign_hierarchy_levels(self):
         # only_calls = edges.query(f"type == '{edge_types[8]}'")
 
@@ -190,7 +260,7 @@ class HierarchyDetector:
         it = 0
         unresolved = -1
         detect_cycles = False
-        cycle_depth = 0
+        # cycle_depth = 0
         max_level = 0
 
         while len(call_groups) > 0:
@@ -201,20 +271,26 @@ class HierarchyDetector:
             ):
                 dsts = [dst for dst in func_edges['dst'] if dst != func_id]  # exclude recursive dst
 
-                if cycle_depth >= self.max_cycle_depth:
-                    logging.warning("Maximum cycle depth reached, assigning functions using best guess")
-                    self.call_graph.nodes[func_id]['level'] = max(self.call_graph.nodes[dst]['level'] for dst in dsts if 'level' in self.call_graph.nodes[dst]) + 1
-                    # function_levels[func_id] = max(function_levels[dst] for dst in dsts if dst in function_levels) + 1
-                    continue
+                # if cycle_depth >= self.max_cycle_depth:
+                #     logging.warning("Maximum cycle depth reached, assigning functions using best guess")
+                #     self.call_graph.nodes[func_id]['level'] = max(self.call_graph.nodes[dst]['level'] for dst in dsts if 'level' in self.call_graph.nodes[dst]) + 1
+                #     # function_levels[func_id] = max(function_levels[dst] for dst in dsts if dst in function_levels) + 1
+                #     continue
 
-                cycle_nodes = None
+                cycle_group = None
                 if detect_cycles:
                     # func_call_neighbourhood = self.get_edges_with_depth(start=func_id, depth=cycle_depth)
                     # cycle_nodes = self.get_cycles(func_call_neighbourhood, start=func_id)
-                    cycle_nodes = self.get_cycles(start=func_id, cycle_depth=cycle_depth)
+                    # cycle_nodes = self.get_cycles(start=func_id, cycle_depth=cycle_depth)
+                    cycle_dsts, cycle_group = self.get_cycle_dsts(func_id)
+                    if cycle_dsts is None:
+                        continue
+                    else:
+                        dsts = cycle_dsts
 
-                if cycle_nodes is not None:  # break cycles
-                    dsts = [dst for dst in dsts if dst not in cycle_nodes]
+
+                # if cycle_nodes is not None:  # break cycles
+                #     dsts = [dst for dst in dsts if dst not in cycle_nodes]
 
                 # destinations = list(dst in function_levels for dst in dsts if dst != func_id)
                 destinations = list('level' in self.call_graph.nodes[dst] for dst in dsts if dst != func_id)
@@ -230,8 +306,16 @@ class HierarchyDetector:
                         new_level = max(self.call_graph.nodes[dst]['level'] for dst in dsts if dst != func_id) + 1
                         if new_level > max_level:
                             max_level = new_level
-                        self.call_graph.nodes[func_id]['level'] = new_level
-                        to_pop.append(func_id)
+                        if cycle_group is not None:
+                            nodes_to_assign = cycle_group
+                            assert func_id in cycle_group
+                        else:
+                            nodes_to_assign = [func_id]
+                        for n in nodes_to_assign:
+                            self.call_graph.nodes[n]['level'] = new_level
+                            to_pop.append(n)
+                        # self.call_graph.nodes[func_id]['level'] = new_level
+                        # to_pop.append(func_id)
 
                 # if cycle_nodes is not None and func_id in function_levels:
                 #     for dst in cycle_nodes:
@@ -255,7 +339,7 @@ class HierarchyDetector:
 
             if unresolved == len(call_groups):
                 detect_cycles = True
-                cycle_depth += 1
+                # cycle_depth += 1
 
             unresolved = len(call_groups)
             it += 1
@@ -292,6 +376,22 @@ def main(args):
     #     "call_nodes.parquet")
     # nx.convert_matrix.to_pandas_edgelist(self.call_graph).rename({"source":"source_node_id", "target":"target_node_id"}, axis=1).to_parquet("call_edges.parquet")
 
+    # nodes = pd.read_parquet("call_nodes.parquet")
+    # nodes = nodes.rename({'level': 'type'}, axis=1)
+    # nodes['type'] = nodes['type'].apply(lambda x: f"type_{x}")
+    # nodes['serialized_name'] = ""
+    # nodes.to_pickle("call_nodes.bz2")
+    #
+    # edges = pd.read_parquet("call_edges.parquet")
+    # edges['type'] = edges['appears_in_cycle'].apply(lambda x: "regular" if x is None else "cycle")
+    # edges.to_pickle("call_edges.bz2")
+
+    # pd.DataFrame([{"id": node,
+    #                "type": f"lvl_{self.call_graph.nodes[node]['level'] if 'level' in self.call_graph.nodes[node] else None}",
+    #                "serialized_name": id2name[node]} for node in self.call_graph.nodes]).to_pickle("call_nodes.bz2")
+    # pd.DataFrame([{"source_node_id": e1, "target_node_id": e2, "type": "regular" if "appears_in_cycle" not in self.call_graph.edges[e1, e2] else "cycle"}for e1, e2 in self.call_graph.edges]).to_pickle("call_edges.bz2")
+
+    # match p=shortestPath( (n{id:6028322})-[*1..10]->(e:lvl_None) ) where e.id <> 6028322 return [n IN nodes(p) WHERE 'lvl_None' IN labels(n)]
 
 if __name__ == "__main__":
 
