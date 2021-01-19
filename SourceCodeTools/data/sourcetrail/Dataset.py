@@ -152,6 +152,8 @@ class SourceGraphDataset:
 
         self.add_splits(train_frac=train_frac)
 
+        self.mark_leaf_nodes()
+
         self.create_hetero_graph()
 
         self.update_global_id()
@@ -361,6 +363,11 @@ class SourceGraphDataset:
         nodes, test_edges = ensure_valid_edges(nodes, test)
 
         return nodes, train_edges, test_edges
+
+    def mark_leaf_nodes(self):
+        leaf_types = {'subword', "Op", "Constant", "Name"}  # the last is used in graphs without subwords
+
+        self.nodes['is_leaf'] = self.nodes['type_backup'].apply(lambda type_: type_ in leaf_types)
 
     def load_node_names(self):
         path = join(self.data_path, "node_names.bz2")
