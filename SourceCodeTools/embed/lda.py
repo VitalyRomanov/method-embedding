@@ -106,12 +106,12 @@ class LdaTrainer:
         all_results = []
 
         param_grid = {
-            'num_topics': [50, 100, 150],
+            'num_topics': [50, 100],
             'alpha': ['auto', 'symmetric'],
             'eta': ['auto'],
-            'passes': [5, 10, 15],
-            'decay': [0.55, 0.7, 0.95],
-            'offset': [1, 4, 16]
+            'passes': [15, 20, 30],
+            'decay': [0.55, 0.7],
+            'offset': [16, 32, 64]
         }
 
         for params in ParameterGrid(param_grid):
