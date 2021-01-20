@@ -76,6 +76,8 @@ if __name__ == "__main__":
                              '[multitask]')
     parser.add_argument('--data_path', '-d', dest='data_path', default=None,
                         help='Path to the files')
+    parser.add_argument('--pretrained', '-p', dest='pretrained', default=None,
+                        help='')
     # parser.add_argument('--node_path', '-n', dest='node_path', default=None,
     #                     help='Path to the file with nodes')
     # parser.add_argument('--edge_path', '-e', dest='edge_path', default=None,

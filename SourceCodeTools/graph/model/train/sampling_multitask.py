@@ -61,14 +61,19 @@ class SamplingMultitaskTrainer:
         self._create_loaders(*self._get_training_targets())
 
         if pretrained_embeddings_path is not None:
-            self.load_pretrained(pretrained_embeddings_path)
+            self.load_pretrained(dataset, pretrained_embeddings_path)
 
-    def load_pretrained(self, path):
+    def load_pretrained(self, dataset, path):
         from SourceCodeTools.embed.fasttext import load_w2v_map
 
         embedder = load_w2v_map(path)
 
-        pretrained_nodes = self.nodes[self.nodes["is_leaf"]][['global_id', 'name']]
+        pretrained_nodes = dataset.nodes[dataset.nodes["is_leaf"]][['global_graph_id', 'type_backup', 'name']]
+
+        name2graph_id = dict(zip(pretrained_nodes['name'], pretrained_nodes['global_graph_id']))
+
+
+
         print()
 
 
@@ -644,7 +649,8 @@ def training_procedure(
         model_params=model_params,
         trainer_params=trainer_params,
         restore=args.restore_state,
-        device=device
+        device=device,
+        pretrained_embeddings_path=args.pretrained
     )
 
     try:
