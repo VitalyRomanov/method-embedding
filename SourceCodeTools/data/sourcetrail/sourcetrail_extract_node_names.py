@@ -14,15 +14,16 @@ def extract_node_names(nodes, min_count):
 
 
     # some cells are empty, probably because of empty strings in AST
-    data = nodes.dropna(axis=0)
-    data = data[data['type'] != 262144]
+    # data = nodes.dropna(axis=0)
+    # data = data[data['type'] != 262144]
+    data = nodes
     data['src'] = data['id']
     data['dst'] = data['serialized_name'].apply(get_node_name)
 
     counts = data['dst'].value_counts()
 
     data['counts'] = data['dst'].apply(lambda x: counts[x])
-    data = data.query(f"counts > {min_count}")
+    data = data.query(f"counts >= {min_count}")
 
     if len(data) > 0:
         return data[['src', 'dst']]
