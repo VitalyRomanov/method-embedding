@@ -21,7 +21,8 @@ class SamplingMultitaskTrainer:
 
     def __init__(self,
                  dataset=None, model_name=None, model_params=None,
-                 trainer_params=None, restore=None, device=None
+                 trainer_params=None, restore=None, device=None,
+                 pretrained_embeddings_path=None
                  ):
 
         self.graph_model = model_name(dataset.g, **model_params).to(device)
@@ -58,6 +59,18 @@ class SamplingMultitaskTrainer:
         self.best_score = BestScoreTracker()
 
         self._create_loaders(*self._get_training_targets())
+
+        if pretrained_embeddings_path is not None:
+            self.load_pretrained(pretrained_embeddings_path)
+
+    def load_pretrained(self, path):
+        from SourceCodeTools.embed.fasttext import load_w2v_map
+
+        embedder = load_w2v_map(path)
+
+        pretrained_nodes = self.nodes[self.nodes["is_leaf"]][['global_id', 'name']]
+        print()
+
 
     @property
     def lr(self):
