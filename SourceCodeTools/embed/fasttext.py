@@ -112,6 +112,31 @@ def export_w2v_for_tensorboard(embs_path, tb_meta_path, tb_embs_path, sep = "\t"
                     tb_embs.write(f"{sep.join(e_[1:])}")
 
 
+def load_w2v_map(w2v_path):
+    """
+    Load embeddings for words in w2v txt format
+    :param w2v_path:
+    :return: Embedder
+    """
+    embs = []
+    w_map = dict()
+
+    with open(w2v_path) as w2v:
+        n_vectors, n_dims = map(int, w2v.readline().strip().split())
+        for ind in range(n_vectors):
+            e = w2v.readline().strip().split()
+
+            word = e[0]
+            w_map[word] = len(w_map)
+
+            embs.append(list(map(float, e[1:])))
+
+    from SourceCodeTools.graph.model.Embedder import Embedder
+    import numpy as np
+
+    return Embedder(w_map, np.array(embs))
+
+
 def main():
     parser = argparse.ArgumentParser(description='Train word vectors')
     parser.add_argument('input_file', type=str, default=150, help='Path to text file')
