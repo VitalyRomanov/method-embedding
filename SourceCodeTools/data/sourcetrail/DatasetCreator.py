@@ -47,7 +47,7 @@ class DatasetCreator:
 
         if not self.only_with_annotations:
             self.create_global_file("nodes.bz2", "local2global.bz2", ['id'],
-                                    join(no_ast_path, "common_nodes.bz2"), message="Merging nodes")
+                                    join(no_ast_path, "common_nodes.bz2"), message="Merging nodes", ensure_unique_with=['type', 'serialized_name'])
             self.create_global_file("edges.bz2", "local2global.bz2", ['target_node_id', 'source_node_id'],
                                     join(no_ast_path, "common_edges.bz2"), message="Merging edges")
             self.create_global_file("source_graph_bodies.bz2", "local2global.bz2", ['id'],
@@ -67,7 +67,7 @@ class DatasetCreator:
             persist(node_names, join(no_ast_path, "node_names.bz2"))
 
         self.create_global_file("nodes_with_ast.bz2", "local2global_with_ast.bz2", ['id', 'mentioned_in'],
-                                join(with_ast_path, "common_nodes.bz2"), message="Merging nodes with ast")
+                                join(with_ast_path, "common_nodes.bz2"), message="Merging nodes with ast", ensure_unique_with=['type', 'serialized_name'])
         self.create_global_file("edges_with_ast.bz2", "local2global_with_ast.bz2", ['target_node_id', 'source_node_id', 'mentioned_in'],
                                 join(with_ast_path, "common_edges.bz2"), "Merging edges with ast")
         self.create_global_file("source_graph_bodies.bz2", "local2global_with_ast.bz2", ['id'],
@@ -225,13 +225,13 @@ class DatasetCreator:
 
         return global_nodes
 
-    def merge_files(self, env_path, filename, map_filename, columns_to_map, original, full_merge=False):
+    def merge_files(self, env_path, filename, map_filename, columns_to_map, original):
         input_table_path = join(env_path, filename)
         local2global = self.get_local2global(join(env_path, map_filename))
         if os.path.isfile(input_table_path) and local2global is not None:
             input_table = unpersist(input_table_path)
             if self.only_with_annotations:
-                if not os.path.isfile(join(env_path, "has_annotations")) and not full_merge:
+                if not os.path.isfile(join(env_path, "has_annotations")):
                     return original
             new_table = map_columns(input_table, local2global, columns_to_map)
             if original is None:
@@ -241,17 +241,22 @@ class DatasetCreator:
         else:
             return original
 
-    def create_global_file(self, local_file, local2global_file, columns, output_path, message, full_merge=False):
+    def create_global_file(self, local_file, local2global_file, columns, output_path, message, ensure_unique_with=None):
         global_table = None
         for ind, env_path in tqdm(
                 enumerate(self.environments), desc=message, leave=True,
                 dynamic_ncols=True, total=len(self.environments)
         ):
             global_table = self.merge_files(
-                env_path, local_file, local2global_file, columns, global_table, full_merge=full_merge
+                env_path, local_file, local2global_file, columns, global_table
             )
-            # print(f"{ind}/{len(self.environments)}", end="\r")
-        # print(" "*30, end="\r")
+
+        if ensure_unique_with is not None:
+            global_table = global_table.drop_duplicates(subset=ensure_unique_with)
+
+        global_table.reset_index(drop=True, inplace=True)
+        assert len(global_table) == len(global_table.index.unique())
+
         persist(global_table, output_path)
 
     def filter_orphaned_nodes(self, global_nodes, output_dir):
