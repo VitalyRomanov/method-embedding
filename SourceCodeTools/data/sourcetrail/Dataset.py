@@ -374,11 +374,11 @@ class SourceGraphDataset:
         return unpersist(path)
 
     def load_var_use(self):
-        path = join(self.data_path, "common-function-variable-pairs.bz2")
+        path = join(self.data_path, "common_function_variable_pairs.bz2")
         return unpersist(path)
 
     def load_api_call(self):
-        path = join(self.data_path, "common-call-seq.bz2")
+        path = join(self.data_path, "common_call_seq.bz2")
         return unpersist(path)
 
 
