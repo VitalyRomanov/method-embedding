@@ -42,7 +42,9 @@ out_path = sys.argv[4]
 
 nodes, edges = load_data(nodes_path, edges_path)
 
-splits = get_train_val_test_indices(nodes.index)
+# splits = get_train_val_test_indices(nodes.index)
+from SourceCodeTools.data.sourcetrail.sourcetrail_types import node_types
+splits = get_train_val_test_indices(nodes.query(f"type_backup == '{node_types[4096]}'").index)
 
 id_map, vecs = load_w2v(emb_path)
 
@@ -63,6 +65,9 @@ torch.save(
     },
     os.path.join(out_path, "state_dict.pt")
 )
+
+from SourceCodeTools.data.sourcetrail.Dataset import create_train_val_test_masks
+create_train_val_test_masks(nodes, *splits)
 
 nodes.to_csv(os.path.join(out_path, "nodes.csv"), index=False)
 edges.to_csv(os.path.join(out_path, "edges.csv"), index=False)

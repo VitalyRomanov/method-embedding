@@ -6,6 +6,8 @@ from os.path import join
 
 from SourceCodeTools.data.sourcetrail.file_utils import *
 from SourceCodeTools.common import compact_property
+from SourceCodeTools.data.sourcetrail.sourcetrail_types import node_types
+from SourceCodeTools.data.sourcetrail.sourcetrail_extract_node_names import extract_node_names
 
 
 def load_data(node_path, edge_path):
@@ -36,19 +38,20 @@ def create_mask(size, idx):
 
 def create_train_val_test_masks(nodes, train_idx, val_idx, test_idx):
     nodes['train_mask'] = False
-    nodes.loc[nodes.index[train_idx], 'train_mask'] = True
+    nodes.loc[train_idx, 'train_mask'] = True
     nodes['val_mask'] = False
-    nodes.loc[nodes.index[val_idx], 'val_mask'] = True
+    nodes.loc[val_idx, 'val_mask'] = True
     nodes['test_mask'] = False
-    nodes.loc[nodes.index[test_idx], 'test_mask'] = True
+    nodes.loc[test_idx, 'test_mask'] = True
 
 
-def get_train_val_test_indices(labels, train_frac=0.6, random_seed=None):
+def get_train_val_test_indices(indices, train_frac=0.6, random_seed=None):
     if random_seed is not None:
         numpy.random.seed(random_seed)
         logging.warning("Random state for splitting dataset is fixed")
 
-    indices = numpy.arange(start=0, stop=labels.size)
+    indices = indices.to_numpy()
+
     numpy.random.shuffle(indices)
 
     train = int(indices.size * train_frac)
@@ -115,8 +118,8 @@ class SourceGraphDataset:
 
         self.nodes, self.edges = load_data(nodes_path, edges_path)
 
-        # self.compress_node_types()
-        # self.compress_edge_types()
+        assert len(self.nodes) == len(self.nodes.index.unique())
+        assert len(self.edges) == len(self.edges.index.unique())
 
         if self_loops:
             self.nodes, self.edges = SourceGraphDataset.assess_need_for_self_loops(self.nodes, self.edges)
@@ -143,8 +146,8 @@ class SourceGraphDataset:
 
         assert any(pandas.isna(self.nodes['label'])) is False
 
-        logging.info(f"Unique node types in the graph: {len(self.nodes['type'].unique())}")
-        logging.info(f"Unique edge types in the graph: {len(self.edges['type'].unique())}")
+        logging.info(f"Unique nodes: {len(self.nodes)}, node types: {len(self.nodes['type'].unique())}")
+        logging.info(f"Unique edges: {len(self.edges)}, edge types: {len(self.edges['type'].unique())}")
 
         self.nodes, self.label_map = self.add_compact_labels()
         self.nodes, self.typed_id_map = self.add_typed_ids()
@@ -191,7 +194,12 @@ class SourceGraphDataset:
 
     def add_splits(self, train_frac):
 
-        splits = get_train_val_test_indices(self.nodes.index, train_frac=train_frac, random_seed=self.random_seed)
+        # now take only nodes that represent functions. need to add functionality to use classes
+        # and variables
+        splits = get_train_val_test_indices(
+            self.nodes.query(f"type_backup == '{node_types[4096]}'").index,
+            train_frac=train_frac, random_seed=self.random_seed
+        )
 
         create_train_val_test_masks(self.nodes, *splits)
 
@@ -370,8 +378,14 @@ class SourceGraphDataset:
         self.nodes['is_leaf'] = self.nodes['type_backup'].apply(lambda type_: type_ in leaf_types)
 
     def load_node_names(self):
-        path = join(self.data_path, "node_names.bz2")
-        return unpersist(path)
+        for_training = self.nodes[self.nodes['train_mask']][['id', 'type_backup', 'name']]\
+            .rename({"name": "serialized_name", "type_backup": "type"}, axis=1)
+
+        node_names = extract_node_names(for_training, 2)
+
+        return node_names
+        # path = join(self.data_path, "node_names.bz2")
+        # return unpersist(path)
 
     def load_var_use(self):
         path = join(self.data_path, "common_function_variable_pairs.bz2")
