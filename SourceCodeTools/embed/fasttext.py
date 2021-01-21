@@ -139,6 +139,12 @@ def load_w2v_map(w2v_path):
     return Embedder(w_map, np.array(embs))
 
 
+def char_ngram_window(x, gram_size):
+    x = "<" + x + ">"
+    length = len(x)
+    return (x[i:i + gram_size] for i in range(0, length) if i+gram_size<=length)
+
+
 def main():
     parser = argparse.ArgumentParser(description='Train word vectors')
     parser.add_argument('input_file', type=str, default=150, help='Path to text file')
