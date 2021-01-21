@@ -63,14 +63,93 @@ class SamplingMultitaskTrainer:
         if pretrained_embeddings_path is not None:
             self.load_pretrained(dataset, pretrained_embeddings_path)
 
-    def load_pretrained(self, dataset, path):
+    def create_node_embedder(self, dataset, n_dims=None, pretrained_path=None):
         from SourceCodeTools.embed.fasttext import load_w2v_map
 
-        embedder = load_w2v_map(path)
+        if pretrained_path is not None:
+            pretrained = load_w2v_map(pretrained_path)
+        else:
+            pretrained = None
 
-        pretrained_nodes = dataset.nodes[dataset.nodes["is_leaf"]][['global_graph_id', 'type_backup', 'name']]
+        if pretrained_path is None and n_dims is None:
+            raise ValueError(f"Specify embedding dimensionality or provide pretrained embeddings")
+        elif pretrained_path is not None and n_dims is not None:
+            assert n_dims == pretrained.n_dims, f"Requested embedding size and pretrained embedding size should match: {n_dims} != {pretrained.n_dims}"
+
+        if pretrained is not None:
+            logging.info(f"Loading pretrained embeddings...")
+        logging.info(f"Input embedding size is {n_dims}")
+
+        leaf_types = {'subword', "Op", "Constant", "Name"}
+
+        nodes_with_embeddings = dataset.nodes[
+            dataset.nodes['type_backup'].apply(lambda type_: type_ in leaf_types)
+        ][['global_graph_id', 'type_backup', 'name']]
+
+        class NodeEmbedder(nn.Module):
+            def __init__(self, nodes, pretrained=None):
+                super(NodeEmbedder, self).__init__()
+
+        # create matrix for pretrained embeddings
+        graph_id_to_name = dict(zip(nodes_with_embeddings['global_graph_id'], nodes_with_embeddings['name']))
+
+        def is_pretrained(node_global_id: int):
+            node_name = graph_id_to_name.get(node_global_id, None)
+            if node_name is None:
+                return False
+            if node_name in pretrained:
+                return True
+            else:
+                return False
+
+
+
+
+
+        # unique types:
 
         name2graph_id = dict(zip(pretrained_nodes['name'], pretrained_nodes['global_graph_id']))
+
+        pretrained_graph_nodes = []
+        pretrained_embeddings = []
+
+        import numpy as np
+
+        # copy subwords
+        for subword in name2graph_id:
+            if subword in embedder.ind:
+                embedding = embedder[subword]
+            else:
+                embedding = np.random.randn(n_dims)
+            pretrained_embeddings.append(embedding)
+            pretrained_graph_nodes.append(name2graph_id[subword])
+
+        # copy op names
+        from SourceCodeTools.embed.python_op_to_bpe_subwords import python_ops_to_bpe
+
+        for op_name in python_ops_to_bpe:
+            embedding = None
+
+            if op_name in name2graph_id:
+                op = python_ops_to_bpe[op_name]
+                if isinstance(op, list):
+                    for e in op:
+                        if e in embedder:
+                            if embedding is None:
+                                embedding = embedder[e]
+                            else:
+                                embedding += embedder[e]
+                else:
+                    if op in embedder:
+                        embedding = embedder[op]
+
+
+            if embedding is None:
+                embedding = np.random.randn(n_dims)
+
+            pretrained_embeddings.append(embedding)
+            pretrained_graph_nodes.append(op_name)
+
 
 
 
