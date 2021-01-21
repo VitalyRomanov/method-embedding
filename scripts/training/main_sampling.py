@@ -80,6 +80,8 @@ if __name__ == "__main__":
                         help='')
     parser.add_argument('--tokenizer', '-t', dest='tokenizer', default=None,
                         help='')
+    parser.add_argument('--pretraining_phase', dest='pretraining_phase', default=5,
+                        help='')
     # parser.add_argument('--node_path', '-n', dest='node_path', default=None,
     #                     help='Path to the file with nodes')
     # parser.add_argument('--edge_path', '-e', dest='edge_path', default=None,
