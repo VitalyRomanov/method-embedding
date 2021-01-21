@@ -9,7 +9,7 @@ from time import time
 from os.path import join
 import logging
 
-from SourceCodeTools.graph.model.train.utils import create_elem_embedder, BestScoreTracker
+from SourceCodeTools.graph.model.train.utils import BestScoreTracker  # create_elem_embedder
 from SourceCodeTools.graph.model.LinkPredictor import LinkPredictor
 from SourceCodeTools.embed import token_hasher
 
@@ -48,6 +48,8 @@ class NodeEmbedder(nn.Module):
             type_name
         ))
 
+        assert len(nodes_with_embeddings) == len(self.node_info)
+
         self.node_info_global = dict(zip(
             nodes_with_embeddings['global_graph_id'],
             type_name
@@ -60,16 +62,17 @@ class NodeEmbedder(nn.Module):
             self._create_pretrained_embeddings(nodes_with_embeddings, pretrained)
 
         self._create_zero_embedding()
-        self.init_tokenizer(tokenizer_path)
+        self._init_tokenizer(tokenizer_path)
 
     def _create_zero_embedding(self):
-        self.zero = torch.zeros((self.emb_size, ))
+        self.zero = torch.zeros((self.emb_size, ), requires_grad=False)
 
     def _create_pretrained_embeddings(self, nodes, pretrained):
         # self.graph_id_to_pretrained_name = dict(zip(nodes['global_graph_id'], nodes['name']))
         self.pretrained_name_to_ind = pretrained.ind
         embed = nn.Parameter(torch.tensor(pretrained.e, dtype=self.dtype))
-        nn.init.xavier_uniform_(embed, gain=nn.init.calculate_gain('relu'))
+        # nn.init.xavier_uniform_(embed, gain=nn.init.calculate_gain('relu'))
+        nn.init.xavier_normal_(embed)
         self.pretrained_embeddings = embed
 
     def _create_ops_tokenization(self, nodes_with_embeddings):
@@ -80,16 +83,17 @@ class NodeEmbedder(nn.Module):
 
     def _create_buckets(self):
         embed = nn.Parameter(torch.Tensor(self.n_buckets, self.emb_size))
-        nn.init.xavier_uniform_(embed, gain=nn.init.calculate_gain('relu'))
+        # nn.init.xavier_uniform_(embed, gain=nn.init.calculate_gain('relu'))
+        nn.init.xavier_normal_(embed)
         self.buckets = embed
 
-    def init_tokenizer(self, tokenizer_path):
+    def _init_tokenizer(self, tokenizer_path):
         from SourceCodeTools.embed.bpe import load_bpe_model, make_tokenizer
         self.bpe_tokenizer = make_tokenizer(load_bpe_model(tokenizer_path))
         from SourceCodeTools.embed.python_op_to_bpe_subwords import op_tokenizer
         self.op_tokenizer = op_tokenizer
 
-    def tokenize(self, type_, name):
+    def _tokenize(self, type_, name):
         tokenized = None
         if type_ == "Op":
             try_tokenized = self.op_tokenizer(name)
@@ -100,22 +104,22 @@ class NodeEmbedder(nn.Module):
             tokenized = self.bpe_tokenizer(name)
         return tokenized
 
-    def get_pretrained_or_none(self, name):
+    def _get_pretrained_or_none(self, name):
         if self.pretrained_name_to_ind is not None and name in self.pretrained_name_to_ind:
             return self.pretrained_embeddings[self.pretrained_name_to_ind[name], :]
         else:
             return None
 
-    def get_from_buckets(self, name):
+    def _get_from_buckets(self, name):
         return self.buckets[token_hasher(name, self.n_buckets), :]
 
-    def get_from_tokenized(self, type_, name):
-        tokens = self.tokenize(type_, name)
+    def _get_from_tokenized(self, type_, name):
+        tokens = self._tokenize(type_, name)
         embedding = None
         for token in tokens:
-            token_emb = self.get_pretrained_or_none(token)
+            token_emb = self._get_pretrained_or_none(token)
             if token_emb is None:
-                token_emb = self.get_from_buckets(token)
+                token_emb = self._get_from_buckets(token)
 
             if embedding is None:
                 embedding = token_emb
@@ -123,37 +127,46 @@ class NodeEmbedder(nn.Module):
                 embedding = embedding + token_emb
         return embedding
 
-    def get_embedding(self, type_id, node_info):
-        embedding = None
+    def _get_embedding(self, type_id, node_info):
         if type_id in node_info:
             real_type, name = self.node_info[type_id]
-            # if real_type in self.leaf_types:
-                # it is already in leaf type
-            embedding = self.get_pretrained_or_none(name)
+            embedding = self._get_pretrained_or_none(name)
 
             if embedding is None:
-                embedding = self.get_from_tokenized(real_type, name)
-            # else:
-            #     embedding = self.zero
+                embedding = self._get_from_tokenized(real_type, name)
         else:
             embedding = self.zero
 
         return embedding
 
-    def get_embeddings(self, node_type, ids):
+    def _get_embeddings_with_type(self, node_type, ids):
         embeddings = []
         for id_ in ids:
             type_id = (node_type, id_)
-            embeddings.append(self.get_embedding(type_id, self.node_info))
+            embeddings.append(self._get_embedding(type_id, self.node_info))
         embeddings = torch.stack(embeddings)
         return embeddings
 
-    def get_embeddings_global(self, ids):
+    def _get_embeddings_global(self, ids):
         embeddings = []
         for global_id in ids:
-            embeddings.append(self.get_embedding(global_id, self.node_info_global))
+            embeddings.append(self._get_embedding(global_id, self.node_info_global))
         embeddings = torch.stack(embeddings)
         return embeddings
+
+    def get_embeddings(self, node_type=None, node_ids=None):
+        assert node_ids is not None
+        if node_type is None:
+            return self._get_embeddings_global(node_ids)
+        else:
+            return self._get_embeddings_with_type(node_type, node_ids)
+
+    def forward(self, node_type=None, node_ids=None, train_embeddings=True):
+        if train_embeddings:
+            return self.get_embeddings(node_type, node_ids.tolist())
+        else:
+            with torch.set_grad_enabled(False):
+                return self.get_embeddings(node_type, node_ids.tolist())
 
 
 class SamplingMultitaskTrainer:
@@ -172,20 +185,38 @@ class SamplingMultitaskTrainer:
         self.epoch = 0
         self.dtype = torch.float32
 
-        self.ee_node_name = create_elem_embedder(
-            dataset.load_node_names(), dataset.nodes,
-            self.elem_emb_size, compact_dst=True
+        # self.ee_node_name = create_elem_embedder(
+        #     dataset.load_node_names(), dataset.nodes,
+        #     self.elem_emb_size, compact_dst=True
+        # ).to(device)
+        #
+        # self.ee_var_use = create_elem_embedder(
+        #     dataset.load_var_use(), dataset.nodes,
+        #     self.elem_emb_size, compact_dst=True
+        # ).to(device)
+        #
+        # self.ee_api_call = create_elem_embedder(
+        #     dataset.load_api_call(), dataset.nodes,
+        #     self.elem_emb_size, compact_dst=False
+        # ).to(device)
+
+        from SourceCodeTools.graph.model.ElementEmbedder import ElementEmbedderWithBpeSubwords
+        self.ee_node_name = ElementEmbedderWithBpeSubwords(
+            elements=dataset.load_node_names(), nodes=dataset.nodes, emb_size=self.elem_emb_size,
+            tokenizer_path=tokenizer_path
         ).to(device)
 
-        self.ee_var_use = create_elem_embedder(
-            dataset.load_var_use(), dataset.nodes,
-            self.elem_emb_size, compact_dst=True
+        self.ee_var_use = ElementEmbedderWithBpeSubwords(
+            elements=dataset.load_var_use(), nodes=dataset.nodes, emb_size=self.elem_emb_size,
+            tokenizer_path=tokenizer_path
         ).to(device)
 
-        self.ee_api_call = create_elem_embedder(
-            dataset.load_api_call(), dataset.nodes,
-            self.elem_emb_size, compact_dst=False
-        ).to(device)
+        from SourceCodeTools.graph.model.ElementEmbedderBase import ElementEmbedderBase
+        self.ee_api_call = ElementEmbedderBase(
+            elements=dataset.load_api_call(), nodes=dataset.nodes, compact_dst=False
+        )
+
+
 
         self.lp_node_name = LinkPredictor(self.ee_node_name.emb_size + self.graph_model.emb_size).to(device)
         self.lp_var_use = LinkPredictor(self.ee_var_use.emb_size + self.graph_model.emb_size).to(device)
@@ -215,18 +246,32 @@ class SamplingMultitaskTrainer:
         if pretrained_path is None and n_dims is None:
             raise ValueError(f"Specify embedding dimensionality or provide pretrained embeddings")
         elif pretrained_path is not None and n_dims is not None:
-            assert n_dims == pretrained.n_dims, f"Requested embedding size and pretrained embedding size should match: {n_dims} != {pretrained.n_dims}"
+            assert n_dims == pretrained.n_dims, f"Requested embedding size and pretrained embedding " \
+                                                f"size should match: {n_dims} != {pretrained.n_dims}"
+        elif pretrained_path is not None and n_dims is None:
+            n_dims = pretrained.n_dims
 
         if pretrained is not None:
             logging.info(f"Loading pretrained embeddings...")
         logging.info(f"Input embedding size is {n_dims}")
 
-        node_embedder = NodeEmbedder(dataset, n_dims, tokenizer_path=tokenizer_path, dtype=self.dtype, pretrained=pretrained)
+        self.node_embedder = NodeEmbedder(
+            dataset=dataset,
+            emb_size=n_dims,
+            tokenizer_path=tokenizer_path,
+            dtype=self.dtype,
+            pretrained=pretrained
+        )
 
-        print()
+        # node_embedder.get_embeddings("node_", [0])
+        # node_embedder.get_embeddings("node_", [13749])
+        # node_embedder.get_embeddings("node_", [13754])
 
+        # node_, 0 matplotlib
+        # node_ 13749        Renderer
+        # node_  13754 ▁renderer
 
-
+        # print()
 
     @property
     def lr(self):
@@ -268,10 +313,23 @@ class SamplingMultitaskTrainer:
     def model_base_path(self):
         return self.trainer_params['model_base_path']
 
-    def _extract_embed(self, node_embed, input_nodes):
+    @property
+    def pretraining(self):
+        return self.epoch >= self.trainer_params['pretraining_phase']
+
+    # def _extract_embed(self, node_embed, input_nodes):
+    #     emb = {}
+    #     for node_type, nid in input_nodes.items():
+    #         emb[node_type] = node_embed[node_type][nid]
+    #     return emb
+
+    def _extract_embed(self, input_nodes):
         emb = {}
         for node_type, nid in input_nodes.items():
-            emb[node_type] = node_embed[node_type][nid]
+            emb[node_type] = self.node_embedder(
+                node_type=node_type, node_ids=nid,
+                train_embeddings=self.pretraining
+            )
         return emb
 
     def _logits_batch(self, input_nodes, blocks):
@@ -279,15 +337,18 @@ class SamplingMultitaskTrainer:
         cumm_logits = []
 
         if self.use_types:
-            emb = self._extract_embed(self.graph_model.node_embed(), input_nodes)
+            # emb = self._extract_embed(self.graph_model.node_embed(), input_nodes)
+            emb = self._extract_embed(input_nodes)
         else:
             if self.ntypes is not None:
                 # single node type
                 key = next(iter(self.ntypes))
                 input_nodes = {key: input_nodes}
-                emb = self._extract_embed(self.graph_model.node_embed(), input_nodes)
+                # emb = self._extract_embed(self.graph_model.node_embed(), input_nodes)
+                emb = self._extract_embed(input_nodes)
             else:
-                emb = self.graph_model.node_embed()[input_nodes]
+                emb = self.node_embedder(node_ids=input_nodes, train_embeddings=self.pretraining)
+                # emb = self.graph_model.node_embed()[input_nodes]
 
         logits = self.graph_model(emb, blocks)
 
@@ -323,8 +384,8 @@ class SamplingMultitaskTrainer:
         labels_pos = torch.ones(batch_size, dtype=torch.long)
 
         node_embeddings_neg_batch = node_embeddings_batch.repeat(k, 1)
-        negative_indices = torch.LongTensor(elem_embedder.sample_negative(batch_size * k)).to(self.device)
-        negative_random = elem_embedder(negative_indices)
+        negative_random = elem_embedder(elem_embedder.sample_negative(batch_size * k).to(self.device))
+
         negative_batch = torch.cat([node_embeddings_neg_batch, negative_random], 1)
         labels_neg = torch.zeros(batch_size * k, dtype=torch.long)
 
@@ -354,13 +415,13 @@ class SamplingMultitaskTrainer:
 
         # dst targets are not unique
         unique_dst, slice_map = self._handle_non_unique(next_call_indices)
-        assert all(unique_dst[slice_map] == next_call_indices)
+        assert unique_dst[slice_map].tolist() == next_call_indices.tolist()
 
         dataloader = create_dataloader(unique_dst)
         input_nodes, dst_seeds, blocks = next(iter(dataloader))
         blocks = [blk.to(self.device) for blk in blocks]
         assert dst_seeds.shape == unique_dst.shape
-        assert all(dst_seeds == unique_dst)
+        assert dst_seeds.tolist() == unique_dst.tolist()
         unique_dst_embeddings = self._logits_batch(input_nodes, blocks)  # use_types, ntypes)
         next_call_embeddings = unique_dst_embeddings[slice_map.to(self.device)]
         positive_batch = torch.cat([node_embeddings_batch, next_call_embeddings], 1)
@@ -370,13 +431,13 @@ class SamplingMultitaskTrainer:
         negative_indices = torch.tensor(elem_embedder.sample_negative(
             batch_size * k), dtype=torch.long)  # embeddings are sampled from 3/4 unigram distribution
         unique_negative, slice_map = self._handle_non_unique(negative_indices)
-        assert all(unique_negative[slice_map] == negative_indices)
+        assert unique_negative[slice_map].tolist() == negative_indices.tolist()
 
         dataloader = create_dataloader(unique_negative)
         input_nodes, dst_seeds, blocks = next(iter(dataloader))
         blocks = [blk.to(self.device) for blk in blocks]
         assert dst_seeds.shape == unique_negative.shape
-        assert all(dst_seeds == unique_negative)
+        assert dst_seeds.tolist() == unique_negative.tolist()
         unique_negative_random = self._logits_batch(input_nodes, blocks)  # use_types, ntypes)
         negative_random = unique_negative_random[slice_map.to(self.device)]
         negative_batch = torch.cat([node_embeddings_neg_batch, negative_random], 1)
@@ -594,7 +655,7 @@ class SamplingMultitaskTrainer:
                 {'params': self.graph_model.parameters()},
                 {'params': self.ee_node_name.parameters()},
                 {'params': self.ee_var_use.parameters()},
-                {'params': self.ee_api_call.parameters()},
+                # {'params': self.ee_api_call.parameters()},
                 {'params': self.lp_node_name.parameters()},
                 {'params': self.lp_var_use.parameters()},
                 {'params': self.lp_api_call.parameters()},
@@ -681,10 +742,10 @@ class SamplingMultitaskTrainer:
             'graph_model': self.graph_model.state_dict(),
             'ee_node_name': self.ee_node_name.state_dict(),
             'ee_var_use': self.ee_var_use.state_dict(),
-            'ee_api_call': self.ee_api_call.state_dict(),
+            # 'ee_api_call': self.ee_api_call.state_dict(),
             "lp_node_name": self.lp_node_name.state_dict(),
             "lp_var_use": self.lp_var_use.state_dict(),
-            "lp_api_call": self.ee_api_call.state_dict(),
+            "lp_api_call": self.lp_api_call.state_dict(),
             "epoch": self.epoch
         }
 
@@ -698,7 +759,7 @@ class SamplingMultitaskTrainer:
         self.graph_model.load_state_dict(checkpoint['graph_model'])
         self.ee_node_name.load_state_dict(checkpoint['ee_node_name'])
         self.ee_var_use.load_state_dict(checkpoint['ee_var_use'])
-        self.ee_api_call.load_state_dict(checkpoint['ee_api_call'])
+        # self.ee_api_call.load_state_dict(checkpoint['ee_api_call'])
         self.lp_node_name.load_state_dict(checkpoint['lp_node_name'])
         self.lp_var_use.load_state_dict(checkpoint['lp_var_use'])
         self.lp_api_call.load_state_dict(checkpoint['lp_api_call'])
@@ -749,7 +810,7 @@ class SamplingMultitaskTrainer:
         self.graph_model.eval()
         self.ee_node_name.eval()
         self.ee_var_use.eval()
-        self.ee_api_call.eval()
+        # self.ee_api_call.eval()
         self.lp_node_name.eval()
         self.lp_var_use.eval()
         self.lp_api_call.eval()
@@ -758,7 +819,7 @@ class SamplingMultitaskTrainer:
         # self.graph_model.to(device)
         self.ee_node_name.to(device)
         self.ee_var_use.to(device)
-        self.ee_api_call.to(device)
+        # self.ee_api_call.to(device)
         self.lp_node_name.to(device)
         self.lp_var_use.to(device)
         self.lp_api_call.to(device)
@@ -791,7 +852,8 @@ def training_procedure(
         # 'var_use_file': args.varuse_file,
         # 'call_seq_file': args.call_seq_file,
         'elem_emb_size': args.elem_emb_size,
-        'model_base_path': model_base_path
+        'model_base_path': model_base_path,
+        'pretraining_phase': args.pretraining_phase
     }
 
     trainer = SamplingMultitaskTrainer(
