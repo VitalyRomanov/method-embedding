@@ -5,8 +5,8 @@ from spacy.gold import biluo_tags_from_offsets, offsets_from_biluo_tags
 
 import hashlib
 
-def el_hash(el, buckets):
-    return int(hashlib.md5(el.encode('utf-8')).hexdigest(), 16) % buckets
+# def el_hash(el, buckets):
+#     return int(hashlib.md5(el.encode('utf-8')).hexdigest(), 16) % buckets
 
 def custom_tokenizer(nlp):
     prefix_re = re.compile(r"^[^\w\s]")
