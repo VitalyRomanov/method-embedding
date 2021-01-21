@@ -378,10 +378,12 @@ class SourceGraphDataset:
         self.nodes['is_leaf'] = self.nodes['type_backup'].apply(lambda type_: type_ in leaf_types)
 
     def load_node_names(self):
-        for_training = self.nodes[self.nodes['train_mask']][['id', 'type_backup', 'name']]\
+        for_training = self.nodes[
+            self.nodes['train_mask'] + self.nodes['test_mask'] + self.nodes['val_mask']
+        ][['id', 'type_backup', 'name']]\
             .rename({"name": "serialized_name", "type_backup": "type"}, axis=1)
 
-        node_names = extract_node_names(for_training, 2)
+        node_names = extract_node_names(for_training, 1)
 
         return node_names
         # path = join(self.data_path, "node_names.bz2")
