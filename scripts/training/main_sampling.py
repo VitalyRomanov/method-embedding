@@ -35,7 +35,7 @@ def main(models, args):
                     from SourceCodeTools.graph.model.train.sampling_multitask import training_procedure
 
                 trainer, scores = \
-                    training_procedure(dataset, model, params, args.epochs, args, model_base)
+                    training_procedure(dataset, model, params, args, model_base)
 
                 trainer.save_checkpoint(model_base)
             else:
@@ -77,6 +77,8 @@ if __name__ == "__main__":
     parser.add_argument('--data_path', '-d', dest='data_path', default=None,
                         help='Path to the files')
     parser.add_argument('--pretrained', '-p', dest='pretrained', default=None,
+                        help='')
+    parser.add_argument('--tokenizer', '-t', dest='tokenizer', default=None,
                         help='')
     # parser.add_argument('--node_path', '-n', dest='node_path', default=None,
     #                     help='Path to the file with nodes')

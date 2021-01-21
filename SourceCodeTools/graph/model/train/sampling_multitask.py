@@ -11,10 +11,149 @@ import logging
 
 from SourceCodeTools.graph.model.train.utils import create_elem_embedder, BestScoreTracker
 from SourceCodeTools.graph.model.LinkPredictor import LinkPredictor
+from SourceCodeTools.embed import token_hasher
 
 
 def _compute_accuracy(pred_, true_):
     return torch.sum(pred_ == true_).item() / len(true_)
+
+
+class NodeEmbedder(nn.Module):
+    def __init__(self, dataset, emb_size, tokenizer_path, dtype=None, n_buckets=100000, pretrained=None):
+        super(NodeEmbedder, self).__init__()
+
+        self.emb_size = emb_size
+        self.dtype = dtype
+        if dtype is None:
+            self.dtype = torch.float32
+        self.n_buckets = n_buckets
+
+        self.bpe_tokenizer = None
+        self.op_tokenizer = None
+        # self.graph_id_to_pretrained_name = None
+        self.pretrained_name_to_ind = None
+        self.pretrained_embeddings = None
+        self.buckets = None
+
+        self.leaf_types = {'subword', "Op", "Constant", "Name"}
+
+        nodes_with_embeddings = dataset.nodes[
+            dataset.nodes['type_backup'].apply(lambda type_: type_ in self.leaf_types)
+        ][['global_graph_id', 'typed_id', 'type', 'type_backup', 'name']]
+
+        type_name = list(zip(nodes_with_embeddings['type_backup'], nodes_with_embeddings['name']))
+
+        self.node_info = dict(zip(
+            list(zip(nodes_with_embeddings['type'], nodes_with_embeddings['typed_id'])),
+            type_name
+        ))
+
+        self.node_info_global = dict(zip(
+            nodes_with_embeddings['global_graph_id'],
+            type_name
+        ))
+
+        # self._create_ops_tokenization(nodes_with_embeddings)
+        self._create_buckets()
+
+        if pretrained is not None:
+            self._create_pretrained_embeddings(nodes_with_embeddings, pretrained)
+
+        self._create_zero_embedding()
+        self.init_tokenizer(tokenizer_path)
+
+    def _create_zero_embedding(self):
+        self.zero = torch.zeros((self.emb_size, ))
+
+    def _create_pretrained_embeddings(self, nodes, pretrained):
+        # self.graph_id_to_pretrained_name = dict(zip(nodes['global_graph_id'], nodes['name']))
+        self.pretrained_name_to_ind = pretrained.ind
+        embed = nn.Parameter(torch.tensor(pretrained.e, dtype=self.dtype))
+        nn.init.xavier_uniform_(embed, gain=nn.init.calculate_gain('relu'))
+        self.pretrained_embeddings = embed
+
+    def _create_ops_tokenization(self, nodes_with_embeddings):
+        ops = nodes_with_embeddings.query("type_backup == 'Op'")
+        from SourceCodeTools.embed.python_op_to_bpe_subwords import op_tokenizer
+
+        self.ops_tokenized = dict(zip(ops['name'], ops['name'].apply(op_tokenizer)))
+
+    def _create_buckets(self):
+        embed = nn.Parameter(torch.Tensor(self.n_buckets, self.emb_size))
+        nn.init.xavier_uniform_(embed, gain=nn.init.calculate_gain('relu'))
+        self.buckets = embed
+
+    def init_tokenizer(self, tokenizer_path):
+        from SourceCodeTools.embed.bpe import load_bpe_model, make_tokenizer
+        self.bpe_tokenizer = make_tokenizer(load_bpe_model(tokenizer_path))
+        from SourceCodeTools.embed.python_op_to_bpe_subwords import op_tokenizer
+        self.op_tokenizer = op_tokenizer
+
+    def tokenize(self, type_, name):
+        tokenized = None
+        if type_ == "Op":
+            try_tokenized = self.op_tokenizer(name)
+            if try_tokenized == name:
+                tokenized = None
+
+        if tokenized is None:
+            tokenized = self.bpe_tokenizer(name)
+        return tokenized
+
+    def get_pretrained_or_none(self, name):
+        if self.pretrained_name_to_ind is not None and name in self.pretrained_name_to_ind:
+            return self.pretrained_embeddings[self.pretrained_name_to_ind[name], :]
+        else:
+            return None
+
+    def get_from_buckets(self, name):
+        return self.buckets[token_hasher(name, self.n_buckets), :]
+
+    def get_from_tokenized(self, type_, name):
+        tokens = self.tokenize(type_, name)
+        embedding = None
+        for token in tokens:
+            token_emb = self.get_pretrained_or_none(token)
+            if token_emb is None:
+                token_emb = self.get_from_buckets(token)
+
+            if embedding is None:
+                embedding = token_emb
+            else:
+                embedding = embedding + token_emb
+        return embedding
+
+    def get_embedding(self, type_id, node_info):
+        embedding = None
+        if type_id in node_info:
+            real_type, name = self.node_info[type_id]
+            # if real_type in self.leaf_types:
+                # it is already in leaf type
+            embedding = self.get_pretrained_or_none(name)
+
+            if embedding is None:
+                embedding = self.get_from_tokenized(real_type, name)
+            # else:
+            #     embedding = self.zero
+        else:
+            embedding = self.zero
+
+        return embedding
+
+    def get_embeddings(self, node_type, ids):
+        embeddings = []
+        for id_ in ids:
+            type_id = (node_type, id_)
+            embeddings.append(self.get_embedding(type_id, self.node_info))
+        embeddings = torch.stack(embeddings)
+        return embeddings
+
+    def get_embeddings_global(self, ids):
+        embeddings = []
+        for global_id in ids:
+            embeddings.append(self.get_embedding(global_id, self.node_info_global))
+        embeddings = torch.stack(embeddings)
+        return embeddings
 
 
 class SamplingMultitaskTrainer:
@@ -22,7 +161,8 @@ class SamplingMultitaskTrainer:
     def __init__(self,
                  dataset=None, model_name=None, model_params=None,
                  trainer_params=None, restore=None, device=None,
-                 pretrained_embeddings_path=None
+                 pretrained_embeddings_path=None,
+                 tokenizer_path=None
                  ):
 
         self.graph_model = model_name(dataset.g, **model_params).to(device)
@@ -30,6 +170,7 @@ class SamplingMultitaskTrainer:
         self.trainer_params = trainer_params
         self.device = device
         self.epoch = 0
+        self.dtype = torch.float32
 
         self.ee_node_name = create_elem_embedder(
             dataset.load_node_names(), dataset.nodes,
@@ -61,9 +202,9 @@ class SamplingMultitaskTrainer:
         self._create_loaders(*self._get_training_targets())
 
         if pretrained_embeddings_path is not None:
-            self.load_pretrained(dataset, pretrained_embeddings_path)
+            self.create_node_embedder(dataset, tokenizer_path, pretrained_path=pretrained_embeddings_path)
 
-    def create_node_embedder(self, dataset, n_dims=None, pretrained_path=None):
+    def create_node_embedder(self, dataset, tokenizer_path, n_dims=None, pretrained_path=None):
         from SourceCodeTools.embed.fasttext import load_w2v_map
 
         if pretrained_path is not None:
@@ -80,80 +221,11 @@ class SamplingMultitaskTrainer:
             logging.info(f"Loading pretrained embeddings...")
         logging.info(f"Input embedding size is {n_dims}")
 
-        leaf_types = {'subword', "Op", "Constant", "Name"}
-
-        nodes_with_embeddings = dataset.nodes[
-            dataset.nodes['type_backup'].apply(lambda type_: type_ in leaf_types)
-        ][['global_graph_id', 'type_backup', 'name']]
-
-        class NodeEmbedder(nn.Module):
-            def __init__(self, nodes, pretrained=None):
-                super(NodeEmbedder, self).__init__()
-
-        # create matrix for pretrained embeddings
-        graph_id_to_name = dict(zip(nodes_with_embeddings['global_graph_id'], nodes_with_embeddings['name']))
-
-        def is_pretrained(node_global_id: int):
-            node_name = graph_id_to_name.get(node_global_id, None)
-            if node_name is None:
-                return False
-            if node_name in pretrained:
-                return True
-            else:
-                return False
-
-
-
-
-
-        # unique types:
-
-        name2graph_id = dict(zip(pretrained_nodes['name'], pretrained_nodes['global_graph_id']))
-
-        pretrained_graph_nodes = []
-        pretrained_embeddings = []
-
-        import numpy as np
-
-        # copy subwords
-        for subword in name2graph_id:
-            if subword in embedder.ind:
-                embedding = embedder[subword]
-            else:
-                embedding = np.random.randn(n_dims)
-            pretrained_embeddings.append(embedding)
-            pretrained_graph_nodes.append(name2graph_id[subword])
-
-        # copy op names
-        from SourceCodeTools.embed.python_op_to_bpe_subwords import python_ops_to_bpe
-
-        for op_name in python_ops_to_bpe:
-            embedding = None
-
-            if op_name in name2graph_id:
-                op = python_ops_to_bpe[op_name]
-                if isinstance(op, list):
-                    for e in op:
-                        if e in embedder:
-                            if embedding is None:
-                                embedding = embedder[e]
-                            else:
-                                embedding += embedder[e]
-                else:
-                    if op in embedder:
-                        embedding = embedder[op]
-
-
-            if embedding is None:
-                embedding = np.random.randn(n_dims)
-
-            pretrained_embeddings.append(embedding)
-            pretrained_graph_nodes.append(op_name)
-
-
-
+        node_embedder = NodeEmbedder(dataset, n_dims, tokenizer_path=tokenizer_path, dtype=self.dtype, pretrained=pretrained)
 
         print()
+
+
 
 
     @property
@@ -702,7 +774,7 @@ def select_device(args):
 
 
 def training_procedure(
-        dataset, model_name, model_params, epochs, args, model_base_path
+        dataset, model_name, model_params, args, model_base_path
 ) -> Tuple[SamplingMultitaskTrainer, dict]:
 
     device = select_device(args)
@@ -714,7 +786,7 @@ def training_procedure(
         'batch_size': args.batch_size,
         'sampling_neighbourhood_size': args.num_per_neigh,
         'neg_sampling_factor': args.neg_sampling_factor,
-        'epochs': epochs,
+        'epochs': args.epochs,
         # 'node_name_file': args.fname_file,
         # 'var_use_file': args.varuse_file,
         # 'call_seq_file': args.call_seq_file,
@@ -729,7 +801,8 @@ def training_procedure(
         trainer_params=trainer_params,
         restore=args.restore_state,
         device=device,
-        pretrained_embeddings_path=args.pretrained
+        pretrained_embeddings_path=args.pretrained,
+        tokenizer_path=args.tokenizer
     )
 
     try:
