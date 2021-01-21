@@ -69,7 +69,8 @@ class RelGraphConvLayer(nn.Module):
                 self.basis = dglnn.WeightBasis((in_feat, out_feat), num_bases, len(self.rel_names))
             else:
                 self.weight = nn.Parameter(th.Tensor(len(self.rel_names), in_feat, out_feat))
-                nn.init.xavier_uniform_(self.weight, gain=nn.init.calculate_gain('relu'))
+                # nn.init.xavier_uniform_(self.weight, gain=nn.init.calculate_gain('relu'))
+                nn.init.xavier_normal_(self.weight)
 
         # bias
         if bias:
@@ -79,8 +80,9 @@ class RelGraphConvLayer(nn.Module):
         # weight for self loop
         if self.self_loop:
             self.loop_weight = nn.Parameter(th.Tensor(in_feat, out_feat))
-            nn.init.xavier_uniform_(self.loop_weight,
-                                    gain=nn.init.calculate_gain('relu'))
+            # nn.init.xavier_uniform_(self.loop_weight,
+            #                         gain=nn.init.calculate_gain('relu'))
+            nn.init.xavier_normal_(self.loop_weight)
 
         self.dropout = nn.Dropout(dropout)
 
@@ -109,11 +111,13 @@ class RelGraphConvLayer(nn.Module):
 
         if g.is_block:
             inputs_src = inputs
+            # TODO:
+            #  dst representations are strangely slices of input nodes?????
             inputs_dst = {k: v[:g.number_of_dst_nodes(k)] for k, v in inputs.items()}
         else:
             inputs_src = inputs_dst = inputs
 
-        hs = self.conv(g, inputs, mod_kwargs=wdict)
+        hs = self.conv(g, inputs_src, mod_kwargs=wdict)
 
         def _apply(ntype, h):
             if self.self_loop:
@@ -125,7 +129,7 @@ class RelGraphConvLayer(nn.Module):
             return self.dropout(h)
         # TODO
         # think of possibility switching to GAT
-        # return {ntype: _apply(ntype, h).mean(1) for ntype, h in hs.items()}
+        # return {ntype: _apply(ntype, h) for ntype, h in hs.items()}
         return {ntype : _apply(ntype, h).mean(1) for ntype, h in hs.items()}
 
 class RelGraphEmbed(nn.Module):
@@ -149,7 +153,8 @@ class RelGraphEmbed(nn.Module):
             embed = nn.Parameter(th.Tensor(g.number_of_nodes(ntype), self.embed_size))
             # TODO
             # watch for activation in init
-            nn.init.xavier_uniform_(embed, gain=nn.init.calculate_gain('relu'))
+            # nn.init.xavier_uniform_(embed, gain=nn.init.calculate_gain('relu'))
+            nn.init.xavier_normal_(embed)
             self.embeds[ntype] = embed
 
     def forward(self, block=None):
