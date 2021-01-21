@@ -1,3 +1,5 @@
+import logging
+import sys
 from typing import Tuple
 
 import numpy as np
@@ -6,25 +8,10 @@ import random as rnd
 from SourceCodeTools.common import compact_property
 
 
-# def create_idx_pools(splits: Tuple, pool) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-#     train_idx, val_idx, test_idx = splits
-#     train_idx = np.fromiter(pool.intersection(train_idx.tolist()), dtype=np.int64)
-#     val_idx = np.fromiter(pool.intersection(val_idx.tolist()), dtype=np.int64)
-#     test_idx = np.fromiter(pool.intersection(test_idx.tolist()), dtype=np.int64)
-#     return train_idx, val_idx, test_idx
-
-
-# def compact_property(values):
-#     uniq = np.unique(values)
-#     prop2pid = dict(zip(uniq, range(uniq.size)))
-#     # prop2pid = dict(list(zip(uniq, list(range(uniq.size)))))
-#     return prop2pid
-
-
 class ElementEmbedderBase:
-    def __init__(self, elements, compact_dst=True):
+    def __init__(self, elements, nodes, compact_dst=True):
 
-        self.elements = elements.copy()
+        self.elements = self.preprocess_element_data(elements.copy(), nodes, compact_dst)
 
         if compact_dst:
             elem2id = compact_property(elements['dst'])
@@ -38,21 +25,48 @@ class ElementEmbedderBase:
 
         self.init_neg_sample()
 
-    def init_neg_sample(self):
-        WORD2VEC_SAMPLING_POWER = 3 / 4
+    def preprocess_element_data(self, element_data, nodes, compact_dst):
+        if len(element_data) == 0:
+            logging.error(f"Not enough data for the embedder: {len(element_data)}. Exiting...")
+            sys.exit()
 
+        id2nodeid = dict(zip(nodes['id'].tolist(), nodes['global_graph_id'].tolist()))
+        id2typedid = dict(zip(nodes['id'].tolist(), nodes['typed_id'].tolist()))
+        id2type = dict(zip(nodes['id'].tolist(), nodes['type'].tolist()))
+
+        element_data['id'] = element_data['src'].apply(lambda x: id2nodeid.get(x, None))
+        element_data['src_type'] = element_data['src'].apply(lambda x: id2type.get(x, None))
+        element_data['src_typed_id'] = element_data['src'].apply(lambda x: id2typedid.get(x, None))
+        element_data = element_data.astype({
+            'id': 'Int32',
+            'src_type': 'category',
+            'src_typed_id': 'Int32',
+        })
+
+        if compact_dst is False:  # creating api call embedder
+            # element_data = element_data.rename({'dst': 'dst_orig'}, axis=1)
+            # element_data['dst'] = element_data['dst_orig'].apply(lambda x: id2nodeid.get(x, None))
+            # element_data['dst_type'] = element_data['dst_orig'].apply(lambda x: id2type.get(x, None))
+            # element_data['dst_typed_id'] = element_data['dst_orig'].apply(lambda x: id2typedid.get(x, None))
+            element_data.drop_duplicates(['id', 'dst'], inplace=True,
+                                         ignore_index=True)  # this line apparenly filters parallel edges
+            # element_data = element_data.astype({
+            #     'dst': 'Int32',
+            #     'dst_type': 'category',
+            #     'dst_typed_id': 'Int32',
+            # })
+
+        # element_data = element_data.dropna(axis=0)
+        return element_data
+
+    def init_neg_sample(self, word2vec_sampling_power=0.75):
         # compute distribution of dst elements
         counts = self.elements['emb_id'].value_counts(normalize=True)
-        # idxs = list(map(lambda x: self.elem2id[x], counts.index))
         self.idxs = counts.index
         self.neg_prob = counts.to_numpy()
-        self.neg_prob **= WORD2VEC_SAMPLING_POWER
-        # ind_freq = list(zip(idxs, freq))
-        # ind_freq = sorted(ind_freq, key=lambda x:x[0])
-        # _, self.elem_probs = zip(*ind_freq)
-        # self.elem_probs = np.power(self.elem_probs, WORD2VEC_SAMPLING_POWER)
+        self.neg_prob **= word2vec_sampling_power
+
         self.neg_prob /= sum(self.neg_prob)
-        # self.random_indices = np.arange(0, len(self.elem2id))
 
     def sample_negative(self, size):
         # TODO
