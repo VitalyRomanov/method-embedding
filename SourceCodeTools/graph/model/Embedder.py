@@ -13,7 +13,7 @@ class Embedder:
         #     self.map_id = np.vectorize(lambda id: self.ind[id])
         # TODO
         # support for str key type
-        if type(key) == int:
+        if type(key) == int or type(key) == str:
             return self.e[self.ind[key], :]
         elif type(key) == np.ndarray:
             # return self.e[self.map_id(key), :]
@@ -28,6 +28,17 @@ class Embedder:
             #     raise TypeError("Problem with embedder internal type:", type(self.e))
         else:
             raise TypeError("Unknown type:", type(key))
+
+    def __contains__(self, item):
+        return item in self.ind
+
+    @property
+    def n_embs(self):
+        return len(self.ind)
+
+    @property
+    def n_dims(self):
+        return self.e.shape[1]
 
     # @staticmethod
     # def load_word2vec(path):
