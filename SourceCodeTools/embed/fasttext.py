@@ -124,11 +124,13 @@ def load_w2v_map(w2v_path):
     with open(w2v_path) as w2v:
         n_vectors, n_dims = map(int, w2v.readline().strip().split())
         for ind in range(n_vectors):
-            e = w2v.readline().strip().split()
+            line = w2v.readline()
+            e = line.rstrip("\n").split(" ")
 
             word = e[0]
             w_map[word] = len(w_map)
 
+            assert len(e[1:]) == n_dims
             embs.append(list(map(float, e[1:])))
 
     from SourceCodeTools.graph.model.Embedder import Embedder
