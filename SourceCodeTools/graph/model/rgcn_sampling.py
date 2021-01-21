@@ -140,13 +140,15 @@ class RelGraphEmbed(nn.Module):
         self.g = g
         self.embed_size = embed_size
         self.embed_name = embed_name
-        self.activation = activation
-        self.dropout = nn.Dropout(dropout)
+        # self.activation = activation
+        # self.dropout = nn.Dropout(dropout)
 
         # create weight embeddings for each node for each relation
         self.embeds = nn.ParameterDict()
         for ntype in g.ntypes:
             embed = nn.Parameter(th.Tensor(g.number_of_nodes(ntype), self.embed_size))
+            # TODO
+            # watch for activation in init
             nn.init.xavier_uniform_(embed, gain=nn.init.calculate_gain('relu'))
             self.embeds[ntype] = embed
 
