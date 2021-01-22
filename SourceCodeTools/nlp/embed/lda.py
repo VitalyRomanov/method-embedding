@@ -136,7 +136,6 @@ class LdaTrainer:
                 for t in topics:
                     topics_sink.write(f"{t}\n")
 
-
         pd.DataFrame(all_results).to_csv(self.results_path, index=False)
 
     def save_as_vectors(self):

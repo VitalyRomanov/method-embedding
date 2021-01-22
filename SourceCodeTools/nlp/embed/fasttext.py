@@ -5,13 +5,18 @@ import logging
 
 from nltk import RegexpTokenizer
 
+
 _tokenizer = RegexpTokenizer("[\w]+|[^\w\s]|[0-9]+")
-default_tokenizer = lambda text: _tokenizer.tokenize(text)
+
+
+def default_tokenizer(text):
+    return _tokenizer.tokenize(text)
+# default_tokenizer = lambda text: _tokenizer.tokenize(text)
 
 
 class Corpus(object):
-    def __init__(self, fname, tokenizer=None):
-        self.dirname = fname
+    def __init__(self, file_name, tokenizer=None):
+        self.dirname = file_name
         self.tok = default_tokenizer if tokenizer is None else tokenizer
 
     def __iter__(self):
@@ -101,7 +106,7 @@ def train_wor2vec(corpus_path, output_path, tokenizer=None):
     train_embedding_model(Word2Vec, params, corpus_path, output_path, tokenizer)
 
 
-def export_w2v_for_tensorboard(embs_path, tb_meta_path, tb_embs_path, sep = "\t"):
+def export_w2v_for_tensorboard(embs_path, tb_meta_path, tb_embs_path, sep="\t"):
     with open(embs_path) as embeddings:
         embeddings.readline()
         with open(tb_meta_path, "w") as tb_meta:
@@ -142,13 +147,13 @@ def load_w2v_map(w2v_path):
 def char_ngram_window(x, gram_size):
     x = "<" + x + ">"
     length = len(x)
-    return (x[i:i + gram_size] for i in range(0, length) if i+gram_size<=length)
+    return (x[i:i + gram_size] for i in range(0, length) if i+gram_size <= length)
 
 
 def main():
     parser = argparse.ArgumentParser(description='Train word vectors')
     parser.add_argument('input_file', type=str, default=150, help='Path to text file')
-    parser.add_argument('output_dir', type=str, default=5, help='Ouput saving directory')
+    parser.add_argument('output_dir', type=str, default=5, help='Output saving directory')
     args = parser.parse_args()
 
     corpus_path = args.input_file

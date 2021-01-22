@@ -8,6 +8,10 @@ setup(name='SourceCodeTools',
             'tensorflow==2.4.0',
             'pandas>=1.1.1',
             'sklearn',
+            'sentencepiece',
+            'gensim',
+            'numpy',
+            'scipy'
             # 'javac_parser'
       ],
       scripts=[
@@ -41,6 +45,6 @@ setup(name='SourceCodeTools',
             'SourceCodeTools/proc/entity/annotator/sourcecodetools-extract-type-annotations.py',
             # 'SourceCodeTools/proc/entity/sourcecodetools-replace-tokenizer.py',
             # 'SourceCodeTools/proc/entity/sourcecodetools-spacy-ner.py',
-            'SourceCodeTools/embed/ft_bin_to_vec.py',
+            'SourceCodeTools/nlp/embed/converters/convert_fasttext_format_bin_to_vec.py',
       ],
 )
