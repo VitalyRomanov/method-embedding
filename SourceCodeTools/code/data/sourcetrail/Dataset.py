@@ -5,7 +5,7 @@ import pickle
 from os.path import join
 
 from SourceCodeTools.code.data.sourcetrail.file_utils import *
-from SourceCodeTools.common import compact_property
+from SourceCodeTools.tabular.common import compact_property
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_extract_node_names import extract_node_names
 

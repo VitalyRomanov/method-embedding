@@ -9,7 +9,7 @@ import numpy as np
 from SourceCodeTools.graph.model.Embedder import Embedder
 import pickle
 
-from SourceCodeTools.common import compact_property
+from SourceCodeTools.tabular.common import compact_property
 
 def keep_from_set(table, pool):
     table['src'] = table['src'].apply(lambda nid: nid if nid in pool else None)

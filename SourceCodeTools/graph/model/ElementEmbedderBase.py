@@ -5,7 +5,7 @@ from typing import Tuple
 import numpy as np
 import random as rnd
 
-from SourceCodeTools.common import compact_property
+from SourceCodeTools.tabular.common import compact_property
 
 
 class ElementEmbedderBase:
