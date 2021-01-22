@@ -11,7 +11,7 @@ import spacy
 # from spacy.util import minibatch, compounding
 import numpy as np
 
-from SourceCodeTools.nlp.entity.ast_tools import get_declarations
+from SourceCodeTools.code.ast_tools import get_declarations
 
 from SourceCodeTools.models.Embedder import Embedder
 # from tf_model import create_batches

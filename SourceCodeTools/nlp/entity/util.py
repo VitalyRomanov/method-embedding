@@ -3,38 +3,34 @@ import re, json
 
 from spacy.gold import biluo_tags_from_offsets, offsets_from_biluo_tags
 
-import hashlib
 
-# def el_hash(el, buckets):
-#     return int(hashlib.md5(el.encode('utf-8')).hexdigest(), 16) % buckets
+# def custom_tokenizer(nlp):
+#     prefix_re = re.compile(r"^[^\w\s]")
+#     infix_re = re.compile(r"[^\w\s]")
+#     suffix_re = re.compile(r"[^\w\s]$")
+#     return Tokenizer(
+#         nlp.vocab, prefix_search=prefix_re.search,
+#         suffix_search=suffix_re.search, infix_finditer=infix_re.finditer
+#     )
+#
+#
+# def inject_tokenizer(nlp):
+#     nlp.tokenizer = custom_tokenizer(nlp)
+#     return nlp
 
-def custom_tokenizer(nlp):
-    prefix_re = re.compile(r"^[^\w\s]")
-    infix_re = re.compile(r"[^\w\s]")
-    suffix_re = re.compile(r"[^\w\s]$")
-    # prefix_re = re.compile(r'''^[\[\(\{"':;\.!@~,=+-/\*%]''')
-    # suffix_re = re.compile(r'''[\]\)\}"':;\.\!~,=+-/\*%]$''')
-    # infix_re = re.compile(r'''[\[\]\(\)\{\},=+-/@\*\"\.!:;~%]''')
-    return Tokenizer(nlp.vocab,
-                                prefix_search=prefix_re.search,
-                                suffix_search=suffix_re.search,
-                                infix_finditer=infix_re.finditer,
-                                )
-
-def inject_tokenizer(nlp):
-    nlp.tokenizer = custom_tokenizer(nlp)
-    return nlp
 
 def normalize_entities(entities):
     norm = lambda x: x.split("[")[0].split(".")[-1]
 
     return [(e[0], e[1], norm(e[2])) for e in entities]
 
+
 def overlap(p1, p2):
     if (p2[1] - p1[0]) * (p2[0] - p1[1]) <= 0:
         return True
     else:
         return False
+
 
 def resolve_repeats(entities):
     ents = []

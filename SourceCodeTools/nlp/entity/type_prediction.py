@@ -11,8 +11,8 @@ import spacy
 from spacy.gold import biluo_tags_from_offsets
 
 from SourceCodeTools.models.Embedder import Embedder
-from SourceCodeTools.nlp.entity.ClassWeightNormalizer import ClassWeightNormalizer
-from SourceCodeTools.nlp.entity.ast_tools import get_declarations
+from SourceCodeTools.models.ClassWeightNormalizer import ClassWeightNormalizer
+from SourceCodeTools.code.ast_tools import get_declarations
 from SourceCodeTools.nlp.entity.tf_model import TypePredictor, train
 from SourceCodeTools.nlp.entity.util import inject_tokenizer, read_data, el_hash, overlap
 

@@ -6,7 +6,7 @@ from spacy.gold import biluo_tags_from_offsets
 import spacy
 import numpy as np
 
-from SourceCodeTools.nlp.entity.ast_tools import get_declarations
+from SourceCodeTools.code.ast_tools import get_declarations
 
 # from tf_model import create_batches
 
