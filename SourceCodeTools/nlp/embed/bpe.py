@@ -19,6 +19,7 @@ def create_subword_tokenizer(lang, vs):
     spm = sentencepiece_load(model_file)
     return lambda text: spm.EncodeAsPieces(re.sub(r"\d", "0", text.lower()))
 
+
 def load_bpe_model(path):
     from sentencepiece import SentencePieceProcessor
     spm = SentencePieceProcessor()
@@ -27,7 +28,6 @@ def load_bpe_model(path):
         return spm
     else:
         raise Exception("Error loading model")
-
 
 
 def make_tokenizer(bpe):

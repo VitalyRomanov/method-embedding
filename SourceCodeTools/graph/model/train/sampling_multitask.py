@@ -88,7 +88,7 @@ class SamplingMultitaskTrainer:
             self.create_node_embedder(dataset, tokenizer_path, pretrained_path=pretrained_embeddings_path)
 
     def create_node_embedder(self, dataset, tokenizer_path, n_dims=None, pretrained_path=None):
-        from SourceCodeTools.embed.fasttext import load_w2v_map
+        from SourceCodeTools.nlp.embed.fasttext import load_w2v_map
 
         if pretrained_path is not None:
             pretrained = load_w2v_map(pretrained_path)

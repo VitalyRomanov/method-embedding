@@ -50,7 +50,7 @@ class LdaTrainer:
             self.tokenize = tokenize
         elif os.path.isfile(tokenizer):
             logging.info("Loading bpe tokenizer")
-            from SourceCodeTools.embed.bpe import load_bpe_model, make_tokenizer
+            from SourceCodeTools.nlp.embed.bpe import load_bpe_model, make_tokenizer
             self.tokenize = make_tokenizer(load_bpe_model(tokenizer))
 
         self.dictionary = self.load_dictionary()

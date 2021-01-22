@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import numpy as np
 import random as rnd
-import hashlib
 
 from SourceCodeTools.graph.model.ElementEmbedderBase import ElementEmbedderBase
 
@@ -39,8 +38,8 @@ def create_fixed_length(parts, length, padding_value):
     return empty
 
 
-from SourceCodeTools.embed import token_hasher
-from SourceCodeTools.embed.fasttext import char_ngram_window
+from SourceCodeTools.nlp import token_hasher
+from SourceCodeTools.nlp.embed.fasttext import char_ngram_window
 
 
 class ElementEmbedderWithCharNGramSubwords(ElementEmbedderBase, nn.Module):
@@ -83,7 +82,7 @@ class ElementEmbedderWithBpeSubwords(ElementEmbedderWithCharNGramSubwords, nn.Mo
 
         self.emb_size = emb_size
 
-        from SourceCodeTools.embed.bpe import load_bpe_model, make_tokenizer
+        from SourceCodeTools.nlp.embed.bpe import load_bpe_model, make_tokenizer
         tokenize = make_tokenizer(load_bpe_model(tokenizer_path))
 
         names = elements['dst']

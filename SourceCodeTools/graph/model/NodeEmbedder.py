@@ -1,4 +1,4 @@
-from SourceCodeTools.embed import token_hasher
+from SourceCodeTools.nlp import token_hasher
 import torch
 import torch.nn as nn
 
@@ -55,7 +55,7 @@ class SimpleNodeEmbedder(nn.Module):
             ind = token_hasher(word, self.n_buckets)
             embs_init[ind, :] = pretrained[word]
 
-        from SourceCodeTools.embed.python_op_to_bpe_subwords import python_ops_to_bpe
+        from SourceCodeTools.nlp.embed.python_op_to_bpe_subwords import python_ops_to_bpe
 
         def op_embedding(op_tokens):
             embedding = None
@@ -169,7 +169,7 @@ class NodeEmbedder(nn.Module):
 
     def _create_ops_tokenization(self, nodes_with_embeddings):
         ops = nodes_with_embeddings.query("type_backup == 'Op'")
-        from SourceCodeTools.embed.python_op_to_bpe_subwords import op_tokenizer
+        from SourceCodeTools.nlp.embed.python_op_to_bpe_subwords import op_tokenizer
 
         self.ops_tokenized = dict(zip(ops['name'], ops['name'].apply(op_tokenizer)))
 
@@ -180,9 +180,9 @@ class NodeEmbedder(nn.Module):
         self.buckets = embed
 
     def _init_tokenizer(self, tokenizer_path):
-        from SourceCodeTools.embed.bpe import load_bpe_model, make_tokenizer
+        from SourceCodeTools.nlp.embed.bpe import load_bpe_model, make_tokenizer
         self.bpe_tokenizer = make_tokenizer(load_bpe_model(tokenizer_path))
-        from SourceCodeTools.embed.python_op_to_bpe_subwords import op_tokenizer
+        from SourceCodeTools.nlp.embed.python_op_to_bpe_subwords import op_tokenizer
         self.op_tokenizer = op_tokenizer
 
     def _tokenize(self, type_, name):

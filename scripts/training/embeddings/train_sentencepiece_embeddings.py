@@ -1,5 +1,5 @@
-from SourceCodeTools.embed.bpe import load_bpe_model, make_tokenizer
-from SourceCodeTools.embed.fasttext import train_wor2vec
+from SourceCodeTools.nlp.embed.bpe import load_bpe_model, make_tokenizer
+from SourceCodeTools.nlp.embed.fasttext import train_wor2vec
 import argparse
 
 parser = argparse.ArgumentParser(description='Train word vectors')

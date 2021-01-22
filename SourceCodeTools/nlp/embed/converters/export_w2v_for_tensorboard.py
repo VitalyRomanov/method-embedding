@@ -1,5 +1,5 @@
 import sys
-from SourceCodeTools.embed.fasttext import export_w2v_for_tensorboard
+from SourceCodeTools.nlp.embed.fasttext import export_w2v_for_tensorboard
 
 
 def main():
