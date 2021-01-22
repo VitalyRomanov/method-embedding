@@ -1,5 +1,5 @@
-from SourceCodeTools.data.sourcetrail.file_utils import *
-from SourceCodeTools.data.sourcetrail.common import custom_tqdm
+from SourceCodeTools.code.data.sourcetrail.file_utils import *
+from SourceCodeTools.code.data.sourcetrail.common import custom_tqdm
 
 import networkx as nx
 from collections import Counter

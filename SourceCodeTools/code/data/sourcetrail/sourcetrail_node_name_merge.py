@@ -1,8 +1,6 @@
-import sys, os
-import pandas as p
-from csv import QUOTE_NONNUMERIC
-from SourceCodeTools.data.sourcetrail.sourcetrail_types import node_types
-from SourceCodeTools.data.sourcetrail.file_utils import *
+import sys
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types
+from SourceCodeTools.code.data.sourcetrail.file_utils import *
 
 # needs testing
 def normalize(line):

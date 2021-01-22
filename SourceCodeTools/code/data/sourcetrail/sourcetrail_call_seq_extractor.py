@@ -1,5 +1,5 @@
-from SourceCodeTools.data.sourcetrail.common import *
-from SourceCodeTools.data.sourcetrail.common import get_occurrence_groups
+from SourceCodeTools.code.data.sourcetrail.common import *
+from SourceCodeTools.code.data.sourcetrail.common import get_occurrence_groups
 
 import sys
 

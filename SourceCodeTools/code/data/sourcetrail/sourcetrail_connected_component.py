@@ -1,7 +1,7 @@
 import networkx as nx
 import sys
 
-from SourceCodeTools.data.sourcetrail.file_utils import *
+from SourceCodeTools.code.data.sourcetrail.file_utils import *
 
 
 def main():

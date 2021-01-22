@@ -1,6 +1,5 @@
 import ast
 import re
-import sys
 from copy import copy
 
 from nltk import RegexpTokenizer
@@ -8,9 +7,9 @@ from nltk import RegexpTokenizer
 from SourceCodeTools.graph.python_ast import AstGraphGenerator
 from SourceCodeTools.graph.python_ast import GNode
 from SourceCodeTools.proc.entity.annotator.annotator_utils import to_offsets, overlap, resolve_self_collision
-from SourceCodeTools.data.sourcetrail.file_utils import *
+from SourceCodeTools.code.data.sourcetrail.file_utils import *
 from SourceCodeTools.embed.bpe import load_bpe_model, make_tokenizer
-from SourceCodeTools.data.sourcetrail.common import custom_tqdm
+from SourceCodeTools.code.data.sourcetrail.common import custom_tqdm
 
 pd.options.mode.chained_assignment = None
 

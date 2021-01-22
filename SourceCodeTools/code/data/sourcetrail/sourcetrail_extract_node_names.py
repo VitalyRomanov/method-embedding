@@ -1,6 +1,6 @@
 import sys
 
-from SourceCodeTools.data.sourcetrail.file_utils import *
+from SourceCodeTools.code.data.sourcetrail.file_utils import *
 
 
 def get_node_name(full_name):

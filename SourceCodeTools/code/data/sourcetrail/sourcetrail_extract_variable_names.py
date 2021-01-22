@@ -3,8 +3,8 @@ import pandas
 import sys
 from collections import Counter
 
-from SourceCodeTools.data.sourcetrail.common import custom_tqdm
-from SourceCodeTools.data.sourcetrail.file_utils import *
+from SourceCodeTools.code.data.sourcetrail.common import custom_tqdm
+from SourceCodeTools.code.data.sourcetrail.file_utils import *
 
 pandas.options.mode.chained_assignment = None
 

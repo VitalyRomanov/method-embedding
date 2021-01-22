@@ -1,11 +1,10 @@
 import torch
 import torch.nn as nn
 from torch.nn import init
-import dgl
 import dgl.function as fn
 from dgl.nn.pytorch.conv import GatedGraphConv
 
-from SourceCodeTools.data.sourcetrail.Dataset import compact_property
+from SourceCodeTools.code.data.sourcetrail.Dataset import compact_property
 from SourceCodeTools.graph.model.Embedder import Embedder
 
 

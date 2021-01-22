@@ -1,4 +1,4 @@
-from SourceCodeTools.data.sourcetrail.Dataset import load_data
+from SourceCodeTools.code.data.sourcetrail.Dataset import load_data
 import sys
 
 node_path = sys.argv[1]

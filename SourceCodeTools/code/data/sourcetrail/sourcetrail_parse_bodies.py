@@ -4,7 +4,7 @@ import string
 import sys
 from typing import Tuple, List, Optional
 
-from SourceCodeTools.data.sourcetrail.common import *
+from SourceCodeTools.code.data.sourcetrail.common import *
 
 
 class RandomReplacementException(Exception):

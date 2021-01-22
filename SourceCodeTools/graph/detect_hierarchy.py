@@ -1,14 +1,13 @@
 import argparse
 
-from SourceCodeTools.data.sourcetrail.Dataset import load_data
-from SourceCodeTools.data.sourcetrail.sourcetrail_types import node_types, edge_types
-from SourceCodeTools.data.sourcetrail.file_utils import *
+from SourceCodeTools.code.data.sourcetrail.Dataset import load_data
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import edge_types
+from SourceCodeTools.code.data.sourcetrail.file_utils import *
 import networkx as nx
-from itertools import chain
 
 from functools import lru_cache
 
-from SourceCodeTools.data.sourcetrail.common import custom_tqdm
+from SourceCodeTools.code.data.sourcetrail.common import custom_tqdm
 
 
 # class CallEdgesCache:

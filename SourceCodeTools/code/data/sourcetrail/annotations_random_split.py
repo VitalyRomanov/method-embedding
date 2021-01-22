@@ -1,4 +1,4 @@
-from SourceCodeTools.data.sourcetrail.Dataset import split, ensure_connectedness, ensure_valid_edges
+from SourceCodeTools.code.data.sourcetrail.Dataset import split, ensure_connectedness, ensure_valid_edges
 import pandas as pd
 import sys
 from os.path import join, dirname

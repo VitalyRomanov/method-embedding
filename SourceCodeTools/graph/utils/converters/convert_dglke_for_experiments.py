@@ -1,9 +1,9 @@
 from SourceCodeTools.graph.model.Embedder import Embedder
 import torch
-import os, sys
+import os
 import pandas as pd
 import numpy as np
-from SourceCodeTools.data.sourcetrail.Dataset import get_train_val_test_indices, SourceGraphDataset, load_data
+from SourceCodeTools.code.data.sourcetrail.Dataset import get_train_val_test_indices, load_data
 import pickle
 import argparse
 
@@ -65,14 +65,14 @@ pd.read_csv(args.held_path).to_csv(os.path.join(args.out_path, "held.csv"), inde
 nodes['global_graph_id'] = nodes['id'].apply(lambda x: ent_map[x])
 
 # splits = get_train_val_test_indices(nodes.index)
-from SourceCodeTools.data.sourcetrail.sourcetrail_types import node_types
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types
 splits = get_train_val_test_indices(nodes.query(f"type_backup == '{node_types[4096]}'").index)
 
 
 # nodes, edges, held = SourceGraphDataset.holdout(nodes, edges, 0.001)
 # nodes['label'] = nodes['type']
 
-from SourceCodeTools.data.sourcetrail.Dataset import create_train_val_test_masks
+from SourceCodeTools.code.data.sourcetrail.Dataset import create_train_val_test_masks
 # def add_splits(nodes, splits):
 #     nodes['train_mask'] = False
 #     nodes.loc[nodes.index[splits[0]], 'train_mask'] = True

@@ -1,11 +1,10 @@
 import json
 import logging
-import pickle
 from datetime import datetime
 from os import mkdir
 from os.path import isdir, join
 
-from SourceCodeTools.data.sourcetrail.Dataset import read_or_create_dataset
+from SourceCodeTools.code.data.sourcetrail.Dataset import read_or_create_dataset
 from SourceCodeTools.graph.model import RGCNSampling
 from SourceCodeTools.graph.model.train.utils import get_name, get_model_base
 from params import rgcnsampling_params

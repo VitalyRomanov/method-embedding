@@ -4,10 +4,10 @@ import pickle
 
 from os.path import join
 
-from SourceCodeTools.data.sourcetrail.file_utils import *
+from SourceCodeTools.code.data.sourcetrail.file_utils import *
 from SourceCodeTools.common import compact_property
-from SourceCodeTools.data.sourcetrail.sourcetrail_types import node_types
-from SourceCodeTools.data.sourcetrail.sourcetrail_extract_node_names import extract_node_names
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_extract_node_names import extract_node_names
 
 
 def load_data(node_path, edge_path):

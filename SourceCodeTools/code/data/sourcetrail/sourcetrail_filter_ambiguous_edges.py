@@ -1,9 +1,7 @@
 #%%
 import sys
-import pandas as pd
-import os
 
-from SourceCodeTools.data.sourcetrail.file_utils import *
+from SourceCodeTools.code.data.sourcetrail.file_utils import *
 
 def filter_ambiguous_edges(edges, ambiguous_edges):
 

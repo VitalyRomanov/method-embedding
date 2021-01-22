@@ -1,10 +1,7 @@
-import pandas as pd
-import sys, os
-from csv import QUOTE_NONNUMERIC
+import sys
 
-from SourceCodeTools.data.sourcetrail.file_utils import *
-from SourceCodeTools.data.sourcetrail.common import create_node_repr, \
-    create_local_to_global_id_map
+from SourceCodeTools.code.data.sourcetrail.file_utils import *
+from SourceCodeTools.code.data.sourcetrail.common import create_local_to_global_id_map
 
 
 def get_local2global(global_nodes, local_nodes) -> pd.DataFrame:

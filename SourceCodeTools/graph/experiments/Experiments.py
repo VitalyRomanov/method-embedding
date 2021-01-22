@@ -8,9 +8,6 @@ import numpy as np
 # from graphtools import Embedder
 from SourceCodeTools.graph.model.Embedder import Embedder
 import pickle
-import random as rnd
-import torch
-import os
 
 from SourceCodeTools.common import compact_property
 
@@ -118,7 +115,7 @@ class Experiments:
         nodes = pandas.read_csv(join(self.base_path, "nodes.csv"))
         edges = pandas.read_csv(join(self.base_path, "held.csv")).astype({"src": "int32", "dst": "int32"})
 
-        from SourceCodeTools.data.sourcetrail.Dataset import SourceGraphDataset
+        from SourceCodeTools.code.data.sourcetrail.Dataset import SourceGraphDataset
 
         self.splits = SourceGraphDataset.get_global_graph_id_splits(nodes)
         # global_ids = nodes['global_graph_id'].values

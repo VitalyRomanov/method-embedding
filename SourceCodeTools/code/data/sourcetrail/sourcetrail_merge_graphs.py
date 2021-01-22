@@ -1,7 +1,7 @@
 import sys
 
-from SourceCodeTools.data.sourcetrail.file_utils import *
-from SourceCodeTools.data.sourcetrail.common import merge_with_file_if_exists
+from SourceCodeTools.code.data.sourcetrail.file_utils import *
+from SourceCodeTools.code.data.sourcetrail.common import merge_with_file_if_exists
 
 pd.options.mode.chained_assignment = None
 

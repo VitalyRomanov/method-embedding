@@ -1,20 +1,20 @@
 from os.path import join
 from tqdm import tqdm
 
-from SourceCodeTools.data.sourcetrail.sourcetrail_map_id_columns import map_columns
-from SourceCodeTools.data.sourcetrail.sourcetrail_merge_graphs import get_global_node_info, merge_global_with_local
-from SourceCodeTools.data.sourcetrail.sourcetrail_node_local2global import get_local2global
-from SourceCodeTools.data.sourcetrail.sourcetrail_node_name_merge import merge_names
-from SourceCodeTools.data.sourcetrail.sourcetrail_decode_edge_types import decode_edge_types
-from SourceCodeTools.data.sourcetrail.sourcetrail_filter_ambiguous_edges import filter_ambiguous_edges
-from SourceCodeTools.data.sourcetrail.sourcetrail_parse_bodies import process_bodies
-from SourceCodeTools.data.sourcetrail.sourcetrail_call_seq_extractor import extract_call_seq
-from SourceCodeTools.data.sourcetrail.sourcetrail_add_reverse_edges import add_reverse_edges
-from SourceCodeTools.data.sourcetrail.sourcetrail_ast_edges import get_from_ast
-from SourceCodeTools.data.sourcetrail.sourcetrail_extract_variable_names import extract_var_names
-from SourceCodeTools.data.sourcetrail.sourcetrail_extract_node_names import extract_node_names
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_map_id_columns import map_columns
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_merge_graphs import get_global_node_info, merge_global_with_local
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_node_local2global import get_local2global
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_node_name_merge import merge_names
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_decode_edge_types import decode_edge_types
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_filter_ambiguous_edges import filter_ambiguous_edges
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_parse_bodies import process_bodies
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_call_seq_extractor import extract_call_seq
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_add_reverse_edges import add_reverse_edges
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_ast_edges import get_from_ast
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_extract_variable_names import extract_var_names
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_extract_node_names import extract_node_names
 
-from SourceCodeTools.data.sourcetrail.file_utils import *
+from SourceCodeTools.code.data.sourcetrail.file_utils import *
 
 
 class DatasetCreator:

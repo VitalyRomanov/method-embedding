@@ -1,5 +1,5 @@
-from SourceCodeTools.data.sourcetrail.sourcetrail_types import edge_types
-from SourceCodeTools.data.sourcetrail.file_utils import *
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import edge_types
+from SourceCodeTools.code.data.sourcetrail.file_utils import *
 
 import sys
 import os

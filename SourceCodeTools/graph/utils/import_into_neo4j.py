@@ -2,7 +2,7 @@ import pandas as pd
 from neo4j import GraphDatabase
 import argparse
 
-from SourceCodeTools.data.sourcetrail.Dataset import load_data
+from SourceCodeTools.code.data.sourcetrail.Dataset import load_data
 # from SourceCodeTools.data.sourcetrail.sourcetrail_types import node_types, edge_types
 
 
