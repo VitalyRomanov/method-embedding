@@ -1,26 +1,17 @@
-This project contains the code for preprocessing the [code-docstring-corpus](https://github.com/EdinburghNLP/code-docstring-corpus) dataset.
+# Source Code Tools
+Library for analyzing source code with graphs and NLP. What this repository can do:
 
-###Usage
-## `method-extraction.py` 
-Exports function call grpah in the format of adjacency list or json
+1. Fetch source codes for packages in pip
+2. Create indexes of python packages using [Sourcetrail](https://www.sourcetrail.com)
+3. Convert Sourcetrail indexes into a connected graph
+4. Build graphs for source codes from AST
+5. Train Graph Neural Network for learning representations for source code
+6. Predict Python types using NLP and graph embeddings
+
+### Installation
+
+```bash
+git clone https://github.com/VitalyRomanov/method-embedding.git
+cd method-embedding
+pip install -e .
 ```
-method-extraction.py [plain/json] path/to/code-docstring-corpus
-```
-
-## `tfidf.py`
-
-Exports code docstrings in the format of tdidf vectors
-```
-tfidf.py path/to/code-docstring-corpus
-```
-
-## `lda.py`
-Train LDA model for the functions specified by input file. Descriptions for functions with the same name concatenated together.
-
-## `spearman.py`
-
-Calculate spearman coefficient for two types of embeddings.
-
-## `lda_filter.py`
-
-Filter LDA embeddings using external files. The file provides the order of indexing used for embeddings created with diffent method.
