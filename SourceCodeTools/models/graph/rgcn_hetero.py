@@ -2,22 +2,16 @@
 Paper: https://arxiv.org/abs/1703.06103
 Reference Code: https://github.com/tkipf/relational-gcn
 """
-import argparse
-import numpy as np
-import time
 import torch
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
-from functools import partial
-# from graphtools import Embedder
-from SourceCodeTools.graph.model.Embedder import Embedder
+from SourceCodeTools.models.Embedder import Embedder
 
 # import torch
 # torch.manual_seed(42)
 
 import dgl.function as fn
-from dgl.data.rdf import AIFB, MUTAG, BGS, AM
 
 
 class RelGraphConvHetero(nn.Module):

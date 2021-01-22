@@ -1,5 +1,4 @@
 """RGCN layer implementation"""
-from collections import defaultdict
 
 import torch as th
 import torch.nn as nn
@@ -7,7 +6,7 @@ import torch.nn.functional as F
 import dgl
 import dgl.nn as dglnn
 # import tqdm
-from SourceCodeTools.graph.model.Embedder import Embedder
+from SourceCodeTools.models.Embedder import Embedder
 
 class RelGraphConvLayer(nn.Module):
     r"""Relational graph convolution layer.

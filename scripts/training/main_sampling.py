@@ -5,8 +5,8 @@ from os import mkdir
 from os.path import isdir, join
 
 from SourceCodeTools.code.data.sourcetrail.Dataset import read_or_create_dataset
-from SourceCodeTools.graph.model import RGCNSampling
-from SourceCodeTools.graph.model.train.utils import get_name, get_model_base
+from SourceCodeTools.models.graph import RGCNSampling
+from SourceCodeTools.models.graph.train.utils import get_name, get_model_base
 from params import rgcnsampling_params
 
 
@@ -29,9 +29,9 @@ def main(models, args):
 
                 if args.intermediate_supervision:
                     # params['use_self_loop'] = True  # ????
-                    from SourceCodeTools.graph.model.train.sampling_multitask_intermediate_supervision import training_procedure
+                    from SourceCodeTools.models.graph.train.sampling_multitask_intermediate_supervision import training_procedure
                 else:
-                    from SourceCodeTools.graph.model.train.sampling_multitask import training_procedure
+                    from SourceCodeTools.models.graph.train.sampling_multitask import training_procedure
 
                 trainer, scores = \
                     training_procedure(dataset, model, params, args, model_base)

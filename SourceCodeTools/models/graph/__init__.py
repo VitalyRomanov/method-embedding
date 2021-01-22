@@ -6,7 +6,7 @@
 
 # https://docs.dgl.ai/tutorials/hetero/1_basics.html#working-with-heterogeneous-graphs-in-dgl
 
-from SourceCodeTools.graph.model.gat import GAT
-from SourceCodeTools.graph.model.rgcn_hetero import RGCN
-from SourceCodeTools.graph.model.rgcn_sampling import RGCNSampling
-from SourceCodeTools.graph.model.ggnn import GGNN
+from SourceCodeTools.models.graph.gat import GAT
+from SourceCodeTools.models.graph.rgcn_hetero import RGCN
+from SourceCodeTools.models.graph.rgcn_sampling import RGCNSampling
+from SourceCodeTools.models.graph.ggnn import GGNN

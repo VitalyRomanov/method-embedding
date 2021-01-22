@@ -10,9 +10,9 @@ import numpy as np
 import spacy
 from spacy.gold import biluo_tags_from_offsets
 
-from SourceCodeTools.graph.model.Embedder import Embedder
+from SourceCodeTools.models.Embedder import Embedder
 from SourceCodeTools.nlp.entity.ClassWeightNormalizer import ClassWeightNormalizer
-from SourceCodeTools.mlp.entity.ast_tools import get_declarations
+from SourceCodeTools.nlp.entity.ast_tools import get_declarations
 from SourceCodeTools.nlp.entity.tf_model import TypePredictor, train
 from SourceCodeTools.nlp.entity.util import inject_tokenizer, read_data, el_hash, overlap
 
@@ -738,4 +738,4 @@ if __name__ == "__main__":
                 learning_rate_decay=args.learning_rate_decay,
                 batch_size=args.batch_size,
                 finetune=args.finetune)
-    # main_spacy(TRAIN_DATA, TEST_DATA, model=model_path,output_dir=output_dir, n_iter=n_iter)
+    # main_spacy(TRAIN_DATA, TEST_DATA, graph=model_path,output_dir=output_dir, n_iter=n_iter)

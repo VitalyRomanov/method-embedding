@@ -4,7 +4,7 @@ import sys
 from os.path import join, isdir
 from os import mkdir
 
-from SourceCodeTools.graph.model.ElementEmbedder import ElementEmbedder
+from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedder
 
 
 def get_num_batches(length, batch_size_suggestion):

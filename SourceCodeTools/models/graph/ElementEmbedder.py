@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 import random as rnd
 
-from SourceCodeTools.graph.model.ElementEmbedderBase import ElementEmbedderBase
+from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
 
 class ElementEmbedder(ElementEmbedderBase, nn.Module):
     def __init__(self, elements, nodes, emb_size, compact_dst=True):

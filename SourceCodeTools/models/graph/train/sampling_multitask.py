@@ -9,9 +9,9 @@ from time import time
 from os.path import join
 import logging
 
-from SourceCodeTools.graph.model.train.utils import BestScoreTracker  # create_elem_embedder
-from SourceCodeTools.graph.model.LinkPredictor import LinkPredictor
-from SourceCodeTools.graph.model.NodeEmbedder import SimpleNodeEmbedder
+from SourceCodeTools.models.graph.train.utils import BestScoreTracker  # create_elem_embedder
+from SourceCodeTools.models.graph.LinkPredictor import LinkPredictor
+from SourceCodeTools.models.graph.NodeEmbedder import SimpleNodeEmbedder
 
 
 def _compute_accuracy(pred_, true_):
@@ -52,7 +52,7 @@ class SamplingMultitaskTrainer:
         #     self.elem_emb_size, compact_dst=False
         # ).to(device)
 
-        from SourceCodeTools.graph.model.ElementEmbedder import ElementEmbedderWithBpeSubwords
+        from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedderWithBpeSubwords
         self.ee_node_name = ElementEmbedderWithBpeSubwords(
             elements=dataset.load_node_names(), nodes=dataset.nodes, emb_size=self.elem_emb_size,
             tokenizer_path=tokenizer_path
@@ -63,7 +63,7 @@ class SamplingMultitaskTrainer:
             tokenizer_path=tokenizer_path
         ).to(device)
 
-        from SourceCodeTools.graph.model.ElementEmbedderBase import ElementEmbedderBase
+        from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
         self.ee_api_call = ElementEmbedderBase(
             elements=dataset.load_api_call(), nodes=dataset.nodes, compact_dst=False
         )

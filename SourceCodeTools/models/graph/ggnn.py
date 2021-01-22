@@ -5,7 +5,7 @@ import dgl.function as fn
 from dgl.nn.pytorch.conv import GatedGraphConv
 
 from SourceCodeTools.code.data.sourcetrail.Dataset import compact_property
-from SourceCodeTools.graph.model.Embedder import Embedder
+from SourceCodeTools.models.Embedder import Embedder
 
 
 class GatedGraphConv(nn.Module):

@@ -6,7 +6,7 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 
 # from graphtools import Embedder
-from SourceCodeTools.graph.model.Embedder import Embedder
+from SourceCodeTools.models.Embedder import Embedder
 import pickle
 
 from SourceCodeTools.tabular.common import compact_property
@@ -315,7 +315,7 @@ class Experiment:
         # do it before creating experiment?
         self.target.drop_duplicates(['src', 'dst'], inplace=True, ignore_index=True)
 
-        # size of embeddings given by gnn model
+        # size of embeddings given by gnn graph
         self.embed_size = self.embed.e.shape[1]
 
         # initialize negative sampler
@@ -332,7 +332,7 @@ class Experiment:
         elif self.split_on == "nodes":
             # # this is useful if you use ElementEmbedder
             self.target['id'] = self.target['src']
-            from SourceCodeTools.graph.model.ElementEmbedderBase import ElementEmbedderBase
+            from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
             self.ee = ElementEmbedderBase(self.target, compact_dst=compact_dst)
             self.train_nodes, self.test_nodes = train_test_split(self.unique_src, test_size=self.TEST_FRAC,
                                                                  random_state=42)
@@ -536,7 +536,7 @@ class Experiment_tt(Experiment):
         elif self.split_on == "nodes":
             # # this is useful if you use ElementEmbedder
             self.target['id'] = self.target['src']
-            from SourceCodeTools.graph.model.ElementEmbedderBase import ElementEmbedderBase
+            from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
             self.ee = ElementEmbedderBase(self.target, compact_dst=compact_dst)
             self.train_nodes, self.test_nodes = train_nodes, test_nodes
         else:
@@ -663,7 +663,7 @@ class Experiment2WithSubwords(Experiment2):
                                           neg_sampling_strategy=neg_sampling_strategy, K=K, test_frac=test_frac,
                                           compact_dst=compact_dst)
 
-        from SourceCodeTools.graph.model.ElementEmbedder import window, hashstr, create_fixed_length
+        from SourceCodeTools.models.graph.ElementEmbedder import window, hashstr, create_fixed_length
 
         reprs = target['orig_dst'].map(lambda x: window(x, gram_size)) \
             .map(lambda grams: (hashstr(g, num_buckets) for g in grams)) \

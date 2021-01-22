@@ -138,7 +138,7 @@ def load_w2v_map(w2v_path):
             assert len(e[1:]) == n_dims
             embs.append(list(map(float, e[1:])))
 
-    from SourceCodeTools.graph.model.Embedder import Embedder
+    from SourceCodeTools.models.Embedder import Embedder
     import numpy as np
 
     return Embedder(w_map, np.array(embs))

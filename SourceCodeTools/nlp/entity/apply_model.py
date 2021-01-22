@@ -1,21 +1,19 @@
 from __future__ import unicode_literals, print_function
-import spacy
 import sys, json, os
 import pickle
 from SourceCodeTools.nlp.entity.util import inject_tokenizer, read_data, overlap
 from spacy.gold import biluo_tags_from_offsets
 
-from spacy.gold import GoldParse
-from spacy.scorer import Scorer
+# from spacy.gold import GoldParse
+# from spacy.scorer import Scorer
 
-from pathlib import Path
 import spacy
-from spacy.util import minibatch, compounding
+# from spacy.util import minibatch, compounding
 import numpy as np
 
 from SourceCodeTools.nlp.entity.ast_tools import get_declarations
 
-from SourceCodeTools.graph.model.Embedder import Embedder
+from SourceCodeTools.models.Embedder import Embedder
 # from tf_model import create_batches
 
 from SourceCodeTools.nlp.entity.tf_model import TypePredictor
@@ -23,8 +21,6 @@ from SourceCodeTools.nlp.entity.type_prediction import create_batches_with_mask
 
 max_len = 400
 
-from SourceCodeTools.nlp.entity.ClassWeightNormalizer import ClassWeightNormalizer
-from SourceCodeTools.nlp.entity.type_prediction import tags_to_mask, declarations_to_tags
 
 def prepare_data_with_mentions(sents, model):
     sents_w = []
