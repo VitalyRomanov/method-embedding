@@ -11,10 +11,10 @@ import spacy
 from spacy.gold import biluo_tags_from_offsets
 
 from SourceCodeTools.graph.model.Embedder import Embedder
-from SourceCodeTools.proc.entity.ClassWeightNormalizer import ClassWeightNormalizer
-from SourceCodeTools.proc.entity.ast_tools import get_declarations
-from SourceCodeTools.proc.entity.tf_model import TypePredictor, train
-from SourceCodeTools.proc.entity.util import inject_tokenizer, read_data, el_hash, overlap
+from SourceCodeTools.nlp.entity.ClassWeightNormalizer import ClassWeightNormalizer
+from SourceCodeTools.mlp.entity.ast_tools import get_declarations
+from SourceCodeTools.nlp.entity.tf_model import TypePredictor, train
+from SourceCodeTools.nlp.entity.util import inject_tokenizer, read_data, el_hash, overlap
 
 max_len = 400
 

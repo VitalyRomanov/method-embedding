@@ -8,8 +8,8 @@ import pandas as pd
 import spacy
 from spacy.gold import biluo_tags_from_offsets
 
-from SourceCodeTools.proc.entity.util import inject_tokenizer
-from SourceCodeTools.proc.entity.annotator.annotator_utils import to_offsets, overlap
+from SourceCodeTools.nlp.entity.util import inject_tokenizer
+from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets, overlap
 
 nlp = inject_tokenizer(spacy.blank("en"))
 

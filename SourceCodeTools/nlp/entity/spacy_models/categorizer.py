@@ -14,7 +14,7 @@ import plac
 import random
 from pathlib import Path
 import thinc.extra.datasets
-from SourceCodeTools.proc.entity.util import read_data_classes
+from SourceCodeTools.nlp.entity.util import read_data_classes
 
 
 import spacy

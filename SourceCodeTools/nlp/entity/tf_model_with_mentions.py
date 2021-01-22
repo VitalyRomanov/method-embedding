@@ -1,20 +1,14 @@
 # import tensorflow as tf
-import sys
 # from gensim.models import Word2Vec
 import numpy as np
-from collections import Counter
-from scipy.linalg import toeplitz
 # from gensim.models import KeyedVectors
 from copy import copy
 
 import tensorflow as tf
 import tensorflow_addons as tfa
 
-from tensorflow.keras.layers import Dense, Flatten, Conv2D, Input, Embedding, concatenate
+from tensorflow.keras.layers import Dense, Embedding
 from tensorflow.keras import Model
-from tensorflow.keras import regularizers
-
-from spacy.gold import offsets_from_biluo_tags
 
 # alternative models
 # https://github.com/flairNLP/flair/tree/master/flair/models
@@ -22,7 +16,7 @@ from spacy.gold import offsets_from_biluo_tags
 # https://arxiv.org/pdf/1903.07785v1.pdf
 # https://github.com/tensorflow/models/tree/master/research/cvt_text/model
 
-from SourceCodeTools.proc.entity.tf_model import DefaultEmbedding, TextCnnLayer
+from SourceCodeTools.nlp.entity.tf_model import DefaultEmbedding, TextCnnLayer
 
 
 class TextCnn(Model):

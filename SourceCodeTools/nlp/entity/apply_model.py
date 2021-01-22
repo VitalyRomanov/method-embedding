@@ -2,33 +2,29 @@ from __future__ import unicode_literals, print_function
 import spacy
 import sys, json, os
 import pickle
-from SourceCodeTools.proc.entity.util import inject_tokenizer, read_data, deal_with_incorrect_offsets, el_hash, overlap
-from spacy.gold import biluo_tags_from_offsets, offsets_from_biluo_tags
+from SourceCodeTools.nlp.entity.util import inject_tokenizer, read_data, overlap
+from spacy.gold import biluo_tags_from_offsets
 
 from spacy.gold import GoldParse
 from spacy.scorer import Scorer
 
-import random
 from pathlib import Path
 import spacy
 from spacy.util import minibatch, compounding
 import numpy as np
-from copy import copy
 
-from SourceCodeTools.proc.entity.ast_tools import get_declarations
+from SourceCodeTools.nlp.entity.ast_tools import get_declarations
 
 from SourceCodeTools.graph.model.Embedder import Embedder
 # from tf_model import create_batches
 
-from SourceCodeTools.proc.entity.tf_model import estimate_crf_transitions, TypePredictor, train
-from SourceCodeTools.proc.entity.type_prediction import create_batches_with_mask
+from SourceCodeTools.nlp.entity.tf_model import TypePredictor
+from SourceCodeTools.nlp.entity.type_prediction import create_batches_with_mask
 
 max_len = 400
 
-from SourceCodeTools.proc.entity.ClassWeightNormalizer import ClassWeightNormalizer
-
-from SourceCodeTools.proc.entity.type_prediction import tags_to_mask, declarations_to_tags
-
+from SourceCodeTools.nlp.entity.ClassWeightNormalizer import ClassWeightNormalizer
+from SourceCodeTools.nlp.entity.type_prediction import tags_to_mask, declarations_to_tags
 
 def prepare_data_with_mentions(sents, model):
     sents_w = []
@@ -292,7 +288,7 @@ def main_tf(TRAIN_DATA, TEST_DATA,
         t_map, inv_t_map
     )
 
-    from SourceCodeTools.proc.entity.entity_render import render_annotations
+    from SourceCodeTools.nlp.entity.entity_render import render_annotations
 
     html = render_annotations(zip(TEST_DATA, est_annotations, true_annotations))
     with open("render.html", "w") as render:

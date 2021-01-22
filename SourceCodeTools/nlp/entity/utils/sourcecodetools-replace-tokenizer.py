@@ -1,6 +1,6 @@
 import spacy
 import sys
-from SourceCodeTools.proc.entity.util import inject_tokenizer
+from SourceCodeTools.nlp.entity.util import inject_tokenizer
 
 nlp = spacy.load(sys.argv[1])
 nlp = inject_tokenizer(nlp)

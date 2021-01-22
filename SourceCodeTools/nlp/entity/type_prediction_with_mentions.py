@@ -2,7 +2,7 @@ from __future__ import unicode_literals, print_function
 import spacy
 import sys, json, os
 import pickle
-from SourceCodeTools.proc.entity.util import inject_tokenizer, read_data, deal_with_incorrect_offsets, el_hash, overlap
+from SourceCodeTools.nlp.entity.util import inject_tokenizer, read_data, deal_with_incorrect_offsets, el_hash, overlap
 from spacy.gold import biluo_tags_from_offsets, offsets_from_biluo_tags
 
 from spacy.gold import GoldParse
@@ -15,17 +15,17 @@ from spacy.util import minibatch, compounding
 import numpy as np
 from copy import copy
 
-from SourceCodeTools.proc.entity.ast_tools import get_declarations
+from SourceCodeTools.nlp.entity.ast_tools import get_declarations
 
 from SourceCodeTools.graph.model.Embedder import Embedder
 # from tf_model import create_batches
 
-from SourceCodeTools.proc.entity.tf_model_with_mentions import TypePredictor, train
+from SourceCodeTools.nlp.entity.tf_model_with_mentions import TypePredictor, train
 
 max_len = 400
 
 
-from SourceCodeTools.proc.entity.type_prediction import ClassWeightNormalizer, evaluate, declarations_to_tags
+from SourceCodeTools.nlp.entity.type_prediction import ClassWeightNormalizer, evaluate, declarations_to_tags
 
 
 def filter_declarations(entities, declarations):
@@ -84,7 +84,7 @@ def prepare_data_with_mentions(sents, model_path):
     return sents_w, sents_t, sents_r, sents_decls
 
 
-from SourceCodeTools.proc.entity.type_prediction import load_pkl_emb, load_w2v_map, create_tag_map
+from SourceCodeTools.nlp.entity.type_prediction import load_pkl_emb, load_w2v_map, create_tag_map
 
 def create_batches_with_mentions(batch_size, seq_len, sents, repl, tags, decls_mentions, graphmap, wordmap, tagmap, class_weights=None, element_hash_size=1000):
     pad_id = len(wordmap)
@@ -183,7 +183,7 @@ def create_batches_with_mentions(batch_size, seq_len, sents, repl, tags, decls_m
     return batch
 
 
-from SourceCodeTools.proc.entity.type_prediction import scorer
+from SourceCodeTools.nlp.entity.type_prediction import scorer
 
 
 def main_tf_hyper_search(TRAIN_DATA, TEST_DATA,

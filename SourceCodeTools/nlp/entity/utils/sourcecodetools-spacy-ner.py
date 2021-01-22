@@ -2,7 +2,7 @@ from __future__ import unicode_literals, print_function
 import spacy
 import sys, json, os
 import pickle
-from SourceCodeTools.proc.entity.util import inject_tokenizer, read_data
+from SourceCodeTools.nlp.entity.util import inject_tokenizer, read_data
 from spacy.gold import biluo_tags_from_offsets
 
 from spacy.gold import GoldParse
@@ -16,7 +16,7 @@ def evaluate(ner_model, examples):
         pred_value = ner_model(input_)
         scorer.score(pred_value, gold)
     return {key: scorer.scores[key] for key in ['ents_p', 'ents_r', 'ents_f', 'ents_per_type']}
-    return scorer.scores['ents_per_type']
+    # return scorer.scores['ents_per_type']
 
 model_path = sys.argv[1]
 data_path = sys.argv[2]

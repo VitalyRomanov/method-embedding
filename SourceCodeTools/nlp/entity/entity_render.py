@@ -1,5 +1,5 @@
 import spacy
-from SourceCodeTools.proc.entity.util import inject_tokenizer
+from SourceCodeTools.nlp.entity.util import inject_tokenizer
 
 html_template = """<!DOCTYPE html>
 <html lang="en"><head>
