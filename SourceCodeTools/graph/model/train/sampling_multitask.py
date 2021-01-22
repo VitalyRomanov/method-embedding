@@ -18,6 +18,113 @@ def _compute_accuracy(pred_, true_):
     return torch.sum(pred_ == true_).item() / len(true_)
 
 
+class SimpleNodeEmbedder(nn.Module):
+    def __init__(self, dataset, emb_size, dtype=None, n_buckets=500000, pretrained=None):
+        super(SimpleNodeEmbedder, self).__init__()
+
+        self.emb_size = emb_size
+        self.dtype = dtype
+        if dtype is None:
+            self.dtype = torch.float32
+        self.n_buckets = n_buckets
+
+        self.buckets = None
+
+        leaf_types = {'subword', "Op", "Constant", "Name"}
+
+        nodes_with_embeddings = dataset.nodes[
+            dataset.nodes['type_backup'].apply(lambda type_: type_ in leaf_types)
+        ][['global_graph_id', 'typed_id', 'type', 'type_backup', 'name']]
+
+        type_name = list(zip(nodes_with_embeddings['type_backup'], nodes_with_embeddings['name']))
+
+        self.node_info = dict(zip(
+            list(zip(nodes_with_embeddings['type'], nodes_with_embeddings['typed_id'])),
+            type_name
+        ))
+
+        assert len(nodes_with_embeddings) == len(self.node_info)
+
+        self.node_info_global = dict(zip(
+            nodes_with_embeddings['global_graph_id'],
+            type_name
+        ))
+
+        if pretrained is None:
+            self._create_buckets()
+        else:
+            self._create_buckets_from_pretrained(pretrained)
+
+    def _create_buckets(self):
+        self.buckets = nn.Embedding(self.n_buckets + 1, self.emb_size, padding_idx=self.n_buckets)
+
+    def _create_buckets_from_pretrained(self, pretrained):
+
+        assert pretrained.n_dims == self.emb_size
+
+        import numpy as np
+
+        embs_init = np.random.randn(self.n_buckets, self.emb_size).astype(np.float32)
+
+        for word in pretrained.keys():
+            ind = token_hasher(word, self.n_buckets)
+            embs_init[ind, :] = pretrained[word]
+
+        from SourceCodeTools.embed.python_op_to_bpe_subwords import python_ops_to_bpe
+
+        def op_embedding(op_tokens):
+            embedding = None
+            for token in op_tokens:
+                token_emb = pretrained.get(token, None)
+                if embedding is None:
+                    embedding = token_emb
+                else:
+                    embedding = embedding + token_emb
+            return embedding
+
+        for op, op_tokens in python_ops_to_bpe.items():
+            op_emb = op_embedding(op_tokens)
+            if op_emb is not None:
+                op_ind = token_hasher(op, self.n_buckets)
+                embs_init[op_ind, :] = op_emb
+
+        weights_with_pad = torch.tensor(np.vstack([embs_init, np.zeros((1, self.emb_size), dtype=np.float32)]))
+
+        self.buckets = nn.Embedding.from_pretrained(weights_with_pad, freeze=False, padding_idx=self.n_buckets)
+
+    def _get_embedding_from_node_info(self, keys, node_info):
+        idxs = []
+
+        for key in keys:
+            if key in node_info:
+                real_type, name = node_info[key]
+                idxs.append(token_hasher(name, self.n_buckets))
+            else:
+                idxs.append(self.n_buckets)
+
+        return self.buckets(torch.LongTensor(idxs))
+
+    def _get_embeddings_with_type(self, node_type, ids):
+        type_ids = ((node_type, id_) for id_ in ids)
+        return self._get_embedding_from_node_info(type_ids, self.node_info)
+
+    def _get_embeddings_global(self, ids):
+        return self._get_embedding_from_node_info(ids, self.node_info_global)
+
+    def get_embeddings(self, node_type=None, node_ids=None):
+        assert node_ids is not None
+        if node_type is None:
+            return self._get_embeddings_global(node_ids)
+        else:
+            return self._get_embeddings_with_type(node_type, node_ids)
+
+    def forward(self, node_type=None, node_ids=None, train_embeddings=True):
+        if train_embeddings:
+            return self.get_embeddings(node_type, node_ids.tolist())
+        else:
+            with torch.set_grad_enabled(False):
+                return self.get_embeddings(node_type, node_ids.tolist())
+
 class NodeEmbedder(nn.Module):
     def __init__(self, dataset, emb_size, tokenizer_path, dtype=None, n_buckets=100000, pretrained=None):
         super(NodeEmbedder, self).__init__()
@@ -255,17 +362,17 @@ class SamplingMultitaskTrainer:
             logging.info(f"Loading pretrained embeddings...")
         logging.info(f"Input embedding size is {n_dims}")
 
-        self.node_embedder = NodeEmbedder(
+        self.node_embedder = SimpleNodeEmbedder(
             dataset=dataset,
             emb_size=n_dims,
-            tokenizer_path=tokenizer_path,
+            # tokenizer_path=tokenizer_path,
             dtype=self.dtype,
             pretrained=pretrained
         )
 
-        # node_embedder.get_embeddings("node_", [0])
-        # node_embedder.get_embeddings("node_", [13749])
-        # node_embedder.get_embeddings("node_", [13754])
+        # self.node_embedder(node_type="node_", node_ids=torch.LongTensor([0]))
+        # self.node_embedder(node_type="node_", node_ids=torch.LongTensor([13749]))
+        # self.node_embedder(node_type="node_", node_ids=torch.LongTensor([13754]))
 
         # node_, 0 matplotlib
         # node_ 13749        Renderer

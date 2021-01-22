@@ -32,6 +32,12 @@ class Embedder:
     def __contains__(self, item):
         return item in self.ind
 
+    def keys(self):
+        return self.ind.keys()
+
+    def get(self, item, default):
+        return self[item] if item in self else default
+
     @property
     def n_embs(self):
         return len(self.ind)
