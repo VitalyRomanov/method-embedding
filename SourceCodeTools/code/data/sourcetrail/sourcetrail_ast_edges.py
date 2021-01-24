@@ -14,6 +14,25 @@ from SourceCodeTools.code.data.sourcetrail.common import custom_tqdm
 pd.options.mode.chained_assignment = None
 
 
+class SharedNodeDetector:
+    leaf_types = {'subword', "Op", "Constant", "JoinedStr", "CtlFlow", "ast_Literal", "Name", "type_annotation", "returned_by"}
+    shared_node_types = {'subword', "Op", "Constant", "JoinedStr", "CtlFlow", "ast_Literal", "Name", "type_annotation", "returned_by", "#attr#", "#keyword#"}
+
+    @classmethod
+    def is_shared(cls, node):
+
+        # nodes that are of stared type
+        # nodes that are subwords of keyword arguments
+        return SharedNodeDetector.is_shared_name_type(node.name, node.type)
+
+    @classmethod
+    def is_shared_name_type(cls, name, type):
+        if type in cls.shared_node_types or \
+                (type == "subword_instance" and "0x" not in name):
+            return True
+        return False
+
+
 class NodeResolver:
     def __init__(self, nodes):
 
@@ -51,7 +70,7 @@ class NodeResolver:
                 type_ = "mention"
                 new_node = GNode(name=real_name, type=type_, name_scope="local")
             else:
-                real_name = self.nodeid2name[node_id]
+                real_name = self.nodeid2name[node_id]  # full name, including modules
                 type_ = self.nodeid2type[node_id]
                 new_node = GNode(name=real_name, type=type_, id=node_id, name_scope="global")
             return new_node
@@ -73,10 +92,12 @@ class NodeResolver:
 
         real_name = name_
         for r, v in replacements.items():
-            real_name = name_.replace(r, v["name"])
+            real_name = real_name.replace(r, v["name"])
 
         if decorated:
             real_name += "@" + decorator
+
+        assert "srctrl" not in real_name
 
         return GNode(name=real_name, type=node.type)
 
@@ -85,12 +106,23 @@ class NodeResolver:
             node_repr = (node.name.strip(), node.type.strip())
 
             if node_repr in self.node_ids:
-                node.setprop("id", self.node_ids[node_repr])
+                node_id = self.node_ids[node_repr]
+                node.setprop("id", node_id)
             else:
                 new_id = self.get_new_node_id()
                 self.node_ids[node_repr] = new_id
+
+                if not SharedNodeDetector.is_shared(node):
+                    assert "0x" in node.name
+
                 self.new_nodes.append(
-                    {"id": new_id, "type": node.type, "serialized_name": node.name, "mentioned_in": function_id})
+                    {
+                        "id": new_id,
+                        "type": node.type,
+                        "serialized_name": node.name,
+                        "mentioned_in": function_id if not SharedNodeDetector.is_shared(node) else pd.NA
+                    }
+                )
 
                 # temp = pd.DataFrame(self.new_nodes)
                 # temp['node_repr'] = list(zip(temp['serialized_name'], temp['type']))
@@ -98,6 +130,21 @@ class NodeResolver:
 
                 node.setprop("id", new_id)
         return node
+
+    def prepare_for_write(self):
+        nodes = pd.concat([self.old_nodes, self.new_nodes_for_write()])[
+            ['id', 'type', 'serialized_name', 'mentioned_in']
+        ]
+
+        return nodes
+
+    def new_nodes_for_write(self):
+
+        new_nodes = pd.DataFrame(self.new_nodes)[
+            ['id', 'type', 'serialized_name', 'mentioned_in']
+        ]
+
+        return new_nodes
 
 
 def get_ast_nodes(edges):
@@ -116,19 +163,19 @@ def get_ast_nodes(edges):
 
     return nodes
 
-
-def get_byte_to_char_map(unicode_string):
-    """
-    Generates a dictionary mapping character offsets to byte offsets for unicode_string.
-    """
-    response = {}
-    byte_offset = 0
-    for char_offset, character in enumerate(unicode_string):
-        response[byte_offset] = char_offset
-        print(character, byte_offset, char_offset)
-        byte_offset += len(character.encode('utf-8'))
-    response[byte_offset] = len(unicode_string)
-    return response
+# from SourceCodeTools.nlp.string_tools import get_byte_to_char_map
+# def get_byte_to_char_map(unicode_string):
+#     """
+#     Generates a dictionary mapping character offsets to byte offsets for unicode_string.
+#     """
+#     response = {}
+#     byte_offset = 0
+#     for char_offset, character in enumerate(unicode_string):
+#         response[byte_offset] = char_offset
+#         print(character, byte_offset, char_offset)
+#         byte_offset += len(character.encode('utf-8'))
+#     response[byte_offset] = len(unicode_string)
+#     return response
 
 
 def adjust_offsets(offsets, amount):
@@ -352,20 +399,17 @@ def replace_mentions_with_subword_instances(edges, bpe, create_subword_instances
                 if not is_global_mention:
                     new_edges.append(edge)
 
-        elif bpe is not None and edge['type'] == "attr":
+        elif bpe is not None and \
+                (
+                    edge['src'].type in {"#attr#", "#keyword#", "Name", "NameConstant"}
+                ) or (
+                    edge['dst'].type in {"Global"} and edge['src'].type != "Constant"
+                ):
             new_edges.append(edge)
             new_edges.append(make_reverse_edge(edge))
 
             dst = edge['src']
             subwords = bpe(dst.name)
-            new_edges.extend(produce_subw_edges(subwords, dst))
-
-        elif bpe is not None and (edge['type'] == "name" or edge['type'] == "names"):
-            if hasattr(edge['src'], "id"):
-                new_edges.extend(global_mention_edges(edge))
-
-            dst = edge['dst']
-            subwords = bpe(edge['src'].name.split(".")[-1])
             new_edges.extend(produce_subw_edges(subwords, dst))
         else:
             new_edges.append(edge)
@@ -394,11 +438,22 @@ def write_bodies(path, bodies):
     write_pickle(pd.DataFrame(bodies), path)
 
 
-def write_nodes(path, node_resolver):
-    new_nodes = pd.concat([node_resolver.old_nodes, pd.DataFrame(node_resolver.new_nodes)])[
-        ['id', 'type', 'serialized_name', 'mentioned_in']
-    ]
+def write_nodes(path, node_resolver: NodeResolver):
+    # new_nodes = pd.concat([node_resolver.old_nodes, pd.DataFrame(node_resolver.new_nodes)])[
+    #     ['id', 'type', 'serialized_name', 'mentioned_in']
+    # ]
+
+    new_nodes = node_resolver.prepare_for_write()
     write_pickle(new_nodes, path)
+
+
+def leaf_nodes_are_leaf_types(nodes: pd.DataFrame, edges: pd.DataFrame):
+    leaf = set(edges["source_node_id"].tolist()) - set(edges["target_node_id"].tolist())
+    leaf_nodes = nodes[nodes["id"].apply(lambda id_: id_ in leaf)]
+
+    is_leaf = map(lambda type_: type_ in SharedNodeDetector.leaf_types, leaf_nodes['type'].unique())
+
+    return all(is_leaf)
 
 
 def _get_from_ast(bodies, node_resolver,
@@ -430,6 +485,8 @@ def _get_from_ast(bodies, node_resolver,
             print(e)
             continue
 
+        replacements = row['random_2_srctrl']
+
         g = AstGraphGenerator(c)
 
         edges = g.get_edges()
@@ -437,7 +494,6 @@ def _get_from_ast(bodies, node_resolver,
         if len(edges) == 0:
             continue
 
-        replacements = row['random_2_srctrl']
         # replacements_lookup = lambda x: complex_replacement_lookup(x, replacements)
         replacements_lookup = lambda x: \
             GNode(name=random_replacement_lookup(x.name, replacements, tokenizer),
@@ -496,12 +552,16 @@ def _get_from_ast(bodies, node_resolver,
 
     # write_nodes(path=nodes_with_ast_name, node_resolver=node_resolver)
 
-    ast_nodes = pd.DataFrame(node_resolver.new_nodes)[['id', 'type', 'serialized_name', 'mentioned_in']].astype(
-        {'mentioned_in': 'Int32'}
-    )
+    # ast_nodes = pd.DataFrame(node_resolver.new_nodes)[['id', 'type', 'serialized_name', 'mentioned_in']].astype(
+    #     {'mentioned_in': 'Int32'}
+    # )
+    ast_nodes = node_resolver.new_nodes_for_write()
     ast_edges = ast_edges.rename({'src': 'source_node_id', 'dst': 'target_node_id'}, axis=1).astype(
         {'mentioned_in': 'Int32'}
     )
+
+    assert leaf_nodes_are_leaf_types(ast_nodes, ast_edges)
+
     return ast_nodes, ast_edges, bodies
 
 
