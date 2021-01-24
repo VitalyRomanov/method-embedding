@@ -15,7 +15,14 @@ class SimpleNodeEmbedder(nn.Module):
 
         self.buckets = None
 
-        leaf_types = {'subword', "Op", "Constant", "Name"}
+        from SourceCodeTools.code.data.sourcetrail.sourcetrail_ast_edges import SharedNodeDetector
+
+        leaf_types = SharedNodeDetector.shared_node_types
+
+        if len(dataset.nodes.query("type_backup == 'subword'")) > 0:
+            # some of the types should not be embedded if subwords were generated
+            leaf_types = leaf_types - {"#attr#"}
+            leaf_types = leaf_types - {"#keyword#"}
 
         nodes_with_embeddings = dataset.nodes[
             dataset.nodes['type_backup'].apply(lambda type_: type_ in leaf_types)
@@ -55,7 +62,7 @@ class SimpleNodeEmbedder(nn.Module):
             ind = token_hasher(word, self.n_buckets)
             embs_init[ind, :] = pretrained[word]
 
-        from SourceCodeTools.code.python_op_to_bpe_subwords import python_ops_to_bpe
+        from SourceCodeTools.code.python_tokens_to_bpe_subwords import python_ops_to_bpe
 
         def op_embedding(op_tokens):
             embedding = None
@@ -127,7 +134,14 @@ class NodeEmbedder(nn.Module):
         self.pretrained_embeddings = None
         self.buckets = None
 
-        self.leaf_types = {'subword', "Op", "Constant", "Name"}
+        from SourceCodeTools.code.data.sourcetrail.sourcetrail_ast_edges import SharedNodeDetector
+
+        leaf_types = SharedNodeDetector.shared_node_types
+
+        if len(dataset.nodes.query("type_backup == 'subword'")) > 0:
+            # some of the types should not be embedded if subwords were generated
+            leaf_types = leaf_types - {"#attr#"}
+            leaf_types = leaf_types - {"#keyword#"}
 
         nodes_with_embeddings = dataset.nodes[
             dataset.nodes['type_backup'].apply(lambda type_: type_ in self.leaf_types)
@@ -169,7 +183,7 @@ class NodeEmbedder(nn.Module):
 
     def _create_ops_tokenization(self, nodes_with_embeddings):
         ops = nodes_with_embeddings.query("type_backup == 'Op'")
-        from SourceCodeTools.code.python_op_to_bpe_subwords import op_tokenizer
+        from SourceCodeTools.code.python_tokens_to_bpe_subwords import op_tokenizer
 
         self.ops_tokenized = dict(zip(ops['name'], ops['name'].apply(op_tokenizer)))
 
@@ -182,7 +196,7 @@ class NodeEmbedder(nn.Module):
     def _init_tokenizer(self, tokenizer_path):
         from SourceCodeTools.nlp.embed.bpe import load_bpe_model, make_tokenizer
         self.bpe_tokenizer = make_tokenizer(load_bpe_model(tokenizer_path))
-        from SourceCodeTools.code.python_op_to_bpe_subwords import op_tokenizer
+        from SourceCodeTools.code.python_tokens_to_bpe_subwords import op_tokenizer
         self.op_tokenizer = op_tokenizer
 
     def _tokenize(self, type_, name):

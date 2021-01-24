@@ -28,7 +28,10 @@ python_ops_to_bpe = {
     # 'MatMul??'
     'BitXor': ["▁^"],
     'LShift': ["▁<<"],
-    'RShift': ["▁>>"]
+    'RShift': ["▁>>"],
+    "Break": ["▁break"],
+    "Pass": ["▁pass"],
+    "Continue": ["▁continue"],
 }
 
 def op_tokenizer(op: str):
