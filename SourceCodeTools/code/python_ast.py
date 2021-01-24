@@ -176,7 +176,7 @@ class AstGraphGenerator(object):
         if len(ext_edges) > 0:  # need this to avoid adding reverse edges to operation names and other highly connected nodes
             edges.append({"src": node_name, "dst": operand_name, "type": type + "_rev"})
 
-    def generic_parse(self, node, operands, with_name=None):
+    def generic_parse(self, node, operands, with_name=None, ensure_iterables=False):
 
         edges = []
 
@@ -192,8 +192,13 @@ class AstGraphGenerator(object):
                 operand_ = node.__getattribute__(operand)
                 if operand_ is not None:
                     if isinstance(operand_, Iterable) and not isinstance(operand_, str):
-                        for oper_ in operand_:
-                            self.parse_and_add_operand(node_name, oper_, operand, edges)
+                        # TODO:
+                        #  appears as leaf node if the iterable is empty. suggest adding an "EMPTY" element
+                        if len(operand_) == 0 and ensure_iterables:
+                            self.parse_and_add_operand(node_name, "!empty_iterable!", operand, edges)
+                        else:
+                            for oper_ in operand_:
+                                self.parse_and_add_operand(node_name, oper_, operand, edges)
                     else:
                         self.parse_and_add_operand(node_name, operand_, operand, edges)
 
@@ -208,7 +213,7 @@ class AstGraphGenerator(object):
         # node.lineno, node.col_offset, node.end_lineno, node.end_col_offset
         if node.lineno == node.end_lineno:
             type_str = self.source[node.lineno][node.col_offset - 1: node.end_col_offset]
-            print(type_str)
+            # print(type_str)
         else:
             type_str = ""
             for ln in range(node.lineno - 1, node.end_lineno):
@@ -229,7 +234,13 @@ class AstGraphGenerator(object):
         fdef_name = self.get_name(node)
         self.function_scope.append(fdef_name)
 
-        edges, f_name = self.generic_parse(node, ["args", "decorator_list"], with_name=fdef_name)
+        to_parse = []
+        if len(node.args.args) > 0 or node.args.vararg is not None:
+            to_parse.append("args")
+        if len("decorator_list") > 0:
+            to_parse.append("decorator_list")
+
+        edges, f_name = self.generic_parse(node, to_parse, with_name=fdef_name)
 
         if node.returns is not None:
             # returns stores return type annotation
@@ -279,15 +290,15 @@ class AstGraphGenerator(object):
         return edges, class_name
 
     def parse_ImportFrom(self, node):
-        # similar issues as with parsing alias, module name is parsed as a long chunk
-        # print(ast.dump(node))
-        edges, name = self.generic_parse(node, ["names"])
-        # if node.module:
-        #     name_from, edges_from = self.parse_operand(ast.parse(node.module).body[0].value)
-        #     edges.extend(edges_from)
-        #     edges.append({"src": name_from, "dst": name, "type": "module"})
-        return edges, name
-        # return self.generic_parse(node, ["module", "names"])
+        # # similar issues as with parsing alias, module name is parsed as a long chunk
+        # # print(ast.dump(node))
+        # edges, name = self.generic_parse(node, ["names"])
+        # # if node.module:
+        # #     name_from, edges_from = self.parse_operand(ast.parse(node.module).body[0].value)
+        # #     edges.extend(edges_from)
+        # #     edges.append({"src": name_from, "dst": name, "type": "module"})
+        # return edges, name
+        return self.generic_parse(node, ["module", "names"])
 
     def parse_Import(self, node):
         return self.generic_parse(node, ["names"])
@@ -315,17 +326,17 @@ class AstGraphGenerator(object):
         return self.generic_parse(node, ['context_expr', 'optional_vars'])
 
     def parse_alias(self, node):
-        # TODO
-        # aliases should be handled by sourcetrail. here i am trying to assign alias to a
-        # local mention of the module. maybe i should simply ignore aliases altogether
-
-        name = self.get_name(node)
-        edges = []
-        # name, edges = self.parse_operand(ast.parse(node.name).body[0].value) # <- this was the functional line
-        # # if node.asname:
-        # #     edges.append({"src": name, "dst": node.asname, "type": "alias"})
-        return edges, name
-        # return self.generic_parse(node, ["name", "asname"])
+        # # TODO
+        # # aliases should be handled by sourcetrail. here i am trying to assign alias to a
+        # # local mention of the module. maybe i should simply ignore aliases altogether
+        #
+        # name = self.get_name(node)
+        # edges = []
+        # # name, edges = self.parse_operand(ast.parse(node.name).body[0].value) # <- this was the functional line
+        # # # if node.asname:
+        # # #     edges.append({"src": name, "dst": node.asname, "type": "alias"})
+        # return edges, name
+        return self.generic_parse(node, ["name", "asname"])
 
     def parse_arg(self, node):
         # node.annotation stores type annotation
@@ -432,7 +443,7 @@ class AstGraphGenerator(object):
     def parse_keyword(self, node):
         # change arg name so that it does not mix with variable names
         if isinstance(node.arg, str):
-            node.arg += "@keyword"
+            node.arg += "@#keyword#"
             return self.generic_parse(node, ["arg", "value"])
         else:
             return self.generic_parse(node, ["value"])
@@ -450,7 +461,7 @@ class AstGraphGenerator(object):
 
     def parse_Attribute(self, node):
         if node.attr is not None:
-            node.attr += "@attr"
+            node.attr += "@#attr#"
         return self.generic_parse(node, ["value", "attr"])
 
     def parse_Name(self, node):
@@ -639,7 +650,7 @@ class AstGraphGenerator(object):
 
     def parse_control_flow(self, node):
         edges = []
-        ctrlflow_name = GNode(name="ctrl_flow_" + str(int(time_ns())), type="CtlFlowInstance")
+        ctrlflow_name = GNode(name="ctrl_flow_" + str(hex(int(time_ns()))), type="CtlFlowInstance")
         # ctrlflow_name = "ctrl_flow_" + str(int(time_ns()))
         edges.append({"src": GNode(name=node.__class__.__name__, type="CtlFlow"), "dst": ctrlflow_name, "type": "control_flow"})
 
@@ -660,16 +671,16 @@ class AstGraphGenerator(object):
         return self.generic_parse(node, ["test", "msg"])
 
     def parse_List(self, node):
-        return self.generic_parse(node, ["elts"])
+        return self.generic_parse(node, ["elts"], ensure_iterables=True)
 
     def parse_Tuple(self, node):
-        return self.generic_parse(node, ["elts"])
+        return self.generic_parse(node, ["elts"], ensure_iterables=True)
 
     def parse_Set(self, node):
-        return self.generic_parse(node, ["elts"])
+        return self.generic_parse(node, ["elts"], ensure_iterables=True)
 
     def parse_Dict(self, node):
-        return self.generic_parse(node, ["keys", "values"])
+        return self.generic_parse(node, ["keys", "values"], ensure_iterables=True)
 
     def parse_UnaryOp(self, node):
         return self.generic_parse(node, ["operand", "op"])
@@ -681,7 +692,9 @@ class AstGraphGenerator(object):
         return self.generic_parse(node, ["value"])
 
     def parse_JoinedStr(self, node):
-        return self.generic_parse(node, [])
+        joinedstr_name = GNode(name="JoinedStr_", type="JoinedStr")
+        return [], joinedstr_name
+        # return self.generic_parse(node, [])
         # return self.generic_parse(node, ["values"])
 
     def parse_FormattedValue(self, node):
@@ -721,7 +734,7 @@ class AstGraphGenerator(object):
     def parse_comprehension(self, node):
         edges = []
 
-        cph_name = GNode(name="comprehension" + str(int(time_ns())), type="comprehension")
+        cph_name = GNode(name="comprehension_" + str(hex(int(time_ns()))), type="comprehension")
 
         target, ext_edges = self.parse_operand(node.target)
         edges.extend(ext_edges)
