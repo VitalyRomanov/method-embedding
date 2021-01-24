@@ -144,7 +144,7 @@ class NodeEmbedder(nn.Module):
             leaf_types = leaf_types - {"#keyword#"}
 
         nodes_with_embeddings = dataset.nodes[
-            dataset.nodes['type_backup'].apply(lambda type_: type_ in self.leaf_types)
+            dataset.nodes['type_backup'].apply(lambda type_: type_ in leaf_types)
         ][['global_graph_id', 'typed_id', 'type', 'type_backup', 'name']]
 
         type_name = list(zip(nodes_with_embeddings['type_backup'], nodes_with_embeddings['name']))
