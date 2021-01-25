@@ -10,27 +10,9 @@ from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets, ove
 from SourceCodeTools.code.data.sourcetrail.file_utils import *
 from SourceCodeTools.nlp.embed.bpe import load_bpe_model, make_tokenizer
 from SourceCodeTools.code.data.sourcetrail.common import custom_tqdm
+from SourceCodeTools.code.python_ast import PythonSharedNodes
 
 pd.options.mode.chained_assignment = None
-
-
-class SharedNodeDetector:
-    leaf_types = {'subword', "Op", "Constant", "JoinedStr", "CtlFlow", "ast_Literal", "Name", "type_annotation", "returned_by"}
-    shared_node_types = {'subword', "Op", "Constant", "JoinedStr", "CtlFlow", "ast_Literal", "Name", "type_annotation", "returned_by", "#attr#", "#keyword#"}
-
-    @classmethod
-    def is_shared(cls, node):
-
-        # nodes that are of stared type
-        # nodes that are subwords of keyword arguments
-        return SharedNodeDetector.is_shared_name_type(node.name, node.type)
-
-    @classmethod
-    def is_shared_name_type(cls, name, type):
-        if type in cls.shared_node_types or \
-                (type == "subword_instance" and "0x" not in name):
-            return True
-        return False
 
 
 class NodeResolver:
@@ -62,17 +44,41 @@ class NodeResolver:
         else:
             name_ = copy(node.name)
 
-        if name_ in srctrl2original:
+        if name_ in srctrl2original and node.type != "type_annotation":
             node_id = int(name_.split("_")[1])
-            if decorated:
-                real_name = srctrl2original[name_]
-                real_name += "@" + decorator
-                type_ = "mention"
-                new_node = GNode(name=real_name, type=type_, name_scope="local")
+            # the only types that should appear here are "Name", "mention", "#attr#"
+            # the first two are from mentions, and the last one is when references sourcetrail node is an attribute
+            assert node.type in {"Name", "mention", "#attr#"}
+            real_name = srctrl2original[name_]
+            global_name = self.nodeid2name[node_id]
+            global_type = self.nodeid2type[node_id]
+
+            if node.type == "Name":
+                # name always go together with mention, therefore no global reference in Name
+                new_node = GNode(name=real_name, type=node.type, global_id=node_id)
+                # new_node = node
             else:
-                real_name = self.nodeid2name[node_id]  # full name, including modules
-                type_ = self.nodeid2type[node_id]
-                new_node = GNode(name=real_name, type=type_, id=node_id, name_scope="global")
+                if decorated:
+                    assert node.type == "mention"
+                    real_name += "@" + decorator
+                    type_ = "mention"
+                else:
+                    assert node.type == "#attr#"
+                    type_ = node.type
+                new_node = GNode(name=real_name, type=type_, global_name=global_name, global_id=node_id, global_type=global_type)
+
+            # if decorated:
+            #     # replace the sourcetrail node with its local name that have originally appeared in the
+            #     # source code of the function, because this was a mention, and should stay a mention
+            #     real_name = srctrl2original[name_]
+            #     real_name += "@" + decorator
+            #     type_ = "mention"
+            #     new_node = GNode(name=real_name, type=type_, name_scope="local")
+            # else:
+            #     # replace the sourcetrail node with full path
+            #     real_name = self.nodeid2name[node_id]  # full name, including modules
+            #     type_ = self.nodeid2type[node_id]
+            #     new_node = GNode(name=real_name, type=type_, id=node_id, name_scope="global")
             return new_node
 
         replacements = dict()
@@ -112,7 +118,7 @@ class NodeResolver:
                 new_id = self.get_new_node_id()
                 self.node_ids[node_repr] = new_id
 
-                if not SharedNodeDetector.is_shared(node):
+                if not PythonSharedNodes.is_shared(node):
                     assert "0x" in node.name
 
                 self.new_nodes.append(
@@ -120,7 +126,7 @@ class NodeResolver:
                         "id": new_id,
                         "type": node.type,
                         "serialized_name": node.name,
-                        "mentioned_in": function_id if not SharedNodeDetector.is_shared(node) else pd.NA
+                        "mentioned_in": function_id if not PythonSharedNodes.is_shared(node) else pd.NA
                     }
                 )
 
@@ -146,6 +152,48 @@ class NodeResolver:
 
         return new_nodes
 
+    def get_mention_edges(self):
+        mention_edges = None
+
+        mentined_nodes = pd.DataFrame(self.new_nodes).query("not mentioned_in.isnull()")
+        mention_groups = mentined_nodes.groupby("mentioned_in")
+
+        for grp_val, group in custom_tqdm(mention_groups, total=len(mention_groups), message="Preparing mention edges"):
+            mention_edges_direct = group[['id']]
+            mention_edges_direct['dst'] = grp_val
+            mention_edges_direct['type'] = "mention_scope"
+            mention_edges_direct = mention_edges_direct.rename({"id": "src"}, axis=1)
+
+            mention_edges_rev = mention_edges_direct.copy()
+            mention_edges_rev = mention_edges_rev.rename({"src": "dst", "dst": "src"}, axis=1)
+            mention_edges_rev['type'] = "mention_scope_rev"
+
+            all_mention_edges = mention_edges_direct.append(mention_edges_rev)
+
+            if mention_edges is None:
+                mention_edges = all_mention_edges
+            else:
+                mention_edges = mention_edges.append(all_mention_edges)
+
+        return mention_edges
+
+        # for node in self.new_nodes:
+        #     if "mentioned_in" in node:
+        #         mentioned_in = node['mentioned_in']
+        #         if isinstance(mentioned_in, int):
+        #             mention_edges.append({
+        #                 "src": node["id"],
+        #                 "dst": mentioned_in,
+        #                 "type": "mention_scope",
+        #                 'line': pd.NA,
+        #                 'end_line': pd.NA,
+        #                 'col_offset': pd.NA,
+        #                 'end_col_offset': pd.NA,
+        #             })
+        #             mention_edges.append(make_reverse_edge(mention_edges[-1]))
+        #
+        # return mention_edges
+
 
 def get_ast_nodes(edges):
     nodes = []
@@ -162,20 +210,6 @@ def get_ast_nodes(edges):
         ))
 
     return nodes
-
-# from SourceCodeTools.nlp.string_tools import get_byte_to_char_map
-# def get_byte_to_char_map(unicode_string):
-#     """
-#     Generates a dictionary mapping character offsets to byte offsets for unicode_string.
-#     """
-#     response = {}
-#     byte_offset = 0
-#     for char_offset, character in enumerate(unicode_string):
-#         response[byte_offset] = char_offset
-#         print(character, byte_offset, char_offset)
-#         byte_offset += len(character.encode('utf-8'))
-#     response[byte_offset] = len(unicode_string)
-#     return response
 
 
 def adjust_offsets(offsets, amount):
@@ -254,16 +288,19 @@ def random_replacement_lookup(name, replacements, tokenizer):
         return corrected_name
 
 
-def filter_out_mentions_for_srctrl_nodes(edges):
-    # filter mention_scope edges for sourcetrail nodes
-    srctrl_decode = lambda x: \
-        GNode(name=x.name.split("@")[0], type="Name") if x.name.startswith("srctrlnd") and "@" in x.name else x
-    edges['src'] = edges['src'].apply(srctrl_decode)
-    edges['dst'] = edges['dst'].apply(srctrl_decode)
-    edges = edges.query("src!=dst")
-    edges['help'] = edges['dst'].apply(lambda x: x.name.split("_")[0])
-    edges = edges.query("help!='srctrlnd' or type!='mention_scope'").drop("help", axis=1)
-    return edges
+# def filter_out_mentions_for_srctrl_nodes(edges):
+#     # filter mention_scope edges for sourcetrail nodes
+#
+#     def srctrl_decode(x):
+#         return GNode(name=x.name.split("@")[0], type="Name") if x.name.startswith("srctrlnd") and "@" in x.name else x
+#
+#     edges['src'] = edges['src'].apply(srctrl_decode)
+#     edges['dst'] = edges['dst'].apply(srctrl_decode)
+#     edges = edges.query("src!=dst")
+#     edges['help'] = edges['dst'].apply(lambda x: x.name.split("_")[0])
+#     # edges = edges.query("help!='srctrlnd' or type!='mention_scope'").drop("help", axis=1)
+#     edges = edges.query("help!='srctrlnd'").drop("help", axis=1)
+#     return edges
 
 
 def produce_subword_edges(subwords, dst, connect_subwords=False):
@@ -359,6 +396,19 @@ def global_mention_edges(edge):
     return [edge, make_reverse_edge(edge)]
 
 
+def global_mention_edges_from_node(node):
+    global_mention = {
+        "src": GNode(name=node.global_name, type=node.global_type, id=node.global_id),
+        "dst": node,
+        "type": "global_mention",
+        'line': pd.NA,
+        'end_line': pd.NA,
+        'col_offset': pd.NA,
+        'end_col_offset': pd.NA,
+    }
+    return [global_mention, make_reverse_edge(global_mention)]
+
+
 def make_reverse_edge(edge):
     rev_edge = copy(edge)
     rev_edge['type'] = edge['type'] + "_rev"
@@ -379,12 +429,19 @@ def replace_mentions_with_subword_instances(edges, bpe, create_subword_instances
 
     new_edges = []
     for edge in edges:
+        if edge['src'].type == "#attr#":
+            if hasattr(edge['src'], "global_name"):
+                new_edges.extend(global_mention_edges_from_node(edge['src']))
+        elif edge['dst'].type == "mention":
+            if hasattr(edge['dst'], "global_name"):
+                new_edges.extend(global_mention_edges_from_node(edge['dst']))
+
         if edge['type'] == "local_mention":
-            is_global_mention = hasattr(edge['src'], "id")
-            if is_global_mention:
-                # this edge connects sourcetrail node need to add couple of links
-                # to ensure global information flow
-                new_edges.extend(global_mention_edges(edge))
+            # is_global_mention = hasattr(edge['src'], "id")
+            # if is_global_mention:
+            #     # this edge connects sourcetrail node need to add couple of links
+            #     # to ensure global information flow
+            #     new_edges.extend(global_mention_edges(edge))
 
             dst = edge['dst']
 
@@ -396,12 +453,11 @@ def replace_mentions_with_subword_instances(edges, bpe, create_subword_instances
 
                 new_edges.extend(produce_subw_edges(subwords, dst))
             else:
-                if not is_global_mention:
-                    new_edges.append(edge)
+                new_edges.append(edge)
 
         elif bpe is not None and \
                 (
-                    edge['src'].type in {"#attr#", "#keyword#", "Name", "NameConstant"}
+                    edge['src'].type in PythonSharedNodes.tokenizable_types
                 ) or (
                     edge['dst'].type in {"Global"} and edge['src'].type != "Constant"
                 ):
@@ -423,9 +479,6 @@ def get_srctrl2original_replacements(record):
 
     return {random2srctrl[key]: random2original[key] for key in random2original}
 
-
-# def append_edges(path, edges):
-#     edges[['id', 'type', 'src', 'dst']].to_csv(path, mode="a", index=False, header=False)
 
 def append_edges(ast_edges, new_edges):
     if ast_edges is None:
@@ -451,20 +504,24 @@ def leaf_nodes_are_leaf_types(nodes: pd.DataFrame, edges: pd.DataFrame):
     leaf = set(edges["source_node_id"].tolist()) - set(edges["target_node_id"].tolist())
     leaf_nodes = nodes[nodes["id"].apply(lambda id_: id_ in leaf)]
 
+    if len(leaf_nodes.query("type == 'subword'")) > 0:
+        leaf_types = PythonSharedNodes.subword_leaf_types
+    else:
+        leaf_types = PythonSharedNodes.named_leaf_types
+
     _leaf_nodes = leaf_nodes[
-        leaf_nodes['type'].apply(lambda type_: type_ not in SharedNodeDetector.leaf_types)
+        leaf_nodes['type'].apply(lambda type_: type_ not in leaf_types)
     ]
 
     if len(_leaf_nodes) > 0:
-        logging.warning("not a leaf type")
+        logging.warning(f"Not a leaf type: not in {leaf_types}")
         logging.warning(_leaf_nodes.to_string())
 
-    # is_leaf = map(lambda type_: type_ in SharedNodeDetector.leaf_types, leaf_nodes['type'].unique())
+    # is_leaf = map(lambda type_: type_ in PythonSharedNodes.leaf_types, leaf_nodes['type'].unique())
     # return all(is_leaf)
 
 
-def _get_from_ast(bodies, node_resolver,
-                   bpe_tokenizer_path=None, create_subword_instances=True, connect_subwords=False):
+def _get_from_ast(bodies, node_resolver, bpe_tokenizer_path=None, create_subword_instances=True, connect_subwords=False):
     ast_edges = None
 
     bodies_with_replacements = {}
@@ -521,7 +578,6 @@ def _get_from_ast(bodies, node_resolver,
             edges, subword_tokenizer, create_subword_instances=create_subword_instances,
             connect_subwords=connect_subwords
         )
-        edges['id'] = 0
 
         resolve_node_id = lambda node: node_resolver.resolve_node_id(node, row['id'])
 
@@ -532,11 +588,16 @@ def _get_from_ast(bodies, node_resolver,
         edges['src'] = edges['src'].apply(extract_id)
         edges['dst'] = edges['dst'].apply(extract_id)
 
+        # edges = edges.append(node_resolver.get_mention_edges())
+        edges = edges.drop_duplicates(subset=["src", "dst", "type"])
+
+        edges['id'] = 0
+
         ast_nodes = resolve_self_collision(filter_nodes(adjust_offsets(
             to_offsets(c, get_ast_nodes(edges), as_bytes=True), -strip_len), orig_body))
 
         srctrl_nodes = list(map(
-            lambda x: (x[0], x[1], node_resolver.resolve(GNode(name=x[2], type="Name"), srctrl2original).id),
+            lambda x: (x[0], x[1], node_resolver.resolve(GNode(name=x[2], type="Name"), srctrl2original).global_id),
             to_offsets(row['body_with_random_replacements'],
                        format_replacement_offsets(row['replacement_list']))
         ))
@@ -562,6 +623,10 @@ def _get_from_ast(bodies, node_resolver,
     # ast_nodes = pd.DataFrame(node_resolver.new_nodes)[['id', 'type', 'serialized_name', 'mentioned_in']].astype(
     #     {'mentioned_in': 'Int32'}
     # )
+
+    ast_edges = ast_edges.append(node_resolver.get_mention_edges())
+    ast_edges['id'] = 0
+
     ast_nodes = node_resolver.new_nodes_for_write()
     ast_edges = ast_edges.rename({'src': 'source_node_id', 'dst': 'target_node_id'}, axis=1).astype(
         {'mentioned_in': 'Int32'}
@@ -573,8 +638,7 @@ def _get_from_ast(bodies, node_resolver,
     return ast_nodes, ast_edges, bodies
 
 
-def get_from_ast(nodes, bodies, bpe_tokenizer_path,
-                          create_subword_instances, connect_subwords):
+def get_from_ast(nodes, bodies, bpe_tokenizer_path, create_subword_instances, connect_subwords):
 
     node_resolver = NodeResolver(nodes)
 
