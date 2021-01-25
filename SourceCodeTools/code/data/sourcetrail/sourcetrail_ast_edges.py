@@ -48,6 +48,9 @@ class NodeResolver:
             node_id = int(name_.split("_")[1])
             # the only types that should appear here are "Name", "mention", "#attr#"
             # the first two are from mentions, and the last one is when references sourcetrail node is an attribute
+            if node.type == "#keyword#":
+                # keywords cannot be real objects. seems like a sourcetrail error
+                return GNode(name=srctrl2original[name_], type=node.type)
             assert node.type in {"Name", "mention", "#attr#"}
             real_name = srctrl2original[name_]
             global_name = self.nodeid2name[node_id]
