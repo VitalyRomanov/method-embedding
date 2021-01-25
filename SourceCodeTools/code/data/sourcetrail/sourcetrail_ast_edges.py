@@ -451,9 +451,16 @@ def leaf_nodes_are_leaf_types(nodes: pd.DataFrame, edges: pd.DataFrame):
     leaf = set(edges["source_node_id"].tolist()) - set(edges["target_node_id"].tolist())
     leaf_nodes = nodes[nodes["id"].apply(lambda id_: id_ in leaf)]
 
-    is_leaf = map(lambda type_: type_ in SharedNodeDetector.leaf_types, leaf_nodes['type'].unique())
+    _leaf_nodes = leaf_nodes[
+        leaf_nodes['type'].apply(lambda type_: type_ not in SharedNodeDetector.leaf_types)
+    ]
 
-    return all(is_leaf)
+    if len(_leaf_nodes) > 0:
+        logging.warning("not a leaf type")
+        logging.warning(_leaf_nodes.to_string())
+
+    # is_leaf = map(lambda type_: type_ in SharedNodeDetector.leaf_types, leaf_nodes['type'].unique())
+    # return all(is_leaf)
 
 
 def _get_from_ast(bodies, node_resolver,
@@ -560,7 +567,8 @@ def _get_from_ast(bodies, node_resolver,
         {'mentioned_in': 'Int32'}
     )
 
-    assert leaf_nodes_are_leaf_types(ast_nodes, ast_edges)
+    # assert leaf_nodes_are_leaf_types(ast_nodes, ast_edges)
+    leaf_nodes_are_leaf_types(ast_nodes, ast_edges)
 
     return ast_nodes, ast_edges, bodies
 
