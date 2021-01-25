@@ -32,16 +32,21 @@ def isnamechar(char: str) -> bool:
 
 def extend_range(start: int, end: int, line: str) -> Optional[Tuple[int, int]]:
     # assume only the following symbols are possible in names: A-Z a-z 0-9 . _
-    if start - 1 > 0 and isnamechar(line[start-1]):
-        return extend_range(start - 1, end, line)
-    elif start - 1 > 0 and line[start - 1] == "!":
-        # used in f-strings
-        # f"[{attr_selector!r}]"
-        return None
-    else:
-        if start - 1 > 0 and line[start] == "." and not isnamechar(line[start - 1]):
-            return start + 1, end
-        return start, end
+    # if start - 1 > 0 and line[start - 1] == "!":
+    #     # used in f-strings
+    #     # f"[{attr_selector!r}]"
+    #     return None
+    return start, end
+    # if start - 1 > 0 and isnamechar(line[start-1]):
+    #     return extend_range(start - 1, end, line)
+    # elif start - 1 > 0 and line[start - 1] == "!":
+    #     # used in f-strings
+    #     # f"[{attr_selector!r}]"
+    #     return None
+    # else:
+    #     if start - 1 > 0 and line[start] == "." and not isnamechar(line[start - 1]):
+    #         return start + 1, end
+    #     return start, end
 
 
 def do_replacement(string_: str, start: int, end: int, substitution: str):
