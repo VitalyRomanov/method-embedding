@@ -7,6 +7,65 @@ import pandas as pd
 # import os
 
 
+class PythonSyntheticNodeTypes:
+    Name = "Name"
+    mention = "mention"
+    ast_Literal = "ast_Literal"
+    type_annotation = "type_annotation"
+    NameConstant = "NameConstant"
+    Constant = "Constant"
+    Op = "Op"
+    CtlFlowInstance = "CtlFlowInstance"
+    CtlFlow = "CtlFlow"
+    JoinedStr = "JoinedStr"
+    comprehension = "comprehension"
+    keyword_prop = "#keyword#"
+    attr_prop = "#attr#"
+
+
+class PythonSyntheticEdgeTypes:
+    subword_instance = "subword_instance"
+    next = "next"
+    prev = "prev"
+    depends_on_ = "depends_on_"
+    execute_when_ = "execute_when_"
+    local_mention = "local_mention"
+    mention_scope = "mention_scope"
+    returned_by = "returned_by"
+    fname = "fname"
+    fname_for = "fname_for"
+    annotation_for = "annotation_for"
+    control_flow = "control_flow"
+
+
+class PythonSharedNodes:
+    annotation_types = {"type_annotation", "returned_by"}
+    tokenizable_types = {"Name", "#attr#", "#keyword#"}
+    python_token_types = {"Op", "Constant", "JoinedStr", "CtlFlow", "ast_Literal"}
+    subword_types = {'subword'}
+
+    subword_leaf_types = annotation_types | subword_types | python_token_types
+    named_leaf_types = annotation_types | tokenizable_types | python_token_types
+
+    shared_node_types = annotation_types | subword_types | tokenizable_types | python_token_types
+
+    # leaf_types = {'subword', "Op", "Constant", "JoinedStr", "CtlFlow", "ast_Literal", "Name", "type_annotation", "returned_by"}
+    # shared_node_types = {'subword', "Op", "Constant", "JoinedStr", "CtlFlow", "ast_Literal", "Name", "type_annotation", "returned_by", "#attr#", "#keyword#"}
+
+    @classmethod
+    def is_shared(cls, node):
+        # nodes that are of stared type
+        # nodes that are subwords of keyword arguments
+        return cls.is_shared_name_type(node.name, node.type)
+
+    @classmethod
+    def is_shared_name_type(cls, name, type):
+        if type in cls.shared_node_types or \
+                (type == "subword_instance" and "0x" not in name):
+            return True
+        return False
+
+
 class GNode:
     # name = None
     # type = None
@@ -120,7 +179,7 @@ class AstGraphGenerator(object):
         # mention_name = (name + "@" + self.function_scope[-1], "mention")
         edges = [
             {"src": name, "dst": mention_name, "type": "local_mention"},
-            {"src": self.function_scope[-1], "dst": mention_name, "type": "mention_scope"}
+            # {"src": self.function_scope[-1], "dst": mention_name, "type": "mention_scope"}
         ]
         return edges, mention_name
 
@@ -249,7 +308,7 @@ class AstGraphGenerator(object):
             # https://www.python.org/dev/peps/pep-0484/#forward-references
             annotation = GNode(name=self.source[node.returns.lineno - 1][node.returns.col_offset: node.returns.end_col_offset],
                                type="type_annotation")
-            edges.append({"src": annotation, "dst": f_name, "type": 'returned_by', "line": node.returns.lineno - 1, "end_line": node.returns.end_lineno - 1, "col_offset": node.returns.col_offset, "end_col_offset": node.returns.end_col_offset})
+            edges.append({"src": annotation, "dst": f_name, "type": "returned_by", "line": node.returns.lineno - 1, "end_line": node.returns.end_lineno - 1, "col_offset": node.returns.col_offset, "end_col_offset": node.returns.end_col_offset})
             # do not use reverse edges for types, will result in leak from function to function
             # edges.append({"src": f_name, "dst": annotation, "type": 'returns'})
 
@@ -347,8 +406,8 @@ class AstGraphGenerator(object):
         # # included mention
         name = self.get_name(node)
         edges, mention_name = self.parse_as_mention(node.arg)
-        edges.append({'src': mention_name, 'dst': name, 'type': 'arg'})
-        edges.append({'src': name, 'dst': mention_name, 'type': 'arg_rev'})
+        edges.append({"src": mention_name, "dst": name, "type": 'arg'})
+        edges.append({"src": name, "dst": mention_name, "type": 'arg_rev'})
         # edges, name = self.generic_parse(node, ["arg"])
         if node.annotation is not None:
             # can contain quotes
