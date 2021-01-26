@@ -48,8 +48,10 @@ class NodeResolver:
             node_id = int(name_.split("_")[1])
             # the only types that should appear here are "Name", "mention", "#attr#"
             # the first two are from mentions, and the last one is when references sourcetrail node is an attribute
-            if node.type == "#keyword#":
-                # keywords cannot be real objects. seems like a sourcetrail error
+            # if node.type not in {"Name", "mention", "#attr#"}:
+            if node.type in {"#keyword#"}:
+                # TODO
+                # either a sourcetrail error or the error parsing
                 return GNode(name=srctrl2original[name_], type=node.type)
             assert node.type in {"Name", "mention", "#attr#"}
             real_name = srctrl2original[name_]
@@ -82,6 +84,7 @@ class NodeResolver:
             #     real_name = self.nodeid2name[node_id]  # full name, including modules
             #     type_ = self.nodeid2type[node_id]
             #     new_node = GNode(name=real_name, type=type_, id=node_id, name_scope="global")
+            assert "srctrlnd" not in new_node.name
             return new_node
 
         replacements = dict()
@@ -106,7 +109,7 @@ class NodeResolver:
         if decorated:
             real_name += "@" + decorator
 
-        assert "srctrl" not in real_name
+        assert "srctrlnd" not in real_name
 
         return GNode(name=real_name, type=node.type)
 
@@ -172,6 +175,7 @@ class NodeResolver:
             mention_edges_rev['type'] = "mention_scope_rev"
 
             all_mention_edges = mention_edges_direct.append(mention_edges_rev)
+            all_mention_edges['mentioned_in'] = grp_val
 
             if mention_edges is None:
                 mention_edges = all_mention_edges
@@ -281,8 +285,11 @@ def join_offsets(offsets_1, offsets_2):
     return joined
 
 
-def random_replacement_lookup(name, replacements, tokenizer):
-    if "[" not in name:
+def random_replacement_lookup(name, type, replacements, tokenizer):
+    # TODO
+    # next line is a work around before random replacements are phased out
+    if type not in {"Name", "mention", "#attr#"}: return name
+    if "[" not in name: # Name, mention
         return replacements.get(name, name)
     else:
         tokens = tokenizer.tokenize(name)
@@ -563,9 +570,9 @@ def _get_from_ast(bodies, node_resolver, bpe_tokenizer_path=None, create_subword
 
         # replacements_lookup = lambda x: complex_replacement_lookup(x, replacements)
         replacements_lookup = lambda x: \
-            GNode(name=random_replacement_lookup(x.name, replacements, tokenizer),
+            GNode(name=random_replacement_lookup(x.name, x.type, replacements, tokenizer),
                   type=x.type) if "@" not in x.name else \
-                GNode(name=random_replacement_lookup(x.name.split("@")[0], replacements, tokenizer) +
+                GNode(name=random_replacement_lookup(x.name.split("@")[0], x.type, replacements, tokenizer) +
                            "@" + x.name.split("@")[1],
                       type=x.type)
 
