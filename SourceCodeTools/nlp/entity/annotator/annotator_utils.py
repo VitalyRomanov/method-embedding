@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List, Tuple, Iterable
 
 
 def get_cum_lens(body, as_bytes=False):
@@ -28,16 +28,17 @@ from SourceCodeTools.nlp.string_tools import get_byte_to_char_map
 #     return response
 
 
-def to_offsets(body: str, entities: List[Tuple], as_bytes=False):
+def to_offsets(body: str, entities: Iterable[Iterable], as_bytes=False, cum_lens=None):
     """
     Transform entity annotation format from (line, end_line, col, end_col)
     to (char_ind, end_char_ind).
     :param body: string containing function body
     :param entities: list of tuples containing entity start- and end-offsets in bytes
-    :param as_bytes: treat entity offsets as offsets for bytes. this is needed when body contains non-ascii characters
+    :param as_bytes: treat entity offsets as offsets for bytes. this is needed when offsets are given in bytes, not in str positions
     :return: list of tuples that represent start- and end-offsets in a string that contains function body
     """
-    cum_lens = get_cum_lens(body, as_bytes=as_bytes)
+    if cum_lens is None:
+        cum_lens = get_cum_lens(body, as_bytes=as_bytes)
 
     # b2c = [get_byte_to_char_map(line) for line in body.split("\n")]
 

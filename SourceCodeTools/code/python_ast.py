@@ -103,7 +103,7 @@ class AstGraphGenerator(object):
         self.root = ast.parse(source)
         self.current_condition = []
         self.condition_status = []
-        self.function_scope = []
+        self.scope = []
 
     def get_name(self, node):
         return GNode(astnode=node)
@@ -174,12 +174,12 @@ class AstGraphGenerator(object):
             self.condition_status.pop(-1)
 
     def parse_as_mention(self, name):
-        mention_name = GNode(name=name + "@" + self.function_scope[-1].name, type="mention")
+        mention_name = GNode(name=name + "@" + self.scope[-1].name, type="mention")
         name = GNode(name=name, type="Name")
-        # mention_name = (name + "@" + self.function_scope[-1], "mention")
+        # mention_name = (name + "@" + self.scope[-1], "mention")
         edges = [
             {"src": name, "dst": mention_name, "type": "local_mention"},
-            # {"src": self.function_scope[-1], "dst": mention_name, "type": "mention_scope"}
+            # {"src": self.scope[-1], "dst": mention_name, "type": "mention_scope"}
         ]
         return edges, mention_name
 
@@ -284,6 +284,13 @@ class AstGraphGenerator(object):
                     type_str += self.source[ln].strip()
         return type_str
 
+    def parse_Module(self, node):
+        edges, module_name = self.generic_parse(node, [])
+        self.scope.append(module_name)
+        self.parse_in_context(module_name, "module", edges, node.body)
+        self.scope.pop(-1)
+        return edges, module_name
+
     def parse_FunctionDef(self, node):
         # edges, f_name = self.generic_parse(node, ["name", "args", "returns", "decorator_list"])
         # edges, f_name = self.generic_parse(node, ["args", "returns", "decorator_list"])
@@ -291,7 +298,7 @@ class AstGraphGenerator(object):
         # need to creare function name before generic_parse so that the scope is set up correctly
         # scope is used to create local mentions of variable and function names
         fdef_name = self.get_name(node)
-        self.function_scope.append(fdef_name)
+        self.scope.append(fdef_name)
 
         to_parse = []
         if len(node.args.args) > 0 or node.args.vararg is not None:
@@ -323,9 +330,9 @@ class AstGraphGenerator(object):
 
         self.parse_in_context(f_name, "defined_in", edges, node.body)
 
-        self.function_scope.pop(-1)
+        self.scope.pop(-1)
 
-        return edges
+        return edges, f_name
 
     def parse_AsyncFunctionDef(self, node):
         return self.parse_FunctionDef(node)
@@ -649,7 +656,7 @@ class AstGraphGenerator(object):
         self.parse_in_context(if_name, "True", edges, node.body)
         self.parse_in_context(if_name, "False", edges, node.orelse)
 
-        return edges
+        return edges, if_name
 
 
     def parse_For(self, node):
@@ -659,7 +666,7 @@ class AstGraphGenerator(object):
         self.parse_in_context(for_name, "for", edges, node.body)
         self.parse_in_context(for_name, "orelse", edges, node.orelse)
         
-        return edges #, for_name
+        return edges, for_name
 
     def parse_AsyncFor(self, node):
         return self.parse_For(node)
@@ -679,7 +686,7 @@ class AstGraphGenerator(object):
         self.parse_in_context(try_name, "final", edges, node.finalbody)
         self.parse_in_context(try_name, "else", edges, node.orelse)
         
-        return edges  # do not return node name since this is an expression and it does not return anything
+        return edges, try_name
         
     def parse_While(self, node):
 
@@ -690,7 +697,7 @@ class AstGraphGenerator(object):
 
         self.parse_in_context([while_name, cond_name], ["while", "True"], edges, node.body)
         
-        return edges  # do not return node name since this is an expression and it does not return anything
+        return edges, while_name
 
     def parse_Compare(self, node):
         return self.generic_parse(node, ["left", "ops", "comparators"])
