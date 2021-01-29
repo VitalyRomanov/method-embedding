@@ -2,10 +2,11 @@ import ast
 import random
 import string
 import sys
+from time import time_ns
 from typing import Tuple, List, Optional
 
 from SourceCodeTools.code.data.sourcetrail.common import *
-
+from SourceCodeTools.nlp.entity.annotator.annotator_utils import adjust_offsets2
 
 from SourceCodeTools.code.python_ast import AstGraphGenerator
 
@@ -69,6 +70,212 @@ class AstProcessor(AstGraphGenerator):
 
         format_offsets(df)
         return df
+
+
+from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets, get_cum_lens
+
+class SourcetrailResolver:
+    def __init__(self, nodes, edges, source_location, occurrence, file_content, lang):
+        self.nodes = nodes
+        self.node2name = dict(zip(nodes['id'], nodes['serialized_name']))
+
+        self.edges = edges
+        self.source_location = source_location
+        self.occurrence = occurrence
+        self.file_content = file_content
+        self.lang = lang
+        self._occurrence_groups = None
+
+    @property
+    def occurrence_groups(self):
+        if self._occurrence_groups is None:
+            self._occurrence_groups = get_occurrence_groups(nodes, edges, source_location, occurrence)
+        return self._occurrence_groups
+
+    def get_node_id_from_occurrence(self, elem_id__target_id__name):
+        element_id, target_node_id, name = elem_id__target_id__name
+
+        if not isinstance(name, str):
+            node_id = target_node_id
+        else:
+            node_id = element_id
+
+        assert node_id in self.node2name
+
+        if self.node2name[node_id] == UNRESOLVED_SYMBOL:
+            # this is an unresolved symbol, avoid
+            return pd.NA
+        else:
+            return node_id
+
+    def get_file_content(self, file_id):
+        return file_content.query(f"id == {file_id}").iloc[0]['content']
+
+    def occurrences_into_ranges(self, body, occurrences: pd.DataFrame):
+
+        occurrences = occurrences.copy()
+        occurrences["temp"] = list(zip(occurrences["element_id"], occurrences["target_node_id"], occurrences["serialized_name"]))
+        occurrences["referenced_node"] = occurrences["temp"].apply(self.get_node_id_from_occurrence)
+        occurrences.dropna(axis=0, subset=["referenced_node"], inplace=True)
+
+        occurrences = occurrences[["start_line", "end_line", "start_column", "end_column", "referenced_node", "occ_type"]]
+        occurrences['names'] = occurrences['referenced_node'].apply(lambda id_: self.node2name[id_])
+        occurrences['elem_id__occ_type'] = [{"node_id": e_id, "occ_type": o_type, "name": name} for e_id, o_type, name in zip(occurrences["referenced_node"], occurrences["occ_type"], occurrences['names'])]
+        occurrences.drop(labels=["referenced_node", "occ_type", "names"], axis=1, inplace=True)
+        occurrences["start_line"] = occurrences["start_line"] - 1
+        occurrences["end_line"] = occurrences["end_line"] - 1
+        occurrences["start_column"] = occurrences["start_column"] - 1
+        return self.offsets2dataframe(to_offsets(body, occurrences.values, as_bytes=True))
+
+    @staticmethod
+    def offsets2dataframe(offsets):
+        records = []
+
+        for offset in offsets:
+            entry = {"start": offset[0], "end": offset[1]}
+            entry.update(offset[2])
+            records.append(entry)
+
+        return pd.DataFrame(records)
+
+    def process_modules(self):
+
+        bodies = []
+
+        for group_ind, (file_id, occurrences) in custom_tqdm(
+                enumerate(self.occurrence_groups), message="Processing function bodies",
+                total=len(self.occurrence_groups)
+        ):
+            source_file_content = self.get_file_content(file_id)
+
+            offsets = self.occurrences_into_ranges(source_file_content, occurrences)
+
+            replacer = OccurrenceReplacer()
+            replacer.perform_replacements(source_file_content, offsets)
+
+            ast_processor = AstProcessor(source_file_content)
+            ast_edges = ast_processor.get_edges()
+
+            offsets_index = OffsetIndex(offsets)
+
+            def join_srctrl_and_ast_offsets(range):
+                if range is None:
+                    return None
+                else:
+                    return offsets_index.get_overlap(range)
+
+            ast_edges["srctrl_overlap"] = ast_edges["offsets"].apply(join_srctrl_and_ast_offsets)
+            overlaps = []
+            for item in ast_edges["srctrl_overlap"]:
+                if item is None:
+                    continue
+                else:
+                    overlaps.extend(item)
+            unique_overlaps = set(overlaps)
+
+            function_definitions = get_function_definitions(occurrences)
+
+            if len(function_definitions):
+                for ind, f_def in function_definitions.iterrows():
+                    f_start = f_def.start_line
+                    f_end = f_def.end_line
+
+                    local_occurrences = get_occurrences_from_range(occurrences, start=f_start, end=f_end)
+
+                    # move to zero-index
+                    f_start -= 1
+                    f_end -= 1
+
+                    body = get_function_body(file_content, file_id, f_start, f_end)
+
+                    if not has_valid_syntax(body):
+                        continue
+
+                    processed = process_body(body, local_occurrences, nodes, f_def.element_id, f_start)
+
+                    if processed is not None:
+                        bodies.append(processed)
+
+            # print(f"\r{group_ind}/{len(occurrence_groups)}", end="")
+
+        # print(" " * 30, end="\r")
+
+        if len(bodies) > 0:
+            bodies_processed = pd.DataFrame(bodies)
+            return bodies_processed
+        else:
+            return None
+
+
+class OccurrenceReplacer:
+    def __init__(self):
+        self.replacement_index = None
+        self.original_source = None
+        self.source_with_replacements = None
+        self.processed = None
+        self.evicted = None
+
+    @staticmethod
+    def format_offsets_for_replacements(offsets):
+        offsets = offsets.sort_values(by=["start", "end"], ascending=[True, False])
+        return list(zip(offsets["start"], offsets["end"], list(zip(offsets["node_id"], offsets["occ_type"]))))
+
+    @staticmethod
+    def place_temp_to_evicted(temp_evicted, temp_end_changes, current_offset, evicted, source_code):
+        pos = 0
+        while pos < len(temp_evicted):
+            if temp_evicted[pos][1] - temp_end_changes[pos] < current_offset[0]:
+                temp_offset = temp_evicted.pop(pos)
+                end_change = temp_end_changes.pop(pos)
+                start = temp_offset[0]
+                end = temp_offset[1] + end_change
+                evicted.append(
+                    {"start": start, "end": end, "sourcetrail_id": temp_offset[2][0], "occ_type": temp_offset[2][1], "str": source_code[start: end]})
+            else:
+                pos += 1
+
+    def perform_replacements(self, source_file_content, offsets):
+
+        self.original_source = source_file_content
+
+        pending = self.format_offsets_for_replacements(offsets)
+        temp_evicted = []
+        temp_end_changes = []
+        processed = []
+        evicted = []
+        replacement_index = {}
+
+        while len(pending) > 0:
+            offset = pending.pop(0)  # format (start, end, (node_id, occ_type))
+
+            if offset[0] == 12299:
+                print()
+
+            self.place_temp_to_evicted(temp_evicted, temp_end_changes, offset, evicted, source_file_content)
+
+            src_str = source_file_content[offset[0]: offset[1]]
+            if "." in src_str or "\n" in src_str or " " in src_str or "[" in src_str or "(" in src_str or "{" in src_str:
+                temp_evicted.append(offset)
+                temp_end_changes.append(0)
+            else:
+                # new_name = f"srctrlnd_{offset[2][0]}"
+                replacement_id = int(time_ns())
+                new_name = "srctrlrpl_" + str(replacement_id)
+                replacement_index[replacement_id] = {"srctrl_id": offset[2][0], "original_string": src_str}
+                old_len = offset[1] - offset[0]
+                new_len = len(new_name)
+                len_diff = new_len - old_len
+                pending = adjust_offsets2(pending, len_diff)
+                processed.append({"start": offset[0], "end": offset[1] + len_diff, "replacement_id": replacement_id})
+                temp_end_changes = [val + len_diff for val in temp_end_changes]
+                source_file_content = source_file_content[:offset[0]] + new_name + source_file_content[offset[1]:]
+
+        assert len(temp_evicted) == 0 # TODO return srctrlrpl_161srctrlrpl_1611928143084280667(modify_doc, driver, bokeh_app_info, has_no_console_errors)
+
+        self.source_with_replacements = source_file_content
+        self.processed = pd.DataFrame(processed)
+        self.evicted = pd.DataFrame(evicted)
+        self.replacement_index = replacement_index
 
 
 class RandomReplacementException(Exception):
@@ -320,142 +527,9 @@ def process_body(body, local_occurrences, nodes, f_id, f_start):
 
     return None
 
-from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets, get_cum_lens
-
-class SourceTrailResolver:
-    def __init__(self, nodes, edges, source_location, occurrence, file_content, lang):
-        self.nodes = nodes
-        self.node2name = dict(zip(nodes['id'], nodes['serialized_name']))
-
-        self.edges = edges
-        self.source_location = source_location
-        self.occurrence = occurrence
-        self.file_content = file_content
-        self.lang = lang
-        self._occurrence_groups = None
-
-    @property
-    def occurrence_groups(self):
-        if self._occurrence_groups is None:
-            self._occurrence_groups = get_occurrence_groups(nodes, edges, source_location, occurrence)
-        return self._occurrence_groups
-
-    def get_node_id_from_occurrence(self, elem_id__target_id__name):
-        element_id, target_node_id, name = elem_id__target_id__name
-
-        if not isinstance(name, str):
-            node_id = target_node_id
-        else:
-            node_id = element_id
-
-        assert node_id in self.node2name
-
-        if self.node2name[node_id] == UNRESOLVED_SYMBOL:
-            # this is an unresolved symbol, avoid
-            return pd.NA
-        else:
-            return node_id
-
-    def get_file_content(self, file_id):
-        return file_content.query(f"id == {file_id}").iloc[0]['content']
-
-    def occurrences_into_ranges(self, body, occurrences: pd.DataFrame):
-
-        occurrences = occurrences.copy()
-        occurrences["temp"] = list(zip(occurrences["element_id"], occurrences["target_node_id"], occurrences["serialized_name"]))
-        occurrences["referenced_node"] = occurrences["temp"].apply(self.get_node_id_from_occurrence)
-        occurrences.dropna(axis=0, subset=["referenced_node"], inplace=True)
-
-        occurrences = occurrences[["start_line", "end_line", "start_column", "end_column", "referenced_node", "occ_type"]]
-        occurrences['names'] = occurrences['referenced_node'].apply(lambda id_: self.node2name[id_])
-        occurrences['elem_id__occ_type'] = [{"node_id": e_id, "occ_type": o_type, "name": name} for e_id, o_type, name in zip(occurrences["referenced_node"], occurrences["occ_type"], occurrences['names'])]
-        occurrences.drop(labels=["referenced_node", "occ_type", "names"], axis=1, inplace=True)
-        occurrences["start_line"] = occurrences["start_line"] - 1
-        occurrences["end_line"] = occurrences["end_line"] - 1
-        occurrences["start_column"] = occurrences["start_column"] - 1
-        return self.offsets2dataframe(to_offsets(body, occurrences.values, as_bytes=True))
-
-    @staticmethod
-    def offsets2dataframe(offsets):
-        records = []
-
-        for offset in offsets:
-            entry = {"start": offset[0], "end": offset[1]}
-            entry.update(offset[2])
-            records.append(entry)
-
-        return pd.DataFrame(records)
 
 
-def process_bodies(nodes, edges, source_location, occurrence, file_content, lang):
 
-    # occurrence_groups = get_occurrence_groups(nodes, edges, source_location, occurrence)
-
-    srctrl_resolver = SourceTrailResolver(nodes, edges, source_location, occurrence, file_content, lang)
-
-    bodies = []
-
-    for group_ind, (file_id, occurrences) in custom_tqdm(
-            enumerate(srctrl_resolver.occurrence_groups), message="Processing function bodies", total=len(srctrl_resolver.occurrence_groups)
-    ):
-        source_file_content = srctrl_resolver.get_file_content(file_id)
-
-        offsets = srctrl_resolver.occurrences_into_ranges(source_file_content, occurrences)
-
-        perform_replacements(source_file_content, offsets)
-
-        ast_processor = AstProcessor(source_file_content)
-        ast_edges = ast_processor.get_edges()
-
-        offsets_index = OffsetIndex(offsets)
-
-        def join_srctrl_and_ast_offsets(range):
-            if range is None:
-                return None
-            else:
-                return offsets_index.get_overlap(range)
-
-        ast_edges["srctrl_overlap"] = ast_edges["offsets"].apply(join_srctrl_and_ast_offsets)
-        overlaps = []
-        for item in ast_edges["srctrl_overlap"]:
-            if item is None:
-                continue
-            else:
-                overlaps.extend(item)
-        unique_overlaps = set(overlaps)
-
-        function_definitions = get_function_definitions(occurrences)
-
-        if len(function_definitions):
-            for ind, f_def in function_definitions.iterrows():
-                f_start = f_def.start_line
-                f_end = f_def.end_line
-
-                local_occurrences = get_occurrences_from_range(occurrences, start=f_start, end=f_end)
-
-                # move to zero-index
-                f_start -= 1
-                f_end -= 1
-
-                body = get_function_body(file_content, file_id, f_start, f_end)
-
-                if not has_valid_syntax(body):
-                    continue
-
-                processed = process_body(body, local_occurrences, nodes, f_def.element_id, f_start)
-
-                if processed is not None:
-                    bodies.append(processed)
-
-        # print(f"\r{group_ind}/{len(occurrence_groups)}", end="")
-
-    # print(" " * 30, end="\r")
-
-    if len(bodies) > 0:
-        bodies_processed = pd.DataFrame(bodies)
-        return bodies_processed
-    else:
-        return None
 
 
 if __name__ == "__main__":
@@ -470,7 +544,8 @@ if __name__ == "__main__":
     nodes = read_nodes(working_directory)
     edges = read_edges(working_directory)
     file_content = read_filecontent(working_directory)
-    bodies_processed = process_bodies(nodes, edges, source_location, occurrence, file_content, lang)
-
+    # bodies_processed = process_modules(nodes, edges, source_location, occurrence, file_content, lang)
+    srctrl_resolver = SourcetrailResolver(nodes, edges, source_location, occurrence, file_content, lang)
+    bodies_processed = srctrl_resolver.process_modules()
     if bodies_processed is not None:
         write_processed_bodies(bodies_processed, working_directory)

@@ -219,8 +219,7 @@ def get_ast_nodes(edges):
     return nodes
 
 
-def adjust_offsets(offsets, amount):
-    return [(offset[0] - amount, offset[1] - amount, offset[2]) for offset in offsets]
+from SourceCodeTools.nlp.entity.annotator.annotator_utils import adjust_offsets
 
 
 def format_replacement_offsets(offsets):

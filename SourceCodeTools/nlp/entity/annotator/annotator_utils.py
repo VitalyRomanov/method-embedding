@@ -54,6 +54,14 @@ def to_offsets(body: str, entities: Iterable[Iterable], as_bytes=False, cum_lens
     return repl
 
 
+def adjust_offsets(offsets, amount):
+    return [(offset[0] - amount, offset[1] - amount, offset[2]) for offset in offsets]
+
+
+def adjust_offsets2(offsets, amount):
+    return [(offset[0] + amount, offset[1] + amount, offset[2]) for offset in offsets]
+
+
 def overlap(p1: Tuple, p2: Tuple) -> bool:
     """
     Check whether two entities defined by (start_position, end_position) overlap
