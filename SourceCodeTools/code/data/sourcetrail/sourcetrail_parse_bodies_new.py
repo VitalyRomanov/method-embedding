@@ -9,6 +9,7 @@ from SourceCodeTools.code.data.sourcetrail.common import *
 from SourceCodeTools.nlp.entity.annotator.annotator_utils import adjust_offsets2
 
 from SourceCodeTools.code.python_ast import AstGraphGenerator
+from SourceCodeTools.nlp.entity.annotator.annotator_utils import overlap as range_overlap
 
 
 class OffsetIndex:
@@ -153,7 +154,7 @@ class SourcetrailResolver:
             replacer = OccurrenceReplacer()
             replacer.perform_replacements(source_file_content, offsets)
 
-            ast_processor = AstProcessor(source_file_content)
+            ast_processor = AstProcessor(replacer.source_with_replacements)
             ast_edges = ast_processor.get_edges()
 
             offsets_index = OffsetIndex(offsets)
@@ -234,6 +235,20 @@ class OccurrenceReplacer:
             else:
                 pos += 1
 
+    @staticmethod
+    def group_overlapping_offsets(offset, pending):
+        offsets = [offset]
+        while len(pending) > 0 and range_overlap(offset, pending[0]):
+            offsets.append(pending.pop(0))
+
+        offsets = sorted(offsets, key=lambda x: x[1] - x[0])  # sort by offset span size
+
+        # choose the smallest span
+        offset = (offsets[0][0], offsets[0][1], list(set(o[2] for o in offsets)))
+        if len(offset[2]) == 1:
+            offset = (offset[0], offset[1], offset[2][0])
+        return offset
+
     def perform_replacements(self, source_file_content, offsets):
 
         self.original_source = source_file_content
@@ -248,20 +263,24 @@ class OccurrenceReplacer:
         while len(pending) > 0:
             offset = pending.pop(0)  # format (start, end, (node_id, occ_type))
 
-            if offset[0] == 12299:
-                print()
-
             self.place_temp_to_evicted(temp_evicted, temp_end_changes, offset, evicted, source_file_content)
 
             src_str = source_file_content[offset[0]: offset[1]]
+            # longer occurrences such as attributes and function definition will be found first because occurences are
+            # sorted by occurrence end position in descending order
             if "." in src_str or "\n" in src_str or " " in src_str or "[" in src_str or "(" in src_str or "{" in src_str:
                 temp_evicted.append(offset)
                 temp_end_changes.append(0)
             else:
+                offset = self.group_overlapping_offsets(offset, pending)
+
                 # new_name = f"srctrlnd_{offset[2][0]}"
                 replacement_id = int(time_ns())
                 new_name = "srctrlrpl_" + str(replacement_id)
-                replacement_index[replacement_id] = {"srctrl_id": offset[2][0], "original_string": src_str}
+                replacement_index[replacement_id] = {
+                    "srctrl_id": offset[2][0] if type(offset[2]) is not list else [o[0] for o in offset[2]],
+                    "original_string": src_str
+                }
                 old_len = offset[1] - offset[0]
                 new_len = len(new_name)
                 len_diff = new_len - old_len
@@ -270,7 +289,8 @@ class OccurrenceReplacer:
                 temp_end_changes = [val + len_diff for val in temp_end_changes]
                 source_file_content = source_file_content[:offset[0]] + new_name + source_file_content[offset[1]:]
 
-        assert len(temp_evicted) == 0 # TODO return srctrlrpl_161srctrlrpl_1611928143084280667(modify_doc, driver, bokeh_app_info, has_no_console_errors)
+        final_position = max(map(lambda x: x[0][1] + x[1], zip(temp_evicted, temp_end_changes)))
+        self.place_temp_to_evicted(temp_evicted, temp_end_changes, (final_position,), evicted, source_file_content)
 
         self.source_with_replacements = source_file_content
         self.processed = pd.DataFrame(processed)
