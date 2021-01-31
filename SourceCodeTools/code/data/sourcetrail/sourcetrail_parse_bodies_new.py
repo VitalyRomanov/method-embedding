@@ -1,15 +1,305 @@
+import argparse
 import ast
 import random
 import string
 import sys
+from copy import copy
 from time import time_ns
 from typing import Tuple, List, Optional
+import re
 
 from SourceCodeTools.code.data.sourcetrail.common import *
 from SourceCodeTools.nlp.entity.annotator.annotator_utils import adjust_offsets2
 
-from SourceCodeTools.code.python_ast import AstGraphGenerator
+from SourceCodeTools.code.python_ast import AstGraphGenerator, GNode, PythonSharedNodes
 from SourceCodeTools.nlp.entity.annotator.annotator_utils import overlap as range_overlap
+
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_ast_edges import NodeResolver, \
+    produce_subword_edges_with_instances, produce_subword_edges, global_mention_edges_from_node, make_reverse_edge
+
+
+class MentionTokenizer:
+    def __init__(self, bpe_tokenizer_path, create_subword_instances, connect_subwords):
+        from SourceCodeTools.nlp.embed.bpe import make_tokenizer
+        from SourceCodeTools.nlp.embed.bpe import load_bpe_model
+
+        self.bpe = make_tokenizer(load_bpe_model((bpe_tokenizer_path))) \
+            if bpe_tokenizer_path else None
+        self.create_subword_instances = create_subword_instances
+        self.connect_subwords = connect_subwords
+
+    def replace_mentions_with_subwords(self, edges):
+        edges = edges.to_dict(orient="records")
+
+        if self.create_subword_instances:
+            def produce_subw_edges(subwords, dst):
+                return self.produce_subword_edges_with_instances(subwords, dst)
+        else:
+            def produce_subw_edges(subwords, dst):
+                return self.produce_subword_edges(subwords, dst, self.connect_subwords)
+
+        new_edges = []
+        for edge in edges:
+            if edge['src'].type in {"#attr#", "Name"}:
+                if hasattr(edge['src'], "global_id"):
+                    new_edges.extend(self.global_mention_edges_from_node(edge['src']))
+            elif edge['dst'].type == "mention":
+                if hasattr(edge['dst'], "global_id"):
+                    new_edges.extend(self.global_mention_edges_from_node(edge['dst']))
+
+            if edge['type'] == "local_mention":
+                # is_global_mention = hasattr(edge['src'], "id")
+                # if is_global_mention:
+                #     # this edge connects sourcetrail node need to add couple of links
+                #     # to ensure global information flow
+                #     new_edges.extend(global_mention_edges(edge))
+
+                dst = edge['dst']
+
+                if self.bpe is not None:
+                    if hasattr(dst, "name_scope") and dst.name_scope == "local":
+                        subwords = self.bpe(dst.name.split("@")[0])
+                    else:
+                        subwords = self.bpe(edge['src'].name)
+
+                    new_edges.extend(produce_subw_edges(subwords, dst))
+                else:
+                    new_edges.append(edge)
+
+            elif self.bpe is not None and \
+                    (
+                            edge['src'].type in PythonSharedNodes.tokenizable_types
+                    ) or (
+                    edge['dst'].type in {"Global"} and edge['src'].type != "Constant"
+            ):
+                new_edges.append(edge)
+                new_edges.append(make_reverse_edge(edge))
+
+                dst = edge['src']
+                subwords = self.bpe(dst.name)
+                new_edges.extend(produce_subw_edges(subwords, dst))
+            else:
+                new_edges.append(edge)
+
+        return pd.DataFrame(new_edges)
+
+    def global_mention_edges_from_node(self, node):
+        global_edges = []
+        if type(node.global_id) is int:
+            id_type = [(node.global_id, node.global_type)]
+        else:
+            id_type = zip(node.global_id, node.global_type)
+
+        for gid, gtype in id_type:
+            global_mention = {
+                "src": GNode(name=None, type=gtype, id=gid),
+                "dst": node,
+                "type": "global_mention",
+                "offsets": None
+            }
+            global_edges.append(global_mention)
+            global_edges.append(make_reverse_edge(global_mention))
+        return global_edges
+
+    @staticmethod
+    def produce_subword_edges(subwords, dst, connect_subwords=False):
+        new_edges = []
+
+        subwords = list(map(lambda x: GNode(name=x, type="subword"), subwords))
+        for ind, subword in enumerate(subwords):
+            new_edges.append({
+                'src': subword,
+                'dst': dst,
+                'type': 'subword',
+                'offsets': None
+            })
+            if connect_subwords:
+                if ind < len(subwords) - 1:
+                    new_edges.append({
+                        'src': subword,
+                        'dst': subwords[ind + 1],
+                        'type': 'next_subword',
+                        'offsets': None
+                    })
+                if ind > 0:
+                    new_edges.append({
+                        'src': subword,
+                        'dst': subwords[ind - 1],
+                        'type': 'prev_subword',
+                        'offsets': None
+                    })
+
+        return new_edges
+
+    @staticmethod
+    def produce_subword_edges_with_instances(subwords, dst):
+        new_edges = []
+
+        subwords = list(map(lambda x: GNode(name=x, type="subword"), subwords))
+        instances = list(map(lambda x: GNode(name=x.name + "@" + dst.name, type="subword_instance"), subwords))
+        for ind, subword in enumerate(subwords):
+            subword_instance = instances[ind]
+            new_edges.append({
+                'src': subword,
+                'dst': subword_instance,
+                'type': 'subword_instance',
+                'offsets': None
+            })
+            new_edges.append({
+                'src': subword_instance,
+                'dst': dst,
+                'type': 'subword',
+                'offsets': None
+            })
+            if ind < len(subwords) - 1:
+                new_edges.append({
+                    'src': subword_instance,
+                    'dst': instances[ind + 1],
+                    'type': 'next_subword',
+                    'offsets': None
+                })
+            if ind > 0:
+                new_edges.append({
+                    'src': subword_instance,
+                    'dst': instances[ind - 1],
+                    'type': 'prev_subword',
+                    'offsets': None
+                })
+
+        return new_edges
+
+
+class ReplacementNodeResolver(NodeResolver):
+    def __init__(self, nodes):
+
+        self.nodeid2name = dict(zip(nodes['id'].tolist(), nodes['serialized_name'].tolist()))
+        self.nodeid2type = dict(zip(nodes['id'].tolist(), nodes['type'].tolist()))
+
+        self.valid_new_node = nodes['id'].max() + 1
+        self.node_ids = {}
+        self.new_nodes = []
+
+        self.old_nodes = nodes.copy()
+
+    def resolve_substrings(self, node, replacement2srctrl):
+
+        decorated = "@" in node.name
+        assert not decorated
+
+        name_ = copy(node.name)
+
+        replacements = dict()
+        global_node_id = []
+        global_name = []
+        global_type = []
+        for name in re.finditer("srctrlrpl_[0-9]+", name_):
+            if isinstance(name, re.Match):
+                name = name.group()
+            elif isinstance(name, str):
+                pass
+            else:
+                print("Unknown type")
+            if name.startswith("srctrlrpl_"):
+                node_id = replacement2srctrl[name]["srctrl_id"]
+                if type(node_id) is int:
+                    global_node_id.append(node_id)
+                    global_name.append(self.nodeid2name[node_id])
+                    global_type.append(self.nodeid2type[node_id])
+                else:
+                    global_node_id.extend(node_id)
+                    global_name.extend([self.nodeid2name[nid] for nid in node_id])
+                    global_type.extend([self.nodeid2type[nid] for nid in node_id])
+                replacements[name] = {
+                    "name": replacement2srctrl[name]["original_string"],
+                    "id": node_id
+                }
+
+        real_name = name_
+        for r, v in replacements.items():
+            real_name = real_name.replace(r, v["name"])
+
+        return GNode(name=real_name, type=node.type, global_name=global_name, global_id=global_node_id, global_type=global_type)
+
+    def resolve_regular_replacement(self, node, replacement2srctrl):
+
+        decorated = "@" in node.name
+        assert len([c for c in node.name if c == "@"]) <= 1
+
+        if decorated:
+            name_, decorator = node.name.split("@")
+        else:
+            name_, decorator = copy(node.name), None
+
+        if name_ in replacement2srctrl:
+
+            global_node_id = replacement2srctrl[name_]["srctrl_id"]
+            # the only types that should appear here are "Name", "mention", "#attr#"
+            # the first two are from mentions, and the last one is when references sourcetrail node is an attribute
+            # if node.type not in {"Name", "mention", "#attr#"}:
+            if node.type in {"#keyword#"}:
+                # TODO
+                # either a sourcetrail error or the error parsing
+                return GNode(name=replacement2srctrl[name_]["original_string"], type=node.type)
+            assert node.type in {"Name", "mention", "#attr#"}
+            real_name = replacement2srctrl[name_]["original_string"]
+            global_name = self.nodeid2name[global_node_id] if type(global_node_id) is int else [self.nodeid2name[nid] for
+                                                                                                nid in global_node_id]
+            global_type = self.nodeid2type[global_node_id] if type(global_node_id) is int else [self.nodeid2type[nid] for
+                                                                                                nid in global_node_id]
+
+            if node.type == "Name":
+                # name always go together with mention, therefore no global reference in Name
+                new_node = GNode(name=real_name, type=node.type, global_id=global_node_id, global_type=global_type)
+            else:
+                if decorated:
+                    assert node.type == "mention"
+                    real_name += "@" + decorator
+                    type_ = "mention"
+                else:
+                    assert node.type == "#attr#"
+                    type_ = node.type
+                new_node = GNode(name=real_name, type=type_, global_name=global_name, global_id=global_node_id,
+                                 global_type=global_type)
+        else:
+            new_node = node
+        return new_node
+
+    def resolve(self, node, replacement2srctrl):
+
+        if node.type == "type_annotation":
+            new_node = self.resolve_substrings(node, replacement2srctrl)
+        else:
+            new_node = self.resolve_regular_replacement(node, replacement2srctrl)
+            if "@" not in new_node.name and new_node.name == node.name:  # hack to process imports
+                new_node = self.resolve_substrings(node, replacement2srctrl)
+
+        assert "srctrlrpl_" not in new_node.name
+
+        return new_node
+
+    def resolve_node_id(self, node, **kwargs):
+        if not hasattr(node, "id"):
+            node_repr = (node.name.strip(), node.type.strip())
+
+            if node_repr in self.node_ids:
+                node_id = self.node_ids[node_repr]
+                node.setprop("id", node_id)
+            else:
+                new_id = self.get_new_node_id()
+                self.node_ids[node_repr] = new_id
+
+                if not PythonSharedNodes.is_shared(node):
+                    assert "0x" in node.name
+
+                self.new_nodes.append(
+                    {
+                        "id": new_id,
+                        "type": node.type,
+                        "serialized_name": node.name
+                    }
+                )
+                node.setprop("id", new_id)
+        return node
 
 
 class OffsetIndex:
@@ -139,9 +429,12 @@ class SourcetrailResolver:
 
         return pd.DataFrame(records)
 
-    def process_modules(self):
+    def process_modules(self, bpe_tokenizer_path, create_subword_instances, connect_subwords):
 
         bodies = []
+
+        node_resolver = ReplacementNodeResolver(self.nodes)
+        mention_tokenizer = MentionTokenizer(bpe_tokenizer_path, create_subword_instances, connect_subwords)
 
         for group_ind, (file_id, occurrences) in custom_tqdm(
                 enumerate(self.occurrence_groups), message="Processing function bodies",
@@ -155,7 +448,41 @@ class SourcetrailResolver:
             replacer.perform_replacements(source_file_content, offsets)
 
             ast_processor = AstProcessor(replacer.source_with_replacements)
-            ast_edges = ast_processor.get_edges()
+            edges = ast_processor.get_edges()
+
+            if len(edges) == 0:
+                continue
+
+            resolve = lambda node: node_resolver.resolve(node, replacer.replacement_index)
+
+            edges['src'] = edges['src'].apply(resolve)
+            edges['dst'] = edges['dst'].apply(resolve)
+
+            edges = mention_tokenizer.replace_mentions_with_subwords(edges)
+
+            resolve_node_id = lambda node: node_resolver.resolve_node_id(node)
+
+            edges['src'] = edges['src'].apply(resolve_node_id)
+            edges['dst'] = edges['dst'].apply(resolve_node_id)
+
+            extract_id = lambda node: node.id
+            edges['src'] = edges['src'].apply(extract_id)
+            edges['dst'] = edges['dst'].apply(extract_id)
+
+            edges = edges.drop_duplicates(subset=["src", "dst", "type"])
+
+            edges['id'] = 0
+
+            nodes_with_mentions = edges[edges["offsets"].apply(lambda x: x is not None)]
+            nodes_with_mentions["node_id__offset"] = list(zip(nodes_with_mentions["src"], nodes_with_mentions["offsets"]))
+            nodes_with_mentions["node_id__offset"] = nodes_with_mentions["node_id__offset"].apply(lambda x: (x[1][0], x[1][1], x[0]))
+
+            ast_offsets = replacer.recover_offsets_with_edits(nodes_with_mentions["node_id__offset"].values)
+
+            # TODO
+            #  resolve modules ind function definitions
+
+            #######################################
 
             offsets_index = OffsetIndex(offsets)
 
@@ -259,6 +586,7 @@ class OccurrenceReplacer:
         processed = []
         evicted = []
         replacement_index = {}
+        edits = []
 
         while len(pending) > 0:
             offset = pending.pop(0)  # format (start, end, (node_id, occ_type))
@@ -277,7 +605,7 @@ class OccurrenceReplacer:
                 # new_name = f"srctrlnd_{offset[2][0]}"
                 replacement_id = int(time_ns())
                 new_name = "srctrlrpl_" + str(replacement_id)
-                replacement_index[replacement_id] = {
+                replacement_index[new_name] = {
                     "srctrl_id": offset[2][0] if type(offset[2]) is not list else [o[0] for o in offset[2]],
                     "original_string": src_str
                 }
@@ -287,6 +615,7 @@ class OccurrenceReplacer:
                 pending = adjust_offsets2(pending, len_diff)
                 processed.append({"start": offset[0], "end": offset[1] + len_diff, "replacement_id": replacement_id})
                 temp_end_changes = [val + len_diff for val in temp_end_changes]
+                edits.append((offset[1], len_diff))
                 source_file_content = source_file_content[:offset[0]] + new_name + source_file_content[offset[1]:]
 
         final_position = max(map(lambda x: x[0][1] + x[1], zip(temp_evicted, temp_end_changes)))
@@ -296,6 +625,55 @@ class OccurrenceReplacer:
         self.processed = pd.DataFrame(processed)
         self.evicted = pd.DataFrame(evicted)
         self.replacement_index = replacement_index
+        self.edits = edits
+
+    def recover_offsets_with_edits(self, offsets):
+        pending = sorted(offsets, key=lambda x: x[0], reverse=True)
+        pending = sorted(pending, key=lambda x: x[1], reverse=True)
+        edits = copy(self.edits)
+        edits.reverse()
+
+        recovered = []
+        compound = []
+        if len(edits) == 0:
+            cum_adds = 0
+            edit_postion, edit_len = 0, 0
+        else:
+            cum_adds = sum(map(lambda x: x[1], edits))
+            edit_postion, edit_len = edits.pop(0)
+
+        if len(pending) == 0:
+            return []
+
+        offset = pending.pop(0)
+        while len(pending) > 0:
+            if len(pending) == 3:
+                print()
+            if len(edits) > 0 and offset[0] <= edit_postion < edit_postion + edit_len <= offset[1] and offset[0] <= edits[0][0] < edits[0][0] + edits[0][1] <= offset[1]:
+                compound.append(edits.pop(0))
+            elif edit_postion + edit_len <= offset[0]:
+                recovered.append((offset[0] - cum_adds, offset[1] - cum_adds, offset[2]))
+                offset = pending.pop(0)
+            elif offset[0] <= edit_postion < edit_postion + edit_len <= offset[1]:
+                adjust = edit_len
+                for c in compound:
+                    adjust += c[1]
+                recovered.append((offset[0] - cum_adds + adjust, offset[1] - cum_adds, offset[2]))
+                offset = pending.pop(0)
+            elif offset[1] < edit_postion:
+                cum_adds -= edit_len
+                if len(compound) > 0:
+                    edit_postion, edit_len = compound.pop(0)
+                else:
+                    edit_postion, edit_len = edits.pop(0)
+            else:
+                raise Exception("Illegal")
+
+        return recovered
+
+
+
+
 
 
 class RandomReplacementException(Exception):
@@ -553,11 +931,19 @@ def process_body(body, local_occurrences, nodes, f_id, f_start):
 
 
 if __name__ == "__main__":
-    working_directory = sys.argv[1]
-    try:
-        lang = sys.argv[2]
-    except:
-        lang = "python"
+    parser = argparse.ArgumentParser(description='')
+    parser.add_argument('working_directory', type=str,
+                        help='Path to ')
+    parser.add_argument('--bpe_tokenizer', '-bpe', dest='bpe_tokenizer', type=str,
+                        help='')
+    parser.add_argument('--create_subword_instances', action='store_true', default=False, help="")
+    parser.add_argument('--connect_subwords', action='store_true', default=False,
+                        help="Takes effect only when `create_subword_instances` is False")
+    parser.add_argument('--lang', dest='lang', default="python", help="")
+
+    args = parser.parse_args()
+
+    working_directory = args.working_directory
 
     source_location = read_source_location(working_directory)
     occurrence = read_occurrence(working_directory)
@@ -565,7 +951,7 @@ if __name__ == "__main__":
     edges = read_edges(working_directory)
     file_content = read_filecontent(working_directory)
     # bodies_processed = process_modules(nodes, edges, source_location, occurrence, file_content, lang)
-    srctrl_resolver = SourcetrailResolver(nodes, edges, source_location, occurrence, file_content, lang)
-    bodies_processed = srctrl_resolver.process_modules()
+    srctrl_resolver = SourcetrailResolver(nodes, edges, source_location, occurrence, file_content, args.lang)
+    bodies_processed = srctrl_resolver.process_modules(args.bpe_tokenizer, args.create_subword_instances, args.connect_subwords)
     if bodies_processed is not None:
         write_processed_bodies(bodies_processed, working_directory)
