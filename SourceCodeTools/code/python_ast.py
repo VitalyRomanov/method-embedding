@@ -232,8 +232,8 @@ class AstGraphGenerator(object):
         else:
             edges.append({"src": operand_name, "dst": node_name, "type": type})
 
-        if len(ext_edges) > 0:  # need this to avoid adding reverse edges to operation names and other highly connected nodes
-            edges.append({"src": node_name, "dst": operand_name, "type": type + "_rev"})
+        # if len(ext_edges) > 0:  # need this to avoid adding reverse edges to operation names and other highly connected nodes
+        edges.append({"src": node_name, "dst": operand_name, "type": type + "_rev"})
 
     def generic_parse(self, node, operands, with_name=None, ensure_iterables=False):
 
@@ -244,6 +244,10 @@ class AstGraphGenerator(object):
         else:
             node_name = with_name
 
+        if len(self.scope) > 0:
+            edges.append({"src": node_name, "dst": self.scope[-1], "type": "mention_scope"})
+            edges.append({"src": self.scope[-1], "dst": node_name, "type": "mention_scope_rev"})
+
         for operand in operands:
             if operand in ["body", "orelse", "finalbody"]:
                 self.parse_in_context(node_name, "operand", edges, node.__getattribute__(operand))
@@ -253,11 +257,8 @@ class AstGraphGenerator(object):
                     if isinstance(operand_, Iterable) and not isinstance(operand_, str):
                         # TODO:
                         #  appears as leaf node if the iterable is empty. suggest adding an "EMPTY" element
-                        if len(operand_) == 0 and ensure_iterables:
-                            self.parse_and_add_operand(node_name, "!empty_iterable!", operand, edges)
-                        else:
-                            for oper_ in operand_:
-                                self.parse_and_add_operand(node_name, oper_, operand, edges)
+                        for oper_ in operand_:
+                            self.parse_and_add_operand(node_name, oper_, operand, edges)
                     else:
                         self.parse_and_add_operand(node_name, operand_, operand, edges)
 
@@ -802,14 +803,18 @@ class AstGraphGenerator(object):
 
         cph_name = GNode(name="comprehension_" + str(hex(int(time_ns()))), type="comprehension")
 
+        if len(self.scope) > 0:
+            edges.append({"src": cph_name, "dst": self.scope[-1], "type": "mention_scope"})
+            edges.append({"src": self.scope[-1], "dst": cph_name, "type": "mention_scope_rev"})
+
         target, ext_edges = self.parse_operand(node.target)
         edges.extend(ext_edges)
         if hasattr(node.target, "lineno"):
             edges.append({"src": target, "dst": cph_name, "type": "target", "line": node.target.lineno-1, "end_line": node.target.end_lineno-1, "col_offset": node.target.col_offset, "end_col_offset": node.target.end_col_offset})
         else:
             edges.append({"src": target, "dst": cph_name, "type": "target"})
-        if len(ext_edges) > 0:
-            edges.append({"src": cph_name, "dst": target, "type": "target_for"})
+        # if len(ext_edges) > 0:
+        edges.append({"src": cph_name, "dst": target, "type": "target_for"})
 
         iter_, ext_edges = self.parse_operand(node.iter)
         edges.extend(ext_edges)
@@ -817,15 +822,15 @@ class AstGraphGenerator(object):
             edges.append({"src": iter_, "dst": cph_name, "type": "iter", "line": node.iter.lineno-1, "end_line": node.iter.end_lineno-1, "col_offset": node.iter.col_offset, "end_col_offset": node.iter.end_col_offset})
         else:
             edges.append({"src": iter_, "dst": cph_name, "type": "iter"})
-        if len(ext_edges) > 0:
-            edges.append({"src": cph_name, "dst": iter_, "type": "iter_for"})
+        # if len(ext_edges) > 0:
+        edges.append({"src": cph_name, "dst": iter_, "type": "iter_for"})
 
         for if_ in node.ifs:
             if_n, ext_edges = self.parse_operand(if_)
             edges.extend(ext_edges)
             edges.append({"src": if_n, "dst": cph_name, "type": "ifs"})
-            if len(ext_edges) > 0:
-                edges.append({"src": cph_name, "dst": if_n, "type": "ifs_rev"})
+            # if len(ext_edges) > 0:
+            edges.append({"src": cph_name, "dst": if_n, "type": "ifs_rev"})
 
         return edges, cph_name
 
