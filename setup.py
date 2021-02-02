@@ -11,7 +11,8 @@ setup(name='SourceCodeTools',
             'sentencepiece',
             'gensim',
             'numpy',
-            'scipy'
+            'scipy',
+            'networkx'
             # 'javac_parser'
       ],
       scripts=[
