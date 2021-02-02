@@ -9,6 +9,7 @@ def add_reverse_edges(edges):
     rev_edges['source_node_id'] = edges['target_node_id']
     rev_edges['target_node_id'] = edges['source_node_id']
     rev_edges['type'] = rev_edges['type'].apply(lambda x: x + "_rev")
+    rev_edges['id'] = -1
 
     return p.concat([edges, rev_edges], axis=0)
 
