@@ -25,7 +25,6 @@ class MentionTokenizer:
         self.connect_subwords = connect_subwords
 
     def replace_mentions_with_subwords(self, edges):
-        # edges = edges.to_dict(orient="records")
 
         if self.create_subword_instances:
             def produce_subw_edges(subwords, dst):
@@ -44,11 +43,6 @@ class MentionTokenizer:
                     new_edges.extend(self.global_mention_edges_from_node(edge['dst']))
 
             if edge['type'] == "local_mention":
-                # is_global_mention = hasattr(edge['src'], "id")
-                # if is_global_mention:
-                #     # this edge connects sourcetrail node need to add couple of links
-                #     # to ensure global information flow
-                #     new_edges.extend(global_mention_edges(edge))
 
                 dst = edge['dst']
 
@@ -78,7 +72,6 @@ class MentionTokenizer:
                 new_edges.append(edge)
 
         return new_edges
-        # return pd.DataFrame(new_edges)
 
     @staticmethod
     def global_mention_edges_from_node(node):
@@ -113,21 +106,6 @@ class MentionTokenizer:
             if connect_subwords:
                 self.connect_prev_next_subwords(new_edges, subword, subwords[ind - 1] if ind > 0 else None,
                                                 subwords[ind + 1] if ind < len(subwords) - 1 else None)
-                # if ind < len(subwords) - 1:
-                #     new_edges.append({
-                #         'src': subword,
-                #         'dst': subwords[ind + 1],
-                #         'type': 'next_subword',
-                #         'offsets': None
-                #     })
-                # if ind > 0:
-                #     new_edges.append({
-                #         'src': subword,
-                #         'dst': subwords[ind - 1],
-                #         'type': 'prev_subword',
-                #         'offsets': None
-                #     })
-
         return new_edges
 
     @staticmethod
@@ -169,21 +147,6 @@ class MentionTokenizer:
             if connect_subwords:
                 self.connect_prev_next_subwords(new_edges, subword, subwords[ind - 1] if ind > 0 else None,
                                                 subwords[ind + 1] if ind < len(subwords) - 1 else None)
-            # if ind < len(subwords) - 1:
-            #     new_edges.append({
-            #         'src': subword_instance,
-            #         'dst': instances[ind + 1],
-            #         'type': 'next_subword',
-            #         'offsets': None
-            #     })
-            # if ind > 0:
-            #     new_edges.append({
-            #         'src': subword_instance,
-            #         'dst': instances[ind - 1],
-            #         'type': 'prev_subword',
-            #         'offsets': None
-            #     })
-
         return new_edges
 
 
@@ -218,32 +181,21 @@ class GlobalNodeMatcher:
     @staticmethod
     def get_node_names(nodes):
         id2name = dict(zip(nodes["id"], nodes["serialized_name"]))
-        # if hasattr(self, "global_names"):
-        #     id2name.update(self.global_names)
         return id2name
 
     @staticmethod
     def get_node_types(nodes):
         id2type = dict(zip(nodes["id"], nodes["type"]))
-        # if hasattr(self, "global_types"):
-        #     id2type.update(self.global_types)
         return id2type
 
     def match_with_global_nodes(self, nodes, edges):
-        # nodes = nodes[nodes['type'].apply(lambda type: type in self.allowed_ast_node_types)]
-        # edges = edges[edges['type'].apply(lambda type: type in self.allowed_ast_edge_types)]
         nodes = pd.DataFrame([node for node in nodes if node["type"] in self.allowed_ast_node_types])
         edges = pd.DataFrame([edge for edge in edges if edge["type"] in self.allowed_ast_edge_types])
-
-        # id2name = self.get_node_names(nodes)
-        # id2type = self.get_node_types(nodes)
 
         func_nodes = nodes.query("type == 'FunctionDef'")["id"].values
         class_nodes = nodes.query("type == 'ClassDef'")["id"].values
         module_nodes = nodes.query("type == 'Module'")["id"].values
 
-        # g = nx.convert_matrix.from_pandas_edgelist(edges, source="source_node_id", target="target_node_id", edge_attr="type", create_using=nx.DiGraph)
-        # g = self.global_graph.copy()
         g = nx.DiGraph()
         g.add_edges_from(self.get_edges_for_graph(edges))
 
@@ -666,19 +618,6 @@ class SourcetrailResolver:
 
     def occurrences_into_ranges(self, body, occurrences: pd.DataFrame):
 
-        # occurrences = occurrences.copy()
-        # occurrences["temp"] = list(zip(occurrences["element_id"], occurrences["target_node_id"], occurrences["serialized_name"]))
-        # occurrences["referenced_node"] = occurrences["temp"].apply(self.get_node_id_from_occurrence)
-        # occurrences.dropna(axis=0, subset=["referenced_node"], inplace=True)
-        #
-        # occurrences = occurrences[["start_line", "end_line", "start_column", "end_column", "referenced_node", "occ_type"]]
-        # occurrences['names'] = occurrences['referenced_node'].apply(lambda id_: self.node2name[id_])
-        # occurrences['elem_id__occ_type'] = [{"node_id": e_id, "occ_type": o_type, "name": name} for e_id, o_type, name in zip(occurrences["referenced_node"], occurrences["occ_type"], occurrences['names'])]
-        # occurrences.drop(labels=["referenced_node", "occ_type", "names"], axis=1, inplace=True)
-        # occurrences["start_line"] = occurrences["start_line"] - 1
-        # occurrences["end_line"] = occurrences["end_line"] - 1
-        # occurrences["start_column"] = occurrences["start_column"] - 1
-
         columns = ["element_id", "start_line", "end_line", "start_column", "end_column", "occ_type",
                    "target_node_id", "serialized_name"]
         cmap = {c: columns.index(c) for c in columns}
@@ -701,7 +640,6 @@ class SourcetrailResolver:
             )
             new_occurrences.append(offset)
 
-        # return self.offsets2dataframe(to_offsets(body, occurrences.values, as_bytes=True))
         return self.offsets2dataframe(to_offsets(body, new_occurrences, as_bytes=True))
 
     @staticmethod
@@ -732,9 +670,6 @@ def process_code(source_file_content, offsets, node_resolver, mention_tokenizer,
         edge["src"] = resolve(edge["src"])
         edge["dst"] = resolve(edge["dst"])
 
-    # edges['src'] = edges['src'].apply(resolve)
-    # edges['dst'] = edges['dst'].apply(resolve)
-
     edges = mention_tokenizer.replace_mentions_with_subwords(edges)
 
     resolve_node_id = lambda node: node_resolver.resolve_node_id(node)
@@ -748,27 +683,8 @@ def process_code(source_file_content, offsets, node_resolver, mention_tokenizer,
         edge["src"] = extract_id(edge["src"])
         edge["dst"] = extract_id(edge["dst"])
 
-    # edges['src'] = edges['src'].apply(resolve_node_id)
-    # edges['dst'] = edges['dst'].apply(resolve_node_id)
-    #
-    #
-    # edges['src'] = edges['src'].apply(extract_id)
-    # edges['dst'] = edges['dst'].apply(extract_id)
-
-    # edges = pd.DataFrame(edges)
-
-    # edges = edges.drop_duplicates(subset=["src", "dst", "type"])
-
-    # edges['id'] = 0
-
     def get_valid_offsets(edges):
         return [(edge["offsets"][0], edge["offsets"][1], edge["src"]) for edge in edges if edge["offsets"] is not None]
-
-    # def get_valid_offsets(edges):
-    #     nodes_with_mentions = edges[edges["offsets"].apply(lambda x: x is not None)]
-    #     nodes_with_mentions["node_id__offset"] = list(zip(nodes_with_mentions["src"], nodes_with_mentions["offsets"]))
-    #     nodes_with_mentions["node_id__offset"] = nodes_with_mentions["node_id__offset"].apply(lambda x: (x[1][0], x[1][1], x[0]))
-    #     return nodes_with_mentions["node_id__offset"].values
 
     ast_offsets = replacer.recover_offsets_with_edits(get_valid_offsets(edges))
 
