@@ -1,4 +1,5 @@
 import ast
+from copy import copy
 
 from pprint import pprint
 from time import time_ns
@@ -106,16 +107,21 @@ class AstGraphGenerator(object):
         self.scope = []
 
     def get_name(self, node):
-        return GNode(astnode=node)
+        if len(self.scope) > 0:
+            return GNode(astnode=node, scope=copy(self.scope[-1]))
+        else:
+            return GNode(astnode=node)
         # return (node.__class__.__name__ + "_" + str(hex(int(time_ns()))), node.__class__.__name__)
 
-    def get_edges(self):
+    def get_edges(self, as_dataframe=True):
         edges = []
         for f_def_node in ast.iter_child_nodes(self.root):
             if type(f_def_node) == ast.FunctionDef:
                 edges.extend(self.parse(f_def_node))
                 break  # to avoid going through nested definitions
 
+        if not as_dataframe:
+            return edges
         df = pd.DataFrame(edges)
         return df.astype({col: "Int32" for col in df.columns if col not in {"src", "dst", "type"}})
 
@@ -149,8 +155,8 @@ class AstGraphGenerator(object):
                 last_node = s[1]
 
                 for cond_name, cond_stat in zip(self.current_condition, self.condition_status):
-                    edges.append({"src": last_node, "dst": cond_name, "type": "depends_on_" + cond_stat})
-                    edges.append({"src": cond_name, "dst": last_node, "type": "execute_when_" + cond_stat})
+                    edges.append({"scope": copy(self.scope[-1]), "src": last_node, "dst": cond_name, "type": "depends_on_" + cond_stat})
+                    edges.append({"scope": copy(self.scope[-1]), "src": cond_name, "dst": last_node, "type": "execute_when_" + cond_stat})
             else:
                 edges.extend(s)
         return edges
@@ -178,8 +184,8 @@ class AstGraphGenerator(object):
         name = GNode(name=name, type="Name")
         # mention_name = (name + "@" + self.scope[-1], "mention")
         edges = [
-            {"src": name, "dst": mention_name, "type": "local_mention"},
-            # {"src": self.scope[-1], "dst": mention_name, "type": "mention_scope"}
+            {"scope": copy(self.scope[-1]), "src": name, "dst": mention_name, "type": "local_mention"},
+            # {"scope": copy(self.scope[-1]), "src": self.scope[-1], "dst": mention_name, "type": "mention_scope"}
         ]
         return edges, mention_name
 
@@ -228,12 +234,12 @@ class AstGraphGenerator(object):
         edges.extend(ext_edges)
 
         if hasattr(operand, "lineno"):
-            edges.append({"src": operand_name, "dst": node_name, "type": type, "line": operand.lineno-1, "end_line": operand.end_lineno-1, "col_offset": operand.col_offset, "end_col_offset": operand.end_col_offset})
+            edges.append({"scope": copy(self.scope[-1]), "src": operand_name, "dst": node_name, "type": type, "line": operand.lineno-1, "end_line": operand.end_lineno-1, "col_offset": operand.col_offset, "end_col_offset": operand.end_col_offset})
         else:
-            edges.append({"src": operand_name, "dst": node_name, "type": type})
+            edges.append({"scope": copy(self.scope[-1]), "src": operand_name, "dst": node_name, "type": type})
 
         # if len(ext_edges) > 0:  # need this to avoid adding reverse edges to operation names and other highly connected nodes
-        edges.append({"src": node_name, "dst": operand_name, "type": type + "_rev"})
+        edges.append({"scope": copy(self.scope[-1]), "src": node_name, "dst": operand_name, "type": type + "_rev"})
 
     def generic_parse(self, node, operands, with_name=None, ensure_iterables=False):
 
@@ -245,8 +251,8 @@ class AstGraphGenerator(object):
             node_name = with_name
 
         if len(self.scope) > 0:
-            edges.append({"src": node_name, "dst": self.scope[-1], "type": "mention_scope"})
-            edges.append({"src": self.scope[-1], "dst": node_name, "type": "mention_scope_rev"})
+            edges.append({"scope": copy(self.scope[-1]), "src": node_name, "dst": self.scope[-1], "type": "mention_scope"})
+            edges.append({"scope": copy(self.scope[-1]), "src": self.scope[-1], "dst": node_name, "type": "mention_scope_rev"})
 
         for operand in operands:
             if operand in ["body", "orelse", "finalbody"]:
@@ -265,7 +271,7 @@ class AstGraphGenerator(object):
         # TODO
         # need to identify the benefit of this node
         # maybe it is better to use node types in the graph
-        # edges.append({"src": node.__class__.__name__, "dst": node_name, "type": "node_type"})
+        # edges.append({"scope": copy(self.scope[-1]), "src": node.__class__.__name__, "dst": node_name, "type": "node_type"})
 
         return edges, node_name
 
@@ -298,8 +304,8 @@ class AstGraphGenerator(object):
 
         # need to creare function name before generic_parse so that the scope is set up correctly
         # scope is used to create local mentions of variable and function names
-        fdef_name = self.get_name(node)
-        self.scope.append(fdef_name)
+        fdef_node_name = self.get_name(node)
+        self.scope.append(fdef_node_name)
 
         to_parse = []
         if len(node.args.args) > 0 or node.args.vararg is not None:
@@ -307,7 +313,7 @@ class AstGraphGenerator(object):
         if len("decorator_list") > 0:
             to_parse.append("decorator_list")
 
-        edges, f_name = self.generic_parse(node, to_parse, with_name=fdef_name)
+        edges, f_name = self.generic_parse(node, to_parse, with_name=fdef_node_name)
 
         if node.returns is not None:
             # returns stores return type annotation
@@ -316,15 +322,9 @@ class AstGraphGenerator(object):
             # https://www.python.org/dev/peps/pep-0484/#forward-references
             annotation = GNode(name=self.source[node.returns.lineno - 1][node.returns.col_offset: node.returns.end_col_offset],
                                type="type_annotation")
-            edges.append({"src": annotation, "dst": f_name, "type": "returned_by", "line": node.returns.lineno - 1, "end_line": node.returns.end_lineno - 1, "col_offset": node.returns.col_offset, "end_col_offset": node.returns.end_col_offset})
+            edges.append({"scope": copy(self.scope[-1]), "src": annotation, "dst": f_name, "type": "returned_by", "line": node.returns.lineno - 1, "end_line": node.returns.end_lineno - 1, "col_offset": node.returns.col_offset, "end_col_offset": node.returns.end_col_offset})
             # do not use reverse edges for types, will result in leak from function to function
-            # edges.append({"src": f_name, "dst": annotation, "type": 'returns'})
-
-        func_name = GNode(name=node.name, type="Name")
-
-        assert isinstance(node.name, str)
-        edges.append({"src": f_name, "dst": func_name, "type": "fname"})
-        edges.append({"src": func_name, "dst": f_name, "type": "fname_for"})
+            # edges.append({"scope": copy(self.scope[-1]), "src": f_name, "dst": annotation, "type": 'returns'})
 
         # if node.returns:
         #     print(self.source[node.lineno -1]) # can get definition string here
@@ -332,6 +332,14 @@ class AstGraphGenerator(object):
         self.parse_in_context(f_name, "defined_in", edges, node.body)
 
         self.scope.pop(-1)
+
+        # func_name = GNode(name=node.name, type="Name")
+        ext_edges, func_name = self.parse_as_mention(name=node.name)
+        edges.extend(ext_edges)
+
+        assert isinstance(node.name, str)
+        edges.append({"scope": copy(self.scope[-1]), "src": f_name, "dst": func_name, "type": "fname"})
+        edges.append({"scope": copy(self.scope[-1]), "src": func_name, "dst": f_name, "type": "fname_for"})
 
         return edges, f_name
 
@@ -343,7 +351,7 @@ class AstGraphGenerator(object):
         edges, assign_name = self.generic_parse(node, ["value", "targets"])
 
         # for cond_name, cons_stat in zip(self.current_condition, self.condition_status):
-        #     edges.append({"src": assign_name, "dst": cond_name, "type": "depends_on_" + cons_stat})
+        #     edges.append({"scope": copy(self.scope[-1]), "src": assign_name, "dst": cond_name, "type": "depends_on_" + cons_stat})
 
         return edges, assign_name
 
@@ -351,10 +359,19 @@ class AstGraphGenerator(object):
         return self.generic_parse(node, ["target", "op", "value"])
 
     def parse_ClassDef(self, node):
-        edges, class_name = self.generic_parse(node, ["name"])
 
-        self.parse_in_context(class_name, "class", edges, node.body)
-        return edges, class_name
+        edges, class_node_name = self.generic_parse(node, [])
+
+        self.scope.append(class_node_name)
+        self.parse_in_context(class_node_name, "class", edges, node.body)
+        self.scope.pop(-1)
+
+        ext_edges, cls_name = self.parse_as_mention(name=node.name)
+        edges.extend(ext_edges)
+        edges.append({"scope": copy(self.scope[-1]), "src": class_node_name, "dst": cls_name, "type": "class_name"})
+        edges.append({"scope": copy(self.scope[-1]), "src": cls_name, "dst": class_node_name, "type": "name_for"})
+
+        return edges, class_node_name
 
     def parse_ImportFrom(self, node):
         # # similar issues as with parsing alias, module name is parsed as a long chunk
@@ -363,7 +380,7 @@ class AstGraphGenerator(object):
         # # if node.module:
         # #     name_from, edges_from = self.parse_operand(ast.parse(node.module).body[0].value)
         # #     edges.extend(edges_from)
-        # #     edges.append({"src": name_from, "dst": name, "type": "module"})
+        # #     edges.append({"scope": copy(self.scope[-1]), "src": name_from, "dst": name, "type": "module"})
         # return edges, name
         return self.generic_parse(node, ["module", "names"])
 
@@ -401,7 +418,7 @@ class AstGraphGenerator(object):
         # edges = []
         # # name, edges = self.parse_operand(ast.parse(node.name).body[0].value) # <- this was the functional line
         # # # if node.asname:
-        # # #     edges.append({"src": name, "dst": node.asname, "type": "alias"})
+        # # #     edges.append({"scope": copy(self.scope[-1]), "src": name, "dst": node.asname, "type": "alias"})
         # return edges, name
         return self.generic_parse(node, ["name", "asname"])
 
@@ -414,8 +431,8 @@ class AstGraphGenerator(object):
         # # included mention
         name = self.get_name(node)
         edges, mention_name = self.parse_as_mention(node.arg)
-        edges.append({"src": mention_name, "dst": name, "type": 'arg'})
-        edges.append({"src": name, "dst": mention_name, "type": 'arg_rev'})
+        edges.append({"scope": copy(self.scope[-1]), "src": mention_name, "dst": name, "type": 'arg'})
+        edges.append({"scope": copy(self.scope[-1]), "src": name, "dst": mention_name, "type": 'arg_rev'})
         # edges, name = self.generic_parse(node, ["arg"])
         if node.annotation is not None:
             # can contain quotes
@@ -423,9 +440,9 @@ class AstGraphGenerator(object):
             # https://www.python.org/dev/peps/pep-0484/#forward-references
             annotation = GNode(name=self.source[node.annotation.lineno - 1][node.annotation.col_offset: node.annotation.end_col_offset],
                                type="type_annotation")
-            edges.append({"src": annotation, "dst": name, "type": 'annotation_for', "line": node.annotation.lineno-1, "end_line": node.annotation.end_lineno-1, "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset, "var_line": node.lineno-1, "var_end_line": node.end_lineno-1, "var_col_offset": node.col_offset, "var_end_col_offset": node.end_col_offset})
+            edges.append({"scope": copy(self.scope[-1]), "src": annotation, "dst": name, "type": 'annotation_for', "line": node.annotation.lineno-1, "end_line": node.annotation.end_lineno-1, "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset, "var_line": node.lineno-1, "var_end_line": node.end_lineno-1, "var_col_offset": node.col_offset, "var_end_col_offset": node.end_col_offset})
             # do not use reverse edges for types, will result in leak from function to function
-            # edges.append({"src": name, "dst": annotation, "type": 'annotation'})
+            # edges.append({"scope": copy(self.scope[-1]), "src": name, "dst": annotation, "type": 'annotation'})
         return edges, name
         # return self.generic_parse(node, ["arg", "annotation"])
 
@@ -446,9 +463,9 @@ class AstGraphGenerator(object):
         annotation = GNode(name=self.source[node.lineno - 1][node.annotation.col_offset: node.annotation.end_col_offset],
                            type="type_annotation")
         edges, name = self.generic_parse(node, ["target"])
-        edges.append({"src": annotation, "dst": name, "type": 'annotation_for', "line": node.annotation.lineno-1, "end_line": node.annotation.end_lineno-1, "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset, "var_line": node.lineno-1, "var_end_line": node.end_lineno-1, "var_col_offset": node.col_offset, "var_end_col_offset": node.end_col_offset})
+        edges.append({"scope": copy(self.scope[-1]), "src": annotation, "dst": name, "type": 'annotation_for', "line": node.annotation.lineno-1, "end_line": node.annotation.end_lineno-1, "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset, "var_line": node.lineno-1, "var_end_line": node.end_lineno-1, "var_col_offset": node.col_offset, "var_end_col_offset": node.end_col_offset})
         # do not use reverse edges for types, will result in leak from function to function
-        # edges.append({"src": name, "dst": annotation, "type": 'annotation'})
+        # edges.append({"scope": copy(self.scope[-1]), "src": name, "dst": annotation, "type": 'annotation'})
         return edges, name
         # return self.generic_parse(node, ["target", "annotation"])
 
@@ -498,12 +515,12 @@ class AstGraphGenerator(object):
         # self.parse_and_add_operand(call_name, node.func, "call_func", edges)
         # # f_name = self.parse(node.func)
         # # call_args = (self.parse(a) for a in node.args)
-        # # edges.append({"src": f_name, "dst": call_name, "type": "call_func"})
+        # # edges.append({"scope": copy(self.scope[-1]), "src": f_name, "dst": call_name, "type": "call_func"})
         # for a in node.args:
         #     self.parse_and_add_operand(call_name, a, "call_arg", edges)
         #     # arg_name, ext_edges = self.parse_operand(a)
         #     # edges.extend(ext_edges)
-        #     # edges.append({"src": arg_name, "dst": call_name, "type": "call_arg"})
+        #     # edges.append({"scope": copy(self.scope[-1]), "src": arg_name, "dst": call_name, "type": "call_arg"})
         # return edges, call_name
         # # return get_call(node.func), tuple(parse(a) for a in node.args)
 
@@ -712,17 +729,17 @@ class AstGraphGenerator(object):
         edges.extend(ext_edges)
         
         # for cond_name, cons_stat in zip(self.current_condition, self.condition_status):
-        #     edges.append({"src": expr_name, "dst": cond_name, "type": "depends_on_" + cons_stat})
+        #     edges.append({"scope": copy(self.scope[-1]), "src": expr_name, "dst": cond_name, "type": "depends_on_" + cons_stat})
         return edges, expr_name
 
     def parse_control_flow(self, node):
         edges = []
         ctrlflow_name = GNode(name="ctrl_flow_" + str(hex(int(time_ns()))), type="CtlFlowInstance")
         # ctrlflow_name = "ctrl_flow_" + str(int(time_ns()))
-        edges.append({"src": GNode(name=node.__class__.__name__, type="CtlFlow"), "dst": ctrlflow_name, "type": "control_flow"})
+        edges.append({"scope": copy(self.scope[-1]), "src": GNode(name=node.__class__.__name__, type="CtlFlow"), "dst": ctrlflow_name, "type": "control_flow"})
 
         # for cond_name, cons_stat in zip(self.current_condition, self.condition_status):
-        #     edges.append({"src": call_name, "dst": cond_name, "type": "depends_on_" + cons_stat})
+        #     edges.append({"scope": copy(self.scope[-1]), "src": call_name, "dst": cond_name, "type": "depends_on_" + cons_stat})
         return edges, ctrlflow_name
 
     def parse_Continue(self, node):
@@ -804,33 +821,33 @@ class AstGraphGenerator(object):
         cph_name = GNode(name="comprehension_" + str(hex(int(time_ns()))), type="comprehension")
 
         if len(self.scope) > 0:
-            edges.append({"src": cph_name, "dst": self.scope[-1], "type": "mention_scope"})
-            edges.append({"src": self.scope[-1], "dst": cph_name, "type": "mention_scope_rev"})
+            edges.append({"scope": copy(self.scope[-1]), "src": cph_name, "dst": self.scope[-1], "type": "mention_scope"})
+            edges.append({"scope": copy(self.scope[-1]), "src": self.scope[-1], "dst": cph_name, "type": "mention_scope_rev"})
 
         target, ext_edges = self.parse_operand(node.target)
         edges.extend(ext_edges)
         if hasattr(node.target, "lineno"):
-            edges.append({"src": target, "dst": cph_name, "type": "target", "line": node.target.lineno-1, "end_line": node.target.end_lineno-1, "col_offset": node.target.col_offset, "end_col_offset": node.target.end_col_offset})
+            edges.append({"scope": copy(self.scope[-1]), "src": target, "dst": cph_name, "type": "target", "line": node.target.lineno-1, "end_line": node.target.end_lineno-1, "col_offset": node.target.col_offset, "end_col_offset": node.target.end_col_offset})
         else:
-            edges.append({"src": target, "dst": cph_name, "type": "target"})
+            edges.append({"scope": copy(self.scope[-1]), "src": target, "dst": cph_name, "type": "target"})
         # if len(ext_edges) > 0:
-        edges.append({"src": cph_name, "dst": target, "type": "target_for"})
+        edges.append({"scope": copy(self.scope[-1]), "src": cph_name, "dst": target, "type": "target_for"})
 
         iter_, ext_edges = self.parse_operand(node.iter)
         edges.extend(ext_edges)
         if hasattr(node.iter, "lineno"):
-            edges.append({"src": iter_, "dst": cph_name, "type": "iter", "line": node.iter.lineno-1, "end_line": node.iter.end_lineno-1, "col_offset": node.iter.col_offset, "end_col_offset": node.iter.end_col_offset})
+            edges.append({"scope": copy(self.scope[-1]), "src": iter_, "dst": cph_name, "type": "iter", "line": node.iter.lineno-1, "end_line": node.iter.end_lineno-1, "col_offset": node.iter.col_offset, "end_col_offset": node.iter.end_col_offset})
         else:
-            edges.append({"src": iter_, "dst": cph_name, "type": "iter"})
+            edges.append({"scope": copy(self.scope[-1]), "src": iter_, "dst": cph_name, "type": "iter"})
         # if len(ext_edges) > 0:
-        edges.append({"src": cph_name, "dst": iter_, "type": "iter_for"})
+        edges.append({"scope": copy(self.scope[-1]), "src": cph_name, "dst": iter_, "type": "iter_for"})
 
         for if_ in node.ifs:
             if_n, ext_edges = self.parse_operand(if_)
             edges.extend(ext_edges)
-            edges.append({"src": if_n, "dst": cph_name, "type": "ifs"})
+            edges.append({"scope": copy(self.scope[-1]), "src": if_n, "dst": cph_name, "type": "ifs"})
             # if len(ext_edges) > 0:
-            edges.append({"src": cph_name, "dst": if_n, "type": "ifs_rev"})
+            edges.append({"scope": copy(self.scope[-1]), "src": cph_name, "dst": if_n, "type": "ifs_rev"})
 
         return edges, cph_name
 
