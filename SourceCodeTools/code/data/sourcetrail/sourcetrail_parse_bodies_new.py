@@ -1,21 +1,17 @@
 import argparse
-import ast
-import random
-import string
-import sys
+import re
 from copy import copy
 from time import time_ns
-from typing import Tuple, List, Optional
-import re
+
+import networkx as nx
 
 from SourceCodeTools.code.data.sourcetrail.common import *
-from SourceCodeTools.nlp.entity.annotator.annotator_utils import adjust_offsets2
-
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_add_reverse_edges import add_reverse_edges
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_ast_edges import NodeResolver, make_reverse_edge
 from SourceCodeTools.code.python_ast import AstGraphGenerator, GNode, PythonSharedNodes
+from SourceCodeTools.nlp.entity.annotator.annotator_utils import adjust_offsets2
 from SourceCodeTools.nlp.entity.annotator.annotator_utils import overlap as range_overlap
-
-from SourceCodeTools.code.data.sourcetrail.sourcetrail_ast_edges import NodeResolver, \
-    produce_subword_edges_with_instances, produce_subword_edges, global_mention_edges_from_node, make_reverse_edge
+from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets, get_cum_lens
 
 
 class MentionTokenizer:
@@ -23,13 +19,13 @@ class MentionTokenizer:
         from SourceCodeTools.nlp.embed.bpe import make_tokenizer
         from SourceCodeTools.nlp.embed.bpe import load_bpe_model
 
-        self.bpe = make_tokenizer(load_bpe_model((bpe_tokenizer_path))) \
+        self.bpe = make_tokenizer(load_bpe_model(bpe_tokenizer_path)) \
             if bpe_tokenizer_path else None
         self.create_subword_instances = create_subword_instances
         self.connect_subwords = connect_subwords
 
     def replace_mentions_with_subwords(self, edges):
-        edges = edges.to_dict(orient="records")
+        # edges = edges.to_dict(orient="records")
 
         if self.create_subword_instances:
             def produce_subw_edges(subwords, dst):
@@ -66,11 +62,11 @@ class MentionTokenizer:
                 else:
                     new_edges.append(edge)
 
-            elif self.bpe is not None and \
+            elif self.bpe is not None and (
                     (
                             edge['src'].type in PythonSharedNodes.tokenizable_types
                     ) or (
-                    edge['dst'].type in {"Global"} and edge['src'].type != "Constant"
+                    edge['dst'].type in {"Global"} and edge['src'].type != "Constant")
             ):
                 new_edges.append(edge)
                 new_edges.append(make_reverse_edge(edge))
@@ -81,9 +77,11 @@ class MentionTokenizer:
             else:
                 new_edges.append(edge)
 
-        return pd.DataFrame(new_edges)
+        return new_edges
+        # return pd.DataFrame(new_edges)
 
-    def global_mention_edges_from_node(self, node):
+    @staticmethod
+    def global_mention_edges_from_node(node):
         global_edges = []
         if type(node.global_id) is int:
             id_type = [(node.global_id, node.global_type)]
@@ -101,8 +99,7 @@ class MentionTokenizer:
             global_edges.append(make_reverse_edge(global_mention))
         return global_edges
 
-    @staticmethod
-    def produce_subword_edges(subwords, dst, connect_subwords=False):
+    def produce_subword_edges(self, subwords, dst, connect_subwords=False):
         new_edges = []
 
         subwords = list(map(lambda x: GNode(name=x, type="subword"), subwords))
@@ -114,25 +111,43 @@ class MentionTokenizer:
                 'offsets': None
             })
             if connect_subwords:
-                if ind < len(subwords) - 1:
-                    new_edges.append({
-                        'src': subword,
-                        'dst': subwords[ind + 1],
-                        'type': 'next_subword',
-                        'offsets': None
-                    })
-                if ind > 0:
-                    new_edges.append({
-                        'src': subword,
-                        'dst': subwords[ind - 1],
-                        'type': 'prev_subword',
-                        'offsets': None
-                    })
+                self.connect_prev_next_subwords(new_edges, subword, subwords[ind - 1] if ind > 0 else None,
+                                                subwords[ind + 1] if ind < len(subwords) - 1 else None)
+                # if ind < len(subwords) - 1:
+                #     new_edges.append({
+                #         'src': subword,
+                #         'dst': subwords[ind + 1],
+                #         'type': 'next_subword',
+                #         'offsets': None
+                #     })
+                # if ind > 0:
+                #     new_edges.append({
+                #         'src': subword,
+                #         'dst': subwords[ind - 1],
+                #         'type': 'prev_subword',
+                #         'offsets': None
+                #     })
 
         return new_edges
 
     @staticmethod
-    def produce_subword_edges_with_instances(subwords, dst):
+    def connect_prev_next_subwords(edges, current, prev_subw, next_subw):
+        if next_subw is not None:
+            edges.append({
+                'src': current,
+                'dst': next_subw,
+                'type': 'next_subword',
+                'offsets': None
+            })
+        if prev_subw is not None:
+            edges.append({
+                'src': current,
+                'dst': prev_subw,
+                'type': 'prev_subword',
+                'offsets': None
+            })
+
+    def produce_subword_edges_with_instances(self, subwords, dst, connect_subwords=True):
         new_edges = []
 
         subwords = list(map(lambda x: GNode(name=x, type="subword"), subwords))
@@ -151,22 +166,177 @@ class MentionTokenizer:
                 'type': 'subword',
                 'offsets': None
             })
-            if ind < len(subwords) - 1:
-                new_edges.append({
-                    'src': subword_instance,
-                    'dst': instances[ind + 1],
-                    'type': 'next_subword',
-                    'offsets': None
-                })
-            if ind > 0:
-                new_edges.append({
-                    'src': subword_instance,
-                    'dst': instances[ind - 1],
-                    'type': 'prev_subword',
-                    'offsets': None
-                })
+            if connect_subwords:
+                self.connect_prev_next_subwords(new_edges, subword, subwords[ind - 1] if ind > 0 else None,
+                                                subwords[ind + 1] if ind < len(subwords) - 1 else None)
+            # if ind < len(subwords) - 1:
+            #     new_edges.append({
+            #         'src': subword_instance,
+            #         'dst': instances[ind + 1],
+            #         'type': 'next_subword',
+            #         'offsets': None
+            #     })
+            # if ind > 0:
+            #     new_edges.append({
+            #         'src': subword_instance,
+            #         'dst': instances[ind - 1],
+            #         'type': 'prev_subword',
+            #         'offsets': None
+            #     })
 
         return new_edges
+
+
+class GlobalNodeMatcher:
+    def __init__(self, nodes, edges):
+        from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types
+        # filter function, classes, methods, and modules
+        self.allowed_node_types = set([node_types[tt] for tt in [8, 128, 4096, 8192]])
+        self.allowed_edge_types = {"defines_rev"}
+
+        self.allowed_ast_node_types = {"FunctionDef", "ClassDef", "Module", "mention"}
+        self.allowed_ast_edge_types = {"fname", "class_name", "global_mention_rev"}
+
+        self.nodes = nodes[nodes['type'].apply(lambda type: type in self.allowed_node_types)]
+        self.edges = edges[edges["type"].apply(lambda type: type in self.allowed_edge_types)]
+
+        self.global_names = self.get_node_names(self.nodes)
+        self.global_types = self.get_node_types(self.nodes)
+
+        self.global_graph = nx.DiGraph()
+        self.global_graph.add_edges_from(self.get_edges_for_graph(self.edges))
+
+    @staticmethod
+    def get_edges_for_graph(edges):
+        try:
+            edge_info = zip(edges['src'], edges['dst'], edges['type'])
+        except KeyError:
+            edge_info = zip(edges['source_node_id'], edges['target_node_id'], edges['type'])
+        edge_info = map(lambda x: (x[0], x[1], {"type": x[2]}), edge_info)
+        return edge_info
+
+    @staticmethod
+    def get_node_names(nodes):
+        id2name = dict(zip(nodes["id"], nodes["serialized_name"]))
+        # if hasattr(self, "global_names"):
+        #     id2name.update(self.global_names)
+        return id2name
+
+    @staticmethod
+    def get_node_types(nodes):
+        id2type = dict(zip(nodes["id"], nodes["type"]))
+        # if hasattr(self, "global_types"):
+        #     id2type.update(self.global_types)
+        return id2type
+
+    def match_with_global_nodes(self, nodes, edges):
+        # nodes = nodes[nodes['type'].apply(lambda type: type in self.allowed_ast_node_types)]
+        # edges = edges[edges['type'].apply(lambda type: type in self.allowed_ast_edge_types)]
+        nodes = pd.DataFrame([node for node in nodes if node["type"] in self.allowed_ast_node_types])
+        edges = pd.DataFrame([edge for edge in edges if edge["type"] in self.allowed_ast_edge_types])
+
+        # id2name = self.get_node_names(nodes)
+        # id2type = self.get_node_types(nodes)
+
+        func_nodes = nodes.query("type == 'FunctionDef'")["id"].values
+        class_nodes = nodes.query("type == 'ClassDef'")["id"].values
+        module_nodes = nodes.query("type == 'Module'")["id"].values
+
+        # g = nx.convert_matrix.from_pandas_edgelist(edges, source="source_node_id", target="target_node_id", edge_attr="type", create_using=nx.DiGraph)
+        # g = self.global_graph.copy()
+        g = nx.DiGraph()
+        g.add_edges_from(self.get_edges_for_graph(edges))
+
+        def find_global_id(graph, def_id, motif):
+            """
+            Do function or class global id lookup
+            :param graph:
+            :param def_id:
+            :param motif: list with edge types, return None if path does not exist
+            :return:
+            """
+            name_node = def_id
+            motif = copy(motif)
+            while len(motif) > 0:
+                link_type = motif.pop(0)
+                for node, eprop in graph[name_node].items():
+                    if eprop["type"] == link_type:
+                        name_node = node
+                        break
+                else:
+                    return None
+            return name_node
+
+        new_node_ids = {}
+        module_candidates = []
+
+        def get_global_id_and_module_candidates(nodes, paths):
+            """
+            Get global ids for function or class definitions and get the candidate module location
+            where they were defined.
+            :param nodes: list of nodes to inspect, should be of the same type
+            :param paths: path of edge types that will lead to the global node
+            :return: mapping from ast node id to global id, the list of candidate modules
+            """
+            new_node_ids = {}
+            module_candidates = []
+            for node in nodes:
+                gid = find_global_id(g, node, paths)
+                if gid is None:
+                    continue
+                new_node_ids[node] = gid
+                # new_node_ids[gid] = node
+                module_candidate = find_global_id(self.global_graph, gid, ["defines_rev"])
+                if module_candidate is not None and self.global_types[module_candidate] == "module":
+                    module_candidates.append(module_candidate)
+            return new_node_ids, module_candidates
+
+        def get_global_module_id(module_nodes, module_candidates, func_global, class_global):
+            assert len(module_nodes) == 1
+            from collections import Counter
+            if len(module_candidates) > 0:
+                mod_id, count = Counter(module_candidates).most_common(1)[0]
+                return {module_nodes[0]: mod_id}
+            mod_id = get_global_module_id2(func_global, class_global)
+            if mod_id is None:
+                return {}
+            else:
+                return {module_nodes[0]: mod_id}
+                # new_node_ids[module_nodes[0]] = mod_id
+                # new_node_ids[mod_id] = module_nodes[0]
+
+        def get_global_module_id2(func_global, class_global):
+            classes = class_global.values()
+            candidate_names = list(map(lambda id_: ".".join(self.global_names[id_].split(".")[:-1]), classes))
+
+            functions = func_global.values()
+            candidate_names.extend(map(lambda id_: ".".join(self.global_names[id_].split(".")[:-1]), functions))
+            candidate_names = sorted(candidate_names, key=len)  # shortest name is assumed to be correct
+
+            if len(candidate_names) > 0:
+                return self.nodes.query(f"serialized_name == '{candidate_names[0]}' and type == 'module'").iloc[0]["id"]
+            return None
+
+        func_global, module_cand = get_global_id_and_module_candidates(func_nodes, ["fname", "global_mention_rev"])
+        new_node_ids.update(func_global)
+        module_candidates.extend(module_cand)
+        class_global, module_cand = get_global_id_and_module_candidates(class_nodes,
+                                                                        ["class_name", "global_mention_rev"])
+        new_node_ids.update(func_global)
+        module_candidates.extend(module_cand)
+
+        module_global = get_global_module_id(module_nodes, module_candidates, func_global, class_global)
+        new_node_ids.update(module_global)
+
+        return new_node_ids
+
+    @staticmethod
+    def merge_global_references(global_references, module_global_references):
+        existing_len = len(global_references)
+        to_add_len = len(module_global_references)
+        global_references.update(module_global_references)
+        new_len = len(global_references)
+        assert new_len == existing_len + to_add_len
 
 
 class ReplacementNodeResolver(NodeResolver):
@@ -178,8 +348,15 @@ class ReplacementNodeResolver(NodeResolver):
         self.valid_new_node = nodes['id'].max() + 1
         self.node_ids = {}
         self.new_nodes = []
+        self.stashed_nodes = []
 
         self.old_nodes = nodes.copy()
+        self.old_nodes['mentioned_in'] = pd.NA
+        self.old_nodes = self.old_nodes.astype({'mentioned_in': 'Int32'})
+
+    def stash_new_nodes(self):
+        self.stashed_nodes.extend(self.new_nodes)
+        self.new_nodes = []
 
     def resolve_substrings(self, node, replacement2srctrl):
 
@@ -218,7 +395,9 @@ class ReplacementNodeResolver(NodeResolver):
         for r, v in replacements.items():
             real_name = real_name.replace(r, v["name"])
 
-        return GNode(name=real_name, type=node.type, global_name=global_name, global_id=global_node_id, global_type=global_type)
+        return GNode(
+            name=real_name, type=node.type, global_name=global_name, global_id=global_node_id, global_type=global_type
+        )
 
     def resolve_regular_replacement(self, node, replacement2srctrl):
 
@@ -242,14 +421,14 @@ class ReplacementNodeResolver(NodeResolver):
                 return GNode(name=replacement2srctrl[name_]["original_string"], type=node.type)
             assert node.type in {"Name", "mention", "#attr#"}
             real_name = replacement2srctrl[name_]["original_string"]
-            global_name = self.nodeid2name[global_node_id] if type(global_node_id) is int else [self.nodeid2name[nid] for
-                                                                                                nid in global_node_id]
-            global_type = self.nodeid2type[global_node_id] if type(global_node_id) is int else [self.nodeid2type[nid] for
-                                                                                                nid in global_node_id]
+            global_name = self.nodeid2name[global_node_id] if type(global_node_id) is int else\
+                [self.nodeid2name[nid] for nid in global_node_id]
+            global_type = self.nodeid2type[global_node_id] if type(global_node_id) is int else\
+                [self.nodeid2type[nid] for nid in global_node_id]
 
             if node.type == "Name":
                 # name always go together with mention, therefore no global reference in Name
-                new_node = GNode(name=real_name, type=node.type, global_id=global_node_id, global_type=global_type)
+                new_node = GNode(name=real_name, type=node.type)
             else:
                 if decorated:
                     assert node.type == "mention"
@@ -270,7 +449,7 @@ class ReplacementNodeResolver(NodeResolver):
             new_node = self.resolve_substrings(node, replacement2srctrl)
         else:
             new_node = self.resolve_regular_replacement(node, replacement2srctrl)
-            if "@" not in new_node.name and new_node.name == node.name:  # hack to process imports
+            if "srctrlrpl_" in new_node.name:  # hack to process imports
                 new_node = self.resolve_substrings(node, replacement2srctrl)
 
         assert "srctrlrpl_" not in new_node.name
@@ -295,11 +474,46 @@ class ReplacementNodeResolver(NodeResolver):
                     {
                         "id": new_id,
                         "type": node.type,
-                        "serialized_name": node.name
+                        "serialized_name": node.name,
+                        "mentioned_in": pd.NA
                     }
                 )
+                if hasattr(node, "scope"):
+                    self.resolve_node_id(node.scope)
+                    self.new_nodes[-1]["mentioned_in"] = node.scope.id
                 node.setprop("id", new_id)
         return node
+
+    def prepare_for_write(self, from_stashed=False):
+        nodes = pd.concat([self.old_nodes, self.new_nodes_for_write(from_stashed)])[
+            ['id', 'type', 'serialized_name', 'mentioned_in']
+        ]
+
+        return nodes
+
+    def new_nodes_for_write(self, from_stashed=False):
+
+        new_nodes = pd.DataFrame(self.new_nodes if not from_stashed else self.stashed_nodes)[
+            ['id', 'type', 'serialized_name', 'mentioned_in']
+        ].astype({"mentioned_in": "Int32"})
+
+        return new_nodes
+
+    def adjust_ast_node_types(self, mapping, from_stashed=False):
+        nodes = self.new_nodes if not from_stashed else self.stashed_nodes
+
+        for node in nodes:
+            node["type"] = mapping.get(node["type"], node["type"])
+
+    def drop_nodes(self, node_ids_to_drop, from_stashed=False):
+        nodes = self.new_nodes if not from_stashed else self.stashed_nodes
+
+        position = 0
+        while position < len(nodes):
+            if nodes[position]["id"] in node_ids_to_drop:
+                nodes.pop(position)
+            else:
+                position += 1
 
 
 class OffsetIndex:
@@ -339,31 +553,78 @@ class OffsetIndex:
 
 
 class AstProcessor(AstGraphGenerator):
-    def get_edges(self):
+    def get_edges(self, as_dataframe=True):
         edges = []
         all_edges, top_node_name = self.parse(self.root)
         edges.extend(all_edges)
 
-        df = pd.DataFrame(edges)
-        df = df.astype({col: "Int32" for col in df.columns if col not in {"src", "dst", "type"}})
+        if as_dataframe:
+            df = pd.DataFrame(edges)
+            df = df.astype({col: "Int32" for col in df.columns if col not in {"src", "dst", "type"}})
 
-        body = "\n".join(self.source)
-        cum_lens = get_cum_lens(body)
-        def format_offsets(edges: pd.DataFrame):
-            edges["start_line__end_line__start_column__end_column"] = list(zip(edges["line"], edges["end_line"], edges["col_offset"], edges["end_col_offset"]))
-            def into_offset(range):
-                try:
-                    return to_offsets(body, [(*range, None)], cum_lens=cum_lens)[-1][:2]
-                except:
-                    return None
-            edges["offsets"] = edges["start_line__end_line__start_column__end_column"].apply(into_offset)
-            edges.drop(axis=1, labels=["start_line__end_line__start_column__end_column", "line", "end_line", "col_offset", "end_col_offset"], inplace=True)
+            body = "\n".join(self.source)
+            cum_lens = get_cum_lens(body)
 
-        format_offsets(df)
-        return df
+            def format_offsets(edges: pd.DataFrame):
+                edges["start_line__end_line__start_column__end_column"] = list(
+                    zip(edges["line"], edges["end_line"], edges["col_offset"], edges["end_col_offset"])
+                )
 
+                def into_offset(range):
+                    try:
+                        return to_offsets(body, [(*range, None)], cum_lens=cum_lens)[-1][:2]
+                    except:
+                        return None
 
-from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets, get_cum_lens
+                edges["offsets"] = edges["start_line__end_line__start_column__end_column"].apply(into_offset)
+                edges.drop(
+                    axis=1,
+                    labels=[
+                        "start_line__end_line__start_column__end_column",
+                        "line",
+                        "end_line",
+                        "col_offset",
+                        "end_col_offset"
+                    ], inplace=True
+                )
+
+            format_offsets(df)
+            return df
+        else:
+            body = "\n".join(self.source)
+            cum_lens = get_cum_lens(body)
+
+            def format_offsets(edge):
+                def into_offset(range):
+                    try:
+                        return to_offsets(body, [(*range, None)], cum_lens=cum_lens)[-1][:2]
+                    except:
+                        return None
+
+                if "line" in edge:
+                    edge["offsets"] = into_offset(
+                        (edge["line"], edge["end_line"], edge["col_offset"], edge["end_col_offset"])
+                    )
+                    edge.pop("line")
+                    edge.pop("end_line")
+                    edge.pop("col_offset")
+                    edge.pop("end_col_offset")
+                else:
+                    edge["offsets"] = None
+                if "var_line" in edge:
+                    edge["var_offsets"] = into_offset(
+                        (edge["var_line"], edge["var_end_line"], edge["var_col_offset"], edge["var_end_col_offset"])
+                    )
+                    edge.pop("var_line")
+                    edge.pop("var_end_line")
+                    edge.pop("var_col_offset")
+                    edge.pop("var_end_col_offset")
+
+            for edge in edges:
+                format_offsets(edge)
+
+            return edges
+
 
 class SourcetrailResolver:
     def __init__(self, nodes, edges, source_location, occurrence, file_content, lang):
@@ -399,24 +660,49 @@ class SourcetrailResolver:
         else:
             return node_id
 
-    def get_file_content(self, file_id):
+    @staticmethod
+    def get_file_content(file_id):
         return file_content.query(f"id == {file_id}").iloc[0]['content']
 
     def occurrences_into_ranges(self, body, occurrences: pd.DataFrame):
 
-        occurrences = occurrences.copy()
-        occurrences["temp"] = list(zip(occurrences["element_id"], occurrences["target_node_id"], occurrences["serialized_name"]))
-        occurrences["referenced_node"] = occurrences["temp"].apply(self.get_node_id_from_occurrence)
-        occurrences.dropna(axis=0, subset=["referenced_node"], inplace=True)
+        # occurrences = occurrences.copy()
+        # occurrences["temp"] = list(zip(occurrences["element_id"], occurrences["target_node_id"], occurrences["serialized_name"]))
+        # occurrences["referenced_node"] = occurrences["temp"].apply(self.get_node_id_from_occurrence)
+        # occurrences.dropna(axis=0, subset=["referenced_node"], inplace=True)
+        #
+        # occurrences = occurrences[["start_line", "end_line", "start_column", "end_column", "referenced_node", "occ_type"]]
+        # occurrences['names'] = occurrences['referenced_node'].apply(lambda id_: self.node2name[id_])
+        # occurrences['elem_id__occ_type'] = [{"node_id": e_id, "occ_type": o_type, "name": name} for e_id, o_type, name in zip(occurrences["referenced_node"], occurrences["occ_type"], occurrences['names'])]
+        # occurrences.drop(labels=["referenced_node", "occ_type", "names"], axis=1, inplace=True)
+        # occurrences["start_line"] = occurrences["start_line"] - 1
+        # occurrences["end_line"] = occurrences["end_line"] - 1
+        # occurrences["start_column"] = occurrences["start_column"] - 1
 
-        occurrences = occurrences[["start_line", "end_line", "start_column", "end_column", "referenced_node", "occ_type"]]
-        occurrences['names'] = occurrences['referenced_node'].apply(lambda id_: self.node2name[id_])
-        occurrences['elem_id__occ_type'] = [{"node_id": e_id, "occ_type": o_type, "name": name} for e_id, o_type, name in zip(occurrences["referenced_node"], occurrences["occ_type"], occurrences['names'])]
-        occurrences.drop(labels=["referenced_node", "occ_type", "names"], axis=1, inplace=True)
-        occurrences["start_line"] = occurrences["start_line"] - 1
-        occurrences["end_line"] = occurrences["end_line"] - 1
-        occurrences["start_column"] = occurrences["start_column"] - 1
-        return self.offsets2dataframe(to_offsets(body, occurrences.values, as_bytes=True))
+        columns = ["element_id", "start_line", "end_line", "start_column", "end_column", "occ_type",
+                   "target_node_id", "serialized_name"]
+        cmap = {c: columns.index(c) for c in columns}
+        occurrences = occurrences[columns].values
+
+        new_occurrences = []
+        for occurrence in occurrences:
+            referenced_node = self.get_node_id_from_occurrence((
+                occurrence[cmap["element_id"]], occurrence[cmap["target_node_id"]], occurrence[cmap["serialized_name"]]
+            ))
+            if pd.isna(referenced_node):
+                continue
+            name = self.node2name[referenced_node]
+            info = {"node_id": referenced_node, "occ_type": occurrence[cmap["occ_type"]], "name": name}
+            offset = (
+                occurrence[cmap["start_line"]] - 1,
+                occurrence[cmap["end_line"]] - 1,
+                occurrence[cmap["start_column"]] - 1,
+                occurrence[cmap["end_column"]], info
+            )
+            new_occurrences.append(offset)
+
+        # return self.offsets2dataframe(to_offsets(body, occurrences.values, as_bytes=True))
+        return self.offsets2dataframe(to_offsets(body, new_occurrences, as_bytes=True))
 
     @staticmethod
     def offsets2dataframe(offsets):
@@ -429,110 +715,150 @@ class SourcetrailResolver:
 
         return pd.DataFrame(records)
 
-    def process_modules(self, bpe_tokenizer_path, create_subword_instances, connect_subwords):
 
-        bodies = []
+def process_code(source_file_content, offsets, node_resolver, mention_tokenizer, node_matcher):
+    replacer = OccurrenceReplacer()
+    replacer.perform_replacements(source_file_content, offsets)
 
-        node_resolver = ReplacementNodeResolver(self.nodes)
-        mention_tokenizer = MentionTokenizer(bpe_tokenizer_path, create_subword_instances, connect_subwords)
+    ast_processor = AstProcessor(replacer.source_with_replacements)
+    edges = ast_processor.get_edges(as_dataframe=False)
 
-        for group_ind, (file_id, occurrences) in custom_tqdm(
-                enumerate(self.occurrence_groups), message="Processing function bodies",
-                total=len(self.occurrence_groups)
-        ):
-            source_file_content = self.get_file_content(file_id)
+    if len(edges) == 0:
+        return None, None, None
 
-            offsets = self.occurrences_into_ranges(source_file_content, occurrences)
+    resolve = lambda node: node_resolver.resolve(node, replacer.replacement_index)
 
-            replacer = OccurrenceReplacer()
-            replacer.perform_replacements(source_file_content, offsets)
+    for edge in edges:
+        edge["src"] = resolve(edge["src"])
+        edge["dst"] = resolve(edge["dst"])
 
-            ast_processor = AstProcessor(replacer.source_with_replacements)
-            edges = ast_processor.get_edges()
+    # edges['src'] = edges['src'].apply(resolve)
+    # edges['dst'] = edges['dst'].apply(resolve)
 
-            if len(edges) == 0:
-                continue
+    edges = mention_tokenizer.replace_mentions_with_subwords(edges)
 
-            resolve = lambda node: node_resolver.resolve(node, replacer.replacement_index)
+    resolve_node_id = lambda node: node_resolver.resolve_node_id(node)
+    extract_id = lambda node: node.id
 
-            edges['src'] = edges['src'].apply(resolve)
-            edges['dst'] = edges['dst'].apply(resolve)
+    for edge in edges:
+        edge["src"] = resolve_node_id(edge["src"])
+        edge["dst"] = resolve_node_id(edge["dst"])
 
-            edges = mention_tokenizer.replace_mentions_with_subwords(edges)
+    for edge in edges:
+        edge["src"] = extract_id(edge["src"])
+        edge["dst"] = extract_id(edge["dst"])
 
-            resolve_node_id = lambda node: node_resolver.resolve_node_id(node)
+    # edges['src'] = edges['src'].apply(resolve_node_id)
+    # edges['dst'] = edges['dst'].apply(resolve_node_id)
+    #
+    #
+    # edges['src'] = edges['src'].apply(extract_id)
+    # edges['dst'] = edges['dst'].apply(extract_id)
 
-            edges['src'] = edges['src'].apply(resolve_node_id)
-            edges['dst'] = edges['dst'].apply(resolve_node_id)
+    # edges = pd.DataFrame(edges)
 
-            extract_id = lambda node: node.id
-            edges['src'] = edges['src'].apply(extract_id)
-            edges['dst'] = edges['dst'].apply(extract_id)
+    # edges = edges.drop_duplicates(subset=["src", "dst", "type"])
 
-            edges = edges.drop_duplicates(subset=["src", "dst", "type"])
+    # edges['id'] = 0
 
-            edges['id'] = 0
+    def get_valid_offsets(edges):
+        return [(edge["offsets"][0], edge["offsets"][1], edge["src"]) for edge in edges if edge["offsets"] is not None]
 
-            nodes_with_mentions = edges[edges["offsets"].apply(lambda x: x is not None)]
-            nodes_with_mentions["node_id__offset"] = list(zip(nodes_with_mentions["src"], nodes_with_mentions["offsets"]))
-            nodes_with_mentions["node_id__offset"] = nodes_with_mentions["node_id__offset"].apply(lambda x: (x[1][0], x[1][1], x[0]))
+    # def get_valid_offsets(edges):
+    #     nodes_with_mentions = edges[edges["offsets"].apply(lambda x: x is not None)]
+    #     nodes_with_mentions["node_id__offset"] = list(zip(nodes_with_mentions["src"], nodes_with_mentions["offsets"]))
+    #     nodes_with_mentions["node_id__offset"] = nodes_with_mentions["node_id__offset"].apply(lambda x: (x[1][0], x[1][1], x[0]))
+    #     return nodes_with_mentions["node_id__offset"].values
 
-            ast_offsets = replacer.recover_offsets_with_edits(nodes_with_mentions["node_id__offset"].values)
+    ast_offsets = replacer.recover_offsets_with_edits(get_valid_offsets(edges))
 
-            # TODO
-            #  resolve modules ind function definitions
+    def merge_global_and_ast_offsets(ast_offsets, global_offsets):
+        ast_offsets.extend(global_offsets)
+        return ast_offsets
 
-            #######################################
+    global_and_ast_offsets = merge_global_and_ast_offsets(
+        ast_offsets, global_offsets=offsets.query("occ_type != 1")[["start", "end", "node_id"]].values
+    )
 
-            offsets_index = OffsetIndex(offsets)
+    ast_nodes_to_srctrl_nodes = node_matcher.match_with_global_nodes(node_resolver.new_nodes, edges)
 
-            def join_srctrl_and_ast_offsets(range):
-                if range is None:
-                    return None
-                else:
-                    return offsets_index.get_overlap(range)
+    return edges, global_and_ast_offsets, ast_nodes_to_srctrl_nodes
 
-            ast_edges["srctrl_overlap"] = ast_edges["offsets"].apply(join_srctrl_and_ast_offsets)
-            overlaps = []
-            for item in ast_edges["srctrl_overlap"]:
-                if item is None:
-                    continue
-                else:
-                    overlaps.extend(item)
-            unique_overlaps = set(overlaps)
 
-            function_definitions = get_function_definitions(occurrences)
+def get_ast_from_modules(
+        nodes, edges, source_location, occurrence, file_content,
+        bpe_tokenizer_path, create_subword_instances, connect_subwords, lang
+):
 
-            if len(function_definitions):
-                for ind, f_def in function_definitions.iterrows():
-                    f_start = f_def.start_line
-                    f_end = f_def.end_line
+    srctrl_resolver = SourcetrailResolver(nodes, edges, source_location, occurrence, file_content, lang)
+    node_resolver = ReplacementNodeResolver(nodes)
+    node_matcher = GlobalNodeMatcher(nodes, add_reverse_edges(edges))
+    mention_tokenizer = MentionTokenizer(bpe_tokenizer_path, create_subword_instances, connect_subwords)
+    all_ast_edges = []
+    all_global_references = {}
+    all_offsets = []
 
-                    local_occurrences = get_occurrences_from_range(occurrences, start=f_start, end=f_end)
+    for group_ind, (file_id, occurrences) in custom_tqdm(
+            enumerate(srctrl_resolver.occurrence_groups), message="Processing function bodies",
+            total=len(srctrl_resolver.occurrence_groups)
+    ):
+        source_file_content = srctrl_resolver.get_file_content(file_id)
 
-                    # move to zero-index
-                    f_start -= 1
-                    f_end -= 1
+        offsets = srctrl_resolver.occurrences_into_ranges(source_file_content, occurrences)
 
-                    body = get_function_body(file_content, file_id, f_start, f_end)
+        # process code
 
-                    if not has_valid_syntax(body):
-                        continue
+        edges, global_and_ast_offsets, ast_nodes_to_srctrl_nodes = process_code(
+            source_file_content, offsets, node_resolver, mention_tokenizer, node_matcher
+        )
 
-                    processed = process_body(body, local_occurrences, nodes, f_def.element_id, f_start)
+        # afterprocessing
 
-                    if processed is not None:
-                        bodies.append(processed)
+        for edge in edges:
+            edge["file_id"] = file_id
 
-            # print(f"\r{group_ind}/{len(occurrence_groups)}", end="")
+        # finish afterprocessing
 
-        # print(" " * 30, end="\r")
+        all_ast_edges.extend(edges)
+        node_matcher.merge_global_references(all_global_references, ast_nodes_to_srctrl_nodes)
 
-        if len(bodies) > 0:
-            bodies_processed = pd.DataFrame(bodies)
-            return bodies_processed
-        else:
-            return None
+        def format_offsets(global_and_ast_offsets, target):
+            for offset in global_and_ast_offsets:
+                target.append({
+                    "file_id": file_id,
+                    "start": offset[0],
+                    "end": offset[1],
+                    "node_id": offset[2]
+                })
+
+        format_offsets(global_and_ast_offsets, target=all_offsets)
+
+        node_resolver.stash_new_nodes()
+
+    def replace_ast_node_to_global(edges, mapping):
+        for edge in edges:
+            edge["src"] = mapping.get(edge["src"], edge["src"])
+            edge["dst"] = mapping.get(edge["dst"], edge["dst"])
+
+    node_resolver.adjust_ast_node_types(
+        mapping={
+            "Module": "module",
+            "FunctionDef": "function",
+            "ClassDef": "class",
+            "class_method": "function"
+        }, from_stashed=True
+    )
+    node_resolver.drop_nodes(set(all_global_references.keys()), from_stashed=True)
+    replace_ast_node_to_global(all_ast_edges, all_global_references)
+
+    all_ast_nodes = node_resolver.new_nodes_for_write(from_stashed=True)
+    all_ast_edges = pd.DataFrame(all_ast_edges)
+    all_ast_edges["id"] = 0
+    all_ast_edges = all_ast_edges[["id", "type", "src", "dst", "file_id"]]
+
+    all_offsets = pd.DataFrame(all_offsets)
+
+    return all_ast_nodes, all_ast_edges, all_offsets
 
 
 class OccurrenceReplacer:
@@ -542,6 +868,7 @@ class OccurrenceReplacer:
         self.source_with_replacements = None
         self.processed = None
         self.evicted = None
+        self.edits = None
 
     @staticmethod
     def format_offsets_for_replacements(offsets):
@@ -558,7 +885,8 @@ class OccurrenceReplacer:
                 start = temp_offset[0]
                 end = temp_offset[1] + end_change
                 evicted.append(
-                    {"start": start, "end": end, "sourcetrail_id": temp_offset[2][0], "occ_type": temp_offset[2][1], "str": source_code[start: end]})
+                    {"start": start, "end": end, "sourcetrail_id": temp_offset[2][0],
+                     "occ_type": temp_offset[2][1], "str": source_code[start: end]})
             else:
                 pos += 1
 
@@ -596,7 +924,8 @@ class OccurrenceReplacer:
             src_str = source_file_content[offset[0]: offset[1]]
             # longer occurrences such as attributes and function definition will be found first because occurences are
             # sorted by occurrence end position in descending order
-            if "." in src_str or "\n" in src_str or " " in src_str or "[" in src_str or "(" in src_str or "{" in src_str:
+            if ("." in src_str or "\n" in src_str or " " in src_str or
+                    "[" in src_str or "(" in src_str or "{" in src_str):
                 temp_evicted.append(offset)
                 temp_end_changes.append(0)
             else:
@@ -618,8 +947,9 @@ class OccurrenceReplacer:
                 edits.append((offset[1], len_diff))
                 source_file_content = source_file_content[:offset[0]] + new_name + source_file_content[offset[1]:]
 
-        final_position = max(map(lambda x: x[0][1] + x[1], zip(temp_evicted, temp_end_changes)))
-        self.place_temp_to_evicted(temp_evicted, temp_end_changes, (final_position,), evicted, source_file_content)
+        if len(temp_evicted) > 0:
+            final_position = max(map(lambda x: x[0][1] + x[1], zip(temp_evicted, temp_end_changes)))
+            self.place_temp_to_evicted(temp_evicted, temp_end_changes, (final_position,), evicted, source_file_content)
 
         self.source_with_replacements = source_file_content
         self.processed = pd.DataFrame(processed)
@@ -637,297 +967,44 @@ class OccurrenceReplacer:
         compound = []
         if len(edits) == 0:
             cum_adds = 0
-            edit_postion, edit_len = 0, 0
+            edit_position, edit_len = 0, 0
         else:
             cum_adds = sum(map(lambda x: x[1], edits))
-            edit_postion, edit_len = edits.pop(0)
+            edit_position, edit_len = edits.pop(0)
 
         if len(pending) == 0:
             return []
 
         offset = pending.pop(0)
         while len(pending) > 0:
-            if len(pending) == 3:
-                print()
-            if len(edits) > 0 and offset[0] <= edit_postion < edit_postion + edit_len <= offset[1] and offset[0] <= edits[0][0] < edits[0][0] + edits[0][1] <= offset[1]:
+            if (len(edits) > 0 and offset[0] <= edit_position < edit_position + edit_len <= offset[1] and
+                    offset[0] <= edits[0][0] < edits[0][0] + edits[0][1] <= offset[1]):
                 compound.append(edits.pop(0))
-            elif edit_postion + edit_len <= offset[0]:
+            elif edit_position + edit_len <= offset[0]:
                 recovered.append((offset[0] - cum_adds, offset[1] - cum_adds, offset[2]))
                 offset = pending.pop(0)
-            elif offset[0] <= edit_postion < edit_postion + edit_len <= offset[1]:
+            # elif edit_len < 0 and offset[0] <= edit_position and edit_position + edit_len <= offset[1]:
+            #     recovered.append((offset[0] - cum_adds, offset[1] - cum_adds, offset[2]))
+            #     offset = pending.pop(0)
+            elif offset[0] <= edit_position and edit_position + edit_len <= offset[1]:
                 adjust = edit_len
                 for c in compound:
                     adjust += c[1]
                 recovered.append((offset[0] - cum_adds + adjust, offset[1] - cum_adds, offset[2]))
                 offset = pending.pop(0)
-            elif offset[1] < edit_postion:
+            elif offset[1] < edit_position:
                 cum_adds -= edit_len
                 if len(compound) > 0:
-                    edit_postion, edit_len = compound.pop(0)
+                    edit_position, edit_len = compound.pop(0)
                 else:
-                    edit_postion, edit_len = edits.pop(0)
+                    edit_position, edit_len = edits.pop(0)
             else:
-                raise Exception("Illegal")
+                raise Exception("Illegal scenario")
 
         return recovered
 
 
-
-
-
-
-class RandomReplacementException(Exception):
-    def __init__(self, message):
-        super(RandomReplacementException, self).__init__(message)
-
-
 pd.options.mode.chained_assignment = None  # default='warn'
-
-
-def overlap(range: Tuple[int, int], ranges: List[Tuple[int, int]]) -> bool:
-    for r in ranges:
-        if (r[0] - range[0]) * (r[1] - range[1]) <= 0:
-            return True
-    return False
-
-
-def isnamechar(char: str) -> bool:
-    return "A" <= char <= "Z" or \
-           "a" <= char <= "z" or \
-           char == "." or \
-           char == "_" or \
-           "0" <= char <= "9"
-
-
-def extend_range(start: int, end: int, line: str) -> Optional[Tuple[int, int]]:
-    # assume only the following symbols are possible in names: A-Z a-z 0-9 . _
-    # if start - 1 > 0 and line[start - 1] == "!":
-    #     # used in f-strings
-    #     # f"[{attr_selector!r}]"
-    #     return None
-    return start, end
-    # if start - 1 > 0 and isnamechar(line[start-1]):
-    #     return extend_range(start - 1, end, line)
-    # elif start - 1 > 0 and line[start - 1] == "!":
-    #     # used in f-strings
-    #     # f"[{attr_selector!r}]"
-    #     return None
-    # else:
-    #     if start - 1 > 0 and line[start] == "." and not isnamechar(line[start - 1]):
-    #         return start + 1, end
-    #     return start, end
-
-
-def do_replacement(string_: str, start: int, end: int, substitution: str):
-    return string_[:start] + substitution + \
-                             string_[end:]
-
-
-def get_docstring_ast(body):
-    try:
-        # this does not work with java, docstring formats are different
-        ast_parse = ast.parse(body.strip())
-        function_definitions = [node for node in ast_parse.body if isinstance(node, ast.FunctionDef)]
-        return ast.get_docstring(function_definitions[0])
-    except:
-        return ""
-
-
-def get_random_string(str_len):
-    return "".join(random.choices(string.ascii_letters, k=str_len))
-
-
-def generate_random_replacement(len: int, source: List[str]):
-    attempts_left = 30
-    secondary_attempts = 10
-    replacement = get_random_string(len)
-    body = "\n".join(source)
-    while body.find(replacement) != -1:
-        attempts_left -= 1
-        replacement = get_random_string(len)
-        if attempts_left <= 0:
-            secondary_attempts -= 1
-            replacement = "".join(random.choices("АБВГДЕЖЗИКЛМНОПРСТУФХЦЧЪЫЬЭЮЯабвгдежзиклмнопрстуфхцчъыьэюя", k=len))
-            if secondary_attempts == 0:
-                raise RandomReplacementException("Could not replace with random name")
-
-    return replacement
-
-
-def get_function_body(file_content, file_id, start, end) -> str:
-    source_lines = file_content.query(f"id == {file_id}").iloc[0]['content'].split("\n")
-
-    body_lines = source_lines[start: end]
-
-    body_num_lines = len(body_lines)
-
-    trim = 0
-
-    if body_num_lines > 2: # assume one line function, or signaure and return statement
-        initial_indent = len(body_lines[0]) - len(body_lines[0].lstrip())
-
-        while trim < body_num_lines:
-            # print("body_num_lines - 1 > 1", body_num_lines - 1 > 1)
-            # print("""body_lines[body_num_lines - trim - 1].strip() == """"", body_lines[body_num_lines - trim - 1].strip() == "")
-            # print("< < initial_indent", len(body_lines[body_num_lines - trim - 1]) - \
-            #         len(body_lines[body_num_lines - trim - 1].lstrip()), initial_indent, len(body_lines[body_num_lines - trim - 1]) - \
-            #         len(body_lines[body_num_lines - trim - 1].lstrip()) <= initial_indent)
-            cline = body_lines[body_num_lines - trim - 1]
-            if body_num_lines - 1 > 1:
-                if cline.strip() == "":
-                    trim += 1
-                elif len(cline) - len(cline.lstrip()) <= initial_indent:
-                    trim += 1
-                else:
-                    break
-            else:
-                break
-
-        if trim == body_num_lines:
-            trim = 0
-
-    return "\n".join(source_lines[start: end - trim])
-
-
-def has_valid_syntax(function_body):
-    # body_lines = function_body.rstrip().split("\n")
-    #
-    # initial_indent = len(body_lines[0]) - len(body_lines[0].lstrip())
-    # final_indent = len(body_lines[-1]) - len(body_lines[-1].lstrip())
-    #
-    # if body_lines[-1].strip() != "" and len(body_lines) > 1 and initial_indent >= final_indent:
-    #     # will also skip functions like this:
-    #     # '    def func(ax, x, y): pass
-    #     #     def func_args(ax, x, y, *args): pass'
-    #     # but this is probably not a big deal
-    #     return False
-
-    try:
-        ast.parse(function_body.lstrip())
-        return True
-    except SyntaxError:
-        return False
-
-
-def get_range_for_replacement(occurrence, start_col, end_col, line, nodes):
-    extended_range = extend_range(start_col, end_col, line)
-
-    if extended_range is None:
-        return None, None
-
-    st_id = occurrence.element_id
-
-    name = occurrence.serialized_name
-    if not isinstance(name, str):  # happens when id refers to an edge, not a node
-        st_id = occurrence.target_node_id
-
-    node_info = nodes.query(f"id == {st_id}")
-    assert len(node_info) == 1
-
-    if node_info.iloc[0]['serialized_name'] == UNRESOLVED_SYMBOL:
-        # this is an unresolved symbol, avoid
-        return None, None
-    else:
-        name = f"srctrlnd_{st_id}"  # sourcetrailnode
-        return extended_range, name
-
-
-def get_occurrence_string(line, col_start, col_end):
-    return line[col_start: col_end]
-
-
-def _process_body(body, local_occurrences, nodes, f_id, f_start):
-    body_normalized = body.split("\n")
-    body_with_random_replacements = body.split("\n")
-    random_2_original = {}
-    random_2_srctrl = {}
-
-    # assert source_lines[f_start] == body_with_random_replacements[0]
-
-    local_occurrences = sort_occurrences(local_occurrences)
-
-    prev_line = 0
-    replaced_ranges = []
-    list_of_replacements = []
-
-    for occ_ind, occurrence in local_occurrences.iterrows():
-        if occurrence.start_line == occurrence.end_line:
-
-            curr_line = occurrence.start_line - 1 - f_start
-
-            if curr_line >= len(body_normalized):
-                continue
-
-            if prev_line != curr_line:
-                replaced_ranges = []
-                # assert body_with_random_replacements[curr_line - f_start] == source_lines[curr_line]
-
-            start_col = occurrence.start_column - 1
-            end_col = occurrence.end_column
-
-            if not overlap((start_col, end_col), replaced_ranges):
-                extended_range, sourcetrail_name = get_range_for_replacement(
-                    occurrence, start_col, end_col, body_normalized[curr_line], nodes
-                )
-
-                if extended_range is not None:
-                    replaced_ranges.append(extended_range)
-                    occ_col_start, occ_col_end = extended_range
-
-                    list_of_replacements.append((
-                        curr_line, occ_col_start, occ_col_end, sourcetrail_name
-                    ))
-
-                    random_name = generate_random_replacement(
-                        len=occ_col_end - occ_col_start, source=body_with_random_replacements
-                    )
-                    random_2_original[random_name] = get_occurrence_string(
-                        body_with_random_replacements[curr_line], occ_col_start, occ_col_end
-                    )
-                    body_with_random_replacements[curr_line] = do_replacement(
-                        body_with_random_replacements[curr_line], occ_col_start, occ_col_end, random_name
-                    )
-                    random_2_srctrl[random_name] = sourcetrail_name
-
-                    body_normalized[curr_line] = do_replacement(
-                        body_normalized[curr_line], occ_col_start, occ_col_end, sourcetrail_name
-                    )
-
-            prev_line = curr_line
-
-    norm_body = "\n".join(body_normalized)
-    body_with_random_replacements = "\n".join(body_with_random_replacements)
-
-    assert has_valid_syntax(norm_body)  # this should always be correct
-    if not has_valid_syntax(body_with_random_replacements):  # this can fail
-        raise RandomReplacementException("Syntax error after replacements")
-
-    return {
-        "id": f_id, #  f_def.element_id,
-        "body": body,
-        "body_normalized": norm_body,
-        "body_with_random_replacements": body_with_random_replacements,
-        "docstring": get_docstring_ast(body),
-        "replacement_list": list_of_replacements,
-        "random_2_original": random_2_original,
-        "random_2_srctrl": random_2_srctrl
-    }
-
-
-def process_body(body, local_occurrences, nodes, f_id, f_start):
-    replacement_attempts = 100
-
-    while replacement_attempts > 0:
-        try:
-            return _process_body(body, local_occurrences, nodes, f_id, f_start)
-        except RandomReplacementException:
-            replacement_attempts -= 1
-
-    return None
-
-
-
-
 
 
 if __name__ == "__main__":
@@ -950,8 +1027,16 @@ if __name__ == "__main__":
     nodes = read_nodes(working_directory)
     edges = read_edges(working_directory)
     file_content = read_filecontent(working_directory)
-    # bodies_processed = process_modules(nodes, edges, source_location, occurrence, file_content, lang)
-    srctrl_resolver = SourcetrailResolver(nodes, edges, source_location, occurrence, file_content, args.lang)
-    bodies_processed = srctrl_resolver.process_modules(args.bpe_tokenizer, args.create_subword_instances, args.connect_subwords)
-    if bodies_processed is not None:
-        write_processed_bodies(bodies_processed, working_directory)
+
+    ast_nodes, ast_edges, offsets = get_ast_from_modules(nodes, edges, source_location, occurrence, file_content,
+                                                         args.bpe_tokenizer, args.create_subword_instances,
+                                                         args.connect_subwords, args.lang)
+
+    edges_with_ast_name = os.path.join(working_directory, "edges_with_ast.bz2")
+    nodes_with_ast_name = os.path.join(working_directory, "nodes_with_ast.bz2")
+    offsets_path = os.path.join(working_directory, "ast_offsets.bz2")
+
+    persist(nodes.append(ast_nodes), nodes_with_ast_name)
+    persist(edges.append(ast_edges), edges_with_ast_name)
+    if len(offsets) > 0:
+        persist(offsets, offsets_path)
