@@ -464,12 +464,12 @@ def replace_mentions_with_subword_instances(edges, bpe, create_subword_instances
             else:
                 new_edges.append(edge)
 
-        elif bpe is not None and \
+        elif bpe is not None and (
                 (
                     edge['src'].type in PythonSharedNodes.tokenizable_types
                 ) or (
                     edge['dst'].type in {"Global"} and edge['src'].type != "Constant"
-                ):
+                )):
             new_edges.append(edge)
             new_edges.append(make_reverse_edge(edge))
 
