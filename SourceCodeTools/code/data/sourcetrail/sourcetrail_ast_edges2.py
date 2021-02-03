@@ -12,6 +12,7 @@ from SourceCodeTools.code.python_ast import AstGraphGenerator, GNode, PythonShar
 from SourceCodeTools.nlp.entity.annotator.annotator_utils import adjust_offsets2
 from SourceCodeTools.nlp.entity.annotator.annotator_utils import overlap as range_overlap
 from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets, get_cum_lens
+from SourceCodeTools.nlp.string_tools import get_byte_to_char_map
 
 
 class MentionTokenizer:
@@ -35,12 +36,12 @@ class MentionTokenizer:
 
         new_edges = []
         for edge in edges:
-            if edge['src'].type in {"#attr#", "Name"}:
-                if hasattr(edge['src'], "global_id"):
-                    new_edges.extend(self.global_mention_edges_from_node(edge['src']))
-            elif edge['dst'].type == "mention":
-                if hasattr(edge['dst'], "global_id"):
-                    new_edges.extend(self.global_mention_edges_from_node(edge['dst']))
+            # if edge['src'].type in {"#attr#", "Name"}:
+            #     if hasattr(edge['src'], "global_id"):
+            #         new_edges.extend(self.global_mention_edges_from_node(edge['src']))
+            # elif edge['dst'].type == "mention":
+            #     if hasattr(edge['dst'], "global_id"):
+            #         new_edges.extend(self.global_mention_edges_from_node(edge['dst']))
 
             if edge['type'] == "local_mention":
 
@@ -56,9 +57,12 @@ class MentionTokenizer:
                 else:
                     new_edges.append(edge)
 
+            elif self.bpe is not None and edge["type"] == "__global_name":
+                subwords = self.bpe(edge['src'].name)
+                new_edges.extend(produce_subw_edges(subwords, edge['dst']))
             elif self.bpe is not None and (
                     (
-                            edge['src'].type in PythonSharedNodes.tokenizable_types
+                            edge['src'].type in PythonSharedNodes.tokenizable_types_and_annotations  #tokenizable_types
                     ) or (
                     edge['dst'].type in {"Global"} and edge['src'].type != "Constant")
             ):
@@ -73,40 +77,24 @@ class MentionTokenizer:
 
         return new_edges
 
-    @staticmethod
-    def global_mention_edges_from_node(node):
-        global_edges = []
-        if type(node.global_id) is int:
-            id_type = [(node.global_id, node.global_type)]
-        else:
-            id_type = zip(node.global_id, node.global_type)
-
-        for gid, gtype in id_type:
-            global_mention = {
-                "src": GNode(name=None, type=gtype, id=gid),
-                "dst": node,
-                "type": "global_mention",
-                "offsets": None
-            }
-            global_edges.append(global_mention)
-            global_edges.append(make_reverse_edge(global_mention))
-        return global_edges
-
-    def produce_subword_edges(self, subwords, dst, connect_subwords=False):
-        new_edges = []
-
-        subwords = list(map(lambda x: GNode(name=x, type="subword"), subwords))
-        for ind, subword in enumerate(subwords):
-            new_edges.append({
-                'src': subword,
-                'dst': dst,
-                'type': 'subword',
-                'offsets': None
-            })
-            if connect_subwords:
-                self.connect_prev_next_subwords(new_edges, subword, subwords[ind - 1] if ind > 0 else None,
-                                                subwords[ind + 1] if ind < len(subwords) - 1 else None)
-        return new_edges
+    # @staticmethod
+    # def global_mention_edges_from_node(node):
+    #     global_edges = []
+    #     if type(node.global_id) is int:
+    #         id_type = [(node.global_id, node.global_type)]
+    #     else:
+    #         id_type = zip(node.global_id, node.global_type)
+    #
+    #     for gid, gtype in id_type:
+    #         global_mention = {
+    #             "src": GNode(name=None, type=gtype, id=gid),
+    #             "dst": node,
+    #             "type": "global_mention",
+    #             "offsets": None
+    #         }
+    #         global_edges.append(global_mention)
+    #         global_edges.append(make_reverse_edge(global_mention))
+    #     return global_edges
 
     @staticmethod
     def connect_prev_next_subwords(edges, current, prev_subw, next_subw):
@@ -124,6 +112,22 @@ class MentionTokenizer:
                 'type': 'prev_subword',
                 'offsets': None
             })
+
+    def produce_subword_edges(self, subwords, dst, connect_subwords=False):
+        new_edges = []
+
+        subwords = list(map(lambda x: GNode(name=x, type="subword"), subwords))
+        for ind, subword in enumerate(subwords):
+            new_edges.append({
+                'src': subword,
+                'dst': dst,
+                'type': 'subword',
+                'offsets': None
+            })
+            if connect_subwords:
+                self.connect_prev_next_subwords(new_edges, subword, subwords[ind - 1] if ind > 0 else None,
+                                                subwords[ind + 1] if ind < len(subwords) - 1 else None)
+        return new_edges
 
     def produce_subword_edges_with_instances(self, subwords, dst, connect_subwords=True):
         new_edges = []
@@ -191,6 +195,9 @@ class GlobalNodeMatcher:
     def match_with_global_nodes(self, nodes, edges):
         nodes = pd.DataFrame([node for node in nodes if node["type"] in self.allowed_ast_node_types])
         edges = pd.DataFrame([edge for edge in edges if edge["type"] in self.allowed_ast_edge_types])
+
+        if len(edges) == 0:
+            return {}
 
         func_nodes = nodes.query("type == 'FunctionDef'")["id"].values
         class_nodes = nodes.query("type == 'ClassDef'")["id"].values
@@ -272,9 +279,8 @@ class GlobalNodeMatcher:
         func_global, module_cand = get_global_id_and_module_candidates(func_nodes, ["fname", "global_mention_rev"])
         new_node_ids.update(func_global)
         module_candidates.extend(module_cand)
-        class_global, module_cand = get_global_id_and_module_candidates(class_nodes,
-                                                                        ["class_name", "global_mention_rev"])
-        new_node_ids.update(func_global)
+        class_global, module_cand = get_global_id_and_module_candidates(class_nodes, ["class_name", "global_mention_rev"])
+        new_node_ids.update(class_global)
         module_candidates.extend(module_cand)
 
         module_global = get_global_module_id(module_nodes, module_candidates, func_global, class_global)
@@ -467,6 +473,13 @@ class ReplacementNodeResolver(NodeResolver):
             else:
                 position += 1
 
+    def map_mentioned_in_to_global(self, mapping, from_stashed=False):
+        nodes = self.new_nodes if not from_stashed else self.stashed_nodes
+
+        for node in nodes:
+            node["mentioned_in"] = mapping.get(node["mentioned_in"], node["mentioned_in"])
+
+
 
 class OffsetIndex:
     class IndexNode:
@@ -515,7 +528,8 @@ class AstProcessor(AstGraphGenerator):
             df = df.astype({col: "Int32" for col in df.columns if col not in {"src", "dst", "type"}})
 
             body = "\n".join(self.source)
-            cum_lens = get_cum_lens(body)
+            cum_lens = get_cum_lens(body, as_bytes=True)
+            byte2char = get_byte_to_char_map(body)
 
             def format_offsets(edges: pd.DataFrame):
                 edges["start_line__end_line__start_column__end_column"] = list(
@@ -524,7 +538,7 @@ class AstProcessor(AstGraphGenerator):
 
                 def into_offset(range):
                     try:
-                        return to_offsets(body, [(*range, None)], cum_lens=cum_lens)[-1][:2]
+                        return to_offsets(body, [(*range, None)], cum_lens=cum_lens, b2c=byte2char, as_bytes=True)[-1][:2]
                     except:
                         return None
 
@@ -544,12 +558,13 @@ class AstProcessor(AstGraphGenerator):
             return df
         else:
             body = "\n".join(self.source)
-            cum_lens = get_cum_lens(body)
+            cum_lens = get_cum_lens(body, as_bytes=True)
+            byte2char = get_byte_to_char_map(body)
 
             def format_offsets(edge):
                 def into_offset(range):
                     try:
-                        return to_offsets(body, [(*range, None)], cum_lens=cum_lens)[-1][:2]
+                        return to_offsets(body, [(*range, None)], cum_lens=cum_lens, b2c=byte2char, as_bytes=True)[-1][:2]
                     except:
                         return None
 
@@ -593,7 +608,7 @@ class SourcetrailResolver:
     @property
     def occurrence_groups(self):
         if self._occurrence_groups is None:
-            self._occurrence_groups = get_occurrence_groups(nodes, edges, source_location, occurrence)
+            self._occurrence_groups = get_occurrence_groups(self.nodes, self.edges, self.source_location, self.occurrence)
         return self._occurrence_groups
 
     def get_node_id_from_occurrence(self, elem_id__target_id__name):
@@ -612,9 +627,8 @@ class SourcetrailResolver:
         else:
             return node_id
 
-    @staticmethod
-    def get_file_content(file_id):
-        return file_content.query(f"id == {file_id}").iloc[0]['content']
+    def get_file_content(self, file_id):
+        return self.file_content.query(f"id == {file_id}").iloc[0]['content']
 
     def occurrences_into_ranges(self, body, occurrences: pd.DataFrame):
 
@@ -654,6 +668,78 @@ class SourcetrailResolver:
         return pd.DataFrame(records)
 
 
+def global_mention_edges_from_node(node):
+    global_edges = []
+    if type(node.global_id) is int:
+        id_type = [(node.global_id, node.global_type)]
+    else:
+        id_type = zip(node.global_id, node.global_type)
+
+    for gid, gtype in id_type:
+        global_mention = {
+            "src": GNode(name=None, type=gtype, id=gid),
+            "dst": node,
+            "type": "global_mention",
+            "offsets": None
+        }
+        global_edges.append(global_mention)
+        global_edges.append(make_reverse_edge(global_mention))
+    return global_edges
+
+def add_global_mentions(edges):
+    new_edges = []
+    for edge in edges:
+        if edge['src'].type in {"#attr#", "Name"}:
+            if hasattr(edge['src'], "global_id"):
+                new_edges.extend(global_mention_edges_from_node(edge['src']))
+        elif edge['dst'].type == "mention":
+            if hasattr(edge['dst'], "global_id"):
+                new_edges.extend(global_mention_edges_from_node(edge['dst']))
+        new_edges.append(edge)
+    return new_edges
+
+
+def edges_for_global_node_names(nodes):
+    edges = []
+    for id, name in nodes[["id", "serialized_name"]].values:
+        edges.append({
+            "src": GNode(type="Name", name=name),
+            "dst": GNode(id=id, type="__global", name=""),
+            "type": "__global_name"
+        })
+    return edges
+
+
+def produce_nodes_without_name(global_nodes, ast_edges):
+    # from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types
+    # global_types = set(list(node_types.values()))
+    global_node_ids = set(global_nodes["id"].tolist())
+    name_edge_types = {"fname", "class_name"}
+
+    global_nodes_with_name = set([edge["src"] for edge in ast_edges if edge["src"] in global_node_ids and edge["type"] in name_edge_types])
+    nodes_without_name = global_nodes.query("id not in @global_nodes_with_name", local_dict={"global_nodes_with_name": global_nodes_with_name})
+    
+    return nodes_without_name
+
+
+def standardize_new_edges(edges, node_resolver, mention_tokenizer):
+
+    edges = mention_tokenizer.replace_mentions_with_subwords(edges)
+
+    resolve_node_id = lambda node: node_resolver.resolve_node_id(node)
+    extract_id = lambda node: node.id
+
+    for edge in edges:
+        edge["src"] = resolve_node_id(edge["src"])
+        edge["dst"] = resolve_node_id(edge["dst"])
+
+    for edge in edges:
+        edge["src"] = extract_id(edge["src"])
+        edge["dst"] = extract_id(edge["dst"])
+
+    return edges
+
+
 def process_code(source_file_content, offsets, node_resolver, mention_tokenizer, node_matcher):
     replacer = OccurrenceReplacer()
     replacer.perform_replacements(source_file_content, offsets)
@@ -670,23 +756,14 @@ def process_code(source_file_content, offsets, node_resolver, mention_tokenizer,
         edge["src"] = resolve(edge["src"])
         edge["dst"] = resolve(edge["dst"])
 
-    edges = mention_tokenizer.replace_mentions_with_subwords(edges)
+    edges = add_global_mentions(edges)
 
-    resolve_node_id = lambda node: node_resolver.resolve_node_id(node)
-    extract_id = lambda node: node.id
-
-    for edge in edges:
-        edge["src"] = resolve_node_id(edge["src"])
-        edge["dst"] = resolve_node_id(edge["dst"])
-
-    for edge in edges:
-        edge["src"] = extract_id(edge["src"])
-        edge["dst"] = extract_id(edge["dst"])
+    edges = standardize_new_edges(edges, node_resolver, mention_tokenizer)
 
     def get_valid_offsets(edges):
         return [(edge["offsets"][0], edge["offsets"][1], edge["src"]) for edge in edges if edge["offsets"] is not None]
 
-    ast_offsets = replacer.recover_offsets_with_edits(get_valid_offsets(edges))
+    ast_offsets = replacer.recover_offsets_with_edits2(get_valid_offsets(edges))
 
     def merge_global_and_ast_offsets(ast_offsets, global_offsets):
         ast_offsets.extend(global_offsets)
@@ -715,7 +792,7 @@ def get_ast_from_modules(
     all_offsets = []
 
     for group_ind, (file_id, occurrences) in custom_tqdm(
-            enumerate(srctrl_resolver.occurrence_groups), message="Processing function bodies",
+            enumerate(srctrl_resolver.occurrence_groups), message="Processing modules",
             total=len(srctrl_resolver.occurrence_groups)
     ):
         source_file_content = srctrl_resolver.get_file_content(file_id)
@@ -727,6 +804,9 @@ def get_ast_from_modules(
         edges, global_and_ast_offsets, ast_nodes_to_srctrl_nodes = process_code(
             source_file_content, offsets, node_resolver, mention_tokenizer, node_matcher
         )
+
+        if edges is None:
+            continue
 
         # afterprocessing
 
@@ -751,26 +831,49 @@ def get_ast_from_modules(
 
         node_resolver.stash_new_nodes()
 
-    def replace_ast_node_to_global(edges, mapping):
-        for edge in edges:
-            edge["src"] = mapping.get(edge["src"], edge["src"])
-            edge["dst"] = mapping.get(edge["dst"], edge["dst"])
+    def prepare_new_nodes(node_resolver):
 
-    node_resolver.adjust_ast_node_types(
-        mapping={
-            "Module": "module",
-            "FunctionDef": "function",
-            "ClassDef": "class",
-            "class_method": "function"
-        }, from_stashed=True
-    )
-    node_resolver.drop_nodes(set(all_global_references.keys()), from_stashed=True)
-    replace_ast_node_to_global(all_ast_edges, all_global_references)
+        node_resolver.adjust_ast_node_types(
+            mapping={
+                "Module": "module",
+                "FunctionDef": "function",
+                "ClassDef": "class",
+                "class_method": "function"
+            }, from_stashed=True
+        )
+        node_resolver.map_mentioned_in_to_global(all_global_references, from_stashed=True)
+        node_resolver.drop_nodes(set(all_global_references.keys()), from_stashed=True)
+
+    prepare_new_nodes(node_resolver)
+
+    def create_subwords_for_global_nodes():
+        all_ast_edges.extend(
+            standardize_new_edges(edges_for_global_node_names(produce_nodes_without_name(nodes, all_ast_edges)),
+                                  node_resolver, mention_tokenizer))
+        node_resolver.stash_new_nodes()
+
+    create_subwords_for_global_nodes()
 
     all_ast_nodes = node_resolver.new_nodes_for_write(from_stashed=True)
-    all_ast_edges = pd.DataFrame(all_ast_edges)
-    all_ast_edges["id"] = 0
-    all_ast_edges = all_ast_edges[["id", "type", "src", "dst", "file_id"]]
+
+    def prepare_edges(all_ast_edges):
+        def replace_ast_node_to_global(edges, mapping):
+            for edge in edges:
+                edge["src"] = mapping.get(edge["src"], edge["src"])
+                edge["dst"] = mapping.get(edge["dst"], edge["dst"])
+
+        replace_ast_node_to_global(all_ast_edges, all_global_references)
+
+        all_ast_edges = pd.DataFrame(all_ast_edges)
+        all_ast_edges.drop_duplicates(["type", "src", "dst"], inplace=True)
+        all_ast_edges = all_ast_edges.query("src != dst")
+        all_ast_edges["id"] = 0
+        all_ast_edges = all_ast_edges[["id", "type", "src", "dst", "file_id"]].rename({'src': 'source_node_id', 'dst': 'target_node_id'}, axis=1).astype(
+            {'file_id': 'Int32'}
+        )
+        return all_ast_edges
+
+    all_ast_edges = prepare_edges(all_ast_edges)
 
     all_offsets = pd.DataFrame(all_offsets)
 
@@ -875,7 +978,6 @@ class OccurrenceReplacer:
 
     def recover_offsets_with_edits(self, offsets):
         pending = sorted(offsets, key=lambda x: x[0], reverse=True)
-        pending = sorted(pending, key=lambda x: x[1], reverse=True)
         edits = copy(self.edits)
         edits.reverse()
 
@@ -891,33 +993,71 @@ class OccurrenceReplacer:
         if len(pending) == 0:
             return []
 
-        offset = pending.pop(0)
+        start, end, node_id = pending.pop(0)
         while len(pending) > 0:
-            if (len(edits) > 0 and offset[0] <= edit_position < edit_position + edit_len <= offset[1] and
-                    offset[0] <= edits[0][0] < edits[0][0] + edits[0][1] <= offset[1]):
-                compound.append(edits.pop(0))
-            elif edit_position + edit_len <= offset[0]:
-                recovered.append((offset[0] - cum_adds, offset[1] - cum_adds, offset[2]))
-                offset = pending.pop(0)
-            # elif edit_len < 0 and offset[0] <= edit_position and edit_position + edit_len <= offset[1]:
-            #     recovered.append((offset[0] - cum_adds, offset[1] - cum_adds, offset[2]))
-            #     offset = pending.pop(0)
-            elif offset[0] <= edit_position and edit_position + edit_len <= offset[1]:
+            if start > edit_position + edit_len:
+                recovered.append((start - cum_adds, end - cum_adds, node_id))
+                start, end, node_id = pending.pop(0)
+            elif end >= edit_position + edit_len:
                 adjust = edit_len
-                for c in compound:
-                    adjust += c[1]
-                recovered.append((offset[0] - cum_adds + adjust, offset[1] - cum_adds, offset[2]))
-                offset = pending.pop(0)
-            elif offset[1] < edit_position:
+                recovered.append((start - cum_adds + adjust, end - cum_adds, node_id))
+                start, end, node_id = pending.pop(0)
+            elif end < edit_position + edit_len:
                 cum_adds -= edit_len
-                if len(compound) > 0:
-                    edit_position, edit_len = compound.pop(0)
-                else:
-                    edit_position, edit_len = edits.pop(0)
+                edit_position, edit_len = edits.pop(0)
             else:
                 raise Exception("Illegal scenario")
 
         return recovered
+
+    def recover_offsets_with_edits2(self, offsets):
+        # pending = copy(offsets)
+        pending = sorted(offsets, key=lambda x: x[0], reverse=True)
+        edits = copy(self.edits)
+        edits.reverse()
+
+        if len(edits) == 0:
+            return pending
+
+        if len(pending) == 0:
+            return []
+
+        for edit_position, edit_len in edits:
+            tolerance = 20
+            new_pending = []
+            for ind, offset in enumerate(pending):
+                start, end, node_id = offset
+                needs_replacement = False
+                if edit_len > 0:
+                    if start > edit_position:
+                        start = start - edit_len
+                        needs_replacement = True
+                    if end > edit_position:
+                        end = end - edit_len
+                        needs_replacement = True
+                    if needs_replacement:
+                        pending[ind] = (start, end, node_id)
+                    else:
+                        tolerance -= 1
+                else:
+                    if start > edit_position + edit_len:
+                        start = start - edit_len
+                        needs_replacement = True
+                    if end >= edit_position + edit_len:
+                        end = end - edit_len
+                        needs_replacement = True
+                    if needs_replacement:
+                        pending[ind] = (start, end, node_id)
+                    else:
+                        tolerance -= 1
+
+                if tolerance == 0:
+                    break
+
+                # if node_id == 261384:
+                #     print()
+
+        return pending
 
 
 pd.options.mode.chained_assignment = None  # default='warn'
