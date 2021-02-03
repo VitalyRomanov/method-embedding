@@ -230,7 +230,8 @@ class DatasetCreator:
             persist(vars, join(dir, filenames['function_variable_pairs']))
         persist(nodes_with_ast, join(dir, "nodes_with_ast.bz2"))
         persist(edges_with_ast, join(dir, "edges_with_ast.bz2"))
-        persist(offsets, join(dir, "offsets.bz2"))
+        if offsets is not None:
+            persist(offsets, join(dir, "offsets.bz2"))
         if len(edges_with_ast.query("type == 'annotation_for' or type == 'returned_by'")) > 0:
             with open(join(dir, "has_annotations"), "w") as has_annotations:
                 pass

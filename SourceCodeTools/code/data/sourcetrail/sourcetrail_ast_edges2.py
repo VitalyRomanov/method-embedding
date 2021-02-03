@@ -740,7 +740,7 @@ def standardize_new_edges(edges, node_resolver, mention_tokenizer):
     return edges
 
 
-def process_code(source_file_content, offsets, node_resolver, mention_tokenizer, node_matcher):
+def process_code(source_file_content, offsets, node_resolver, mention_tokenizer, node_matcher, track_offsets=False):
     replacer = OccurrenceReplacer()
     replacer.perform_replacements(source_file_content, offsets)
 
@@ -760,18 +760,21 @@ def process_code(source_file_content, offsets, node_resolver, mention_tokenizer,
 
     edges = standardize_new_edges(edges, node_resolver, mention_tokenizer)
 
-    def get_valid_offsets(edges):
-        return [(edge["offsets"][0], edge["offsets"][1], edge["src"]) for edge in edges if edge["offsets"] is not None]
+    if track_offsets:
+        def get_valid_offsets(edges):
+            return [(edge["offsets"][0], edge["offsets"][1], edge["src"]) for edge in edges if edge["offsets"] is not None]
 
-    ast_offsets = replacer.recover_offsets_with_edits2(get_valid_offsets(edges))
+        ast_offsets = replacer.recover_offsets_with_edits2(get_valid_offsets(edges))
 
-    def merge_global_and_ast_offsets(ast_offsets, global_offsets):
-        ast_offsets.extend(global_offsets)
-        return ast_offsets
+        def merge_global_and_ast_offsets(ast_offsets, global_offsets):
+            ast_offsets.extend(global_offsets)
+            return ast_offsets
 
-    global_and_ast_offsets = merge_global_and_ast_offsets(
-        ast_offsets, global_offsets=offsets.query("occ_type != 1")[["start", "end", "node_id"]].values
-    )
+        global_and_ast_offsets = merge_global_and_ast_offsets(
+            ast_offsets, global_offsets=offsets.query("occ_type != 1")[["start", "end", "node_id"]].values
+        )
+    else:
+        global_and_ast_offsets = None
 
     ast_nodes_to_srctrl_nodes = node_matcher.match_with_global_nodes(node_resolver.new_nodes, edges)
 
@@ -819,13 +822,14 @@ def get_ast_from_modules(
         node_matcher.merge_global_references(all_global_references, ast_nodes_to_srctrl_nodes)
 
         def format_offsets(global_and_ast_offsets, target):
-            for offset in global_and_ast_offsets:
-                target.append({
-                    "file_id": file_id,
-                    "start": offset[0],
-                    "end": offset[1],
-                    "node_id": offset[2]
-                })
+            if global_and_ast_offsets is not None:
+                for offset in global_and_ast_offsets:
+                    target.append({
+                        "file_id": file_id,
+                        "start": offset[0],
+                        "end": offset[1],
+                        "node_id": offset[2]
+                    })
 
         format_offsets(global_and_ast_offsets, target=all_offsets)
 
@@ -875,7 +879,10 @@ def get_ast_from_modules(
 
     all_ast_edges = prepare_edges(all_ast_edges)
 
-    all_offsets = pd.DataFrame(all_offsets)
+    if len(all_offsets) > 0:
+        all_offsets = pd.DataFrame(all_offsets)
+    else:
+        all_offsets = None
 
     return all_ast_nodes, all_ast_edges, all_offsets
 
@@ -1094,5 +1101,5 @@ if __name__ == "__main__":
 
     persist(nodes.append(ast_nodes), nodes_with_ast_name)
     persist(edges.append(ast_edges), edges_with_ast_name)
-    if len(offsets) > 0:
+    if offsets is not None:
         persist(offsets, offsets_path)
