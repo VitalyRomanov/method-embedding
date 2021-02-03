@@ -53,7 +53,8 @@ def get_docstring_ast(body):
 
 
 def get_function_body(file_content, file_id, start, end) -> str:
-    source_lines = file_content.query(f"id == {file_id}").iloc[0]['content'].split("\n")
+    # source_lines = file_content.query(f"id == {file_id}").iloc[0]['content'].split("\n")
+    source_lines = file_content[file_id].split("\n")
 
     body_lines = source_lines[start: end]
 
@@ -152,6 +153,8 @@ def process_body(body, local_occurrences, nodeid2name, f_id, f_start):
 def process_bodies(nodes, edges, source_location, occurrence, file_content, lang):
 
     occurrence_groups = get_occurrence_groups(nodes, edges, source_location, occurrence)
+
+    file_content = dict(zip(file_content["id"], file_content["content"]))
 
     bodies = []
 
