@@ -5,6 +5,26 @@ DEFINITION_TYPE = 1
 UNRESOLVED_SYMBOL = "unsolved_symbol"
 
 
+import sqlite3
+
+
+class SQLTable:
+    def __init__(self, df, filename, table_name):
+        self.conn = sqlite3.connect(filename)
+        self.path = filename
+        self.table_name = table_name
+
+        df.to_sql(self.table_name, con=self.conn, if_exists='replace', index=False, index_label=df.columns)
+
+    def query(self, query_string):
+        return pd.read_sql(query_string, self.conn)
+
+    def __del__(self):
+        self.conn.close()
+        if os.path.isfile(self.path):
+            os.remove(self.path)
+
+
 def get_occurrence_groups(nodes, edges, source_location, occurrence):
     edges = edges.rename(columns={'type': 'e_type'})
     edges = edges.query("id >= 0")  # filter reverse edges
@@ -37,6 +57,17 @@ def get_function_definitions(occurrences):
 def get_occurrences_from_range(occurrences, start, end) -> pd.DataFrame:
     return occurrences.query(
         f"start_line >= {start} and end_line <= {end} and occ_type != {DEFINITION_TYPE} and start_line == end_line")
+
+
+def sql_get_function_definitions(occurrences):
+    return occurrences.query(
+        f"select * from {occurrences.table_name} where occ_type = {DEFINITION_TYPE} and (type = 'function' or type = 'class_method')")
+    # return occurrences.query(f"occ_type == {DEFINITION_TYPE} and (type == 4096 or type == 8192)")
+
+
+def sql_get_occurrences_from_range(occurrences, start, end) -> pd.DataFrame:
+    return occurrences.query(
+        f"select * from {occurrences.table_name} where start_line >= {start} and end_line <= {end} and occ_type != {DEFINITION_TYPE} and start_line = end_line")
 
 
 def create_node_repr(nodes):

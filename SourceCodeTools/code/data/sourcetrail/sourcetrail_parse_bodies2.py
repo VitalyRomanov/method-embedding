@@ -163,15 +163,16 @@ def process_bodies(nodes, edges, source_location, occurrence, file_content, lang
     for group_ind, (file_id, occurrences) in custom_tqdm(
             enumerate(occurrence_groups), message="Processing function bodies", total=len(occurrence_groups)
     ):
+        sql_occurrences = SQLTable(occurrences, "/tmp/sourcetrail_occurrences.db", "occurrences")
 
-        function_definitions = get_function_definitions(occurrences)
+        function_definitions = sql_get_function_definitions(sql_occurrences)
 
         if len(function_definitions):
             for ind, f_def in function_definitions.iterrows():
                 f_start = f_def.start_line
                 f_end = f_def.end_line
 
-                local_occurrences = get_occurrences_from_range(occurrences, start=f_start, end=f_end)
+                local_occurrences = sql_get_occurrences_from_range(sql_occurrences, start=f_start, end=f_end)
 
                 # move to zero-index
                 f_start -= 1
@@ -186,6 +187,8 @@ def process_bodies(nodes, edges, source_location, occurrence, file_content, lang
 
                 if processed is not None:
                     bodies.append(processed)
+
+        del sql_occurrences
 
     if len(bodies) > 0:
         bodies_processed = pd.DataFrame(bodies)

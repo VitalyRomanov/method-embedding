@@ -84,4 +84,4 @@ if __name__ == "__main__":
     variables = extract_var_names(nodes, bodies, lang)
 
     if variables is not None:
-        persist(variables, os.path.join(working_directory, filenames["function-variable-pairs"]))
+        persist(variables, os.path.join(working_directory, filenames["function_variable_pairs"]))

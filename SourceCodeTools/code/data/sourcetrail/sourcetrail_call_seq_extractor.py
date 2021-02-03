@@ -1,5 +1,4 @@
 from SourceCodeTools.code.data.sourcetrail.common import *
-from SourceCodeTools.code.data.sourcetrail.common import get_occurrence_groups
 
 import sys
 
@@ -16,6 +15,10 @@ def get_function_calls_from_range(occurrences, start, end):
     return occurrences.query(f"start_line >= {start} and end_line <= {end} and occ_type != {DEFINITION_TYPE} and e_type == 'calls'")
 
 
+def sql_get_function_calls_from_range(occurrences, start, end):
+    return occurrences.query(f"select * from {occurrences.table_name} where start_line >= {start} and end_line <= {end} and occ_type != {DEFINITION_TYPE} and e_type = 'calls'")
+
+
 def extract_call_seq(nodes, edges, source_location, occurrence):
 
     occurrence_groups = get_occurrence_groups(nodes, edges, source_location, occurrence)
@@ -26,11 +29,13 @@ def extract_call_seq(nodes, edges, source_location, occurrence):
             enumerate(occurrence_groups), message="Extracting call sequences", total=len(occurrence_groups)
     ):
 
-        function_definitions = get_function_definitions(occurrences)
+        sql_occurrences = SQLTable(occurrences, "/tmp/sourcetrail_occurrences.db", "occurrences")
+
+        function_definitions = sql_get_function_definitions(sql_occurrences)
 
         if len(function_definitions):
             for ind, f_def in function_definitions.iterrows():
-                local_occurrences = get_function_calls_from_range(occurrences, start=f_def.start_line, end=f_def.end_line)
+                local_occurrences = sql_get_function_calls_from_range(sql_occurrences, start=f_def.start_line, end=f_def.end_line)
                 local_occurrences = sort_occurrences(local_occurrences)
 
                 all_calls = get_function_calls(local_occurrences)
@@ -40,6 +45,8 @@ def extract_call_seq(nodes, edges, source_location, occurrence):
                         'src': all_calls[i],
                         'dst': all_calls[i+1]
                     })
+
+        del sql_occurrences
 
         # print(f"\r{grp_ind}/{len(occurrence_groups)}", end="")
     # print(" " * 30, end="\r")
@@ -64,4 +71,4 @@ if __name__ == "__main__":
     call_seq = extract_call_seq(nodes, edges, source_location, occurrence)
 
     if call_seq is not None:
-        persist(call_seq, os.path.join(working_directory, filenames["call-seq"]))
+        persist(call_seq, os.path.join(working_directory, filenames["call_seq"]))
