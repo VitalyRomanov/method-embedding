@@ -7,6 +7,7 @@ UNRESOLVED_SYMBOL = "unsolved_symbol"
 
 def get_occurrence_groups(nodes, edges, source_location, occurrence):
     edges = edges.rename(columns={'type': 'e_type'})
+    edges = edges.query("id >= 0")  # filter reverse edges
 
     # merge nodes and edges, some references in code point to edges, not to nodes
     node_edge = pd.concat([nodes, edges], sort=False).astype({"target_node_id": "Int32", "source_node_id": "Int32"})
