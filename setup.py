@@ -12,7 +12,8 @@ setup(name='SourceCodeTools',
             'gensim',
             'numpy',
             'scipy',
-            'networkx'
+            'networkx',
+            'pygraphviz'
             # 'javac_parser'
       ],
       scripts=[
