@@ -28,7 +28,7 @@ from SourceCodeTools.nlp.string_tools import get_byte_to_char_map
 #     return response
 
 
-def to_offsets(body: str, entities: Iterable[Iterable], as_bytes=False, cum_lens=None):
+def to_offsets(body: str, entities: Iterable[Iterable], as_bytes=False, cum_lens=None, b2c=None):
     """
     Transform entity annotation format from (line, end_line, col, end_col)
     to (char_ind, end_char_ind).
@@ -48,7 +48,8 @@ def to_offsets(body: str, entities: Iterable[Iterable], as_bytes=False, cum_lens
             ind, (line, end_line, start, end, annotation) in enumerate(entities)]
 
     if as_bytes:
-        b2c = get_byte_to_char_map(body)
+        if b2c is None:
+            b2c = get_byte_to_char_map(body)
         repl = list(map(lambda x: (b2c[x[0]], b2c[x[1]], x[2]), repl))
 
     return repl
