@@ -40,20 +40,24 @@ def normalize(line):
 
 def merge_names(nodes_path, exit_if_empty=True):
     if exit_if_empty:
-        data = unpersist_or_exit(nodes_path, exit_message="Sourcetrail nodes are empty",
+        nodes = unpersist_or_exit(nodes_path, exit_message="Sourcetrail nodes are empty",
                                  dtype={"id": int, "type": int, "serialized_name": str})
     else:
-        data = unpersist_if_present(nodes_path, dtype={"id": int, "type": int, "serialized_name": str})
+        nodes = unpersist_if_present(nodes_path, dtype={"id": int, "type": int, "serialized_name": str})
 
-    if data is None:
+    if nodes is None:
         return None
 
-    data = data[data['type'] != 262144] # filter nodes for files
-    data['serialized_name'] = data['serialized_name'].apply(normalize)
-    data['type'] = data['type'].apply(lambda x: node_types[x])
+    nodes.query("type != 262144", inplace=True)
+    nodes.eval("serialized_name = serialized_name.map(@normalize)", local_dict={"normalize": normalize}, inplace=True)
+    nodes.eval("type = type.map(@node_types.get)", local_dict={"node_types": node_types}, inplace=True)
 
-    if len(data) > 0:
-        return data.astype({"id": int, "type": str, "serialized_name": str})
+    # nodes = nodes[nodes['type'] != 262144] # filter nodes for files
+    # nodes['serialized_name'] = nodes['serialized_name'].apply(normalize)
+    # nodes['type'] = nodes['type'].apply(lambda x: node_types[x])
+
+    if len(nodes) > 0:
+        return nodes.astype({"id": int, "type": str, "serialized_name": str})
     else:
         return None
 
