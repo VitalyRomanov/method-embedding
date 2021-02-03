@@ -28,7 +28,7 @@ class PythonSyntheticEdgeTypes:
     subword_instance = "subword_instance"
     next = "next"
     prev = "prev"
-    depends_on_ = "depends_on_"
+    # depends_on_ = "depends_on_"
     execute_when_ = "execute_when_"
     local_mention = "local_mention"
     mention_scope = "mention_scope"
@@ -47,6 +47,7 @@ class PythonSharedNodes:
 
     subword_leaf_types = annotation_types | subword_types | python_token_types
     named_leaf_types = annotation_types | tokenizable_types | python_token_types
+    tokenizable_types_and_annotations = annotation_types | tokenizable_types
 
     shared_node_types = annotation_types | subword_types | tokenizable_types | python_token_types
 
@@ -155,8 +156,9 @@ class AstGraphGenerator(object):
                 last_node = s[1]
 
                 for cond_name, cond_stat in zip(self.current_condition, self.condition_status):
-                    edges.append({"scope": copy(self.scope[-1]), "src": last_node, "dst": cond_name, "type": "depends_on_" + cond_stat})
-                    edges.append({"scope": copy(self.scope[-1]), "src": cond_name, "dst": last_node, "type": "execute_when_" + cond_stat})
+                    edges.append({"scope": copy(self.scope[-1]), "src": last_node, "dst": cond_name, "type": "defined_in_" + cond_stat})
+                    edges.append({"scope": copy(self.scope[-1]), "src": cond_name, "dst": last_node, "type": "defined_in_" + cond_stat + "_rev"})
+                    # edges.append({"scope": copy(self.scope[-1]), "src": cond_name, "dst": last_node, "type": "execute_when_" + cond_stat})
             else:
                 edges.extend(s)
         return edges
@@ -329,7 +331,7 @@ class AstGraphGenerator(object):
         # if node.returns:
         #     print(self.source[node.lineno -1]) # can get definition string here
 
-        self.parse_in_context(f_name, "defined_in", edges, node.body)
+        self.parse_in_context(f_name, "function", edges, node.body)
 
         self.scope.pop(-1)
 
@@ -671,8 +673,8 @@ class AstGraphGenerator(object):
 
         edges, if_name = self.generic_parse(node, ["test"])
 
-        self.parse_in_context(if_name, "True", edges, node.body)
-        self.parse_in_context(if_name, "False", edges, node.orelse)
+        self.parse_in_context(if_name, "if_true", edges, node.body)
+        self.parse_in_context(if_name, "if_false", edges, node.orelse)
 
         return edges, if_name
 
@@ -682,7 +684,7 @@ class AstGraphGenerator(object):
         edges, for_name = self.generic_parse(node, ["target", "iter"])
         
         self.parse_in_context(for_name, "for", edges, node.body)
-        self.parse_in_context(for_name, "orelse", edges, node.orelse)
+        self.parse_in_context(for_name, "for_orelse", edges, node.orelse)
         
         return edges, for_name
 
@@ -699,10 +701,10 @@ class AstGraphGenerator(object):
             
             handler_name, ext_edges = self.parse_operand(h)
             edges.extend(ext_edges)
-            self.parse_in_context([try_name, handler_name], ["except", "handler"], edges, h.body)
+            self.parse_in_context([try_name, handler_name], ["try_except", "try_handler"], edges, h.body)
         
-        self.parse_in_context(try_name, "final", edges, node.finalbody)
-        self.parse_in_context(try_name, "else", edges, node.orelse)
+        self.parse_in_context(try_name, "try_final", edges, node.finalbody)
+        self.parse_in_context(try_name, "try_else", edges, node.orelse)
         
         return edges, try_name
         
@@ -713,7 +715,7 @@ class AstGraphGenerator(object):
         cond_name, ext_edges = self.parse_operand(node.test)
         edges.extend(ext_edges)
 
-        self.parse_in_context([while_name, cond_name], ["while", "True"], edges, node.body)
+        self.parse_in_context([while_name, cond_name], ["while", "if_true"], edges, node.body)
         
         return edges, while_name
 
