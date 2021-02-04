@@ -276,7 +276,10 @@ class GlobalNodeMatcher:
             candidate_names = sorted(candidate_names, key=len)  # shortest name is assumed to be correct
 
             if len(candidate_names) > 0:
-                return self.nodes.query(f"serialized_name == '{candidate_names[0]}' and type == 'module'").iloc[0]["id"]
+                c = self.nodes.query(f"serialized_name == '{candidate_names[0]}' and type == 'module'")
+                if len(c) > 0:
+                    return c.iloc[0]["id"]
+                logging.warning(f"Could not resolve module from candidates: {candidate_names}")
             return None
 
         func_global, module_cand = get_global_id_and_module_candidates(func_nodes, ["function_name", "global_mention_rev"])
