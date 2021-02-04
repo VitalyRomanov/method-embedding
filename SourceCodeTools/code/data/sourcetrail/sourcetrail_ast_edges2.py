@@ -826,10 +826,13 @@ def get_ast_from_modules(
         offsets = srctrl_resolver.occurrences_into_ranges(source_file_content, occurrences)
 
         # process code
-
-        edges, global_and_ast_offsets, ast_nodes_to_srctrl_nodes = process_code(
-            source_file_content, offsets, node_resolver, mention_tokenizer, node_matcher
-        )
+        try:
+            edges, global_and_ast_offsets, ast_nodes_to_srctrl_nodes = process_code(
+                source_file_content, offsets, node_resolver, mention_tokenizer, node_matcher
+            )
+        except SyntaxError:
+            logging.warning(f"Error processing file_id {file_id}")
+            continue
 
         if edges is None:
             continue
