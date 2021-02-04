@@ -109,6 +109,21 @@ class AstGraphGenerator(object):
         self.condition_status = []
         self.scope = []
 
+    def get_source_from_ast_range(self, start_line, end_line, start_col, end_col):
+        source = ""
+        num_lines = end_line - start_line + 1
+        for ind, lineno in enumerate(range(start_line - 1, end_line)):
+            if ind == 0:
+                source += self.source[lineno].encode("utf8")[start_col:].decode(
+                    "utf8").strip()
+            elif ind == num_lines - 1:
+                source += self.source[lineno].encode("utf8")[:end_col].decode(
+                    "utf8").strip()
+            else:
+                source += self.source[lineno].strip()
+
+        return source
+
     def get_name(self, node):
         if len(self.scope) > 0:
             return GNode(astnode=node, scope=copy(self.scope[-1]))
@@ -324,7 +339,11 @@ class AstGraphGenerator(object):
             # can contain quotes
             # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
             # https://www.python.org/dev/peps/pep-0484/#forward-references
-            annotation = GNode(name=self.source[node.returns.lineno - 1][node.returns.col_offset: node.returns.end_col_offset],
+            annotation_string = self.get_source_from_ast_range(
+                node.returns.lineno, node.returns.end_lineno,
+                node.returns.col_offset, node.returns.end_col_offset
+            )
+            annotation = GNode(name=annotation_string,
                                type="type_annotation")
             edges.append({"scope": copy(self.scope[-1]), "src": annotation, "dst": f_name, "type": "returned_by", "line": node.returns.lineno - 1, "end_line": node.returns.end_lineno - 1, "col_offset": node.returns.col_offset, "end_col_offset": node.returns.end_col_offset})
             # do not use reverse edges for types, will result in leak from function to function
@@ -442,7 +461,11 @@ class AstGraphGenerator(object):
             # can contain quotes
             # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
             # https://www.python.org/dev/peps/pep-0484/#forward-references
-            annotation = GNode(name=self.source[node.annotation.lineno - 1][node.annotation.col_offset: node.annotation.end_col_offset],
+            annotation_string = self.get_source_from_ast_range(
+                node.annotation.lineno, node.annotation.end_lineno,
+                node.annotation.col_offset, node.annotation.end_col_offset
+            )
+            annotation = GNode(name=annotation_string,
                                type="type_annotation")
             edges.append({"scope": copy(self.scope[-1]), "src": annotation, "dst": name, "type": 'annotation_for', "line": node.annotation.lineno-1, "end_line": node.annotation.end_lineno-1, "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset, "var_line": node.lineno-1, "var_end_line": node.end_lineno-1, "var_col_offset": node.col_offset, "var_end_col_offset": node.end_col_offset})
             # do not use reverse edges for types, will result in leak from function to function
@@ -464,7 +487,11 @@ class AstGraphGenerator(object):
         # can contain quotes
         # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
         # https://www.python.org/dev/peps/pep-0484/#forward-references
-        annotation = GNode(name=self.source[node.lineno - 1][node.annotation.col_offset: node.annotation.end_col_offset],
+        annotation_string = self.get_source_from_ast_range(
+            node.annotation.lineno, node.annotation.end_lineno,
+            node.annotation.col_offset, node.annotation.end_col_offset
+        )
+        annotation = GNode(name=annotation_string,
                            type="type_annotation")
         edges, name = self.generic_parse(node, ["target"])
         edges.append({"scope": copy(self.scope[-1]), "src": annotation, "dst": name, "type": 'annotation_for', "line": node.annotation.lineno-1, "end_line": node.annotation.end_lineno-1, "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset, "var_line": node.lineno-1, "var_end_line": node.end_lineno-1, "var_col_offset": node.col_offset, "var_end_col_offset": node.end_col_offset})
