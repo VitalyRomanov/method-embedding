@@ -49,6 +49,8 @@ class MentionTokenizer:
 
                 if self.bpe is not None:
                     if hasattr(dst, "name_scope") and dst.name_scope == "local":
+                        # TODO
+                        # this rule seems to be irrelevant now
                         subwords = self.bpe(dst.name.split("@")[0])
                     else:
                         subwords = self.bpe(edge['src'].name)
@@ -162,7 +164,7 @@ class GlobalNodeMatcher:
         self.allowed_edge_types = {"defines_rev"}
 
         self.allowed_ast_node_types = {"FunctionDef", "ClassDef", "Module", "mention"}
-        self.allowed_ast_edge_types = {"fname", "class_name", "global_mention_rev"}
+        self.allowed_ast_edge_types = {"function_name", "class_name", "global_mention_rev"}
 
         self.nodes = nodes[nodes['type'].apply(lambda type: type in self.allowed_node_types)]
         self.edges = edges[edges["type"].apply(lambda type: type in self.allowed_edge_types)]
@@ -246,7 +248,7 @@ class GlobalNodeMatcher:
                 new_node_ids[node] = gid
                 # new_node_ids[gid] = node
                 module_candidate = find_global_id(self.global_graph, gid, ["defines_rev"])
-                if module_candidate is not None and self.global_types[module_candidate] == "module":
+                if module_candidate is not None and module_candidate in self.global_types and self.global_types[module_candidate] == "module":
                     module_candidates.append(module_candidate)
             return new_node_ids, module_candidates
 
@@ -276,7 +278,7 @@ class GlobalNodeMatcher:
                 return self.nodes.query(f"serialized_name == '{candidate_names[0]}' and type == 'module'").iloc[0]["id"]
             return None
 
-        func_global, module_cand = get_global_id_and_module_candidates(func_nodes, ["fname", "global_mention_rev"])
+        func_global, module_cand = get_global_id_and_module_candidates(func_nodes, ["function_name", "global_mention_rev"])
         new_node_ids.update(func_global)
         module_candidates.extend(module_cand)
         class_global, module_cand = get_global_id_and_module_candidates(class_nodes, ["class_name", "global_mention_rev"])
@@ -701,11 +703,22 @@ def add_global_mentions(edges):
 
 def edges_for_global_node_names(nodes):
     edges = []
-    for id, name in nodes[["id", "serialized_name"]].values:
+    for id, name, type in nodes[["id", "serialized_name", "type"]].values:
+        # edges.append({
+        #     "src": GNode(type="Name", name=name),
+        #     "dst": GNode(id=id, type="__global", name=""),
+        #     "type": "__global_name"
+        # })
+        mention = GNode(type="mention", name=f"{name}@{name}_0x")
         edges.append({
             "src": GNode(type="Name", name=name),
+            "dst": mention,
+            "type": "local_mention"
+        })
+        edges.append({
+            "src": mention,
             "dst": GNode(id=id, type="__global", name=""),
-            "type": "__global_name"
+            "type": type + "_name"
         })
     return edges
 
@@ -714,7 +727,7 @@ def produce_nodes_without_name(global_nodes, ast_edges):
     # from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types
     # global_types = set(list(node_types.values()))
     global_node_ids = set(global_nodes["id"].tolist())
-    name_edge_types = {"fname", "class_name"}
+    name_edge_types = {"function_name", "class_name"}
 
     global_nodes_with_name = set([edge["src"] for edge in ast_edges if edge["src"] in global_node_ids and edge["type"] in name_edge_types])
     nodes_without_name = global_nodes.query("id not in @global_nodes_with_name", local_dict={"global_nodes_with_name": global_nodes_with_name})
@@ -732,10 +745,14 @@ def standardize_new_edges(edges, node_resolver, mention_tokenizer):
     for edge in edges:
         edge["src"] = resolve_node_id(edge["src"])
         edge["dst"] = resolve_node_id(edge["dst"])
+        if "scope" in edge:
+            edge["scope"] = resolve_node_id(edge["scope"])
 
     for edge in edges:
         edge["src"] = extract_id(edge["src"])
         edge["dst"] = extract_id(edge["dst"])
+        if "scope" in edge:
+            edge["scope"] = extract_id(edge["scope"])
 
     return edges
 
@@ -755,6 +772,8 @@ def process_code(source_file_content, offsets, node_resolver, mention_tokenizer,
     for edge in edges:
         edge["src"] = resolve(edge["src"])
         edge["dst"] = resolve(edge["dst"])
+        if "scope" in edge:
+            edge["scope"] = resolve(edge["scope"])
 
     edges = add_global_mentions(edges)
 
@@ -835,6 +854,23 @@ def get_ast_from_modules(
 
         node_resolver.stash_new_nodes()
 
+    def replace_ast_node_to_global(edges, mapping):
+        for edge in edges:
+            edge["src"] = mapping.get(edge["src"], edge["src"])
+            edge["dst"] = mapping.get(edge["dst"], edge["dst"])
+            if "scope" in edge:
+                edge["scope"] = mapping.get(edge["scope"], edge["scope"])
+
+    replace_ast_node_to_global(all_ast_edges, all_global_references)
+
+    def create_subwords_for_global_nodes():
+        all_ast_edges.extend(
+            standardize_new_edges(edges_for_global_node_names(produce_nodes_without_name(nodes, all_ast_edges)),
+                                  node_resolver, mention_tokenizer))
+        node_resolver.stash_new_nodes()
+
+    create_subwords_for_global_nodes()
+
     def prepare_new_nodes(node_resolver):
 
         node_resolver.adjust_ast_node_types(
@@ -850,30 +886,15 @@ def get_ast_from_modules(
 
     prepare_new_nodes(node_resolver)
 
-    def create_subwords_for_global_nodes():
-        all_ast_edges.extend(
-            standardize_new_edges(edges_for_global_node_names(produce_nodes_without_name(nodes, all_ast_edges)),
-                                  node_resolver, mention_tokenizer))
-        node_resolver.stash_new_nodes()
-
-    create_subwords_for_global_nodes()
-
     all_ast_nodes = node_resolver.new_nodes_for_write(from_stashed=True)
 
     def prepare_edges(all_ast_edges):
-        def replace_ast_node_to_global(edges, mapping):
-            for edge in edges:
-                edge["src"] = mapping.get(edge["src"], edge["src"])
-                edge["dst"] = mapping.get(edge["dst"], edge["dst"])
-
-        replace_ast_node_to_global(all_ast_edges, all_global_references)
-
         all_ast_edges = pd.DataFrame(all_ast_edges)
         all_ast_edges.drop_duplicates(["type", "src", "dst"], inplace=True)
         all_ast_edges = all_ast_edges.query("src != dst")
         all_ast_edges["id"] = 0
-        all_ast_edges = all_ast_edges[["id", "type", "src", "dst", "file_id"]].rename({'src': 'source_node_id', 'dst': 'target_node_id'}, axis=1).astype(
-            {'file_id': 'Int32'}
+        all_ast_edges = all_ast_edges[["id", "type", "src", "dst", "file_id", "scope"]].rename({'src': 'source_node_id', 'dst': 'target_node_id', 'scope': 'mentioned_in'}, axis=1).astype(
+            {'file_id': 'Int32', "mentioned_in": 'Int32'}
         )
         return all_ast_edges
 
