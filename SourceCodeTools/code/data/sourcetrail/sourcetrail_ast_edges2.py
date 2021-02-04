@@ -657,7 +657,7 @@ class SourcetrailResolver:
             )
             new_occurrences.append(offset)
 
-        return self.offsets2dataframe(to_offsets(body, new_occurrences, as_bytes=True))
+        return self.offsets2dataframe(to_offsets(body, new_occurrences))
 
     @staticmethod
     def offsets2dataframe(offsets):
@@ -818,6 +818,7 @@ def get_ast_from_modules(
             enumerate(srctrl_resolver.occurrence_groups), message="Processing modules",
             total=len(srctrl_resolver.occurrence_groups)
     ):
+        # if file_id != 74720: continue
         source_file_content = srctrl_resolver.get_file_content(file_id)
 
         if not has_valid_syntax(source_file_content):
@@ -826,13 +827,13 @@ def get_ast_from_modules(
         offsets = srctrl_resolver.occurrences_into_ranges(source_file_content, occurrences)
 
         # process code
-        try:
-            edges, global_and_ast_offsets, ast_nodes_to_srctrl_nodes = process_code(
-                source_file_content, offsets, node_resolver, mention_tokenizer, node_matcher
-            )
-        except SyntaxError:
-            logging.warning(f"Error processing file_id {file_id}")
-            continue
+        # try:
+        edges, global_and_ast_offsets, ast_nodes_to_srctrl_nodes = process_code(
+            source_file_content, offsets, node_resolver, mention_tokenizer, node_matcher
+        )
+        # except SyntaxError:
+        #     logging.warning(f"Error processing file_id {file_id}")
+        #     continue
 
         if edges is None:
             continue
