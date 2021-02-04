@@ -34,7 +34,7 @@ class DatasetCreator:
         self.visualize = visualize
 
         paths = (os.path.join(path, dir) for dir in os.listdir(path))
-        self.environments = list(filter(lambda path: os.path.isdir(path), paths))
+        self.environments = sorted(list(filter(lambda path: os.path.isdir(path), paths)), key=lambda x: x.lower())
 
         self.local2global_cache = {}
 
