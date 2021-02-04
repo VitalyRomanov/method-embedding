@@ -33,8 +33,10 @@ class PythonSyntheticEdgeTypes:
     local_mention = "local_mention"
     mention_scope = "mention_scope"
     returned_by = "returned_by"
-    fname = "fname"
-    fname_for = "fname_for"
+    # TODO
+    #  make sure every place uses function_name and not fname
+    fname = "function_name"
+    # fname_for = "fname_for"
     annotation_for = "annotation_for"
     control_flow = "control_flow"
 
@@ -340,8 +342,8 @@ class AstGraphGenerator(object):
         edges.extend(ext_edges)
 
         assert isinstance(node.name, str)
-        edges.append({"scope": copy(self.scope[-1]), "src": f_name, "dst": func_name, "type": "fname"})
-        edges.append({"scope": copy(self.scope[-1]), "src": func_name, "dst": f_name, "type": "fname_for"})
+        edges.append({"scope": copy(self.scope[-1]), "src": f_name, "dst": func_name, "type": "function_name"})
+        edges.append({"scope": copy(self.scope[-1]), "src": func_name, "dst": f_name, "type": "function_name_rev"})
 
         return edges, f_name
 
@@ -371,7 +373,7 @@ class AstGraphGenerator(object):
         ext_edges, cls_name = self.parse_as_mention(name=node.name)
         edges.extend(ext_edges)
         edges.append({"scope": copy(self.scope[-1]), "src": class_node_name, "dst": cls_name, "type": "class_name"})
-        edges.append({"scope": copy(self.scope[-1]), "src": cls_name, "dst": class_node_name, "type": "name_for"})
+        edges.append({"scope": copy(self.scope[-1]), "src": cls_name, "dst": class_node_name, "type": "class_name_rev"})
 
         return edges, class_node_name
 
