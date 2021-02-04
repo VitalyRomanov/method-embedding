@@ -10,7 +10,7 @@ setup(name='SourceCodeTools',
             'sklearn',
             'sentencepiece',
             'gensim',
-            'numpy',
+            'numpy==1.19.2',
             'scipy',
             'networkx',
             'pygraphviz'
