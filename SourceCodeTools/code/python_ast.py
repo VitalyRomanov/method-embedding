@@ -75,12 +75,7 @@ class GNode:
     # type = None
     # id = None
 
-    def __init__(self, astnode=None, **kwargs):
-
-        if astnode is not None:
-            self.name = astnode.__class__.__name__ + "_" + str(hex(int(time_ns())))
-            self.type = astnode.__class__.__name__
-
+    def __init__(self, **kwargs):
         for k, v in kwargs.items():
             setattr(self, k, v)
 
@@ -124,11 +119,19 @@ class AstGraphGenerator(object):
 
         return source
 
-    def get_name(self, node):
-        if len(self.scope) > 0:
-            return GNode(astnode=node, scope=copy(self.scope[-1]))
+    def get_name(self, *, node=None, name=None, type=None, add_random_identifier=False):
+
+        if node is not None:
+            name = node.__class__.__name__ + "_" + str(hex(int(time_ns())))
+            type = node.__class__.__name__
         else:
-            return GNode(astnode=node)
+            if add_random_identifier:
+                name += f"_{str(hex(int(time_ns())))}"
+
+        if len(self.scope) > 0:
+            return GNode(name=name, type=type, scope=copy(self.scope[-1]))
+        else:
+            return GNode(name=name, type=type)
         # return (node.__class__.__name__ + "_" + str(hex(int(time_ns()))), node.__class__.__name__)
 
     def get_edges(self, as_dataframe=True):
@@ -265,7 +268,7 @@ class AstGraphGenerator(object):
         edges = []
 
         if with_name is None:
-            node_name = self.get_name(node)
+            node_name = self.get_name(node=node)
         else:
             node_name = with_name
 
@@ -323,7 +326,7 @@ class AstGraphGenerator(object):
 
         # need to creare function name before generic_parse so that the scope is set up correctly
         # scope is used to create local mentions of variable and function names
-        fdef_node_name = self.get_name(node)
+        fdef_node_name = self.get_name(node=node)
         self.scope.append(fdef_node_name)
 
         to_parse = []
@@ -452,7 +455,7 @@ class AstGraphGenerator(object):
         #     print(node.arg)
 
         # # included mention
-        name = self.get_name(node)
+        name = self.get_name(node=node)
         edges, mention_name = self.parse_as_mention(node.arg)
         edges.append({"scope": copy(self.scope[-1]), "src": mention_name, "dst": name, "type": 'arg'})
         edges.append({"scope": copy(self.scope[-1]), "src": name, "dst": mention_name, "type": 'arg_rev'})
@@ -765,7 +768,8 @@ class AstGraphGenerator(object):
 
     def parse_control_flow(self, node):
         edges = []
-        ctrlflow_name = GNode(name="ctrl_flow_" + str(hex(int(time_ns()))), type="CtlFlowInstance")
+        ctrlflow_name = self.get_name(name="ctrl_flow", type="CtlFlowInstance", add_random_identifier=True)
+        # ctrlflow_name = GNode(name="ctrl_flow_" + str(hex(int(time_ns()))), type="CtlFlowInstance")
         # ctrlflow_name = "ctrl_flow_" + str(int(time_ns()))
         edges.append({"scope": copy(self.scope[-1]), "src": GNode(name=node.__class__.__name__, type="CtlFlow"), "dst": ctrlflow_name, "type": "control_flow"})
 
@@ -849,7 +853,8 @@ class AstGraphGenerator(object):
     def parse_comprehension(self, node):
         edges = []
 
-        cph_name = GNode(name="comprehension_" + str(hex(int(time_ns()))), type="comprehension")
+        cph_name = self.get_name(name="comprehension", type="comprehension", add_random_identifier=True)
+        # cph_name = GNode(name="comprehension_" + str(hex(int(time_ns()))), type="comprehension")
 
         if len(self.scope) > 0:
             edges.append({"scope": copy(self.scope[-1]), "src": cph_name, "dst": self.scope[-1], "type": "mention_scope"})
