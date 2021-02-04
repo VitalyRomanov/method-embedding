@@ -80,10 +80,24 @@ def test_OccurrenceReplacer():
 
     print()
 
-test_OccurrenceReplacer()
+# test_OccurrenceReplacer()
 
 """class srctrlrpl_1612301920884920000:
         srctrlrpl_1612301920884960000 = [("ascii", ["hello", "world", "hi"]),
                       ("unicode", ["zzzzzzzzzzzz", "zzzzzz"])]
         ids, cases = srctrlrpl_1612301920884984000(*srctrlrpl_1612301920885006000)
 """
+
+
+def test_OccurrenceReplacer_gcrp():
+    from SourceCodeTools.code.data.sourcetrail.sourcetrail_ast_edges2 import OccurrenceReplacer, AstProcessor
+    import pandas as pd
+    from gcrp_test_case import gcrp_offsets, gcrp_test_string
+
+    replacer = OccurrenceReplacer()
+    replacer.perform_replacements(gcrp_test_string, pd.DataFrame(gcrp_offsets))
+
+    ast_processor = AstProcessor(replacer.source_with_replacements)
+    edges = ast_processor.get_edges(as_dataframe=False)
+
+test_OccurrenceReplacer_gcrp()
