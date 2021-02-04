@@ -57,6 +57,16 @@ def test_OccurrenceReplacer():
 #         {"start": 613, "end": 622, "node_id": 13, "occ_type": 0},
 #     ])
 
+    test_case = """with pytest.raises(AssertionError, match=msg):
+        tm.assert_almost_equal(np.array(["á", "à", "ä"]), np.array(["á", "à", "å"]))"""
+
+    offsets = pd.DataFrame([
+        {"start": 78, "end": 80, "node_id": 13, "occ_type": 0},
+        {"start": 105, "end": 107, "node_id": 13, "occ_type": 0},
+        {"start": 81, "end": 86, "node_id": 13, "occ_type": 0},
+        {"start": 108, "end": 113, "node_id": 13, "occ_type": 0},
+    ])
+
     replacer = OccurrenceReplacer()
     replacer.perform_replacements(test_case, offsets)
 
@@ -80,7 +90,7 @@ def test_OccurrenceReplacer():
 
     print()
 
-# test_OccurrenceReplacer()
+test_OccurrenceReplacer()
 
 """class srctrlrpl_1612301920884920000:
         srctrlrpl_1612301920884960000 = [("ascii", ["hello", "world", "hi"]),
@@ -100,4 +110,4 @@ def test_OccurrenceReplacer_gcrp():
     ast_processor = AstProcessor(replacer.source_with_replacements)
     edges = ast_processor.get_edges(as_dataframe=False)
 
-test_OccurrenceReplacer_gcrp()
+# test_OccurrenceReplacer_gcrp()
