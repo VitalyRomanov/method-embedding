@@ -13,6 +13,7 @@ from SourceCodeTools.nlp.entity.annotator.annotator_utils import adjust_offsets2
 from SourceCodeTools.nlp.entity.annotator.annotator_utils import overlap as range_overlap
 from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets, get_cum_lens
 from SourceCodeTools.nlp.string_tools import get_byte_to_char_map
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_parse_bodies2 import has_valid_syntax
 
 
 class MentionTokenizer:
@@ -818,6 +819,9 @@ def get_ast_from_modules(
             total=len(srctrl_resolver.occurrence_groups)
     ):
         source_file_content = srctrl_resolver.get_file_content(file_id)
+
+        if not has_valid_syntax(source_file_content):
+            continue
 
         offsets = srctrl_resolver.occurrences_into_ranges(source_file_content, occurrences)
 
