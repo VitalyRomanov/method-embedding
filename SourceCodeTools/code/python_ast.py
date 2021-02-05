@@ -107,15 +107,19 @@ class AstGraphGenerator(object):
     def get_source_from_ast_range(self, start_line, end_line, start_col, end_col):
         source = ""
         num_lines = end_line - start_line + 1
-        for ind, lineno in enumerate(range(start_line - 1, end_line)):
-            if ind == 0:
-                source += self.source[lineno].encode("utf8")[start_col:].decode(
-                    "utf8").strip()
-            elif ind == num_lines - 1:
-                source += self.source[lineno].encode("utf8")[:end_col].decode(
-                    "utf8").strip()
-            else:
-                source += self.source[lineno].strip()
+        if start_line == end_line:
+            source += self.source[start_line - 1].encode("utf8")[start_col:end_col].decode(
+                "utf8").strip()
+        else:
+            for ind, lineno in enumerate(range(start_line - 1, end_line)):
+                if ind == 0:
+                    source += self.source[lineno].encode("utf8")[start_col:].decode(
+                        "utf8").strip()
+                elif ind == num_lines - 1:
+                    source += self.source[lineno].encode("utf8")[:end_col].decode(
+                        "utf8").strip()
+                else:
+                    source += self.source[lineno].strip()
 
         return source
 
