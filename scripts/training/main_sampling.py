@@ -5,7 +5,7 @@ from os import mkdir
 from os.path import isdir, join
 
 from SourceCodeTools.code.data.sourcetrail.Dataset import read_or_create_dataset
-from SourceCodeTools.models.graph import RGCNSampling
+from SourceCodeTools.models.graph import RGCNSampling, RGAN
 from SourceCodeTools.models.graph.train.utils import get_name, get_model_base
 from params import rgcnsampling_params
 
@@ -128,7 +128,9 @@ if __name__ == "__main__":
     models_ = {
         # GCNSampling: gcnsampling_params,
         # GATSampler: gatsampling_params,
-        RGCNSampling: rgcnsampling_params
+        # RGCNSampling: rgcnsampling_params,
+        RGAN: rgcnsampling_params
+
     }
 
     if not isdir(args.model_output_dir):
