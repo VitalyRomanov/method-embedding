@@ -110,8 +110,8 @@ class RelGraphConvLayer(nn.Module):
 
         if g.is_block:
             inputs_src = inputs
-            # TODO:
-            #  dst representations are strangely slices of input nodes?????
+            # the begginning of src and dst indexes match, that is why we can simply slice the first
+            # nodes to get dst embeddings
             inputs_dst = {k: v[:g.number_of_dst_nodes(k)] for k, v in inputs.items()}
         else:
             inputs_src = inputs_dst = inputs
