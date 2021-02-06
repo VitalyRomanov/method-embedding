@@ -15,9 +15,9 @@ class SimpleNodeEmbedder(nn.Module):
 
         self.buckets = None
 
-        from SourceCodeTools.code.data.sourcetrail.sourcetrail_ast_edges import SharedNodeDetector
+        from SourceCodeTools.code.data.sourcetrail.sourcetrail_ast_edges import PythonSharedNodes
 
-        leaf_types = SharedNodeDetector.shared_node_types
+        leaf_types = PythonSharedNodes.shared_node_types
 
         if len(dataset.nodes.query("type_backup == 'subword'")) > 0:
             # some of the types should not be embedded if subwords were generated
