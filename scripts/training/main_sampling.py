@@ -5,9 +5,9 @@ from os import mkdir
 from os.path import isdir, join
 
 from SourceCodeTools.code.data.sourcetrail.Dataset import read_or_create_dataset
-from SourceCodeTools.models.graph import RGCNSampling, RGAN
+from SourceCodeTools.models.graph import RGCNSampling, RGAN, RGGAN
 from SourceCodeTools.models.graph.train.utils import get_name, get_model_base
-from params import rgcnsampling_params
+from params import rgcnsampling_params, rggan_params
 
 
 def main(models, args):
@@ -129,7 +129,8 @@ if __name__ == "__main__":
         # GCNSampling: gcnsampling_params,
         # GATSampler: gatsampling_params,
         # RGCNSampling: rgcnsampling_params,
-        RGAN: rgcnsampling_params
+        # RGAN: rgcnsampling_params,
+        RGGAN: rggan_params
 
     }
 

@@ -85,7 +85,7 @@ class RelGraphConvLayer(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, g, inputs):
+    def forward(self, g, inputs, **kwargs):
         """Forward computation
 
         Parameters
@@ -224,6 +224,7 @@ class RGCNSampling(nn.Module):
         # weight=False
 
         self.emb_size = num_classes
+        self.num_layers = len(self.layers)
 
     def node_embed(self):
         return self.embed_layer()
