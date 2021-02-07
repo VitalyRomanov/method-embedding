@@ -9,6 +9,7 @@ from time import time
 from os.path import join
 import logging
 
+from SourceCodeTools.models.Embedder import Embedder
 from SourceCodeTools.models.graph.train.utils import BestScoreTracker  # create_elem_embedder
 from SourceCodeTools.models.graph.LinkPredictor import LinkPredictor
 from SourceCodeTools.models.graph.NodeEmbedder import SimpleNodeEmbedder
@@ -226,7 +227,7 @@ class SamplingMultitaskTrainer:
 
     def seeds_to_global(self, seeds):
         if type(seeds) is dict:
-            indices = [self.graph_model.g.nodes[type].data["global_graph_id"][seeds[type]] for type in seeds]
+            indices = [self.graph_model.g.nodes[ntype].data["global_graph_id"][seeds[ntype]] for ntype in seeds]
             return torch.cat(indices, dim=0)
         else:
             return seeds
@@ -337,15 +338,15 @@ class SamplingMultitaskTrainer:
                 self.use_types = False
         
             train_idx = {
-                ntype: torch.nonzero(self.graph_model.g.nodes[ntype].data['train_mask']).squeeze()
+                ntype: torch.nonzero(self.graph_model.g.nodes[ntype].data['train_mask'], as_tuple=False).squeeze()
                 for ntype in self.ntypes
             }
             val_idx = {
-                ntype: torch.nonzero(self.graph_model.g.nodes[ntype].data['val_mask']).squeeze()
+                ntype: torch.nonzero(self.graph_model.g.nodes[ntype].data['val_mask'], as_tuple=False).squeeze()
                 for ntype in self.ntypes
             }
             test_idx = {
-                ntype: torch.nonzero(self.graph_model.g.nodes[ntype].data['test_mask']).squeeze()
+                ntype: torch.nonzero(self.graph_model.g.nodes[ntype].data['test_mask'], as_tuple=False).squeeze()
                 for ntype in self.ntypes
             }
         else:
@@ -675,13 +676,32 @@ class SamplingMultitaskTrainer:
         self.lp_api_call.eval()
 
     def to(self, device):
-        # self.graph_model.to(device)
+        self.graph_model.to(device)
         self.ee_node_name.to(device)
         self.ee_var_use.to(device)
         # self.ee_api_call.to(device)
         self.lp_node_name.to(device)
         self.lp_var_use.to(device)
         self.lp_api_call.to(device)
+
+    def get_embeddings(self):
+        # self.graph_model.g.nodes["function"].data.keys()
+        nodes = self.graph_model.g.nodes
+        node_embs = {ntype: self.node_embedder(node_type=ntype, node_ids=nodes[ntype].data['typed_id'], train_embeddings=False) for ntype in self.graph_model.g.ntypes}
+
+        h = self.graph_model.inference(batch_size=256, device='cpu', num_workers=0, x=node_embs)
+
+        original_id = []
+        global_id = []
+        embeddings = []
+        for ntype in self.graph_model.g.ntypes:
+            embeddings.append(h[ntype])
+            original_id.extend(nodes[ntype].data['original_id'].tolist())
+            global_id.extend(nodes[ntype].data['global_graph_id'].tolist())
+
+        embeddings = torch.cat(embeddings, dim=0).detach().numpy()
+
+        return [Embedder(dict(zip(original_id, global_id)), embeddings)]
 
 
 def select_device(args):

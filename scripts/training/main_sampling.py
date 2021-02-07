@@ -58,6 +58,8 @@ def main(models, args):
             metadata.update(args.__dict__)
 
             # pickle.dump(dataset, open(join(model_base, "dataset.pkl"), "wb"))
+            import pickle
+            pickle.dump(trainer.get_embeddings(), open(join(model_base, metadata['layers']), "wb"))
 
             with open(join(model_base, "metadata.json"), "w") as mdata:
                 mdata.write(json.dumps(metadata, indent=4))
