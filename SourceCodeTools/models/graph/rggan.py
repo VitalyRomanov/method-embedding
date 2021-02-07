@@ -135,79 +135,6 @@ class RGAN(RGCNSampling):
         self.emb_size = num_classes
         self.num_layers = len(self.layers)
 
-    def node_embed(self):
-        return None
-
-    def forward(self, h=None, blocks=None,
-                return_all=False):  # added this as an experimental feature for intermediate supervision
-
-        all_layers = []  # added this as an experimental feature for intermediate supervision
-
-        if blocks is None:
-            raise NotImplemented()
-            # full graph training
-            for layer in self.layers:
-                h = layer(self.g, h)
-                all_layers.append(h)  # added this as an experimental feature for intermediate supervision
-        else:
-            # minibatch training
-            for layer, block in zip(self.layers, blocks):
-                h = layer(block, h)
-                all_layers.append(h)  # added this as an experimental feature for intermediate supervision
-
-        if return_all:  # added this as an experimental feature for intermediate supervision
-            return all_layers
-        else:
-            return h
-
-    def inference(self, g, batch_size, device, num_workers, x=None):
-        """Minibatch inference of final representation over all node types.
-
-        ***NOTE***
-        For node classification, the model is trained to predict on only one node type's
-        label.  Therefore, only that type's final representation is meaningful.
-        """
-        raise NotImplemented()
-
-        with th.set_grad_enabled(False):
-
-            if x is None:
-                x = self.embed_layer()
-
-            for l, layer in enumerate(self.layers):
-                y = {
-                    k: th.zeros(
-                        g.number_of_nodes(k),
-                        self.h_dim if l != len(self.layers) - 1 else self.out_dim)
-                    for k in g.ntypes}
-
-                sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
-                dataloader = dgl.dataloading.NodeDataLoader(
-                    g,
-                    {k: th.arange(g.number_of_nodes(k)) for k in g.ntypes},
-                    sampler,
-                    batch_size=batch_size,
-                    shuffle=True,
-                    drop_last=False,
-                    num_workers=num_workers)
-
-                for input_nodes, output_nodes, blocks in dataloader:  # tqdm.tqdm(dataloader):
-                    block = blocks[0].to(device)
-
-                    if not isinstance(input_nodes, dict):
-                        key = next(iter(g.ntypes))
-                        input_nodes = {key: input_nodes}
-                        output_nodes = {key: output_nodes}
-
-                    h = {k: x[k][input_nodes[k]].to(device) for k in input_nodes.keys()}
-                    h = layer(block, h)
-
-                    for k in h.keys():
-                        y[k][output_nodes[k]] = h[k].cpu()
-
-                x = y
-            return y
-
 
 class OneStepGRU(nn.Module):
     def __init__(self, dim):
@@ -290,6 +217,9 @@ class RGGANLayer(RelGraphConvLayer):
             if self.activation:
                 h = self.activation(h)
             return self.dropout(h)
+
+        # the code above is identical to RelGraphConvLayer
+
         # TODO
         # think of possibility switching to GAT
         # return {ntype: _apply(ntype, h) for ntype, h in hs.items()}
@@ -346,28 +276,4 @@ class RGGAN(RGAN):
 
         self.emb_size = num_classes
         self.num_layers = num_steps
-
-    def forward(self, h=None, blocks=None,
-                return_all=False):  # added this as an experimental feature for intermediate supervision
-
-        all_layers = []  # added this as an experimental feature for intermediate supervision
-
-        if blocks is None:
-            raise NotImplemented()
-            # full graph training
-            for l in range(self.steps):
-                h = self.layer(self.g, h)
-                all_layers.append(h)  # added this as an experimental feature for intermediate supervision
-        else:
-            # minibatch training
-            for l, block in enumerate(blocks):
-                h = self.layer(block, h)
-                all_layers.append(h)  # added this as an experimental feature for intermediate supervision
-
-        if return_all:  # added this as an experimental feature for intermediate supervision
-            return all_layers
-        else:
-            return h
-
-    def inference(self, g, batch_size, device, num_workers, x=None):
-        raise NotImplemented()
+        self.layers = [self.layer] * num_steps

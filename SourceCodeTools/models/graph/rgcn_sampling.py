@@ -85,7 +85,7 @@ class RelGraphConvLayer(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, g, inputs, **kwargs):
+    def forward(self, g, inputs):
         """Forward computation
 
         Parameters
@@ -198,7 +198,7 @@ class RGCNSampling(nn.Module):
         self.dropout = dropout
         self.use_self_loop = use_self_loop
 
-        self.embed_layer = RelGraphEmbed(g, self.h_dim)
+        # self.embed_layer = RelGraphEmbed(g, self.h_dim)
         self.layers = nn.ModuleList()
         # i2h
         self.layers.append(RelGraphConvLayer(
@@ -226,8 +226,8 @@ class RGCNSampling(nn.Module):
         self.emb_size = num_classes
         self.num_layers = len(self.layers)
 
-    def node_embed(self):
-        return self.embed_layer()
+    # def node_embed(self):
+    #     return self.embed_layer()
 
     # def forward(self, h=None, blocks=None):
     #     if h is None:
@@ -243,31 +243,31 @@ class RGCNSampling(nn.Module):
     #             h = layer(block, h)
     #     return h
 
-    def forward(self, h=None, blocks=None,
+    def forward(self, h, blocks=None,
                 return_all=False): # added this as an experimental feature for intermediate supervision
-        if h is None:
-            # full graph training
-            h = self.embed_layer()
+        # if h is None:
+        #     # full graph training
+        #     h = self.embed_layer()
 
         all_layers = [] # added this as an experimental feature for intermediate supervision
 
-        if blocks is None:
-            # full graph training
-            for layer in self.layers:
-                h = layer(self.g, h)
-                all_layers.append(h) # added this as an experimental feature for intermediate supervision
-        else:
-            # minibatch training
-            for layer, block in zip(self.layers, blocks):
-                h = layer(block, h)
-                all_layers.append(h) # added this as an experimental feature for intermediate supervision
+        # if blocks is None:
+        #     # full graph training
+        #     for layer in self.layers:
+        #         h = layer(self.g, h)
+        #         all_layers.append(h) # added this as an experimental feature for intermediate supervision
+        # else:
+        # minibatch training
+        for layer, block in zip(self.layers, blocks):
+            h = layer(block, h)
+            all_layers.append(h) # added this as an experimental feature for intermediate supervision
 
         if return_all: # added this as an experimental feature for intermediate supervision
             return all_layers
         else:
             return h
 
-    def inference(self, g, batch_size, device, num_workers, x=None):
+    def inference(self, batch_size, device, num_workers, x=None):
         """Minibatch inference of final representation over all node types.
 
         ***NOTE***
@@ -277,20 +277,20 @@ class RGCNSampling(nn.Module):
 
         with th.set_grad_enabled(False):
 
-            if x is None:
-                x = self.embed_layer()
+            # if x is None:
+            #     x = self.embed_layer()
 
             for l, layer in enumerate(self.layers):
                 y = {
                     k: th.zeros(
-                        g.number_of_nodes(k),
+                        self.g.number_of_nodes(k),
                         self.h_dim if l != len(self.layers) - 1 else self.out_dim)
-                    for k in g.ntypes}
+                    for k in self.g.ntypes}
 
                 sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
                 dataloader = dgl.dataloading.NodeDataLoader(
-                    g,
-                    {k: th.arange(g.number_of_nodes(k)) for k in g.ntypes},
+                    self.g,
+                    {k: th.arange(self.g.number_of_nodes(k)) for k in self.g.ntypes},
                     sampler,
                     batch_size=batch_size,
                     shuffle=True,
@@ -301,7 +301,7 @@ class RGCNSampling(nn.Module):
                     block = blocks[0].to(device)
 
                     if not isinstance(input_nodes, dict):
-                        key = next(iter(g.ntypes))
+                        key = next(iter(self.g.ntypes))
                         input_nodes = {key: input_nodes}
                         output_nodes = {key: output_nodes}
 
@@ -314,21 +314,21 @@ class RGCNSampling(nn.Module):
                 x = y
             return y
 
-    def get_layers(self):
-        """
-        Retrieve tensor values on the layers for further use as node embeddings.
-        :return:
-        """
-        # h = self.embed_layer()
-        # l_out = [th.cat([h[ntype] for ntype in self.g.ntypes], dim=0).detach().numpy()]
-        # for layer in self.layers:
-        #     h = layer(self.g, h)
-        #     l_out.append(th.cat([h[ntype] for ntype in self.g.ntypes], dim=0).detach().numpy())
-
-        h = self.inference(g=self.g, batch_size=256, device='cpu', num_workers=0)
-        l_out = [th.cat([h[ntype] for ntype in self.g.ntypes], dim=0).detach().numpy()]
-
-        return l_out
-
-    def get_embeddings(self, id_maps):
-        return [Embedder(id_maps, e) for e in self.get_layers()]
+    # def get_layers(self):
+    #     """
+    #     Retrieve tensor values on the layers for further use as node embeddings.
+    #     :return:
+    #     """
+    #     # h = self.embed_layer()
+    #     # l_out = [th.cat([h[ntype] for ntype in self.g.ntypes], dim=0).detach().numpy()]
+    #     # for layer in self.layers:
+    #     #     h = layer(self.g, h)
+    #     #     l_out.append(th.cat([h[ntype] for ntype in self.g.ntypes], dim=0).detach().numpy())
+    #
+    #     h = self.inference(batch_size=256, device='cpu', num_workers=0)
+    #     l_out = [th.cat([h[ntype] for ntype in self.g.ntypes], dim=0).detach().numpy()]
+    #
+    #     return l_out
+    #
+    # def get_embeddings(self, id_maps):
+    #     return [Embedder(id_maps, e) for e in self.get_layers()]
