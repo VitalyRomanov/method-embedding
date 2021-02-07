@@ -59,12 +59,12 @@ class ElementEmbedderBase:
         # element_data = element_data.dropna(axis=0)
         return element_data
 
-    def init_neg_sample(self, word2vec_sampling_power=0.75):
+    def init_neg_sample(self, skipgram_sampling_power=0.75):
         # compute distribution of dst elements
         counts = self.elements['emb_id'].value_counts(normalize=True)
         self.idxs = counts.index
         self.neg_prob = counts.to_numpy()
-        self.neg_prob **= word2vec_sampling_power
+        self.neg_prob **= skipgram_sampling_power
 
         self.neg_prob /= sum(self.neg_prob)
 
