@@ -134,6 +134,8 @@ class SourceGraphDataset:
             self.nodes['type'] = "node_"
             self.nodes = self.nodes.astype({'type': 'category'})
 
+        # need to do this to avoid issues insode dgl library
+        self.edges['type'] = self.edges['type'].apply(lambda x: f"{x}_")
         self.edges['type_backup'] = self.edges['type']
         if not self.edges_have_types:
             self.edges['type'] = "edge_"
@@ -266,6 +268,11 @@ class SourceGraphDataset:
         global_map = dict(zip(orig_id, graph_id))
 
         self.nodes['global_graph_id'] = self.nodes['id'].apply(lambda old_id: global_map[old_id])
+        import torch
+        for ntype in self.g.ntypes:
+            self.g.nodes[ntype].data['global_graph_id'] = torch.LongTensor(
+                list(map(lambda x: global_map[x], self.g.nodes[ntype].data['original_id'].tolist()))
+            )
 
     @property
     def typed_node_counts(self):
@@ -328,16 +335,18 @@ class SourceGraphDataset:
         for ntype in self.g.ntypes:
             # int_type = node_types[ntype]
 
-            masks = self.nodes.query(
+            node_data = self.nodes.query(
                 f"type == '{ntype}'"
             )[[
-                'typed_id', 'train_mask', 'test_mask', 'val_mask', 'compact_label'
+                'typed_id', 'train_mask', 'test_mask', 'val_mask', 'compact_label', 'id'
             ]].sort_values('typed_id')
 
-            self.g.nodes[ntype].data['train_mask'] = torch.tensor(masks['train_mask'].values, dtype=torch.bool)
-            self.g.nodes[ntype].data['test_mask'] = torch.tensor(masks['test_mask'].values, dtype=torch.bool)
-            self.g.nodes[ntype].data['val_mask'] = torch.tensor(masks['val_mask'].values, dtype=torch.bool)
-            self.g.nodes[ntype].data['labels'] = torch.tensor(masks['compact_label'].values, dtype=torch.int64)
+            self.g.nodes[ntype].data['train_mask'] = torch.tensor(node_data['train_mask'].values, dtype=torch.bool)
+            self.g.nodes[ntype].data['test_mask'] = torch.tensor(node_data['test_mask'].values, dtype=torch.bool)
+            self.g.nodes[ntype].data['val_mask'] = torch.tensor(node_data['val_mask'].values, dtype=torch.bool)
+            self.g.nodes[ntype].data['labels'] = torch.tensor(node_data['compact_label'].values, dtype=torch.int64)
+            self.g.nodes[ntype].data['typed_id'] = torch.tensor(node_data['typed_id'].values, dtype=torch.int64)
+            self.g.nodes[ntype].data['original_id'] = torch.tensor(node_data['id'].values, dtype=torch.int64)
 
     @classmethod
     def assess_need_for_self_loops(cls, nodes, edges):
