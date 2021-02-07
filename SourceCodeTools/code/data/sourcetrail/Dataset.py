@@ -388,7 +388,7 @@ class SourceGraphDataset:
 
     def load_node_names(self):
         for_training = self.nodes[
-            self.nodes['train_mask'] + self.nodes['test_mask'] + self.nodes['val_mask']
+            self.nodes['train_mask'] | self.nodes['test_mask'] | self.nodes['val_mask']
         ][['id', 'type_backup', 'name']]\
             .rename({"name": "serialized_name", "type_backup": "type"}, axis=1)
 
