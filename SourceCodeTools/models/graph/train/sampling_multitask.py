@@ -224,10 +224,17 @@ class SamplingMultitaskTrainer:
 
         return torch.cat(cumm_logits)
 
+    def seeds_to_global(self, seeds):
+        if type(seeds) is dict:
+            indices = [self.graph_model.g.nodes[type].data["global_graph_id"][seeds[type]] for type in seeds]
+            return torch.cat(indices, dim=0)
+        else:
+            return seeds
+
     def _logits_embedder(self, node_embeddings, elem_embedder, link_predictor, seeds, negative_factor=1):
         k = negative_factor
-        indices = seeds
-        batch_size = len(seeds)
+        indices = self.seeds_to_global(seeds)
+        batch_size = len(indices)
 
         node_embeddings_batch = node_embeddings
         element_embeddings = elem_embedder(elem_embedder[indices.tolist()].to(self.device))
@@ -259,8 +266,8 @@ class SamplingMultitaskTrainer:
                       elem_embedder, link_predictor, create_dataloader,
                       src_seeds, negative_factor=1):
         k = negative_factor
-        indices = src_seeds
-        batch_size = len(src_seeds)
+        indices = self.seeds_to_global(src_seeds)
+        batch_size = len(indices)
 
         node_embeddings_batch = node_embeddings
         next_call_indices = elem_embedder[indices.tolist()]  # this assumes indices is torch tensor
@@ -426,7 +433,7 @@ class SamplingMultitaskTrainer:
         return length
 
     def _get_loaders(self, train_idx, val_idx, test_idx, batch_size):
-        layers = len(self.graph_model.layers)
+        layers = self.graph_model.num_layers
         # train sampler
         sampler = dgl.dataloading.MultiLayerNeighborSampler([self.sampling_neighbourhood_size] * layers)
         loader = dgl.dataloading.NodeDataLoader(
