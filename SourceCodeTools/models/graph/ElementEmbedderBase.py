@@ -9,9 +9,9 @@ from SourceCodeTools.tabular.common import compact_property
 
 
 class ElementEmbedderBase:
-    def __init__(self, elements, nodes, compact_dst=True):
+    def __init__(self, elements, nodes, compact_dst=True, dst_to_global=False):
 
-        self.elements = self.preprocess_element_data(elements.copy(), nodes, compact_dst)
+        self.elements = self.preprocess_element_data(elements.copy(), nodes, compact_dst, dst_to_global=dst_to_global)
 
         if compact_dst:
             elem2id = compact_property(elements['dst'])
@@ -25,7 +25,7 @@ class ElementEmbedderBase:
 
         self.init_neg_sample()
 
-    def preprocess_element_data(self, element_data, nodes, compact_dst):
+    def preprocess_element_data(self, element_data, nodes, compact_dst, dst_to_global=False):
         if len(element_data) == 0:
             logging.error(f"Not enough data for the embedder: {len(element_data)}. Exiting...")
             sys.exit()
@@ -37,6 +37,8 @@ class ElementEmbedderBase:
         element_data['id'] = element_data['src'].apply(lambda x: id2nodeid.get(x, None))
         element_data['src_type'] = element_data['src'].apply(lambda x: id2type.get(x, None))
         element_data['src_typed_id'] = element_data['src'].apply(lambda x: id2typedid.get(x, None))
+        if dst_to_global:
+            element_data['dst'] = element_data['dst'].apply(lambda x: id2nodeid.get(x, None))
         element_data = element_data.astype({
             'id': 'Int32',
             'src_type': 'category',

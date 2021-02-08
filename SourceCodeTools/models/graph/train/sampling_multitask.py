@@ -66,7 +66,7 @@ class SamplingMultitaskTrainer:
 
         from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
         self.ee_api_call = ElementEmbedderBase(
-            elements=dataset.load_api_call(), nodes=dataset.nodes, compact_dst=False
+            elements=dataset.load_api_call(), nodes=dataset.nodes, compact_dst=False, dst_to_global=True
         )
 
 
