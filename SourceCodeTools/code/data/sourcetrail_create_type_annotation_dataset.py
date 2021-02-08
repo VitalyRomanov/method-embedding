@@ -324,6 +324,12 @@ def to_global_ids(entry, id_map, local_names, global_names):
 
 
 def main(args):
+    from argparse import ArgumentParser
+    parser = ArgumentParser()
+    parser.add_argument("working_directory", type=str)
+
+    args = parser.parse_args()
+
     bodies_path = args[1]
     bodies = pd.read_csv(bodies_path)
     id2global = pd.read_csv(args[3])
