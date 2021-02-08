@@ -85,8 +85,7 @@ class SamplingMultitaskTrainer:
 
         self._create_loaders(*self._get_training_targets())
 
-        if pretrained_embeddings_path is not None:
-            self.create_node_embedder(dataset, tokenizer_path, pretrained_path=pretrained_embeddings_path)
+        self.create_node_embedder(dataset, tokenizer_path, n_dims=model_params["h_dim"], pretrained_path=pretrained_embeddings_path)
 
     def create_node_embedder(self, dataset, tokenizer_path, n_dims=None, pretrained_path=None):
         from SourceCodeTools.nlp.embed.fasttext import load_w2v_map
@@ -182,7 +181,7 @@ class SamplingMultitaskTrainer:
             emb[node_type] = self.node_embedder(
                 node_type=node_type, node_ids=nid,
                 train_embeddings=self.pretraining
-            )
+            ).to(self.device)
         return emb
 
     def _logits_batch(self, input_nodes, blocks):
@@ -481,25 +480,25 @@ class SamplingMultitaskTrainer:
             f"test {self._idx_len(test_idx_api_call)}."
         )
 
-        batch_size_node_name = self.batch_size
-
-        def estimate_batch_size(indexes):
-            return ceil(self._idx_len(indexes) / ceil(self._idx_len(train_idx_node_name) / batch_size_node_name))
-
-        batch_size_var_use = estimate_batch_size(train_idx_var_use)
-        batch_size_api_call = estimate_batch_size(train_idx_api_call)
+        # batch_size_node_name = self.batch_size
+        #
+        # def estimate_batch_size(indexes):
+        #     return ceil(self._idx_len(indexes) / ceil(self._idx_len(train_idx_node_name) / batch_size_node_name))
+        #
+        # batch_size_var_use = estimate_batch_size(train_idx_var_use)
+        # batch_size_api_call = estimate_batch_size(train_idx_api_call)
 
         self.loader_node_name, self.test_loader_node_name, self.val_loader_node_name = self._get_loaders(
             train_idx=train_idx_node_name, val_idx=val_idx_node_name, test_idx=test_idx_node_name,
-            batch_size=batch_size_node_name
+            batch_size=self.batch_size  #batch_size_node_name
         )
         self.loader_var_use, self.test_loader_var_use, self.val_loader_var_use = self._get_loaders(
             train_idx=train_idx_var_use, val_idx=val_idx_var_use, test_idx=test_idx_var_use,
-            batch_size=batch_size_var_use
+            batch_size=self.batch_size  #batch_size_var_use
         )
         self.loader_api_call, self.test_loader_api_call, self.val_loader_api_call = self._get_loaders(
             train_idx=train_idx_api_call, val_idx=val_idx_api_call, test_idx=test_idx_api_call,
-            batch_size=batch_size_api_call
+            batch_size=self.batch_size  #batch_size_api_call
         )
 
     def _create_api_call_loader(self, indices):
