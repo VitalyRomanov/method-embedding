@@ -806,7 +806,7 @@ def process_code(source_file_content, offsets, node_resolver, mention_tokenizer,
 
 def get_ast_from_modules(
         nodes, edges, source_location, occurrence, file_content,
-        bpe_tokenizer_path, create_subword_instances, connect_subwords, lang
+        bpe_tokenizer_path, create_subword_instances, connect_subwords, lang, track_offsets=False
 ):
 
     srctrl_resolver = SourcetrailResolver(nodes, edges, source_location, occurrence, file_content, lang)
@@ -832,7 +832,7 @@ def get_ast_from_modules(
         # process code
         # try:
         edges, global_and_ast_offsets, ast_nodes_to_srctrl_nodes = process_code(
-            source_file_content, offsets, node_resolver, mention_tokenizer, node_matcher
+            source_file_content, offsets, node_resolver, mention_tokenizer, node_matcher, track_offsets=track_offsets
         )
         # except SyntaxError:
         #     logging.warning(f"Error processing file_id {file_id}")

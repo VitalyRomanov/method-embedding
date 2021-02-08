@@ -22,7 +22,7 @@ class DatasetCreator:
             self, path, lang,
             bpe_tokenizer, create_subword_instances,
             connect_subwords, only_with_annotations,
-            do_extraction=False, visualize=False
+            do_extraction=False, visualize=False, track_offsets=False
     ):
         self.indexed_path = path
         self.lang = lang
@@ -32,6 +32,7 @@ class DatasetCreator:
         self.only_with_annotations = only_with_annotations
         self.extract = do_extraction
         self.visualize = visualize
+        self.track_offsets = track_offsets
 
         paths = (os.path.join(path, dir) for dir in os.listdir(path))
         self.environments = sorted(list(filter(lambda path: os.path.isdir(path), paths)), key=lambda x: x.lower())
@@ -135,7 +136,8 @@ class DatasetCreator:
             if bodies is not None:
                 ast_nodes, ast_edges, offsets = get_ast_from_modules(
                     nodes, edges, source_location, occurrence, filecontent,
-                    self.bpe_tokenizer, self.create_subword_instances, self.connect_subwords, self.lang
+                    self.bpe_tokenizer, self.create_subword_instances, self.connect_subwords, self.lang,
+                    track_offsets=self.track_offsets
                 )
                 nodes_with_ast = nodes.append(ast_nodes)
                 edges_with_ast = edges.append(ast_edges)
@@ -320,6 +322,7 @@ if __name__ == "__main__":
     parser.add_argument('--only_with_annotations', action='store_true', default=False, help="")
     parser.add_argument('--do_extraction', action='store_true', default=False, help="")
     parser.add_argument('--visualize', action='store_true', default=False, help="")
+    parser.add_argument('--track_offsets', action='store_true', default=False, help="")
 
 
     args = parser.parse_args()
@@ -329,5 +332,5 @@ if __name__ == "__main__":
     dataset = DatasetCreator(args.indexed_environments, args.language,
                              args.bpe_tokenizer, args.create_subword_instances,
                              args.connect_subwords, args.only_with_annotations,
-                             args.do_extraction, args.visualize)
+                             args.do_extraction, args.visualize, args.track_offsets)
     dataset.merge(args.output_directory)
