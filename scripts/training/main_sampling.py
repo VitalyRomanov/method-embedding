@@ -120,6 +120,9 @@ if __name__ == "__main__":
     parser.add_argument('--self_loops', action='store_true')
     parser.add_argument('--override_labels', action='store_true')
     parser.add_argument('--intermediate_supervision', action='store_true')
+    parser.add_argument('--use_gcn_checkpoint', action='store_true')
+    parser.add_argument('--use_att_checkpoint', action='store_true')
+    parser.add_argument('--use_gru_checkpoint', action='store_true')
     parser.add_argument('--gpu', dest='gpu', default=-1, type=int,
                         help='')
 

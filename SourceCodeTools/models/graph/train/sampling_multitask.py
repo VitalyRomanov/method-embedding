@@ -719,6 +719,9 @@ def training_procedure(
     device = select_device(args)
 
     model_params['num_classes'] = args.node_emb_size
+    model_params['use_gcn_checkpoint'] = args.use_gcn_checkpoint
+    model_params['use_att_checkpoint'] = args.use_att_checkpoint
+    model_params['use_gru_checkpoint'] = args.use_gru_checkpoint
 
     trainer_params = {
         'lr': model_params.pop('lr'),

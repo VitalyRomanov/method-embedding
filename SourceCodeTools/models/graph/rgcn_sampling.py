@@ -20,13 +20,15 @@ class CkptGATConv(dglnn.GATConv):
                  negative_slope=0.2,
                  residual=False,
                  activation=None,
-                 allow_zero_in_degree=False):
+                 allow_zero_in_degree=False,
+                 use_checkpoint=False):
         super(CkptGATConv, self).__init__(
             in_feats, out_feats, num_heads,
             feat_drop=feat_drop, attn_drop=attn_drop, negative_slope=negative_slope,
             residual=residual, activation=activation, allow_zero_in_degree=allow_zero_in_degree
         )
         self.dummy_tensor = th.ones(1, dtype=th.float32, requires_grad=True)
+        self.use_checkpoint = use_checkpoint
 
     def custom(self, graph):
         def custom_forward(*inputs):
@@ -35,7 +37,10 @@ class CkptGATConv(dglnn.GATConv):
         return custom_forward
 
     def forward(self, graph, feat):
-        return checkpoint.checkpoint(self.custom(graph), feat[0], feat[1], self.dummy_tensor)
+        if self.use_checkpoint:
+            return checkpoint.checkpoint(self.custom(graph), feat[0], feat[1], self.dummy_tensor)
+        else:
+            super(CkptGATConv, self).forward(graph, feat)
 
 
 class RelGraphConvLayer(nn.Module):
@@ -72,7 +77,7 @@ class RelGraphConvLayer(nn.Module):
                  bias=True,
                  activation=None,
                  self_loop=False,
-                 dropout=0.0):
+                 dropout=0.0, use_gcn_checkpoint=False, **kwargs):
         super(RelGraphConvLayer, self).__init__()
         self.in_feat = in_feat
         self.out_feat = out_feat
@@ -81,6 +86,7 @@ class RelGraphConvLayer(nn.Module):
         self.bias = bias
         self.activation = activation
         self.self_loop = self_loop
+        self.use_gcn_checkpoint = use_gcn_checkpoint
 
         # TODO
         # think of possibility switching to GAT
@@ -114,7 +120,7 @@ class RelGraphConvLayer(nn.Module):
 
     def create_conv(self, in_feat, out_feat, rel_names):
         self.conv = dglnn.HeteroGraphConv({
-            rel: CkptGATConv(in_feat, out_feat, num_heads=1)
+            rel: CkptGATConv(in_feat, out_feat, num_heads=1, use_checkpoint=self.use_gcn_checkpoint)
             for rel in rel_names
         })
 
@@ -215,7 +221,8 @@ class RGCNSampling(nn.Module):
                  num_hidden_layers=1,
                  dropout=0,
                  use_self_loop=False,
-                 activation=F.relu):
+                 activation=F.relu,
+                 use_gcn_checkpoint=False, **kwargs):
         super(RGCNSampling, self).__init__()
         self.g = g
         self.h_dim = h_dim
@@ -238,13 +245,13 @@ class RGCNSampling(nn.Module):
         self.layers.append(RelGraphConvLayer(
             self.h_dim, self.h_dim, self.rel_names,
             self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
-            dropout=self.dropout, weight=False))
+            dropout=self.dropout, weight=False, use_gcn_checkpoint=use_gcn_checkpoint))
         # h2h
         for i in range(self.num_hidden_layers):
             self.layers.append(RelGraphConvLayer(
                 self.h_dim, self.h_dim, self.rel_names,
                 self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
-                dropout=self.dropout, weight=False)) # changed weight for GATConv
+                dropout=self.dropout, weight=False, use_gcn_checkpoint=use_gcn_checkpoint)) # changed weight for GATConv
             # TODO
             # think of possibility switching to GAT
             # weight=False
@@ -252,7 +259,7 @@ class RGCNSampling(nn.Module):
         self.layers.append(RelGraphConvLayer(
             self.h_dim, self.out_dim, self.rel_names,
             self.num_bases, activation=None,
-            self_loop=self.use_self_loop, weight=False)) # changed weight for GATConv
+            self_loop=self.use_self_loop, weight=False, use_gcn_checkpoint=use_gcn_checkpoint)) # changed weight for GATConv
         # TODO
         # think of possibility switching to GAT
         # weight=False
