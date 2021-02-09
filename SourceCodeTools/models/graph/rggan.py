@@ -1,4 +1,4 @@
-from SourceCodeTools.models.graph.rgcn_sampling import RGCNSampling, RelGraphConvLayer
+from SourceCodeTools.models.graph.rgcn_sampling import RGCNSampling, RelGraphConvLayer, CkptGATConv
 
 import torch as th
 import torch.nn as nn
@@ -38,49 +38,17 @@ class RGANLayer(RelGraphConvLayer):
                  activation=None,
                  self_loop=False,
                  dropout=0.0):
-        super(RelGraphConvLayer, self).__init__()
-        self.in_feat = in_feat
-        self.out_feat = out_feat
-        self.rel_names = rel_names
-        self.num_bases = num_bases
-        self.bias = bias
-        self.activation = activation
-        self.self_loop = self_loop
+        super(RGANLayer, self).__init__(
+            in_feat, out_feat, rel_names, num_bases,
+            weight=weight, bias=bias, activation=activation, self_loop=self_loop, dropout=dropout
+        )
 
+    def create_conv(self, in_feat, out_feat, rel_names):
         self.attentive_aggregator = AttentiveAggregator(out_feat)
-
-        # TODO
-        # think of possibility switching to GAT
-        # rel : dglnn.GATConv(in_feat, out_feat, num_heads=4)
-        # rel : dglnn.GraphConv(in_feat, out_feat, norm='right', weight=False, bias=False, allow_zero_in_degree=True)
         self.conv = dglnn.HeteroGraphConv({
-                rel : dglnn.GATConv(in_feat, out_feat, num_heads=1)
-                for rel in rel_names
-            }, aggregate=self.attentive_aggregator)
-
-        self.use_weight = weight
-        self.use_basis = num_bases < len(self.rel_names) and weight
-        if self.use_weight:
-            if self.use_basis:
-                self.basis = dglnn.WeightBasis((in_feat, out_feat), num_bases, len(self.rel_names))
-            else:
-                self.weight = nn.Parameter(th.Tensor(len(self.rel_names), in_feat, out_feat))
-                # nn.init.xavier_uniform_(self.weight, gain=nn.init.calculate_gain('relu'))
-                nn.init.xavier_normal_(self.weight)
-
-        # bias
-        if bias:
-            self.h_bias = nn.Parameter(th.Tensor(out_feat))
-            nn.init.zeros_(self.h_bias)
-
-        # weight for self loop
-        if self.self_loop:
-            self.loop_weight = nn.Parameter(th.Tensor(in_feat, out_feat))
-            # nn.init.xavier_uniform_(self.loop_weight,
-            #                         gain=nn.init.calculate_gain('relu'))
-            nn.init.xavier_normal_(self.loop_weight)
-
-        self.dropout = nn.Dropout(dropout)
+            rel: CkptGATConv(in_feat, out_feat, num_heads=1)
+            for rel in rel_names
+        }, aggregate=self.attentive_aggregator)
 
 
 class RGAN(RGCNSampling):
@@ -157,7 +125,7 @@ class OneStepGRU(nn.Module):
 
 
 
-class RGGANLayer(RelGraphConvLayer):
+class RGGANLayer(RGANLayer):
     def __init__(self,
                  in_feat,
                  out_feat,

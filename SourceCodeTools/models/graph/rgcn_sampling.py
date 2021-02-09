@@ -6,7 +6,37 @@ import torch.nn.functional as F
 import dgl
 import dgl.nn as dglnn
 # import tqdm
+from torch.utils import checkpoint
+
 from SourceCodeTools.models.Embedder import Embedder
+
+class CkptGATConv(dglnn.GATConv):
+    def __init__(self,
+                 in_feats,
+                 out_feats,
+                 num_heads,
+                 feat_drop=0.,
+                 attn_drop=0.,
+                 negative_slope=0.2,
+                 residual=False,
+                 activation=None,
+                 allow_zero_in_degree=False):
+        super(CkptGATConv, self).__init__(
+            in_feats, out_feats, num_heads,
+            feat_drop=feat_drop, attn_drop=attn_drop, negative_slope=negative_slope,
+            residual=residual, activation=activation, allow_zero_in_degree=allow_zero_in_degree
+        )
+        self.dummy_tensor = th.ones(1, dtype=th.float32, requires_grad=True)
+
+    def custom(self, graph):
+        def custom_forward(*inputs):
+            feat0, feat1, dummy = inputs
+            return super(CkptGATConv, self).forward(graph, (feat0, feat1))
+        return custom_forward
+
+    def forward(self, graph, feat):
+        return checkpoint.checkpoint(self.custom(graph), feat[0], feat[1], self.dummy_tensor)
+
 
 class RelGraphConvLayer(nn.Module):
     r"""Relational graph convolution layer.
@@ -56,10 +86,7 @@ class RelGraphConvLayer(nn.Module):
         # think of possibility switching to GAT
         # rel : dglnn.GATConv(in_feat, out_feat, num_heads=4)
         # rel : dglnn.GraphConv(in_feat, out_feat, norm='right', weight=False, bias=False, allow_zero_in_degree=True)
-        self.conv = dglnn.HeteroGraphConv({
-                rel : dglnn.GATConv(in_feat, out_feat, num_heads=1)
-                for rel in rel_names
-            })
+        self.create_conv(in_feat, out_feat, rel_names)
 
         self.use_weight = weight
         self.use_basis = num_bases < len(self.rel_names) and weight
@@ -84,6 +111,13 @@ class RelGraphConvLayer(nn.Module):
             nn.init.xavier_normal_(self.loop_weight)
 
         self.dropout = nn.Dropout(dropout)
+
+    def create_conv(self, in_feat, out_feat, rel_names):
+        self.conv = dglnn.HeteroGraphConv({
+            rel: CkptGATConv(in_feat, out_feat, num_heads=1)
+            for rel in rel_names
+        })
+
 
     def forward(self, g, inputs):
         """Forward computation
@@ -243,6 +277,13 @@ class RGCNSampling(nn.Module):
     #             h = layer(block, h)
     #     return h
 
+    def custom(self, layer):
+        def custom_forward(*inputs):
+            block, h = inputs
+            h = layer(block, h)
+            return h
+        return custom_forward
+
     def forward(self, h, blocks=None,
                 return_all=False): # added this as an experimental feature for intermediate supervision
         # if h is None:
@@ -259,6 +300,7 @@ class RGCNSampling(nn.Module):
         # else:
         # minibatch training
         for layer, block in zip(self.layers, blocks):
+            # h = checkpoint.checkpoint(self.custom(layer), block, h)
             h = layer(block, h)
             all_layers.append(h) # added this as an experimental feature for intermediate supervision
 
