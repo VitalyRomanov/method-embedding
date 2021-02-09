@@ -40,7 +40,7 @@ class CkptGATConv(dglnn.GATConv):
         if self.use_checkpoint:
             return checkpoint.checkpoint(self.custom(graph), feat[0], feat[1], self.dummy_tensor)
         else:
-            super(CkptGATConv, self).forward(graph, feat)
+            return super(CkptGATConv, self).forward(graph, feat)
 
 
 class RelGraphConvLayer(nn.Module):
