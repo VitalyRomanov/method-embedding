@@ -1,7 +1,10 @@
+import os
+from copy import copy
 from typing import Tuple
 
 import torch
 import torch.nn as nn
+from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import ExponentialLR
 import dgl
 from math import ceil
@@ -36,7 +39,10 @@ class SamplingMultitaskTrainer:
         self.trainer_params = trainer_params
         self.device = device
         self.epoch = 0
+        self.batch = 0
         self.dtype = torch.float32
+
+        self.summary_writer = SummaryWriter(os.path.dirname(self.model_base_path))
 
         # self.ee_node_name = create_elem_embedder(
         #     dataset.load_node_names(), dataset.nodes,
@@ -174,6 +180,17 @@ class SamplingMultitaskTrainer:
     #     for node_type, nid in input_nodes.items():
     #         emb[node_type] = node_embed[node_type][nid]
     #     return emb
+
+    def write_summary(self, scores, batch_step):
+        main_name = os.path.basename(self.model_base_path)
+        for var, val in scores.items():
+            self.summary_writer.add_scalar(f"{main_name}/{var}", val, batch_step)
+
+    def write_hyperparams(self, scores, epoch):
+        params = copy(self.model_params)
+        params["epoch"] = epoch
+        main_name = os.path.basename(self.model_base_path)
+        self.summary_writer.add_hparams(params, scores, run_name=main_name)
 
     def _extract_embed(self, input_nodes):
         emb = {}
@@ -528,7 +545,7 @@ class SamplingMultitaskTrainer:
         :return:
         """
 
-        for epoch in range(self.epochs):
+        for epoch in range(self.epoch, self.epochs):
             self.epoch = epoch
 
             start = time()
@@ -571,6 +588,16 @@ class SamplingMultitaskTrainer:
                 loss.backward()
                 self.optimizer.step()
 
+                self.write_summary(
+                    {
+                        "Loss/train": loss,
+                        "Accuracy/train/node_name": train_acc_node_name,
+                        "Accuracy/train/var_use": train_acc_var_use,
+                        "Accuracy/train/api_call": train_acc_api_call
+                    }, self.batch
+                )
+                self.batch += 1
+
             _, val_acc_node_name, val_acc_var_use, val_acc_api_call = self._evaluate_objectives(
                 self.val_loader_node_name, self.val_loader_var_use, self.val_loader_api_call, self.neg_sampling_factor
             )
@@ -591,6 +618,34 @@ class SamplingMultitaskTrainer:
 
             self.save_checkpoint(self.model_base_path)
 
+            self.write_summary(
+                {
+                    "Accuracy/test/node_name": test_acc_node_name,
+                    "Accuracy/test/var_use": test_acc_var_use,
+                    "Accuracy/test/api_call": test_acc_api_call,
+                    "Accuracy/val/node_name": val_acc_node_name,
+                    "Accuracy/val/var_use": val_acc_var_use,
+                    "Accuracy/val/api_call": val_acc_api_call
+                }, self.batch
+            )
+
+            self.write_hyperparams({
+                "Loss/train": loss,
+                "Accuracy/train/node_name": train_acc_node_name,
+                "Accuracy/train/var_use": train_acc_var_use,
+                "Accuracy/train/api_call": train_acc_api_call,
+                "Accuracy/test/node_name": test_acc_node_name,
+                "Accuracy/test/var_use": test_acc_var_use,
+                "Accuracy/test/api_call": test_acc_api_call,
+                "Accuracy/val/node_name": val_acc_node_name,
+                "Accuracy/val/var_use": val_acc_var_use,
+                "Accuracy/val/api_call": val_acc_api_call
+            }, self.epoch)
+
+            if self.epoch > 0 and self.epoch % self.trainer_params["shedule_layers_every"] == 0:
+                if hasattr(self.graph_model, "schedule_next_layer"):
+                    self.graph_model.schedule_next_layer()
+
             self.lr_scheduler.step()
 
     def save_checkpoint(self, checkpoint_path=None, checkpoint_name=None, **kwargs):
@@ -605,7 +660,8 @@ class SamplingMultitaskTrainer:
             "lp_node_name": self.lp_node_name.state_dict(),
             "lp_var_use": self.lp_var_use.state_dict(),
             "lp_api_call": self.lp_api_call.state_dict(),
-            "epoch": self.epoch
+            "epoch": self.epoch,
+            "batch": self.batch
         }
 
         if len(kwargs) > 0:
@@ -622,6 +678,8 @@ class SamplingMultitaskTrainer:
         self.lp_node_name.load_state_dict(checkpoint['lp_node_name'])
         self.lp_var_use.load_state_dict(checkpoint['lp_var_use'])
         self.lp_api_call.load_state_dict(checkpoint['lp_api_call'])
+        self.epoch = checkpoint['epoch']
+        self.batch = checkpoint['batch']
         logging.info(f"Restored from epoch {checkpoint['epoch']}")
 
     def final_evaluation(self):
@@ -734,7 +792,9 @@ def training_procedure(
         # 'call_seq_file': args.call_seq_file,
         'elem_emb_size': args.elem_emb_size,
         'model_base_path': model_base_path,
-        'pretraining_phase': args.pretraining_phase
+        'pretraining_phase': args.pretraining_phase,
+        'use_layer_scheduling': args.use_layer_scheduling,
+        'shedule_layers_every': args.shedule_layers_every
     }
 
     trainer = SamplingMultitaskTrainer(
