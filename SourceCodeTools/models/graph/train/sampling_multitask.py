@@ -197,7 +197,7 @@ class SamplingMultitaskTrainer:
 
         main_name = os.path.basename(self.model_base_path)
         scores = {f"h_metric/{k}": v for k,v in scores.items()}
-        self.summary_writer.add_hparams(params, scores, run_name=f"{main_name}/{epoch}")
+        self.summary_writer.add_hparams(params, scores, run_name=f"h_metric/{epoch}")
 
     def _extract_embed(self, input_nodes):
         emb = {}
@@ -605,6 +605,8 @@ class SamplingMultitaskTrainer:
                 )
                 self.batch += 1
 
+            self.eval()
+
             _, val_acc_node_name, val_acc_var_use, val_acc_api_call = self._evaluate_objectives(
                 self.val_loader_node_name, self.val_loader_var_use, self.val_loader_api_call, self.neg_sampling_factor
             )
@@ -613,6 +615,8 @@ class SamplingMultitaskTrainer:
                 self.test_loader_node_name, self.test_loader_var_use, self.test_loader_api_call,
                 self.neg_sampling_factor
             )
+
+            self.train()
 
             end = time()
 
@@ -636,18 +640,18 @@ class SamplingMultitaskTrainer:
                 }, self.batch
             )
 
-            # self.write_hyperparams({
-            #     "Loss/train_vs_epoch": loss,
-            #     "Accuracy/train/node_name_vs_epoch": train_acc_node_name,
-            #     "Accuracy/train/var_use_vs_epoch": train_acc_var_use,
-            #     "Accuracy/train/api_call_vs_epoch": train_acc_api_call,
-            #     "Accuracy/test/node_name_vs_epoch": test_acc_node_name,
-            #     "Accuracy/test/var_use_vs_epoch": test_acc_var_use,
-            #     "Accuracy/test/api_call_vs_epoch": test_acc_api_call,
-            #     "Accuracy/val/node_name_vs_epoch": val_acc_node_name,
-            #     "Accuracy/val/var_use_vs_epoch": val_acc_var_use,
-            #     "Accuracy/val/api_call_vs_epoch": val_acc_api_call
-            # }, self.epoch)
+            self.write_hyperparams({
+                "Loss/train_vs_epoch": loss,
+                "Accuracy/train/node_name_vs_epoch": train_acc_node_name,
+                "Accuracy/train/var_use_vs_epoch": train_acc_var_use,
+                "Accuracy/train/api_call_vs_epoch": train_acc_api_call,
+                "Accuracy/test/node_name_vs_epoch": test_acc_node_name,
+                "Accuracy/test/var_use_vs_epoch": test_acc_var_use,
+                "Accuracy/test/api_call_vs_epoch": test_acc_api_call,
+                "Accuracy/val/node_name_vs_epoch": val_acc_node_name,
+                "Accuracy/val/var_use_vs_epoch": val_acc_var_use,
+                "Accuracy/val/api_call_vs_epoch": val_acc_api_call
+            }, self.epoch)
 
             self.lr_scheduler.step()
 
@@ -734,6 +738,15 @@ class SamplingMultitaskTrainer:
         self.lp_node_name.eval()
         self.lp_var_use.eval()
         self.lp_api_call.eval()
+
+    def train(self):
+        self.graph_model.train()
+        self.ee_node_name.train()
+        self.ee_var_use.train()
+        # self.ee_api_call.eval()
+        self.lp_node_name.train()
+        self.lp_var_use.train()
+        self.lp_api_call.train()
 
     def to(self, device):
         self.graph_model.to(device)
