@@ -190,6 +190,10 @@ class SamplingMultitaskTrainer:
         params = copy(self.model_params)
         params["epoch"] = epoch
         main_name = os.path.basename(self.model_base_path)
+        params = {k: v for k,v in params.items() if type(v) in {int, float, str, bool, torch.Tensor}}
+
+        main_name = os.path.basename(self.model_base_path)
+        scores = {f"{main_name}/{k}": v for k,v in scores.items()}
         self.summary_writer.add_hparams(params, scores, run_name=main_name)
 
     def _extract_embed(self, input_nodes):
@@ -590,10 +594,10 @@ class SamplingMultitaskTrainer:
 
                 self.write_summary(
                     {
-                        "Loss/train": loss,
-                        "Accuracy/train/node_name": train_acc_node_name,
-                        "Accuracy/train/var_use": train_acc_var_use,
-                        "Accuracy/train/api_call": train_acc_api_call
+                        "Loss/train_vs_batch": loss,
+                        "Accuracy/train/node_name_vs_batch": train_acc_node_name,
+                        "Accuracy/train/var_use_vs_batch": train_acc_var_use,
+                        "Accuracy/train/api_call_vs_batch": train_acc_api_call
                     }, self.batch
                 )
                 self.batch += 1
@@ -620,26 +624,26 @@ class SamplingMultitaskTrainer:
 
             self.write_summary(
                 {
-                    "Accuracy/test/node_name": test_acc_node_name,
-                    "Accuracy/test/var_use": test_acc_var_use,
-                    "Accuracy/test/api_call": test_acc_api_call,
-                    "Accuracy/val/node_name": val_acc_node_name,
-                    "Accuracy/val/var_use": val_acc_var_use,
-                    "Accuracy/val/api_call": val_acc_api_call
+                    "Accuracy/test/node_name_vs_batch": test_acc_node_name,
+                    "Accuracy/test/var_use_vs_batch": test_acc_var_use,
+                    "Accuracy/test/api_call_vs_batch": test_acc_api_call,
+                    "Accuracy/val/node_name_vs_batch": val_acc_node_name,
+                    "Accuracy/val/var_use_vs_batch": val_acc_var_use,
+                    "Accuracy/val/api_call_vs_batch": val_acc_api_call
                 }, self.batch
             )
 
             self.write_hyperparams({
-                "Loss/train": loss,
-                "Accuracy/train/node_name": train_acc_node_name,
-                "Accuracy/train/var_use": train_acc_var_use,
-                "Accuracy/train/api_call": train_acc_api_call,
-                "Accuracy/test/node_name": test_acc_node_name,
-                "Accuracy/test/var_use": test_acc_var_use,
-                "Accuracy/test/api_call": test_acc_api_call,
-                "Accuracy/val/node_name": val_acc_node_name,
-                "Accuracy/val/var_use": val_acc_var_use,
-                "Accuracy/val/api_call": val_acc_api_call
+                "Loss/train_vs_epoch": loss,
+                "Accuracy/train/node_name_vs_epoch": train_acc_node_name,
+                "Accuracy/train/var_use_vs_epoch": train_acc_var_use,
+                "Accuracy/train/api_call_vs_epoch": train_acc_api_call,
+                "Accuracy/test/node_name_vs_epoch": test_acc_node_name,
+                "Accuracy/test/var_use_vs_epoch": test_acc_var_use,
+                "Accuracy/test/api_call_vs_epoch": test_acc_api_call,
+                "Accuracy/val/node_name_vs_epoch": val_acc_node_name,
+                "Accuracy/val/var_use_vs_epoch": val_acc_var_use,
+                "Accuracy/val/api_call_vs_epoch": val_acc_api_call
             }, self.epoch)
 
             if self.epoch > 0 and self.epoch % self.trainer_params["shedule_layers_every"] == 0:
