@@ -42,7 +42,8 @@ class SamplingMultitaskTrainer:
         self.batch = 0
         self.dtype = torch.float32
 
-        self.summary_writer = SummaryWriter(os.path.dirname(self.model_base_path))
+        # self.summary_writer = SummaryWriter(os.path.dirname(self.model_base_path))
+        self.summary_writer = SummaryWriter(self.model_base_path)
 
         # self.ee_node_name = create_elem_embedder(
         #     dataset.load_node_names(), dataset.nodes,
@@ -86,7 +87,7 @@ class SamplingMultitaskTrainer:
 
         self.optimizer = self._create_optimizer()
 
-        self.lr_scheduler = ExponentialLR(self.optimizer, gamma=0.991)
+        self.lr_scheduler = ExponentialLR(self.optimizer, gamma=1.0)
         self.best_score = BestScoreTracker()
 
         self._create_loaders(*self._get_training_targets())
@@ -182,9 +183,11 @@ class SamplingMultitaskTrainer:
     #     return emb
 
     def write_summary(self, scores, batch_step):
-        main_name = os.path.basename(self.model_base_path)
+        # main_name = os.path.basename(self.model_base_path)
         for var, val in scores.items():
-            self.summary_writer.add_scalar(f"{main_name}/{var}", val, batch_step)
+            # self.summary_writer.add_scalar(f"{main_name}/{var}", val, batch_step)
+            self.summary_writer.add_scalar(var, val, batch_step)
+        # self.summary_writer.add_scalars(main_name, scores, batch_step)
 
     def write_hyperparams(self, scores, epoch):
         params = copy(self.model_params)
@@ -193,8 +196,8 @@ class SamplingMultitaskTrainer:
         params = {k: v for k,v in params.items() if type(v) in {int, float, str, bool, torch.Tensor}}
 
         main_name = os.path.basename(self.model_base_path)
-        scores = {f"{main_name}/{k}": v for k,v in scores.items()}
-        self.summary_writer.add_hparams(params, scores, run_name=main_name)
+        scores = {f"h_metric/{k}": v for k,v in scores.items()}
+        self.summary_writer.add_hparams(params, scores, run_name=f"{main_name}/{epoch}")
 
     def _extract_embed(self, input_nodes):
         emb = {}
@@ -594,7 +597,7 @@ class SamplingMultitaskTrainer:
 
                 self.write_summary(
                     {
-                        "Loss/train_vs_batch": loss,
+                        "Loss": loss,
                         "Accuracy/train/node_name_vs_batch": train_acc_node_name,
                         "Accuracy/train/var_use_vs_batch": train_acc_var_use,
                         "Accuracy/train/api_call_vs_batch": train_acc_api_call
@@ -633,22 +636,18 @@ class SamplingMultitaskTrainer:
                 }, self.batch
             )
 
-            self.write_hyperparams({
-                "Loss/train_vs_epoch": loss,
-                "Accuracy/train/node_name_vs_epoch": train_acc_node_name,
-                "Accuracy/train/var_use_vs_epoch": train_acc_var_use,
-                "Accuracy/train/api_call_vs_epoch": train_acc_api_call,
-                "Accuracy/test/node_name_vs_epoch": test_acc_node_name,
-                "Accuracy/test/var_use_vs_epoch": test_acc_var_use,
-                "Accuracy/test/api_call_vs_epoch": test_acc_api_call,
-                "Accuracy/val/node_name_vs_epoch": val_acc_node_name,
-                "Accuracy/val/var_use_vs_epoch": val_acc_var_use,
-                "Accuracy/val/api_call_vs_epoch": val_acc_api_call
-            }, self.epoch)
-
-            if self.epoch > 0 and self.epoch % self.trainer_params["shedule_layers_every"] == 0:
-                if hasattr(self.graph_model, "schedule_next_layer"):
-                    self.graph_model.schedule_next_layer()
+            # self.write_hyperparams({
+            #     "Loss/train_vs_epoch": loss,
+            #     "Accuracy/train/node_name_vs_epoch": train_acc_node_name,
+            #     "Accuracy/train/var_use_vs_epoch": train_acc_var_use,
+            #     "Accuracy/train/api_call_vs_epoch": train_acc_api_call,
+            #     "Accuracy/test/node_name_vs_epoch": test_acc_node_name,
+            #     "Accuracy/test/var_use_vs_epoch": test_acc_var_use,
+            #     "Accuracy/test/api_call_vs_epoch": test_acc_api_call,
+            #     "Accuracy/val/node_name_vs_epoch": val_acc_node_name,
+            #     "Accuracy/val/var_use_vs_epoch": val_acc_var_use,
+            #     "Accuracy/val/api_call_vs_epoch": val_acc_api_call
+            # }, self.epoch)
 
             self.lr_scheduler.step()
 
