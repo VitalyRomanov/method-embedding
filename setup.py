@@ -37,7 +37,7 @@ setup(name='SourceCodeTools',
             'SourceCodeTools/code/data/sourcetrail/sourcetrail_node_local2global.py',
             'SourceCodeTools/code/data/sourcetrail/sourcetrail_connected_component.py',
             'SourceCodeTools/code/data/sourcetrail/pandas_format_converter.py',
-            'SourceCodeTools/nlp/entity/annotator/sourcecodetools-extract-type-annotations.py',
+            # 'SourceCodeTools/nlp/entity/annotator/sourcecodetools-extract-type-annotations.py',
             'SourceCodeTools/nlp/embed/converters/convert_fasttext_format_bin_to_vec.py',
       ],
 )
