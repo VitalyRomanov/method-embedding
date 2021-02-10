@@ -104,6 +104,8 @@ if __name__ == "__main__":
                         help='')
     parser.add_argument('--num_per_neigh', dest='num_per_neigh', default=10, type=int,
                         help='')
+    parser.add_argument('--shedule_layers_every', dest='shedule_layers_every', default=10, type=int,
+                        help='')
     parser.add_argument('--neg_sampling_factor', dest='neg_sampling_factor', default=3, type=int,
                         help='')
     parser.add_argument('--epochs', dest='epochs', default=100, type=int,
@@ -120,6 +122,7 @@ if __name__ == "__main__":
     parser.add_argument('--self_loops', action='store_true')
     parser.add_argument('--override_labels', action='store_true')
     parser.add_argument('--intermediate_supervision', action='store_true')
+    parser.add_argument('--use_layer_scheduling', action='store_true')
     parser.add_argument('--use_gcn_checkpoint', action='store_true')
     parser.add_argument('--use_att_checkpoint', action='store_true')
     parser.add_argument('--use_gru_checkpoint', action='store_true')
