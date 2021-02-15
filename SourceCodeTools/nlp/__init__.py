@@ -24,6 +24,26 @@ def _inject_tokenizer(nlp):
 
 
 def create_tokenizer(type, bpe_path=None, regex=None):
+    """
+    Create tokenizer instance. Usage
+
+    ```
+    tok = create_tokenizer("spacy") # create spacy doc
+    tokens = tok("string for tokenization")
+
+    ...
+
+    tok = create_tokenizer("bpe") # create list of tokens
+    tokens = tok("string for tokenization")
+    ```
+
+    :param type: tokenizer type is one of [spacy|regex|bpe]. Spacy creates a blank english tokenizer with additional
+        tokenization rules. Regex tokenizer is a simple tokenizer from nltk that uses regular expression
+        `[\w]+|[^\w\s]|[0-9]+`. BPE tokenizer is an instance of sentencepiece model (requires pretrained model).
+    :param bpe_path: path for pretrained BPE model. Used for BPE tokenizer
+    :param regex: Override regular expression for Regex tokenizer.
+    :return: Returns spacy pipeline (nlp) or a tokenize function.
+    """
     if type == "spacy":
         import spacy
         return _inject_tokenizer(spacy.blank("en"))
