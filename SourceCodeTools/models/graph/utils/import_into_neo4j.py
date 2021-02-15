@@ -25,7 +25,7 @@ def main(args):
     driver = GraphDatabase.driver(uri, auth=(f"{args.user}", f"{args.password}"))
 
     def create_node(tx, id_, name_, node_type):
-        tx.run(f"CREATE (n:{node_type}{{id:{id_}, name:'{name_}'}})")
+        tx.run(f"CREATE (n:{node_type.replace('#','_')}{{id:{id_}, name:'{name_}'}})")
 
     def create_edge(tx, src, dst, edge_type):
         tx.run(f"""
@@ -35,8 +35,8 @@ def main(args):
 
     def create_indexes(tx, types):
         for type in types:
-            tx.run(f"create index on :{type}(id)")
-            tx.run(f"create index on :{type}(name)")
+            tx.run(f"create index on :{type.replace('#','_')}(id)")
+            tx.run(f"create index on :{type.replace('#','_')}(name)")
 
     with driver.session() as session:
         # https://neo4j.com/docs/api/python-driver/current/api.html#explicit-transactions
