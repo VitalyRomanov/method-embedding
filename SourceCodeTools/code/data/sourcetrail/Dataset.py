@@ -139,7 +139,6 @@ class SourceGraphDataset:
             self.nodes = self.nodes.astype({'type': 'category'})
 
         self.add_embeddable_flag()
-        self.add_op_tokens()
 
         # need to do this to avoid issues insode dgl library
         self.edges['type'] = self.edges['type'].apply(lambda x: f"{x}_")
@@ -204,8 +203,7 @@ class SourceGraphDataset:
 
         if len(self.nodes.query("type_backup == 'subword'")) > 0:
             # some of the types should not be embedded if subwords were generated
-            embeddable_types = embeddable_types - {"#attr#"}
-            embeddable_types = embeddable_types - {"#keyword#"}
+            embeddable_types = embeddable_types - PythonSharedNodes.tokenizable_types
 
         # self.nodes['embeddable'] = False
         self.nodes.eval(
@@ -214,24 +212,30 @@ class SourceGraphDataset:
             inplace=True
         )
 
-    def add_op_tokens(self):
+    def op_tokens(self):
         if self.tokenizer_path is None:
             from SourceCodeTools.code.python_tokens_to_bpe_subwords import python_ops_to_bpe
             logging.info("Using heuristic tokenization for ops")
 
-            def op_tokenize(op_name):
-                return python_ops_to_bpe[op_name] if op_name in python_ops_to_bpe else None
+            # def op_tokenize(op_name):
+            #     return python_ops_to_bpe[op_name] if op_name in python_ops_to_bpe else None
+            return python_ops_to_bpe
         else:
-            # from SourceCodeTools.code.python_tokens_to_bpe_subwords import python_ops_to_literal
-            from SourceCodeTools.code.python_tokens_to_bpe_subwords import op_tokenize_or_none
+            # from SourceCodeTools.code.python_tokens_to_bpe_subwords import op_tokenize_or_none
 
             tokenizer = make_tokenizer(load_bpe_model(self.tokenizer_path))
 
-            def op_tokenize(op_name):
-                return op_tokenize_or_none(op_name, tokenizer)
+            # def op_tokenize(op_name):
+            #     return op_tokenize_or_none(op_name, tokenizer)
 
-        self.nodes.eval("name_alter_tokens = name.map(@op_tokenize)",
-                        local_dict={"op_tokenize": op_tokenize}, inplace=True)
+            from SourceCodeTools.code.python_tokens_to_bpe_subwords import python_ops_to_literal
+            return {
+                op_name: tokenizer(op_literal)
+                for op_name, op_literal in python_ops_to_literal.items()
+            }
+
+        # self.nodes.eval("name_alter_tokens = name.map(@op_tokenize)",
+        #                 local_dict={"op_tokenize": op_tokenize}, inplace=True)
 
     def add_splits(self, train_frac):
 
@@ -451,6 +455,39 @@ class SourceGraphDataset:
     def load_api_call(self):
         path = join(self.data_path, "common_call_seq.bz2")
         return unpersist(path)
+
+    def buckets_from_pretrained_embeddings(self, pretrained_path, n_buckets):
+
+        from SourceCodeTools.nlp.embed.fasttext import load_w2v_map
+        from SourceCodeTools.nlp import token_hasher
+        pretrained = load_w2v_map(pretrained_path)
+
+        import numpy as np
+
+        embs_init = np.random.randn(n_buckets, pretrained.n_dims).astype(np.float32)
+
+        for word in pretrained.keys():
+            ind = token_hasher(word, n_buckets)
+            embs_init[ind, :] = pretrained[word]
+
+        def op_embedding(op_tokens):
+            embedding = None
+            for token in op_tokens:
+                token_emb = pretrained.get(token, None)
+                if embedding is None:
+                    embedding = token_emb
+                else:
+                    embedding = embedding + token_emb
+            return embedding
+
+        python_ops_to_bpe = self.op_tokens()
+        for op, op_tokens in python_ops_to_bpe.items():
+            op_emb = op_embedding(op_tokens)
+            if op_emb is not None:
+                op_ind = token_hasher(op, n_buckets)
+                embs_init[op_ind, :] = op_emb
+
+        return embs_init
 
 
 def split(edges, holdout_frac, random_seed=None):

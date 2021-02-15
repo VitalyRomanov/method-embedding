@@ -15,7 +15,7 @@ import logging
 from SourceCodeTools.models.Embedder import Embedder
 from SourceCodeTools.models.graph.train.utils import BestScoreTracker  # create_elem_embedder
 from SourceCodeTools.models.graph.LinkPredictor import LinkPredictor
-from SourceCodeTools.models.graph.NodeEmbedder import SimpleNodeEmbedder
+from SourceCodeTools.models.graph.NodeEmbedder import NodeEmbedder
 
 
 def _compute_accuracy(pred_, true_):
@@ -94,7 +94,7 @@ class SamplingMultitaskTrainer:
 
         self.create_node_embedder(dataset, tokenizer_path, n_dims=model_params["h_dim"], pretrained_path=pretrained_embeddings_path)
 
-    def create_node_embedder(self, dataset, tokenizer_path, n_dims=None, pretrained_path=None):
+    def create_node_embedder(self, dataset, tokenizer_path, n_dims=None, pretrained_path=None, n_buckets=500000):
         from SourceCodeTools.nlp.embed.fasttext import load_w2v_map
 
         if pretrained_path is not None:
@@ -114,12 +114,13 @@ class SamplingMultitaskTrainer:
             logging.info(f"Loading pretrained embeddings...")
         logging.info(f"Input embedding size is {n_dims}")
 
-        self.node_embedder = SimpleNodeEmbedder(
-            dataset=dataset,
+        self.node_embedder = NodeEmbedder(
+            nodes=dataset.nodes,
             emb_size=n_dims,
             # tokenizer_path=tokenizer_path,
             dtype=self.dtype,
-            pretrained=pretrained
+            pretrained=dataset.buckets_from_pretrained_embeddings(pretrained_path, n_buckets)
+                            if pretrained_path is not None else None
         )
 
         # self.node_embedder(node_type="node_", node_ids=torch.LongTensor([0]))
@@ -810,7 +811,7 @@ def training_procedure(
         'model_base_path': model_base_path,
         'pretraining_phase': args.pretraining_phase,
         'use_layer_scheduling': args.use_layer_scheduling,
-        'shedule_layers_every': args.shedule_layers_every
+        'schedule_layers_every': args.schedule_layers_every
     }
 
     trainer = SamplingMultitaskTrainer(
