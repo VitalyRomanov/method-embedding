@@ -104,7 +104,7 @@ if __name__ == "__main__":
                         help='')
     parser.add_argument('--num_per_neigh', dest='num_per_neigh', default=10, type=int,
                         help='')
-    parser.add_argument('--shedule_layers_every', dest='shedule_layers_every', default=10, type=int,
+    parser.add_argument('--schedule_layers_every', dest='schedule_layers_every', default=10, type=int,
                         help='')
     parser.add_argument('--neg_sampling_factor', dest='neg_sampling_factor', default=3, type=int,
                         help='')
