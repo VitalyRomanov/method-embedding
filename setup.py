@@ -1,21 +1,28 @@
 from distutils.core import setup
 
+requitements = [
+      'nltk',
+      'tensorflow>=2.4.0',
+      'torch>=1.7.1',
+      'pandas>=1.1.1',
+      'sklearn',
+      'sentencepiece',
+      'gensim',
+      'numpy>=1.19.2',
+      'scipy',
+      'networkx',
+      'dgl'
+      # 'pygraphviz'
+      # 'javac_parser'
+]
+
 setup(name='SourceCodeTools',
       version='0.0.2',
       py_modules=['SourceCodeTools'],
-      install_requires=[
-            'nltk',
-            'tensorflow==2.4.0',
-            'pandas>=1.1.1',
-            'sklearn',
-            'sentencepiece',
-            'gensim',
-            'numpy==1.19.2',
-            'scipy',
-            'networkx',
-            'pygraphviz'
-            # 'javac_parser'
-      ],
+      install_requires=requitements,
+      extras_require={
+            "gpu": requitements + ["dgl-cu110"]
+      },
       scripts=[
             'SourceCodeTools/code/data/sourcetrail/sourcetrail_call_seq_extractor.py',
             'SourceCodeTools/code/data/sourcetrail/deprecated/sourcetrail_edge_types_to_int.py',
