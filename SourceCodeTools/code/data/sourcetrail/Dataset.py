@@ -5,6 +5,8 @@ import pickle
 from os.path import join
 
 from SourceCodeTools.code.data.sourcetrail.file_utils import *
+from SourceCodeTools.code.python_ast import PythonSharedNodes
+from SourceCodeTools.nlp.embed.bpe import make_tokenizer, load_bpe_model
 from SourceCodeTools.tabular.common import compact_property
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_extract_node_names import extract_node_names
@@ -82,7 +84,7 @@ class SourceGraphDataset:
     def __init__(self, data_path,
                  label_from, use_node_types=False,
                  use_edge_types=False, filter=None, self_loops=False,
-                 train_frac=0.6, random_seed=None):
+                 train_frac=0.6, random_seed=None, tokenizer_path=None):
         """
         Prepares the data for training GNN model. The graph is prepared in the following way:
             1. Edges are split into the train set and holdout set. Holdout set is used in the future experiments.
@@ -112,12 +114,14 @@ class SourceGraphDataset:
         self.edges_have_types = use_edge_types
         self.labels_from = label_from
         self.data_path = data_path
+        self.tokenizer_path = tokenizer_path
 
         nodes_path = join(data_path, "nodes.bz2")
         edges_path = join(data_path, "edges.bz2")
 
         self.nodes, self.edges = load_data(nodes_path, edges_path)
 
+        # index is later used for sampling and is assumed to be unique
         assert len(self.nodes) == len(self.nodes.index.unique())
         assert len(self.edges) == len(self.edges.index.unique())
 
@@ -134,6 +138,9 @@ class SourceGraphDataset:
             self.nodes['type'] = "node_"
             self.nodes = self.nodes.astype({'type': 'category'})
 
+        self.add_embeddable_flag()
+        self.add_op_tokens()
+
         # need to do this to avoid issues insode dgl library
         self.edges['type'] = self.edges['type'].apply(lambda x: f"{x}_")
         self.edges['type_backup'] = self.edges['type']
@@ -142,22 +149,20 @@ class SourceGraphDataset:
             self.edges = self.edges.astype({'type': 'category'})
 
         # compact labels
-        self.nodes['label'] = self.nodes[label_from]
-        self.nodes = self.nodes.astype({'label': 'category'})
-        self.label_map = compact_property(self.nodes['label'])
-
-        assert any(pandas.isna(self.nodes['label'])) is False
+        # self.nodes['label'] = self.nodes[label_from]
+        # self.nodes = self.nodes.astype({'label': 'category'})
+        # self.label_map = compact_property(self.nodes['label'])
+        # assert any(pandas.isna(self.nodes['label'])) is False
 
         logging.info(f"Unique nodes: {len(self.nodes)}, node types: {len(self.nodes['type'].unique())}")
         logging.info(f"Unique edges: {len(self.edges)}, edge types: {len(self.edges['type'].unique())}")
 
-        self.nodes, self.label_map = self.add_compact_labels()
-        self.nodes, self.typed_id_map = self.add_typed_ids()
-        self.edges = self.add_node_types_to_edges()
+        # self.nodes, self.label_map = self.add_compact_labels()
+        self.add_typed_ids()
 
         self.add_splits(train_frac=train_frac)
 
-        self.mark_leaf_nodes()
+        # self.mark_leaf_nodes()
 
         self.create_hetero_graph()
 
@@ -165,7 +170,7 @@ class SourceGraphDataset:
 
         self.nodes.sort_values('global_graph_id', inplace=True)
 
-        self.splits = SourceGraphDataset.get_global_graph_id_splits(self.nodes)
+        # self.splits = SourceGraphDataset.get_global_graph_id_splits(self.nodes)
 
     @classmethod
     def get_global_graph_id_splits(cls, nodes):
@@ -193,6 +198,40 @@ class SourceGraphDataset:
         )
 
         self.edges['type'] = self.edges['type'].apply(lambda x: edge_type_map[x])
+
+    def add_embeddable_flag(self):
+        embeddable_types = PythonSharedNodes.shared_node_types
+
+        if len(self.nodes.query("type_backup == 'subword'")) > 0:
+            # some of the types should not be embedded if subwords were generated
+            embeddable_types = embeddable_types - {"#attr#"}
+            embeddable_types = embeddable_types - {"#keyword#"}
+
+        # self.nodes['embeddable'] = False
+        self.nodes.eval(
+            "embeddable = type_backup in @embeddable_types",
+            local_dict={"embeddable_types": embeddable_types},
+            inplace=True
+        )
+
+    def add_op_tokens(self):
+        if self.tokenizer_path is None:
+            from SourceCodeTools.code.python_tokens_to_bpe_subwords import python_ops_to_bpe
+            logging.info("Using heuristic tokenization for ops")
+
+            def op_tokenize(op_name):
+                return python_ops_to_bpe[op_name] if op_name in python_ops_to_bpe else None
+        else:
+            # from SourceCodeTools.code.python_tokens_to_bpe_subwords import python_ops_to_literal
+            from SourceCodeTools.code.python_tokens_to_bpe_subwords import op_tokenize_or_none
+
+            tokenizer = make_tokenizer(load_bpe_model(self.tokenizer_path))
+
+            def op_tokenize(op_name):
+                return op_tokenize_or_none(op_name, tokenizer)
+
+        self.nodes.eval("name_alter_tokens = name.map(@op_tokenize)",
+                        local_dict={"op_tokenize": op_tokenize}, inplace=True)
 
     def add_splits(self, train_frac):
 
@@ -228,23 +267,21 @@ class SourceGraphDataset:
 
         nodes = nodes.astype({"typed_id": "int"})
 
-        return nodes, typed_id_map
+        self.nodes, self.typed_id_map = nodes, typed_id_map
+        # return nodes, typed_id_map
 
-    def add_compact_labels(self):
+    # def add_compact_labels(self):
+    #     nodes = self.nodes.copy()
+    #     label_map = compact_property(nodes['label'])
+    #     nodes['compact_label'] = nodes['label'].apply(lambda old_id: label_map[old_id])
+    #     return nodes, label_map
 
-        nodes = self.nodes.copy()
+    def add_node_types_to_edges(self, nodes, edges):
 
-        label_map = compact_property(nodes['label'])
+        # nodes = self.nodes
+        # edges = self.edges.copy()
 
-        nodes['compact_label'] = nodes['label'].apply(lambda old_id: label_map[old_id])
-
-        return nodes, label_map
-
-    def add_node_types_to_edges(self):
-
-        edges = self.edges.copy()
-
-        node_type_map = dict(zip(self.nodes['id'].values, self.nodes['type']))
+        node_type_map = dict(zip(nodes['id'].values, nodes['type']))
 
         edges['src_type'] = edges['src'].apply(lambda src_id: node_type_map[src_id])
         edges['dst_type'] = edges['dst'].apply(lambda dst_id: node_type_map[dst_id])
@@ -274,6 +311,8 @@ class SourceGraphDataset:
                 list(map(lambda x: global_map[x], self.g.nodes[ntype].data['original_id'].tolist()))
             )
 
+        self.node_id_to_global_id = dict(zip(self.nodes["id"], self.nodes["global_graph_id"]))
+
     @property
     def typed_node_counts(self):
 
@@ -294,6 +333,7 @@ class SourceGraphDataset:
 
         nodes = self.nodes.copy()
         edges = self.edges.copy()
+        edges = self.add_node_types_to_edges(nodes, edges)
 
         typed_node_id = dict(zip(nodes['id'], nodes['typed_id']))
 
@@ -338,13 +378,13 @@ class SourceGraphDataset:
             node_data = self.nodes.query(
                 f"type == '{ntype}'"
             )[[
-                'typed_id', 'train_mask', 'test_mask', 'val_mask', 'compact_label', 'id'
+                'typed_id', 'train_mask', 'test_mask', 'val_mask', 'id' # 'compact_label',
             ]].sort_values('typed_id')
 
             self.g.nodes[ntype].data['train_mask'] = torch.tensor(node_data['train_mask'].values, dtype=torch.bool)
             self.g.nodes[ntype].data['test_mask'] = torch.tensor(node_data['test_mask'].values, dtype=torch.bool)
             self.g.nodes[ntype].data['val_mask'] = torch.tensor(node_data['val_mask'].values, dtype=torch.bool)
-            self.g.nodes[ntype].data['labels'] = torch.tensor(node_data['compact_label'].values, dtype=torch.int64)
+            # self.g.nodes[ntype].data['labels'] = torch.tensor(node_data['compact_label'].values, dtype=torch.int64)
             self.g.nodes[ntype].data['typed_id'] = torch.tensor(node_data['typed_id'].values, dtype=torch.int64)
             self.g.nodes[ntype].data['original_id'] = torch.tensor(node_data['id'].values, dtype=torch.int64)
 
@@ -381,10 +421,16 @@ class SourceGraphDataset:
 
         return nodes, train_edges, test_edges
 
-    def mark_leaf_nodes(self):
-        leaf_types = {'subword', "Op", "Constant", "Name"}  # the last is used in graphs without subwords
+    # def mark_leaf_nodes(self):
+    #     leaf_types = {'subword', "Op", "Constant", "Name"}  # the last is used in graphs without subwords
+    #
+    #     self.nodes['is_leaf'] = self.nodes['type_backup'].apply(lambda type_: type_ in leaf_types)
 
-        self.nodes['is_leaf'] = self.nodes['type_backup'].apply(lambda type_: type_ in leaf_types)
+    def get_typed_node_id(self, node_id, node_type):
+        return self.typed_id_map[node_type][node_id]
+
+    def get_global_node_id(self, node_id, node_type=None):
+        return self.node_id_to_global_id[node_id]
 
     def load_node_names(self):
         for_training = self.nodes[
@@ -496,7 +542,8 @@ def read_or_create_dataset(args, model_base, labels_from="type"):
             use_edge_types=args.use_edge_types,
             filter=args.filter_edges,
             self_loops=args.self_loops,
-            train_frac=args.train_frac
+            train_frac=args.train_frac,
+            tokenizer_path=args.tokenizer
         )
 
         # save dataset state for recovery
