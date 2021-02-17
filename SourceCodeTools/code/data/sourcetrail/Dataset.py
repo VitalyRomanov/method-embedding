@@ -51,6 +51,8 @@ def get_train_val_test_indices(indices, train_frac=0.6, random_seed=None):
     if random_seed is not None:
         numpy.random.seed(random_seed)
         logging.warning("Random state for splitting dataset is fixed")
+    else:
+        logging.info("Random state is not set")
 
     indices = indices.to_numpy()
 
@@ -580,7 +582,8 @@ def read_or_create_dataset(args, model_base, labels_from="type"):
             filter=args.filter_edges,
             self_loops=args.self_loops,
             train_frac=args.train_frac,
-            tokenizer_path=args.tokenizer
+            tokenizer_path=args.tokenizer,
+            random_seed=args.random_seed
         )
 
         # save dataset state for recovery
