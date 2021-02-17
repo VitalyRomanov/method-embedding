@@ -31,7 +31,7 @@ def main(models, args):
                     # params['use_self_loop'] = True  # ????
                     from SourceCodeTools.models.graph.train.sampling_multitask_intermediate_supervision import training_procedure
                 else:
-                    from SourceCodeTools.models.graph.train.sampling_multitask import training_procedure
+                    from SourceCodeTools.models.graph.train.sampling_multitask2 import training_procedure
 
                 trainer, scores = \
                     training_procedure(dataset, model, params, args, model_base)
@@ -113,6 +113,8 @@ if __name__ == "__main__":
     parser.add_argument('--epochs', dest='epochs', default=100, type=int,
                         help='Number of epochs')
     parser.add_argument('--batch_size', dest='batch_size', default=128, type=int,
+                        help='Batch size')
+    parser.add_argument('--embedding_table_size', dest='embedding_table_size', default=200000, type=int,
                         help='Batch size')
     parser.add_argument('--note', dest='note', default="",
                         help='Note, added to metadata')

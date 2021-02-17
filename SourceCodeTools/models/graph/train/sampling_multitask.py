@@ -39,6 +39,10 @@ class SamplingMultitaskTrainer:
         self.epoch = 0
         self.batch = 0
         self.dtype = torch.float32
+        self.create_node_embedder(
+            dataset, tokenizer_path, n_dims=model_params["h_dim"],
+            pretrained_path=pretrained_embeddings_path, n_buckets=trainer_params["embedding_table_size"]
+        )
 
         self.summary_writer = SummaryWriter(self.model_base_path)
 
@@ -70,8 +74,6 @@ class SamplingMultitaskTrainer:
 
         self._create_loaders(*self._get_training_targets())
 
-        self.create_node_embedder(dataset, tokenizer_path, n_dims=model_params["h_dim"], pretrained_path=pretrained_embeddings_path)
-
     def create_node_embedder(self, dataset, tokenizer_path, n_dims=None, pretrained_path=None, n_buckets=500000):
         from SourceCodeTools.nlp.embed.fasttext import load_w2v_map
 
@@ -98,7 +100,8 @@ class SamplingMultitaskTrainer:
             # tokenizer_path=tokenizer_path,
             dtype=self.dtype,
             pretrained=dataset.buckets_from_pretrained_embeddings(pretrained_path, n_buckets)
-                            if pretrained_path is not None else None
+                            if pretrained_path is not None else None,
+            n_buckets=n_buckets
         )
 
         # self.node_embedder(node_type="node_", node_ids=torch.LongTensor([0]))
@@ -635,6 +638,7 @@ class SamplingMultitaskTrainer:
 
         param_dict = {
             'graph_model': self.graph_model.state_dict(),
+            'node_embedder': self.node_embedder.state_dict(),
             'ee_node_name': self.ee_node_name.state_dict(),
             'ee_var_use': self.ee_var_use.state_dict(),
             # 'ee_api_call': self.ee_api_call.state_dict(),
@@ -789,7 +793,8 @@ def training_procedure(
         'model_base_path': model_base_path,
         'pretraining_phase': args.pretraining_phase,
         'use_layer_scheduling': args.use_layer_scheduling,
-        'schedule_layers_every': args.schedule_layers_every
+        'schedule_layers_every': args.schedule_layers_every,
+        'embedding_table_size': args.embedding_table_size
     }
 
     trainer = SamplingMultitaskTrainer(
