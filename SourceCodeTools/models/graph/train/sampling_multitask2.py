@@ -168,6 +168,10 @@ class SamplingMultitaskTrainer:
     def pretraining(self):
         return self.epoch >= self.trainer_params['pretraining_phase']
 
+    @property
+    def do_save(self):
+        return self.trainer_params['save_checkpoints']
+
     def write_summary(self, scores, batch_step):
         # main_name = os.path.basename(self.model_base_path)
         for var, val in scores.items():
@@ -297,7 +301,8 @@ class SamplingMultitaskTrainer:
             print(f"Epoch: {self.epoch}, Time: {int(end - start)} s", end="\t")
             print(summary_dict)
 
-            self.save_checkpoint(self.model_base_path)
+            if self.do_save:
+                self.save_checkpoint(self.model_base_path)
 
             self.lr_scheduler.step()
 
@@ -438,7 +443,8 @@ def training_procedure(
         'pretraining_phase': args.pretraining_phase,
         'use_layer_scheduling': args.use_layer_scheduling,
         'schedule_layers_every': args.schedule_layers_every,
-        'embedding_table_size': args.embedding_table_size
+        'embedding_table_size': args.embedding_table_size,
+        'save_checkpoints': args.save_checkpoints
     }
 
     trainer = SamplingMultitaskTrainer(

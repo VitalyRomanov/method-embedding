@@ -158,6 +158,10 @@ class SamplingMultitaskTrainer:
     def pretraining(self):
         return self.epoch >= self.trainer_params['pretraining_phase']
 
+    @property
+    def do_save(self):
+        return self.trainer_params['save_checkpoints']
+
     # def _extract_embed(self, node_embed, input_nodes):
     #     emb = {}
     #     for node_type, nid in input_nodes.items():
@@ -604,7 +608,8 @@ class SamplingMultitaskTrainer:
                                        val_acc_api_call=val_acc_api_call, test_acc_api_call=test_acc_api_call,
                                        time=end - start)
 
-            self.save_checkpoint(self.model_base_path)
+            if self.do_save:
+                self.save_checkpoint(self.model_base_path)
 
             self.write_summary(
                 {
@@ -794,7 +799,8 @@ def training_procedure(
         'pretraining_phase': args.pretraining_phase,
         'use_layer_scheduling': args.use_layer_scheduling,
         'schedule_layers_every': args.schedule_layers_every,
-        'embedding_table_size': args.embedding_table_size
+        'embedding_table_size': args.embedding_table_size,
+        'save_checkpoints': args.save_checkpoints
     }
 
     trainer = SamplingMultitaskTrainer(

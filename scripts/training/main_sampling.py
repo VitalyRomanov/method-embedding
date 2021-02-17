@@ -120,6 +120,7 @@ if __name__ == "__main__":
                         help='Note, added to metadata')
     parser.add_argument('model_output_dir',
                         help='Location of the final model')
+    parser.add_argument('--no_checkpoints', dest="save_checkpoints", action='store_false')
     parser.add_argument('--use_node_types', action='store_true')
     parser.add_argument('--use_edge_types', action='store_true')
     parser.add_argument('--restore_state', action='store_true')
