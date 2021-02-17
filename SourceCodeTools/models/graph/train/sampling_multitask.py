@@ -7,12 +7,13 @@ import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import ExponentialLR
 import dgl
-from math import ceil
 from time import time
 from os.path import join
 import logging
 
 from SourceCodeTools.models.Embedder import Embedder
+from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedderWithBpeSubwords
+from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
 from SourceCodeTools.models.graph.train.utils import BestScoreTracker  # create_elem_embedder
 from SourceCodeTools.models.graph.LinkPredictor import LinkPredictor
 from SourceCodeTools.models.graph.NodeEmbedder import NodeEmbedder
@@ -20,9 +21,6 @@ from SourceCodeTools.models.graph.NodeEmbedder import NodeEmbedder
 
 def _compute_accuracy(pred_, true_):
     return torch.sum(pred_ == true_).item() / len(true_)
-
-
-
 
 
 class SamplingMultitaskTrainer:
@@ -42,45 +40,25 @@ class SamplingMultitaskTrainer:
         self.batch = 0
         self.dtype = torch.float32
 
-        # self.summary_writer = SummaryWriter(os.path.dirname(self.model_base_path))
         self.summary_writer = SummaryWriter(self.model_base_path)
 
-        # self.ee_node_name = create_elem_embedder(
-        #     dataset.load_node_names(), dataset.nodes,
-        #     self.elem_emb_size, compact_dst=True
-        # ).to(device)
-        #
-        # self.ee_var_use = create_elem_embedder(
-        #     dataset.load_var_use(), dataset.nodes,
-        #     self.elem_emb_size, compact_dst=True
-        # ).to(device)
-        #
-        # self.ee_api_call = create_elem_embedder(
-        #     dataset.load_api_call(), dataset.nodes,
-        #     self.elem_emb_size, compact_dst=False
-        # ).to(device)
-
-        from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedderWithBpeSubwords
         self.ee_node_name = ElementEmbedderWithBpeSubwords(
             elements=dataset.load_node_names(), nodes=dataset.nodes, emb_size=self.elem_emb_size,
             tokenizer_path=tokenizer_path
-        ).to(device)
+        ).to(self.device)
 
         self.ee_var_use = ElementEmbedderWithBpeSubwords(
             elements=dataset.load_var_use(), nodes=dataset.nodes, emb_size=self.elem_emb_size,
             tokenizer_path=tokenizer_path
-        ).to(device)
+        ).to(self.device)
 
-        from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
         self.ee_api_call = ElementEmbedderBase(
             elements=dataset.load_api_call(), nodes=dataset.nodes, compact_dst=False, dst_to_global=True
         )
 
-
-
-        self.lp_node_name = LinkPredictor(self.ee_node_name.emb_size + self.graph_model.emb_size).to(device)
-        self.lp_var_use = LinkPredictor(self.ee_var_use.emb_size + self.graph_model.emb_size).to(device)
-        self.lp_api_call = LinkPredictor(self.graph_model.emb_size + self.graph_model.emb_size).to(device)
+        self.lp_node_name = LinkPredictor(self.ee_node_name.emb_size + self.graph_model.emb_size).to(self.device)
+        self.lp_var_use = LinkPredictor(self.ee_var_use.emb_size + self.graph_model.emb_size).to(self.device)
+        self.lp_api_call = LinkPredictor(self.graph_model.emb_size + self.graph_model.emb_size).to(self.device)
 
         if restore:
             self.restore_from_checkpoint(self.model_base_path)
@@ -194,10 +172,10 @@ class SamplingMultitaskTrainer:
         params = copy(self.model_params)
         params["epoch"] = epoch
         main_name = os.path.basename(self.model_base_path)
-        params = {k: v for k,v in params.items() if type(v) in {int, float, str, bool, torch.Tensor}}
+        params = {k: v for k, v in params.items() if type(v) in {int, float, str, bool, torch.Tensor}}
 
         main_name = os.path.basename(self.model_base_path)
-        scores = {f"h_metric/{k}": v for k,v in scores.items()}
+        scores = {f"h_metric/{k}": v for k, v in scores.items()}
         self.summary_writer.add_hparams(params, scores, run_name=f"h_metric/{epoch}")
 
     def _extract_embed(self, input_nodes):
@@ -336,18 +314,18 @@ class SamplingMultitaskTrainer:
 
     def _logits_node_name(self, input_nodes, seeds, blocks):
         src_embs = self._logits_batch(input_nodes, blocks)
-        logits, labels = self._logits_embedder(src_embs, self.ee_node_name, self.lp_node_name, seeds)
+        logits, labels = self._logits_embedder(src_embs, self.ee_node_name, self.lp_node_name, seeds, negative_factor=self.neg_sampling_factor)
         return logits, labels
 
     def _logits_var_use(self, input_nodes, seeds, blocks):
         src_embs = self._logits_batch(input_nodes, blocks)
-        logits, labels = self._logits_embedder(src_embs, self.ee_var_use, self.lp_var_use, seeds)
+        logits, labels = self._logits_embedder(src_embs, self.ee_var_use, self.lp_var_use, seeds, negative_factor=self.neg_sampling_factor)
         return logits, labels
 
     def _logits_api_call(self, input_nodes, seeds, blocks):
         src_embs = self._logits_batch(input_nodes, blocks)
         logits, labels = self._logits_nodes(src_embs, self.ee_api_call, self.lp_api_call, self._create_api_call_loader,
-                                            seeds)
+                                            seeds, negative_factor=self.neg_sampling_factor)
         return logits, labels
 
     def _get_training_targets(self):
@@ -360,7 +338,7 @@ class SamplingMultitaskTrainer:
                 # key = next(iter(labels.keys()))
                 # labels = labels[key]
                 self.use_types = False
-        
+
             train_idx = {
                 ntype: torch.nonzero(self.graph_model.g.nodes[ntype].data['train_mask'], as_tuple=False).squeeze()
                 for ntype in self.ntypes
@@ -432,7 +410,7 @@ class SamplingMultitaskTrainer:
             loader_api_call, neg_sampling_factor
     ):
 
-        node_name, node_name_acc = self._evaluate_embedder(
+        node_name_loss, node_name_acc = self._evaluate_embedder(
             self.ee_node_name, self.lp_node_name, loader_node_name, neg_sampling_factor=neg_sampling_factor
         )
 
@@ -444,7 +422,7 @@ class SamplingMultitaskTrainer:
                                                            self._create_api_call_loader, loader_api_call,
                                                            neg_sampling_factor=neg_sampling_factor)
 
-        loss = node_name + var_use_loss + api_call_loss
+        loss = node_name_loss + var_use_loss + api_call_loss
 
         return loss, node_name_acc, var_use_acc, api_call_acc
 
@@ -505,30 +483,22 @@ class SamplingMultitaskTrainer:
             f"test {self._idx_len(test_idx_api_call)}."
         )
 
-        # batch_size_node_name = self.batch_size
-        #
-        # def estimate_batch_size(indexes):
-        #     return ceil(self._idx_len(indexes) / ceil(self._idx_len(train_idx_node_name) / batch_size_node_name))
-        #
-        # batch_size_var_use = estimate_batch_size(train_idx_var_use)
-        # batch_size_api_call = estimate_batch_size(train_idx_api_call)
-
-        self.loader_node_name, self.test_loader_node_name, self.val_loader_node_name = self._get_loaders(
+        self.loader_node_name, self.val_loader_node_name, self.test_loader_node_name = self._get_loaders(
             train_idx=train_idx_node_name, val_idx=val_idx_node_name, test_idx=test_idx_node_name,
-            batch_size=self.batch_size  #batch_size_node_name
+            batch_size=self.batch_size  # batch_size_node_name
         )
-        self.loader_var_use, self.test_loader_var_use, self.val_loader_var_use = self._get_loaders(
+        self.loader_var_use, self.val_loader_var_use, self.test_loader_var_use = self._get_loaders(
             train_idx=train_idx_var_use, val_idx=val_idx_var_use, test_idx=test_idx_var_use,
-            batch_size=self.batch_size  #batch_size_var_use
+            batch_size=self.batch_size  # batch_size_var_use
         )
-        self.loader_api_call, self.test_loader_api_call, self.val_loader_api_call = self._get_loaders(
+        self.loader_api_call, self.val_loader_api_call, self.test_loader_api_call = self._get_loaders(
             train_idx=train_idx_api_call, val_idx=val_idx_api_call, test_idx=test_idx_api_call,
-            batch_size=self.batch_size  #batch_size_api_call
+            batch_size=self.batch_size  # batch_size_api_call
         )
 
     def _create_api_call_loader(self, indices):
         sampler = dgl.dataloading.MultiLayerNeighborSampler(
-            [self.sampling_neighbourhood_size] * len(self.graph_model.layers))
+            [self.sampling_neighbourhood_size] * self.graph_model.num_layers)
         return dgl.dataloading.NodeDataLoader(
             self.graph_model.g, indices, sampler, batch_size=len(indices), num_workers=0)
 
@@ -537,6 +507,7 @@ class SamplingMultitaskTrainer:
         optimizer = torch.optim.Adam(
             [
                 {'params': self.graph_model.parameters()},
+                {'params': self.node_embedder.parameters()},
                 {'params': self.ee_node_name.parameters()},
                 {'params': self.ee_var_use.parameters()},
                 # {'params': self.ee_api_call.parameters()},
@@ -608,14 +579,16 @@ class SamplingMultitaskTrainer:
 
             self.eval()
 
-            _, val_acc_node_name, val_acc_var_use, val_acc_api_call = self._evaluate_objectives(
-                self.val_loader_node_name, self.val_loader_var_use, self.val_loader_api_call, self.neg_sampling_factor
-            )
+            with torch.set_grad_enabled(False):
 
-            _, test_acc_node_name, test_acc_var_use, test_acc_api_call = self._evaluate_objectives(
-                self.test_loader_node_name, self.test_loader_var_use, self.test_loader_api_call,
-                self.neg_sampling_factor
-            )
+                _, val_acc_node_name, val_acc_var_use, val_acc_api_call = self._evaluate_objectives(
+                    self.val_loader_node_name, self.val_loader_var_use, self.val_loader_api_call, self.neg_sampling_factor
+                )
+
+                _, test_acc_node_name, test_acc_var_use, test_acc_api_call = self._evaluate_objectives(
+                    self.test_loader_node_name, self.test_loader_var_use, self.test_loader_api_call,
+                    self.neg_sampling_factor
+                )
 
             self.train()
 
@@ -692,17 +665,19 @@ class SamplingMultitaskTrainer:
 
     def final_evaluation(self):
 
-        loss, train_acc_node_name, train_acc_var_use, train_acc_api_call = self._evaluate_objectives(
-            self.loader_node_name, self.loader_var_use, self.loader_api_call, 1
-        )
+        with torch.set_grad_enabled(False):
 
-        _, val_acc_node_name, val_acc_var_use, val_acc_api_call = self._evaluate_objectives(
-            self.val_loader_node_name, self.val_loader_var_use, self.val_loader_api_call, 1
-        )
+            loss, train_acc_node_name, train_acc_var_use, train_acc_api_call = self._evaluate_objectives(
+                self.loader_node_name, self.loader_var_use, self.loader_api_call, 1
+            )
 
-        _, test_acc_node_name, test_acc_var_use, test_acc_api_call = self._evaluate_objectives(
-            self.test_loader_node_name, self.test_loader_var_use, self.test_loader_api_call, 1
-        )
+            _, val_acc_node_name, val_acc_var_use, val_acc_api_call = self._evaluate_objectives(
+                self.val_loader_node_name, self.val_loader_var_use, self.val_loader_api_call, 1
+            )
+
+            _, test_acc_node_name, test_acc_var_use, test_acc_api_call = self._evaluate_objectives(
+                self.test_loader_node_name, self.test_loader_var_use, self.test_loader_api_call, 1
+            )
 
         scores = {
             # "loss": loss.item(),
@@ -761,7 +736,10 @@ class SamplingMultitaskTrainer:
     def get_embeddings(self):
         # self.graph_model.g.nodes["function"].data.keys()
         nodes = self.graph_model.g.nodes
-        node_embs = {ntype: self.node_embedder(node_type=ntype, node_ids=nodes[ntype].data['typed_id'], train_embeddings=False) for ntype in self.graph_model.g.ntypes}
+        node_embs = {
+            ntype: self.node_embedder(node_type=ntype, node_ids=nodes[ntype].data['typed_id'], train_embeddings=False)
+            for ntype in self.graph_model.g.ntypes
+        }
 
         h = self.graph_model.inference(batch_size=256, device='cpu', num_workers=0, x=node_embs)
 
