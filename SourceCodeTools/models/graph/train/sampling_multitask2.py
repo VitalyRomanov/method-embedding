@@ -1,5 +1,4 @@
 import os
-import sys
 from copy import copy
 from typing import Tuple
 
@@ -7,18 +6,12 @@ import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import ExponentialLR
-import dgl
-from math import ceil
 from time import time
 from os.path import join
 import logging
 
 from SourceCodeTools.models.Embedder import Embedder
-from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedderWithBpeSubwords
-from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
 from SourceCodeTools.models.graph.train.objectives import Objective
-from SourceCodeTools.models.graph.train.utils import BestScoreTracker  # create_elem_embedder
-from SourceCodeTools.models.graph.LinkPredictor import LinkPredictor
 from SourceCodeTools.models.graph.NodeEmbedder import NodeEmbedder
 
 
@@ -189,27 +182,6 @@ class SamplingMultitaskTrainer:
         scores = {f"h_metric/{k}": v for k, v in scores.items()}
         self.summary_writer.add_hparams(params, scores, run_name=f"h_metric/{epoch}")
 
-    def _evaluate_objectives(
-            self, loader_node_name, loader_var_use,
-            loader_api_call, neg_sampling_factor
-    ):
-
-        node_name_loss, node_name_acc = self._evaluate_embedder(
-            self.ee_node_name, self.lp_node_name, loader_node_name, neg_sampling_factor=neg_sampling_factor
-        )
-
-        var_use_loss, var_use_acc = self._evaluate_embedder(
-            self.ee_var_use, self.lp_var_use, loader_var_use, neg_sampling_factor=neg_sampling_factor
-        )
-
-        api_call_loss, api_call_acc = self._evaluate_nodes(self.ee_api_call, self.lp_api_call,
-                                                           self._create_api_call_loader, loader_api_call,
-                                                           neg_sampling_factor=neg_sampling_factor)
-
-        loss = node_name_loss + var_use_loss + api_call_loss
-
-        return loss, node_name_acc, var_use_acc, api_call_acc
-
     def _create_optimizer(self):
         parameters = nn.ParameterList(self.graph_model.parameters())
         parameters.extend(self.node_embedder.parameters())
@@ -294,7 +266,7 @@ class SamplingMultitaskTrainer:
 
                 objective.train()
 
-            self.write_hyperparams({k.replace("vs_batch", "vs_epoch"): v for k,v in summary_dict.items()}, self.epoch)
+            self.write_hyperparams({k.replace("vs_batch", "vs_epoch"): v for k, v in summary_dict.items()}, self.epoch)
 
             end = time()
 
