@@ -5,6 +5,7 @@ from itertools import chain
 import dgl
 import torch
 
+from SourceCodeTools.code.data.sourcetrail.SubwordMasker import SubwordMasker
 from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedderWithBpeSubwords
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
 from SourceCodeTools.models.graph.LinkPredictor import LinkPredictor
@@ -18,7 +19,7 @@ class Objective(nn.Module):
     def __init__(
             self, name, objective_type, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
-            tokenizer_path=None, target_emb_size=None, link_predictor_type="nn"
+            tokenizer_path=None, target_emb_size=None, link_predictor_type="nn", masker: SubwordMasker=None
     ):
         """
         :param name: name for reference
@@ -40,6 +41,7 @@ class Objective(nn.Module):
         self.batch_size = batch_size
         self.node_embedder = node_embedder
         self.device = device
+        self.masker = masker
 
         if self.type not in {"graph_link_prediction", "graph_link_classification", "subword_ranker", "classification"}:
             raise NotImplementedError()
@@ -104,6 +106,11 @@ class Objective(nn.Module):
         return torch.tensor(unique_ids, dtype=torch.long), slice_map
 
     def _get_training_targets(self):
+        """
+        Set use_type flag based on the number of types in the graph.
+        :return: Return train, validation and test indexes as typed
+        ids. For graphs with single node type typed and global graph ids match.
+        """
         if hasattr(self.graph_model.g, 'ntypes'):
             self.ntypes = self.graph_model.g.ntypes
             # labels = {ntype: self.graph_model.g.nodes[ntype].data['labels'] for ntype in self.ntypes}
@@ -127,12 +134,14 @@ class Objective(nn.Module):
                 for ntype in self.ntypes
             }
         else:
-            self.ntypes = None
-            # labels = g.ndata['labels']
-            train_idx = self.graph_model.g.ndata['train_mask']
-            val_idx = self.graph_model.g.ndata['val_mask']
-            test_idx = self.graph_model.g.ndata['test_mask']
-            self.use_types = False
+            # not sure when this is called
+            raise NotImplementedError()
+            # self.ntypes = None
+            # # labels = g.ndata['labels']
+            # train_idx = self.graph_model.g.ndata['train_mask']
+            # val_idx = self.graph_model.g.ndata['val_mask']
+            # test_idx = self.graph_model.g.ndata['test_mask']
+            # self.use_types = False
 
         return train_idx, val_idx, test_idx
 
@@ -172,31 +181,31 @@ class Objective(nn.Module):
         return dgl.dataloading.NodeDataLoader(
             self.graph_model.g, indices, sampler, batch_size=len(indices), num_workers=0)
 
-    def _extract_embed(self, input_nodes, train_embeddings=True):
+    def _extract_embed(self, input_nodes, train_embeddings=True, masked=None):
         emb = {}
         for node_type, nid in input_nodes.items():
             emb[node_type] = self.node_embedder(
                 node_type=node_type, node_ids=nid,
-                train_embeddings=train_embeddings
+                train_embeddings=train_embeddings, masked=masked
             ).to(self.device)
         return emb
 
-    def _logits_batch(self, input_nodes, blocks, train_embeddings=True):
+    def _logits_batch(self, input_nodes, blocks, train_embeddings=True, masked=None):
 
         cumm_logits = []
 
         if self.use_types:
             # emb = self._extract_embed(self.graph_model.node_embed(), input_nodes)
-            emb = self._extract_embed(input_nodes, train_embeddings)
+            emb = self._extract_embed(input_nodes, train_embeddings, masked=masked)
         else:
             if self.ntypes is not None:
                 # single node type
                 key = next(iter(self.ntypes))
                 input_nodes = {key: input_nodes}
                 # emb = self._extract_embed(self.graph_model.node_embed(), input_nodes)
-                emb = self._extract_embed(input_nodes, train_embeddings)
+                emb = self._extract_embed(input_nodes, train_embeddings, masked=masked)
             else:
-                emb = self.node_embedder(node_ids=input_nodes, train_embeddings=train_embeddings)
+                emb = self.node_embedder(node_ids=input_nodes, train_embeddings=train_embeddings, masked=masked)
                 # emb = self.graph_model.node_embed()[input_nodes]
 
         logits = self.graph_model(emb, blocks)
@@ -299,8 +308,20 @@ class Objective(nn.Module):
 
         return logits, labels
 
+    def seeds_to_python(self, seeds):
+        if isinstance(seeds, dict):
+            python_seeds = {}
+            for key, val in seeds.items():
+                python_seeds[key] = val.tolist()
+        else:
+            python_seeds = seeds.tolist()
+        return python_seeds
+
     def forward(self, input_nodes, seeds, blocks, train_embeddings=True):
-        graph_emb = self._logits_batch(input_nodes, blocks, train_embeddings)
+        masked = None
+        if self.type in {"subword_ranker"}:
+            masked = self.masker.get_mask(self.seeds_to_python(seeds))
+        graph_emb = self._logits_batch(input_nodes, blocks, train_embeddings, masked=masked)
         if self.type in {"subword_ranker"}:
             logits, labels = self._logits_embedder(graph_emb, self.target_embedder, self.link_predictor, seeds)
         elif self.type in {"graph_link_prediction", "graph_link_classification"}:
@@ -324,7 +345,11 @@ class Objective(nn.Module):
         for input_nodes, seeds, blocks in getattr(self, f"{data_split}_loader"):
             blocks = [blk.to(self.device) for blk in blocks]
 
-            src_embs = self._logits_batch(input_nodes, blocks)
+            masked = None
+            if self.type == "subword_ranker":
+                masked = self.masker.get_mask(self.seeds_to_python(seeds))
+
+            src_embs = self._logits_batch(input_nodes, blocks, masked=masked)
             logits, labels = self._logits_embedder(src_embs, ee, lp, seeds, neg_sampling_factor)
 
             logp = nn.functional.log_softmax(logits, 1)
@@ -345,7 +370,11 @@ class Objective(nn.Module):
         for input_nodes, seeds, blocks in getattr(self, f"{data_split}_loader"):
             blocks = [blk.to(self.device) for blk in blocks]
 
-            src_embs = self._logits_batch(input_nodes, blocks)
+            masked = None
+            if self.type == "subword_ranker":
+                masked = self.masker.get_mask(self.seeds_to_python(seeds))
+
+            src_embs = self._logits_batch(input_nodes, blocks, masked=masked)
             logits, labels = self._logits_nodes(src_embs, ee, lp, create_api_call_loader, seeds, neg_sampling_factor)
 
             logp = nn.functional.log_softmax(logits, 1)

@@ -51,38 +51,46 @@ class NodeEmbedder(nn.Module):
 
         self.buckets = nn.Embedding.from_pretrained(weights_with_pad, freeze=False, padding_idx=self.n_buckets)
 
-    def _get_embedding_from_node_info(self, keys, node_info):
+    def _get_embedding_from_node_info(self, keys, node_info, masked=None):
         idxs = []
 
+        if isinstance(masked, dict):
+            new_masked = set()
+            for ntype, nids in masked.items():
+                for nid in nids:
+                    new_masked.add((ntype, nid))
+            masked = new_masked
+
         for key in keys:
-            if key in node_info:
+            if key not in node_info or masked is not None and key in masked:
+            # if key in node_info and key not in masked:
+                idxs.append(self.n_buckets)
+            else:
                 real_type, name = node_info[key]
                 idxs.append(token_hasher(name, self.n_buckets))
-            else:
-                idxs.append(self.n_buckets)
 
         return self.buckets(torch.LongTensor(idxs))
 
-    def _get_embeddings_with_type(self, node_type, ids):
+    def _get_embeddings_with_type(self, node_type, ids, masked=None):
         type_ids = ((node_type, id_) for id_ in ids)
-        return self._get_embedding_from_node_info(type_ids, self.node_info)
+        return self._get_embedding_from_node_info(type_ids, self.node_info, masked=masked)
 
-    def _get_embeddings_global(self, ids):
-        return self._get_embedding_from_node_info(ids, self.node_info_global)
+    def _get_embeddings_global(self, ids, masked=None):
+        return self._get_embedding_from_node_info(ids, self.node_info_global, masked=masked)
 
-    def get_embeddings(self, node_type=None, node_ids=None):
+    def get_embeddings(self, node_type=None, node_ids=None, masked=None):
         assert node_ids is not None
         if node_type is None:
-            return self._get_embeddings_global(node_ids)
+            return self._get_embeddings_global(node_ids, masked=masked)
         else:
-            return self._get_embeddings_with_type(node_type, node_ids)
+            return self._get_embeddings_with_type(node_type, node_ids, masked=masked)
 
-    def forward(self, node_type=None, node_ids=None, train_embeddings=True):
+    def forward(self, node_type=None, node_ids=None, train_embeddings=True, masked=None):
         if train_embeddings:
-            return self.get_embeddings(node_type, node_ids.tolist())
+            return self.get_embeddings(node_type, node_ids.tolist(), masked=masked)
         else:
             with torch.set_grad_enabled(False):
-                return self.get_embeddings(node_type, node_ids.tolist())
+                return self.get_embeddings(node_type, node_ids.tolist(), masked=masked)
 
 
 # class SimpleNodeEmbedder(nn.Module):
