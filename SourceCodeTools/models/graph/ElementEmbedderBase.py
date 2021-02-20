@@ -79,12 +79,12 @@ class ElementEmbedderBase:
         return np.fromiter((rnd.choice(self.element_lookup[id]) for id in ids), dtype=np.int32)
 
     def get_src_pool(self, ntypes=None):
-        # if ntypes is None:
-        #     return set(self.elements['id'].to_list())
-        # # elif ntypes == ['_U']:
-        # #     # this case processes graphs with no specific node types https://docs.dgl.ai/en/latest/api/python/heterograph.html
-        # #     return {"_U": set(self.elements['id'].to_list())}
-        # else:
+        """
+        Get pool of nodes present in the elements represented as typed_id. For graphs without node types, typed and
+        global ids match.
+        :param ntypes:
+        :return:
+        """
         return {ntype: set(self.elements.query(f"src_type == '{ntype}'")['src_typed_id'].tolist()) for ntype in ntypes}
 
     def _create_pools(self, train_idx, val_idx, test_idx, pool) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -94,12 +94,22 @@ class ElementEmbedderBase:
         return train_idx, val_idx, test_idx
 
     def create_idx_pools(self, train_idx, val_idx, test_idx):
-        # if isinstance(train_idx, dict):
+        """
+        Given split ids, filter only those that are given in elements.
+        The format of splits is dict {node_type: typed_ids}.
+        For graphs with single node type, global and typed ids match.
+        :param train_idx:
+        :param val_idx:
+        :param test_idx:
+        :return:
+        """
         train_pool = {}
         test_pool = {}
         val_pool = {}
 
-        pool = self.get_src_pool(ntypes=list(train_idx.keys()))
+        node_types = set(train_idx.keys()) | set(val_idx.keys()) | set(test_idx.keys())
+
+        pool = self.get_src_pool(ntypes=node_types)
 
         for ntype in train_idx.keys():
             train, test, val = self._create_pools(train_idx[ntype], val_idx[ntype], test_idx[ntype], pool[ntype])
