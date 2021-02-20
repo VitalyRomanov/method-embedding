@@ -136,11 +136,15 @@ class SourceGraphDataset:
                 logging.info(f"Filtering edge type {e_type}")
                 self.edges = self.edges.query(f"type != {e_type}")
 
+        if use_node_types is False and use_edge_types is False:
+            new_nodes, new_edges = self.create_nodetype_edges()
+            self.nodes = self.nodes.append(new_nodes, ignore_index=True)
+            self.edges = self.edges.append(new_edges, ignore_index=True)
+
         self.nodes['type_backup'] = self.nodes['type']
         if not self.nodes_have_types:
             self.nodes['type'] = "node_"
             self.nodes = self.nodes.astype({'type': 'category'})
-            # self.create_nodetype_edges()
 
         self.add_embeddable_flag()
 
@@ -208,6 +212,8 @@ class SourceGraphDataset:
         if len(self.nodes.query("type_backup == 'subword'")) > 0:
             # some of the types should not be embedded if subwords were generated
             embeddable_types = embeddable_types - PythonSharedNodes.tokenizable_types
+
+        embeddable_types |= {"node_type"}
 
         # self.nodes['embeddable'] = False
         self.nodes.eval(
@@ -303,6 +309,39 @@ class SourceGraphDataset:
         edges = edges.astype({'src_type': 'category', 'dst_type': 'category'})
 
         return edges
+
+    def create_nodetype_edges(self):
+        node_new_id = self.nodes["id"].max() + 1
+        edge_new_id = self.edges["id"].max() + 1
+
+        new_nodes = []
+        new_edges = []
+        added_type_nodes = {}
+
+        for ind, row in self.nodes.iterrows():
+            type_node_name = f"node_type_{row['type']}"
+            if type_node_name not in added_type_nodes:
+                added_type_nodes[type_node_name] = node_new_id
+                node_new_id += 1
+
+                new_nodes.append({
+                    "id": added_type_nodes[type_node_name],
+                    "name": f"##{type_node_name}",
+                    "type": "node_type",
+                    "mentioned_in": pd.NA
+                })
+
+            new_edges.append({
+                "id": edge_new_id,
+                "type": "node_type",
+                "src": added_type_nodes[type_node_name],
+                "dst": row["id"],
+                "file_id": pd.NA,
+                "mentioned_in": pd.NA
+            })
+            edge_new_id += 1
+
+        return pd.DataFrame(new_nodes), pd.DataFrame(new_edges)
 
     def update_global_id(self):
         orig_id = []
