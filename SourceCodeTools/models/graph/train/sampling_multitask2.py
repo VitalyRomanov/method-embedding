@@ -53,9 +53,21 @@ class SamplingMultitaskTrainer:
 
     def create_objectives(self, dataset, tokenizer_path):
         self.objectives = nn.ModuleList()
-        self.create_node_name_objective(dataset, tokenizer_path)
-        self.create_var_use_objective(dataset, tokenizer_path)
-        self.create_api_call_objective(dataset, tokenizer_path)
+        self.create_token_pred_objective(dataset, tokenizer_path)
+        # self.create_node_name_objective(dataset, tokenizer_path)
+        # self.create_var_use_objective(dataset, tokenizer_path)
+        # self.create_api_call_objective(dataset, tokenizer_path)
+
+    def create_token_pred_objective(self, dataset, tokenizer_path):
+        self.objectives.append(
+            Objective(
+                "token_name", "subword_ranker", self.graph_model, self.node_embedder, dataset.nodes,
+                dataset.load_token_prediction, self.device,
+                self.sampling_neighbourhood_size, self.batch_size,
+                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="nn",
+                masker=dataset.create_subword_masker()
+            )
+        )
 
     def create_node_name_objective(self, dataset, tokenizer_path):
         self.objectives.append(
