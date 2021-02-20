@@ -4,6 +4,7 @@ import pickle
 
 from os.path import join
 
+from SourceCodeTools.code.data.sourcetrail.SubwordMasker import SubwordMasker
 from SourceCodeTools.code.data.sourcetrail.file_utils import *
 from SourceCodeTools.code.python_ast import PythonSharedNodes
 from SourceCodeTools.nlp.embed.bpe import make_tokenizer, load_bpe_model
@@ -32,10 +33,10 @@ def load_data(node_path, edge_path):
     return nodes_, edges_
 
 
-def create_mask(size, idx):
-    mask = numpy.full((size,), False, dtype=numpy.bool)
-    mask[idx] = True
-    return mask
+# def create_mask(size, idx):
+#     mask = numpy.full((size,), False, dtype=numpy.bool)
+#     mask[idx] = True
+#     return mask
 
 
 def create_train_val_test_masks(nodes, train_idx, val_idx, test_idx):
@@ -139,6 +140,7 @@ class SourceGraphDataset:
         if not self.nodes_have_types:
             self.nodes['type'] = "node_"
             self.nodes = self.nodes.astype({'type': 'category'})
+            # self.create_nodetype_edges()
 
         self.add_embeddable_flag()
 
@@ -240,11 +242,18 @@ class SourceGraphDataset:
         #                 local_dict={"op_tokenize": op_tokenize}, inplace=True)
 
     def add_splits(self, train_frac):
+        """
+        Generates train, validation, and test masks
+        Store the masks is pandas table for nodes
+        :param train_frac:
+        :return:
+        """
 
-        # now take only nodes that represent functions. need to add functionality to use classes
-        # and variables
+        assert len(self.nodes.index) == self.nodes.index.max() + 1
+        # generate splits for all nodes, additional filtering will be applied later
+        # by an objective
         splits = get_train_val_test_indices(
-            self.nodes.query(f"type_backup == '{node_types[4096]}'").index,
+            self.nodes.index,
             train_frac=train_frac, random_seed=self.random_seed
         )
 
@@ -408,24 +417,24 @@ class SourceGraphDataset:
 
         return nodes, edges
 
-    @classmethod
-    def holdout(cls, nodes, edges, holdout_frac, random_seed):
-        """
-        Create a set of holdout edges, ensure that there are no orphan nodes after these edges are removed.
-        :param nodes:
-        :param edges:
-        :param holdout_frac:
-        :param random_seed:
-        :return:
-        """
-
-        train, test = split(edges, holdout_frac, random_seed=random_seed)
-
-        nodes, train_edges = ensure_connectedness(nodes, train)
-
-        nodes, test_edges = ensure_valid_edges(nodes, test)
-
-        return nodes, train_edges, test_edges
+    # @classmethod
+    # def holdout(cls, nodes, edges, holdout_frac, random_seed):
+    #     """
+    #     Create a set of holdout edges, ensure that there are no orphan nodes after these edges are removed.
+    #     :param nodes:
+    #     :param edges:
+    #     :param holdout_frac:
+    #     :param random_seed:
+    #     :return:
+    #     """
+    #
+    #     train, test = split(edges, holdout_frac, random_seed=random_seed)
+    #
+    #     nodes, train_edges = ensure_connectedness(nodes, train)
+    #
+    #     nodes, test_edges = ensure_valid_edges(nodes, test)
+    #
+    #     return nodes, train_edges, test_edges
 
     # def mark_leaf_nodes(self):
     #     leaf_types = {'subword', "Op", "Constant", "Name"}  # the last is used in graphs without subwords
@@ -457,6 +466,19 @@ class SourceGraphDataset:
     def load_api_call(self):
         path = join(self.data_path, "common_call_seq.bz2")
         return unpersist(path)
+
+    def load_token_prediction(self):
+        if self.use_edge_types:
+            edges = self.edges.query("type == 'subword_'")
+        else:
+            edges = self.edges.query("type_backup == 'subword_'")
+
+        target_nodes = set(edges["dst"].to_list())
+        target_nodes = self.nodes.query("id in @target_nodes", local_dict={"target_nodes": target_nodes})[["id", "name"]]
+        name_extr = lambda x: x.split('@')[0]
+        target_nodes.eval("name = name.map(@name_extr)", local_dict={"name_extr": name_extr}, inplace=True)
+        target_nodes.rename({"id": "src", "name": "dst"}, axis=1, inplace=True)
+        return target_nodes
 
     def buckets_from_pretrained_embeddings(self, pretrained_path, n_buckets):
 
@@ -491,23 +513,25 @@ class SourceGraphDataset:
 
         return embs_init
 
+    def create_subword_masker(self):
+        return SubwordMasker(self.nodes, self.edges)
 
-def split(edges, holdout_frac, random_seed=None):
-    if random_seed is not None:
-        edges_shuffled = edges.sample(frac=1., random_state=42)
-        logging.warning("Random state for splitting edges is fixed")
-    else:
-        edges_shuffled = edges.sample(frac=1.)
-
-    train_frac = int(edges_shuffled.shape[0] * (1. - holdout_frac))
-
-    train = edges_shuffled.iloc[:train_frac]
-    test = edges_shuffled.iloc[train_frac:]
-    logging.info(
-        f"Splitting edges into train and test set. "
-        f"Train: {train.shape[0]}. Test: {test.shape[0]}. Fraction: {holdout_frac}"
-    )
-    return train, test
+# def split(edges, holdout_frac, random_seed=None):
+#     if random_seed is not None:
+#         edges_shuffled = edges.sample(frac=1., random_state=42)
+#         logging.warning("Random state for splitting edges is fixed")
+#     else:
+#         edges_shuffled = edges.sample(frac=1.)
+#
+#     train_frac = int(edges_shuffled.shape[0] * (1. - holdout_frac))
+#
+#     train = edges_shuffled.iloc[:train_frac]
+#     test = edges_shuffled.iloc[train_frac:]
+#     logging.info(
+#         f"Splitting edges into train and test set. "
+#         f"Train: {train.shape[0]}. Test: {test.shape[0]}. Fraction: {holdout_frac}"
+#     )
+#     return train, test
 
 
 def ensure_connectedness(nodes: pandas.DataFrame, edges: pandas.DataFrame):
@@ -603,10 +627,11 @@ def test_dataset():
         data_path,
         # nodes_path, edges_path,
         label_from='type',
-        use_node_types=True,
+        use_node_types=False,
         use_edge_types=True,
     )
 
+    # sm = dataset.create_subword_masker()
     print(dataset)
 
 
