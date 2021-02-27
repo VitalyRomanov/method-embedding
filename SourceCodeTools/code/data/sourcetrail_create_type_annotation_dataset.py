@@ -1,17 +1,18 @@
 import ast
 import json
+import logging
 import os
 import sys
 from ast import literal_eval
 
 import pandas as pd
-import spacy
 from spacy.gold import biluo_tags_from_offsets
+from tqdm import tqdm
 
-from SourceCodeTools.nlp.entity.util import inject_tokenizer
-from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets, overlap
-
-nlp = inject_tokenizer(spacy.blank("en"))
+from SourceCodeTools.nlp import create_tokenizer
+from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets, overlap, adjust_offsets2, \
+    resolve_self_collisions2
+from SourceCodeTools.code.data.sourcetrail.file_utils import read_processed_bodies, unpersist, unpersist_if_present
 
 allowed = {'str', 'bool', 'Optional', 'None', 'int', 'Any', 'Union', 'List', 'Dict', 'Callable', 'ndarray',
            'FrameOrSeries', 'bytes', 'DataFrame', 'Matcher', 'float', 'Tuple', 'bool_t', 'Description', 'Type'}
@@ -107,29 +108,8 @@ def get_docstring(body):
                 docstring_ranges.append((node.body[0].lineno - 1, node.body[0].end_lineno - 1, #first line, last line
                                          0, len(body_lines[node.body[0].end_lineno - 1]), "docstring")) # beginning of first line, end of last line
 
-    # do not need to use as_bytes here because column offsets are created with len(), not with ast package
-    return to_offsets(body, docstring_ranges)
-
-    # block_symbol = ""
-    # block = False
-    #
-    # docstrings = []
-    # cdocstring = None
-    #
-    # for line_no, line in enumerate(body_lines):
-    #     if not block and (line.lstrip().startswith('"""') or line.lstrip().startswith("'''")):
-    #         block = True
-    #         block_symbol = line.lstrip()[:3]
-    #         cdocstring = (line_no, 0)  # line and col_offset
-    #
-    #     if block and line.rstrip().endswith(block_symbol):
-    #         if line_no == cdocstring[0] and len(line.strip()) >= 6 or \
-    #                 line_no != cdocstring[0]:
-    #             block = False
-    #             block_symbol = ""
-    #             docstrings.append((cdocstring[0], line_no, cdocstring[1], len(line), "docstring"))
-    #
-    # return to_offsets(body, docstrings)
+    # as bytes is needed because the offsets are creted using ast package
+    return to_offsets(body, docstring_ranges, as_bytes=True)
 
 
 def remove_offsets(body, entities, offsets):
@@ -222,10 +202,17 @@ def unpack_annotations(body, labels):
     return vars, cuts
 
 
-def process_body(body, replacements):
-    # do not need these two lines anymore
-    # replacements = [(r[0], r[0], r[1], r[2], r[3]) for r in replacements]
-    # replacements = to_offsets(body, replacements)
+def process_body(nlp, body: str, replacements=None):
+    """
+    Extract annotation information, strip documentation and type annotations.
+    :param nlp: Spacy tokenizer
+    :param body: Function body
+    :param replacements: Optional. Additional replacements that need to be adjusted for modified function
+    :return: Entry with modified function body. Returns None if not annotations in the function
+    """
+
+    if replacements is None:
+        replacements = []
 
     entry = {"ents": [],
              "cats": [],
@@ -254,13 +241,18 @@ def process_body(body, replacements):
     body_, replacements_annotations, _ = remove_offsets(body_, replacements + annotations,
                                                         return_cuts + annotation_cuts)
 
+    replacements_annotations = adjust_offsets2(replacements_annotations, len(initial_strip))
+    body_ = initial_strip + body_
+
     entry['replacements'].extend(list(filter(lambda x: isint(x[2]), replacements_annotations)))
     entry['ents'].extend(list(filter(lambda x: not isint(x[2]), replacements_annotations)))
     entry['cats'].extend(returns)
     entry['text'] = body_
 
-    assert isvalid(body_, entry['replacements'])
-    assert isvalid(body_, entry['ents'])
+    entry['replacements'] = resolve_self_collisions2(entry['replacements'])
+
+    assert isvalid(nlp, body_, entry['replacements'])
+    assert isvalid(nlp, body_, entry['ents'])
 
     return entry
 
@@ -292,7 +284,7 @@ def get_initial_labels(body_):
         return None
 
 
-def isvalid(text, ents):
+def isvalid(nlp, text, ents):
     doc = nlp(text)
     tags = biluo_tags_from_offsets(doc, ents)
     # for t, tag in zip(doc, tags):
@@ -310,61 +302,145 @@ def isvalid(text, ents):
 #         return False
 
 
-def to_global_ids(entry, id_map, local_names, global_names):
-    replacements = []
+def to_global_ids(entry, id_map, global_names=None, local_names=None):
+    global_replacements = []
     for r in entry['replacements']:
         # id_ = int(r[2].split("_")[-1])
         id_ = r[2]
-        assert local_names[id_] == global_names[id_map[id_]], f"{local_names[id_]} != {global_names[id_map[id_]]}"
+        if global_names is not None and local_names is not None:
+            assert local_names[id_] == global_names[id_map[id_]], f"{local_names[id_]} != {global_names[id_map[id_]]}"
         # assert local_names[id_][0].lower() == local_names[id_][0], f"{local_names[id_]}"
-        replacements.append((r[0], r[1], str(id_map[id_])))
 
-    entry['replacements'] = replacements
+        # cast id into string to make format compatible with spacy's NER classifier
+        # name = local_names[id_]
+        # var = entry["text"][r[0]: r[1]]
+        global_replacements.append((r[0], r[1], str(id_map[id_])))
+
+    entry['replacements'] = global_replacements
     return entry
 
 
-def main(args):
-    from argparse import ArgumentParser
-    parser = ArgumentParser()
-    parser.add_argument("working_directory", type=str)
+def offsets_for_func(offsets, body, func_id):
+    def in_mention(id_, mentions):
+        for mention in mentions:
+            if mention[2] == id_:
+                return True
+        return False
 
-    args = parser.parse_args()
+    def get_correct_mention(mentions, id_):
+        for mention in mentions:
+            if mention[2] == id_:
+                return mention
+        raise Exception("Mention should have been found")
 
-    bodies_path = args[1]
-    bodies = pd.read_csv(bodies_path)
-    id2global = pd.read_csv(args[3])
-    id_maps = dict(zip(id2global['id'], id2global['global_id']))
+    in_mention_ = lambda mention: in_mention(func_id, mention)
+    body_offsets = offsets.query("mentioned_in.map(@in_mention)", local_dict={"in_mention": in_mention_})
 
-    global_names = pd.read_csv(args[4])
-    local_names = pd.read_csv(args[5])
-    global_names = dict(zip(global_names['id'].tolist(), global_names['serialized_name'].tolist()))
-    local_names = dict(zip(local_names['id'].tolist(), local_names['serialized_name'].tolist()))
+    if len(body_offsets) == 0:
+        return []
 
-    # body_field = bodies.columns[1]
+    start_, end_, id_ = get_correct_mention(mentions=body_offsets.iloc[0, 4], id_=func_id)
+
+    body_offsets = [tuple(offset) for offset in body_offsets[["start", "end", "node_id"]].values.tolist()]
+
+    initial_indent = len(body) - len(body.lstrip())
+    body_offsets = adjust_offsets2(body_offsets, amount=-(start_-initial_indent))
+    body_offsets = list(set(body_offsets))
+
+    return body_offsets
+
+
+def load_names(nodes_path):
+    if nodes_path is not None:
+        nodes = unpersist(nodes_path)
+        names = dict(zip(nodes['id'].tolist(), nodes['serialized_name'].tolist()))
+    else:
+        names = None
+    return names
+
+
+def process_package(working_directory, global_names=None):
+    """
+    Find functions with annotations, extract annotation information, strip documentation and type annotations.
+    :param working_directory: location of package related files
+    :param global_names: optional, mapping from global node ids to names
+    :return: list of entries in spacy compatible format
+    """
+    bodies = unpersist_if_present(os.path.join(working_directory, "source_graph_bodies.bz2"))
+    if bodies is None:
+        return []
+
+    offsets_path = os.path.join(working_directory, "offsets.bz2")
+
+    # offsets store information about spans for nodes referenced in the source code
+    if os.path.isfile(offsets_path):
+        offsets = unpersist(offsets_path)
+    else:
+        logging.warning(f"No file with offsets: {offsets_path}")
+        offsets = None
+
+    def load_local2global(working_directory):
+        local2global = unpersist(os.path.join(working_directory, "local2global_with_ast.bz2"))
+        id_maps = dict(zip(local2global['id'], local2global['global_id']))
+        return id_maps
+
+    id_maps = load_local2global(working_directory)
+
+    local_names = load_names(os.path.join(working_directory, "nodes_with_ast.bz2"))
+
+    nlp = create_tokenizer("spacy")
 
     data = []
 
-    for ind, (_, row) in enumerate(bodies.iterrows()):
+    for ind, (_, row) in tqdm(enumerate(bodies.iterrows()), total=len(bodies), leave=True, desc=os.path.basename(working_directory)):
         body = row['body']
-        replacements = literal_eval(row['replacement_list'])
-        entry = process_body(body, replacements)
-        if entry is not None:
-            entry = to_global_ids(entry, id_maps, local_names, global_names)
-            data.append(entry)
-        print(f"{ind}/{len(bodies)}", end="\r")
 
-    format = "jsonl"
-    if format == "jsonl":
-        with open(args[2], "a") as sink:
+        if offsets is not None:
+            graph_node_spans = offsets_for_func(offsets, body, row["id"])
+        else:
+            graph_node_spans = []
+
+        entry = process_body(nlp, body, replacements=graph_node_spans)
+
+        if entry is not None:
+            entry = to_global_ids(entry, id_maps, global_names, local_names)
+            data.append(entry)
+
+    return data
+
+
+def main():
+    from argparse import ArgumentParser
+    parser = ArgumentParser()
+    parser.add_argument("packages", type=str, help="")
+    parser.add_argument("output_dataset", type=str, help="")
+    parser.add_argument("--format", "-f", dest="format", default="jsonl", help="jsonl|csv")
+    parser.add_argument("--global_nodes", "-g", dest="global_nodes", default=None)
+
+    args = parser.parse_args()
+
+    global_names = load_names(args.global_nodes)
+
+    data = []
+
+    for package in os.listdir(args.packages):
+        pkg_path = os.path.join(args.packages, package)
+        if not os.path.isdir(pkg_path):
+            continue
+
+        data.extend(process_package(working_directory=pkg_path, global_names=global_names))
+
+    if args.format == "jsonl":  # jsonl format is used by spacy
+        with open(args.output_dataset, "a") as sink:
             for entry in data:
                 sink.write(f"{json.dumps(entry)}\n")
-    elif format == "csv":
-        if os.path.isfile(args[2]):
+    elif args.format == "csv":
+        if os.path.isfile(args.output_dataset):
             header = False
         else:
             header = True
-        pd.DataFrame(data).to_csv(args[2], index=False, header=header)
+        pd.DataFrame(data).to_csv(args.output_dataset, index=False, header=header)
 
 
 if __name__ == "__main__":
-    main(sys.argv)
+    main()
