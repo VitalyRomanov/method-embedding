@@ -16,7 +16,9 @@ def get_function_calls_from_range(occurrences, start, end):
 
 
 def sql_get_function_calls_from_range(occurrences, start, end):
-    return occurrences.query(f"select * from {occurrences.table_name} where start_line >= {start} and end_line <= {end} and occ_type != {DEFINITION_TYPE} and e_type = 'calls'")
+    df = occurrences.query(f"select * from {occurrences.table_name} where start_line >= {start} and end_line <= {end} and occ_type != {DEFINITION_TYPE} and e_type = 'calls'")
+    df = df.astype({"source_node_id": "Int32", "target_node_id": "Int32"})
+    return df
 
 
 def extract_call_seq(nodes, edges, source_location, occurrence):
