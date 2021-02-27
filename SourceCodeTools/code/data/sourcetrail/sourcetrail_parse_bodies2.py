@@ -3,7 +3,7 @@ import sys
 from typing import Tuple, List, Optional
 
 from SourceCodeTools.code.data.sourcetrail.common import *
-
+from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
@@ -52,35 +52,20 @@ def get_docstring_ast(body):
         return ""
 
 
-def get_function_body(file_content, file_id, start, end) -> str:
+def get_function_body(file_content, file_id, start, end, s_col, e_col) -> str:
+    # need to extract using offsets because last line can have content in it
+    offsets = [(start, end, s_col, e_col, "body")]
+    offsets = to_offsets(file_content[file_id], offsets)
     # source_lines = file_content.query(f"id == {file_id}").iloc[0]['content'].split("\n")
+
     source_lines = file_content[file_id].split("\n")
 
     body_lines = source_lines[start: end]
 
-    body_num_lines = len(body_lines)
+    initial_strip = body_lines[0][0:len(body_lines[0]) - len(body_lines[0].lstrip())]
+    body = initial_strip + file_content[file_id][offsets[0][0]: offsets[0][1]]
 
-    trim = 0
-
-    if body_num_lines > 2: # assume one line function, or signaure and return statement
-        initial_indent = len(body_lines[0]) - len(body_lines[0].lstrip())
-
-        while trim < body_num_lines:
-            cline = body_lines[body_num_lines - trim - 1]
-            if body_num_lines - 1 > 1:
-                if cline.strip() == "":
-                    trim += 1
-                elif len(cline) - len(cline.lstrip()) <= initial_indent:
-                    trim += 1
-                else:
-                    break
-            else:
-                break
-
-        if trim == body_num_lines:
-            trim = 0
-
-    return "\n".join(source_lines[start: end - trim])
+    return body
 
 
 def has_valid_syntax(function_body):
@@ -110,7 +95,8 @@ def get_range_for_replacement(occurrence, start_col, end_col, line, nodeid2name)
         return None, None
     else:
         name = f"srctrlnd_{st_id}"  # sourcetrailnode
-        return extended_range, name
+        return extended_range, st_id
+        # return extended_range, name
 
 
 def process_body(body, local_occurrences, nodeid2name, f_id, f_start):
@@ -138,9 +124,13 @@ def process_body(body, local_occurrences, nodeid2name, f_id, f_start):
             if extended_range is not None:
                 occ_col_start, occ_col_end = extended_range
 
+                # (start_line, end_line, start_col, end_col)
                 list_of_replacements.append((
-                    curr_line, occ_col_start, occ_col_end, sourcetrail_name
+                    curr_line, curr_line, occ_col_start, occ_col_end, sourcetrail_name
                 ))
+
+    list_of_replacements = list(set(list_of_replacements))
+    list_of_replacements = to_offsets(body, list_of_replacements, as_bytes=False)
 
     return {
         "id": f_id,
@@ -178,7 +168,7 @@ def process_bodies(nodes, edges, source_location, occurrence, file_content, lang
                 f_start -= 1
                 f_end -= 1
 
-                body = get_function_body(file_content, file_id, f_start, f_end)
+                body = get_function_body(file_content, file_id, f_start, f_end, f_def.start_column-1, f_def.end_column)
 
                 if not has_valid_syntax(body):
                     continue
