@@ -1,3 +1,4 @@
+from copy import copy
 from typing import List, Tuple, Iterable
 
 
@@ -103,5 +104,43 @@ def resolve_self_collision(offsets):
         #     no_collisions.pop(ind)
         #
         # no_collisions.extend(new)
+
+    return no_collisions
+
+
+def resolve_self_collisions2(offsets):
+    """
+    Resolve self collision in favour of the smallest entity.
+    :param offsets:
+    :return:
+    """
+    offsets = copy(offsets)
+    no_collisions = []
+
+    while len(offsets) > 0:
+        offset_1 = offsets.pop(0)
+        evict = []
+        new = []
+
+        add = True
+        for ind_2, offset_2 in enumerate(no_collisions):
+            if overlap(offset_1, offset_2):
+                # keep smallest
+                if (offset_1[1] - offset_1[0]) <= (offset_2[1] - offset_2[0]):
+                    evict.append(ind_2)
+                    new.append(offset_1)
+                else:
+                    pass
+                add = False
+
+        if add:
+            new.append(offset_1)
+
+        for ind in sorted(evict, reverse=True):
+            no_collisions.pop(ind)
+
+        no_collisions.extend(new)
+
+    no_collisions = list(set(no_collisions))
 
     return no_collisions
