@@ -2,20 +2,19 @@ import ast
 import json
 import logging
 import os
-import sys
-from ast import literal_eval
 
 import pandas as pd
 from spacy.gold import biluo_tags_from_offsets
 from tqdm import tqdm
 
+from SourceCodeTools.code.data.sourcetrail.file_utils import unpersist, unpersist_if_present
 from SourceCodeTools.nlp import create_tokenizer
 from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets, overlap, adjust_offsets2, \
     resolve_self_collisions2
-from SourceCodeTools.code.data.sourcetrail.file_utils import read_processed_bodies, unpersist, unpersist_if_present
 
-allowed = {'str', 'bool', 'Optional', 'None', 'int', 'Any', 'Union', 'List', 'Dict', 'Callable', 'ndarray',
-           'FrameOrSeries', 'bytes', 'DataFrame', 'Matcher', 'float', 'Tuple', 'bool_t', 'Description', 'Type'}
+
+# allowed = {'str', 'bool', 'Optional', 'None', 'int', 'Any', 'Union', 'List', 'Dict', 'Callable', 'ndarray',
+#            'FrameOrSeries', 'bytes', 'DataFrame', 'Matcher', 'float', 'Tuple', 'bool_t', 'Description', 'Type'}
 
 
 def preprocess(ent):
@@ -24,6 +23,11 @@ def preprocess(ent):
 
 
 def inspect_fdef(node):
+    """
+    Extract return type annotations
+    :param node: ast node
+    :return:
+    """
     if node.returns is not None:
         return [{"name": "returns", "line": node.returns.lineno - 1, "end_line": node.returns.end_lineno - 1,
                  "col_offset": node.returns.col_offset, "end_col_offset": node.returns.end_col_offset}]
@@ -32,6 +36,11 @@ def inspect_fdef(node):
 
 
 def inspect_arg(node):
+    """
+    Extract variable type annotation
+    :param node: ast node
+    :return:
+    """
     return inspect_ann(node)
 
 
@@ -39,10 +48,16 @@ def isint(val):
     try:
         int(val)
         return True
-    except:
+    except ValueError:
         return False
 
+
 def inspect_ann(node):
+    """
+    Extract variable type annotation
+    :param node: ast node
+    :return:
+    """
     if node.annotation is not None:
         return [{"name": "annotation", "line": node.annotation.lineno - 1, "end_line": node.annotation.end_lineno - 1,
                  "col_offset": node.annotation.col_offset, "end_col_offset": node.annotation.end_col_offset,
@@ -52,18 +67,13 @@ def inspect_ann(node):
         return []
 
 
-def resolve_collisions(entities_1, entities_2):
-    evict = set()
-
-    for ind_1, e1 in enumerate(entities_1):
-        for ind_2, e2 in enumerate(entities_2):
-            if overlap(e1, e2):
-                evict.add(ind_2)
-
-    return [r for ind, r in enumerate(entities_2) if ind not in evict]
-
-
 def correct_entities(entities, removed_offsets):
+    """
+    Update offsets based on the information about removed spans
+    :param entities: list of entities in format (start, end, entity)
+    :param removed_offsets: list of removed spans in format (start, end)
+    :return:
+    """
     offsets_sorted = sorted(removed_offsets, key=lambda x: x[0], reverse=True)
 
     offset_lens = [offset[1] - offset[0] for offset in offsets_sorted]
@@ -92,8 +102,12 @@ def correct_entities(entities, removed_offsets):
     return for_correction
 
 
-def get_docstring(body):
-
+def get_docstring(body: str):
+    """
+    Get docstring ranges
+    :param body:
+    :return:
+    """
     body_lines = body.split("\n")
 
     docstring_ranges = []
@@ -101,18 +115,30 @@ def get_docstring(body):
     for node in ast.walk(ast.parse(body)):
         try:
             docstring = ast.get_docstring(node)
-        except:
+        except:  # syntax error?
             continue
         else:
             if docstring is not None:
-                docstring_ranges.append((node.body[0].lineno - 1, node.body[0].end_lineno - 1, #first line, last line
-                                         0, len(body_lines[node.body[0].end_lineno - 1]), "docstring")) # beginning of first line, end of last line
+                docstring_ranges.append(
+                    (
+                        node.body[0].lineno - 1, node.body[0].end_lineno - 1,  # first line, last line
+                        0, len(body_lines[node.body[0].end_lineno - 1]),  # beginning of first line, end of last line
+                        "docstring"
+                    )
+                )
 
-    # as bytes is needed because the offsets are creted using ast package
-    return to_offsets(body, docstring_ranges, as_bytes=True)
+    # as bytes is not needed because the offsets are created using len and not ast package
+    return to_offsets(body, docstring_ranges, as_bytes=False)
 
 
-def remove_offsets(body, entities, offsets):
+def remove_offsets(body: str, entities, offsets):
+    """
+    Remove offsets from body, adjust entities to match trimmed body
+    :param body:
+    :param entities: list of entities in format (start, end, entity)
+    :param offsets: list of removed spans in format (start, end)
+    :return:
+    """
     cuts = []
 
     new_body = body
@@ -128,7 +154,13 @@ def remove_offsets(body, entities, offsets):
     return new_body, new_entities, cuts
 
 
-def unpack_returns(body, labels):
+def unpack_returns(body: str, labels: pd.DataFrame):
+    """
+    Use information from ast package to strip return type annotation from function body
+    :param body:
+    :param labels: DataFrame with information about return type annotation
+    :return: Trimmed body and list of return types (normally one).
+    """
     returns = []
 
     for ind, row in labels.iterrows():
@@ -163,6 +195,12 @@ def unpack_returns(body, labels):
 
 
 def unpack_annotations(body, labels):
+    """
+    Use information from ast package to strip type annotation from function body
+    :param body:
+    :param labels: DataFrame with information about type annotations
+    :return: Trimmed body and list of annotations.
+    """
     variables = []
     annotations = []
 
@@ -258,10 +296,14 @@ def process_body(nlp, body: str, replacements=None):
 
 
 def get_initial_labels(body_):
+    """
+    Walk ast to find type annotations
+    :param body_:
+    :return: DataFrame with type annotation information
+    """
     try:
         root = ast.parse(body_)
-    except SyntaxError as e:
-        # print(e)
+    except SyntaxError:
         return None
 
     positions = []
@@ -285,35 +327,37 @@ def get_initial_labels(body_):
 
 
 def isvalid(nlp, text, ents):
+    """
+    Verify that tokens and entity spans are aligned
+    :param nlp: spacy tokenizer
+    :param text: text to tokenize
+    :param ents: list of entities in format (start, end, entity)
+    :return: true if entities and tokens are aligned
+    """
     doc = nlp(text)
     tags = biluo_tags_from_offsets(doc, ents)
-    # for t, tag in zip(doc, tags):
-    #     print(tag, t.text, sep="\t")
     if "-" in tags:
         return False
     else:
         return True
 
 
-# def overlap(p1, p2):
-#     if (p2[1] - p1[0]) * (p2[0] - p1[1]) <= 0:
-#         return True
-#     else:
-#         return False
-
-
 def to_global_ids(entry, id_map, global_names=None, local_names=None):
+    """
+    Map local ids to ids in a global source code graph
+    :param entry:
+    :param id_map: mapping from local ids to global ids
+    :param global_names: Optional, used for verification
+    :param local_names: Optional, used for verification
+    :return: entry with global replacement ids
+    """
     global_replacements = []
     for r in entry['replacements']:
-        # id_ = int(r[2].split("_")[-1])
         id_ = r[2]
         if global_names is not None and local_names is not None:
             assert local_names[id_] == global_names[id_map[id_]], f"{local_names[id_]} != {global_names[id_map[id_]]}"
-        # assert local_names[id_][0].lower() == local_names[id_][0], f"{local_names[id_]}"
 
         # cast id into string to make format compatible with spacy's NER classifier
-        # name = local_names[id_]
-        # var = entry["text"][r[0]: r[1]]
         global_replacements.append((r[0], r[1], str(id_map[id_])))
 
     entry['replacements'] = global_replacements
@@ -392,7 +436,10 @@ def process_package(working_directory, global_names=None):
 
     data = []
 
-    for ind, (_, row) in tqdm(enumerate(bodies.iterrows()), total=len(bodies), leave=True, desc=os.path.basename(working_directory)):
+    for ind, (_, row) in tqdm(
+            enumerate(bodies.iterrows()), total=len(bodies),
+            leave=True, desc=os.path.basename(working_directory)
+    ):
         body = row['body']
 
         if offsets is not None:
