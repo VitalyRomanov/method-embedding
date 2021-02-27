@@ -66,8 +66,10 @@ def sql_get_function_definitions(occurrences):
 
 
 def sql_get_occurrences_from_range(occurrences, start, end) -> pd.DataFrame:
-    return occurrences.query(
+    df = occurrences.query(
         f"select * from {occurrences.table_name} where start_line >= {start} and end_line <= {end} and occ_type != {DEFINITION_TYPE} and start_line = end_line")
+    df = df.astype({"source_node_id": "Int32", "target_node_id": "Int32"})
+    return df
 
 
 def create_node_repr(nodes):
