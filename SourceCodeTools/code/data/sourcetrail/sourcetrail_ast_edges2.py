@@ -789,12 +789,28 @@ def process_code(source_file_content, offsets, node_resolver, mention_tokenizer,
 
         ast_offsets = replacer.recover_offsets_with_edits2(get_valid_offsets(edges))
 
-        def merge_global_and_ast_offsets(ast_offsets, global_offsets):
-            ast_offsets.extend(global_offsets)
-            return ast_offsets
+        def merge_global_and_ast_offsets(ast_offsets, global_offsets, definitions):
+            """
+            Merge local and global offsets and add information about the scope
+            :param ast_offsets:
+            :param global_offsets:
+            :param definitions:
+            :return:
+            """
+            offsets = [[*offset, set()] for offset in ast_offsets]
+            offsets = offsets + [[*offset, set()] for offset in global_offsets]
+
+            for def_ in definitions:
+                for offset_ in offsets:
+                    if range_overlap(def_, offset_):
+                        offset_[3].add(tuple(def_))
+
+            return offsets
 
         global_and_ast_offsets = merge_global_and_ast_offsets(
-            ast_offsets, global_offsets=offsets.query("occ_type != 1")[["start", "end", "node_id"]].values
+            # occ_type == 1 are function definitions
+            ast_offsets, global_offsets=offsets.query("occ_type != 1")[["start", "end", "node_id"]].values.tolist(),
+            definitions=offsets.query("occ_type == 1")[["start", "end", "node_id"]].values.tolist()
         )
     else:
         global_and_ast_offsets = None
@@ -858,7 +874,8 @@ def get_ast_from_modules(
                         "file_id": file_id,
                         "start": offset[0],
                         "end": offset[1],
-                        "node_id": offset[2]
+                        "node_id": offset[2],
+                        "mentioned_in": offset[3] # if len(offset[3]) > 0 else pd.NA
                     })
 
         format_offsets(global_and_ast_offsets, target=all_offsets)
@@ -980,7 +997,7 @@ class OccurrenceReplacer:
             self.place_temp_to_evicted(temp_evicted, temp_end_changes, offset, evicted, source_file_content)
 
             src_str = source_file_content[offset[0]: offset[1]]
-            # longer occurrences such as attributes and function definition will be found first because occurences are
+            # longer occurrences such as attributes and function definition will be found first because occurrences are
             # sorted by occurrence end position in descending order
             if ("." in src_str or "\n" in src_str or " " in src_str or
                     "[" in src_str or "(" in src_str or "{" in src_str):
