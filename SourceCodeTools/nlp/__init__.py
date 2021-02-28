@@ -1,5 +1,7 @@
 import hashlib
 
+from SourceCodeTools.nlp.entity.utils.spacy_tools.SpacyPythonBpeTokenizer import SpacyPythonBpe
+
 
 def token_hasher(token: str, buckets: int):
     return int(hashlib.md5(token.encode('utf-8')).hexdigest(), 16) % buckets
@@ -37,7 +39,7 @@ def create_tokenizer(type, bpe_path=None, regex=None):
     tokens = tok("string for tokenization")
     ```
 
-    :param type: tokenizer type is one of [spacy|regex|bpe]. Spacy creates a blank english tokenizer with additional
+    :param type: tokenizer type is one of [spacy|spacy_bpe|regex|bpe]. Spacy creates a blank english tokenizer with additional
         tokenization rules. Regex tokenizer is a simple tokenizer from nltk that uses regular expression
         `[\w]+|[^\w\s]|[0-9]+`. BPE tokenizer is an instance of sentencepiece model (requires pretrained model).
     :param bpe_path: path for pretrained BPE model. Used for BPE tokenizer
@@ -47,6 +49,15 @@ def create_tokenizer(type, bpe_path=None, regex=None):
     if type == "spacy":
         import spacy
         return _inject_tokenizer(spacy.blank("en"))
+    elif type == "spacy_bpe":
+        import spacy
+        nlp = spacy.blank("en")
+
+        if bpe_path is None:
+            raise Exception("Specify path for bpe tokenizer model")
+
+        nlp.tokenizer = SpacyPythonBpe(bpe_path, nlp.vocab)
+        return nlp
     elif type == "regex":
         from nltk import RegexpTokenizer
         if regex is None:
@@ -66,3 +77,7 @@ def create_tokenizer(type, bpe_path=None, regex=None):
         return make_tokenizer(load_bpe_model(bpe_path))
     else:
         raise Exception("Supported tokenizer types: spacy, regex, bpe")
+
+# import tokenize
+# from io import BytesIO
+# tokenize.tokenize(BytesIO(s.encode('utf-8')).readline)
