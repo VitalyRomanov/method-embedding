@@ -4,13 +4,13 @@ import logging
 import os
 
 import pandas as pd
-from spacy.gold import biluo_tags_from_offsets
 from tqdm import tqdm
 
 from SourceCodeTools.code.data.sourcetrail.file_utils import unpersist, unpersist_if_present
 from SourceCodeTools.nlp import create_tokenizer
-from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets, overlap, adjust_offsets2, \
+from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets, adjust_offsets2, \
     resolve_self_collisions2
+from SourceCodeTools.nlp.entity.utils.spacy_tools import isvalid
 
 
 # allowed = {'str', 'bool', 'Optional', 'None', 'int', 'Any', 'Union', 'List', 'Dict', 'Callable', 'ndarray',
@@ -324,22 +324,6 @@ def get_initial_labels(body_):
         return df
     else:
         return None
-
-
-def isvalid(nlp, text, ents):
-    """
-    Verify that tokens and entity spans are aligned
-    :param nlp: spacy tokenizer
-    :param text: text to tokenize
-    :param ents: list of entities in format (start, end, entity)
-    :return: true if entities and tokens are aligned
-    """
-    doc = nlp(text)
-    tags = biluo_tags_from_offsets(doc, ents)
-    if "-" in tags:
-        return False
-    else:
-        return True
 
 
 def to_global_ids(entry, id_map, global_names=None, local_names=None):
