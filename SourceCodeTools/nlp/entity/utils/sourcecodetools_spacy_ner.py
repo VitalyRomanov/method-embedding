@@ -2,11 +2,25 @@ from __future__ import unicode_literals, print_function
 import spacy
 import sys, json, os
 import pickle
-from SourceCodeTools.nlp.entity.util import inject_tokenizer, read_data
+
+from SourceCodeTools.nlp import create_tokenizer
+from SourceCodeTools.nlp.entity.utils.data import read_data
 from spacy.gold import biluo_tags_from_offsets
 
 from spacy.gold import GoldParse
 from spacy.scorer import Scorer
+import random
+from pathlib import Path
+import spacy
+from spacy.util import minibatch, compounding
+
+from SourceCodeTools.nlp.entity.utils.spacy_tools import isvalid, add_vectors
+
+
+class SpacyNERTrainer:
+    def __init__(self):
+        pass
+
 
 def evaluate(ner_model, examples):
     scorer = Scorer()
@@ -18,62 +32,27 @@ def evaluate(ner_model, examples):
     return {key: scorer.scores[key] for key in ['ents_p', 'ents_r', 'ents_f', 'ents_per_type']}
     # return scorer.scores['ents_per_type']
 
-model_path = sys.argv[1]
-data_path = sys.argv[2]
-output_dir = "model-final-ner"
-n_iter = 90
 
-def isvalid(nlp, text, ents):
-    doc = nlp(text)
-    tags = biluo_tags_from_offsets(doc, ents)
-    if "-" in tags:
-        return False
-    else:
-        return True
-
-
-import random
-from pathlib import Path
-import spacy
-from spacy.util import minibatch, compounding
-
-
-TRAIN_DATA, TEST_DATA = read_data(data_path)
-
-
-ent_types = []
-for _,e in TRAIN_DATA:
-    ee = [ent[2] for ent in e['entities']]
-    ent_types += ee
-
-
-def main(model=None, output_dir=None, n_iter=100):
+def train_spacy_model(train_data, test_data, model, output_dir=None, n_iter=100):
     """Load the model, set up the pipeline and train the entity recognizer."""
-    if model is not None:
-        nlp = spacy.load(model)  # load existing spaCy model
-        print("Loaded model '%s'" % model)
-    else:
-        nlp = spacy.blank("en")  # create blank Language class
-        print("Created blank 'en' model")
+    nlp = model
 
-    # nlp = spacy.blank("en")
-    # nlp = inject_tokenizer(nlp)
+    ent_types = []
+    for _, e in train_data:
+        ee = [ent[2] for ent in e['entities']]
+        ent_types += ee
 
-    for text, ent in TRAIN_DATA:
+    for text, ent in train_data:
         doc = nlp(text)
         entities = ent['entities']
         tags = biluo_tags_from_offsets(doc, entities)
+
+        # # if "-" in tags:
         # print(text)
         # print(entities, tags)
-        # sys.exit()
-        # if text.startswith("def _bundle_extensions(objs, resources)"):
-        #     pass
-        # if "-" in tags:
-        #     for t in doc:
-        #         if t.is_space: continue
-        #         print(t, tags[t.i])
-        #         if t.text == '.':
-        #             print()
+        # for t in doc:
+        #     print(t, tags[t.i])
+        # print("\n\n\n")
 
     # create the built-in pipeline components and add them to the pipeline
     # nlp.create_pipe works for built-ins that are registered with spaCy
@@ -85,7 +64,7 @@ def main(model=None, output_dir=None, n_iter=100):
         ner = nlp.get_pipe("ner")
 
     # add labels
-    for _, annotations in TRAIN_DATA:
+    for _, annotations in train_data:
         for ent in annotations.get("entities"):
             ner.add_label(ent[2])
 
@@ -97,10 +76,10 @@ def main(model=None, output_dir=None, n_iter=100):
         # if model is None:
         nlp.begin_training()
         for itn in range(n_iter):
-            random.shuffle(TRAIN_DATA)
+            random.shuffle(train_data)
             losses = {}
             # batch up the examples using spaCy's minibatch
-            batches = minibatch(TRAIN_DATA, size=compounding(4.0, 32.0, 1.001))
+            batches = minibatch(train_data, size=compounding(4.0, 32.0, 1.001))
             for batch in batches:
                 texts, annotations = zip(*batch)
                 nlp.update(
@@ -111,7 +90,7 @@ def main(model=None, output_dir=None, n_iter=100):
                 )
             print(f"{itn}:")
             print("\tLosses", losses)
-            score = evaluate(nlp, TEST_DATA)
+            score = evaluate(nlp, test_data)
             if not os.path.isdir("models"):
                 os.mkdir("models")
             nlp.to_disk(os.path.join("models", f"model_{itn}"))
@@ -137,21 +116,40 @@ def main(model=None, output_dir=None, n_iter=100):
     #     print("Loading from", output_dir)
     #     nlp2 = spacy.load(output_dir)
     #
-    #     for text, _ in TEST_DATA:
+    #     for text, _ in test_data:
     #         doc = nlp2(text)
     #         print("Entities", [(ent.text, ent.label_) for ent in doc.ents])
     #         print("Tokens", [(t.text, t.ent_type_, t.ent_iob) for t in doc])
 
 
-if __name__ == "__main__":
-    # en_core_web_sm
-    main(model=model_path,output_dir=output_dir, n_iter=n_iter)
-    # plac.call(main)
 
-    # Expected output:
-    # Entities [('Shaka Khan', 'PERSON')]
-    # Tokens [('Who', '', 2), ('is', '', 2), ('Shaka', 'PERSON', 3),
-    # ('Khan', 'PERSON', 1), ('?', '', 2)]
-    # Entities [('London', 'LOC'), ('Berlin', 'LOC')]
-    # Tokens [('I', '', 2), ('like', '', 2), ('London', 'LOC', 3),
-    # ('and', '', 2), ('Berlin', 'LOC', 3), ('.', '', 2)]
+def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model_path", "-m", dest="model_path", default=None)
+    parser.add_argument("--vectors", "-v", dest="vectors", default=None)
+    parser.add_argument("data_path")
+    parser.add_argument("--output_model", "-o", dest="output_model", default="spacy-typing-ner")
+    parser.add_argument("--epochs", "-e", dest="epochs", default=90, type=int)
+    parser.add_argument("--seed", "-s", dest="seed", default=42, type=int, help="Seed for random dataset split")
+    parser.add_argument("--bpe", dest="bpe", default=None, type=str, help="")
+    args = parser.parse_args()
+
+
+    train_data, test_data = read_data(open(args.data_path, "r").readlines())
+
+    if args.model_path is not None:
+        model = spacy.load(args.model_path)
+    else:
+        if args.vectors is not None:
+            model = create_tokenizer("spacy_bpe", bpe_path=args.bpe)
+            add_vectors(model, args.vectors)
+        else:
+            raise Exception("You should provide either an initialized spacy model or pretrained vectors")
+
+
+    train_spacy_model(train_data, test_data, model=model, output_dir=args.output_model, n_iter=args.epochs)
+
+
+if __name__ == "__main__":
+    main()
