@@ -1,6 +1,6 @@
 import hashlib
 
-from SourceCodeTools.nlp.entity.utils.spacy_tools.SpacyPythonBpeTokenizer import SpacyPythonBpe
+from SourceCodeTools.nlp.spacy_tools.SpacyPythonBpeTokenizer import SpacyPythonBpe
 
 
 def token_hasher(token: str, buckets: int):
