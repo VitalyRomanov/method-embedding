@@ -136,7 +136,7 @@ def main():
     args = parser.parse_args()
 
 
-    train_data, test_data = read_data(open(args.data_path, "r").readlines())
+    train_data, test_data = read_data(open(args.data_path, "r").readlines(), random_seed=args.seed)
 
     if args.model_path is not None:
         model = spacy.load(args.model_path)
