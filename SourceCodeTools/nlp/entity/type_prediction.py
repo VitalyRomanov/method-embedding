@@ -382,6 +382,12 @@ def get_type_prediction_arguments():
     return args
 
 
+def save_entities(path, entities):
+    with open(os.path.join(path, 'entities.txt')) as entitiesfile:
+        for e in entities:
+            entitiesfile.write(f"{e}\n")
+
+
 if __name__ == "__main__":
     args = get_type_prediction_arguments()
 
@@ -398,6 +404,7 @@ if __name__ == "__main__":
     )
 
     unique_entities = get_unique_entities(train_data, field="entities")
+    save_entities(output_dir, unique_entities)
 
     for params in cnn_params:
         trainer = ModelTrainer(

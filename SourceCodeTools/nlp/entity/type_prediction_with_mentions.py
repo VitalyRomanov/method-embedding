@@ -11,8 +11,9 @@ from spacy.gold import biluo_tags_from_offsets
 from SourceCodeTools.code.ast_tools import get_declarations
 from SourceCodeTools.nlp import TagMap, try_int
 from SourceCodeTools.nlp.entity import fix_incorrect_tags
+from SourceCodeTools.nlp.entity.tf_models.params import att_params
 from SourceCodeTools.nlp.entity.type_prediction import PythonBatcher, get_type_prediction_arguments, \
-    ModelTrainer
+    ModelTrainer, save_entities
 from SourceCodeTools.nlp.entity.utils import overlap, get_unique_entities
 from SourceCodeTools.nlp.entity.utils.data import read_data
 
@@ -183,8 +184,9 @@ if __name__ == "__main__":
     )
 
     unique_entities = get_unique_entities(train_data, field="entities")
+    save_entities(output_dir, unique_entities)
 
-    for params in catt_params:
+    for params in att_params:
         trainer = ModelTrainerWithMentions(
             train_data, test_data, params, graph_emb_path=args.graph_emb_path, word_emb_path=args.word_emb_path,
             output_dir=output_dir, epochs=args.epochs, batch_size=args.batch_size,
