@@ -49,7 +49,7 @@ def predict_one(model, input, tagmap):
         )
 
 
-def apply_to_dataset(data, graph_emb_path=None, word_emb_path=None, checkpoint_path=None, batch_size=1):
+def apply_to_dataset(data, Batcher, Model, graph_emb_path=None, word_emb_path=None, checkpoint_path=None, batch_size=1):
     graph_emb = load_pkl_emb(graph_emb_path)
     word_emb = load_pkl_emb(word_emb_path)
 
@@ -62,7 +62,7 @@ def apply_to_dataset(data, graph_emb_path=None, word_emb_path=None, checkpoint_p
     seq_len = params.pop("seq_len")
     suffix_prefix_buckets = params.pop("suffix_prefix_buckets")
 
-    data_batcher = PythonBatcher(
+    data_batcher = Batcher(
         data, batch_size, seq_len=seq_len, wordmap=word_emb.ind, graphmap=graph_emb.ind, tagmap=tagmap,
         mask_unlabeled_declarations=True, class_weights=False, element_hash_size=suffix_prefix_buckets
     )
@@ -75,7 +75,7 @@ def apply_to_dataset(data, graph_emb_path=None, word_emb_path=None, checkpoint_p
     params.pop("learning_rate")
     params.pop("learning_rate_decay")
 
-    model = TypePredictor(
+    model = Model(
         word_emb, graph_emb, train_embeddings=False, num_classes=len(tagmap), seq_len=seq_len, **params
     )
 
@@ -118,6 +118,6 @@ if __name__ == "__main__":
     )
 
     apply_to_dataset(
-        test_data, graph_emb_path=args.graph_emb_path, word_emb_path=args.word_emb_path,
+        test_data, PythonBatcher, TypePredictor, graph_emb_path=args.graph_emb_path, word_emb_path=args.word_emb_path,
         checkpoint_path=args.checkpoint_path, batch_size=args.batch_size
     )
