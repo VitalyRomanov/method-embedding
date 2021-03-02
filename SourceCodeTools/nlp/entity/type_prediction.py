@@ -4,6 +4,7 @@ import json
 import os
 import pickle
 import sys
+from copy import copy
 from datetime import datetime
 from functools import lru_cache
 from math import ceil
@@ -279,6 +280,22 @@ def scorer(pred, labels, tagmap, eps=1e-8):
     return precision, recall, f1
 
 
+def write_config(trial_dir, params, extra_params=None):
+    config_path = os.path.join(trial_dir, "model_config.conf")
+
+    import configparser
+
+    params = copy(params)
+    if extra_params is not None:
+        params.update(extra_params)
+
+    config = configparser.ConfigParser()
+    config['DEFAULT'] = params
+
+    with open(config_path, 'w') as configfile:
+        config.write(configfile)
+
+
 def train_model(
         train_data, test_data, params,
         graph_emb_path=None, word_emb_path=None,
@@ -322,8 +339,8 @@ def train_model(
             learning_rate_decay=lr_decay, finetune=finetune
         )
 
-        chechpoint_path = os.path.join(trial_dir, "checkpoint")
-        model.save_weights(chechpoint_path)
+        checkpoint_path = os.path.join(trial_dir, "checkpoint")
+        model.save_weights(checkpoint_path)
 
         metadata = {
             "train_losses": train_losses,
@@ -332,8 +349,12 @@ def train_model(
             "test_f1": test_f1,
             "learning_rate": lr,
             "learning_rate_decay": lr_decay,
-            "epochs": epochs
+            "epochs": epochs,
+            "suffix_prefix_buckets": suffix_prefix_buckets,
+            "seq_len": seq_len
         }
+
+        # write_config(trial_dir, params, extra_params={"suffix_prefix_buckets": suffix_prefix_buckets, "seq_len": seq_len})
 
         metadata.update(params)
 
