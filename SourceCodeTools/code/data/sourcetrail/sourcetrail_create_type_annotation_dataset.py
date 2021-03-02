@@ -10,8 +10,7 @@ from SourceCodeTools.code.data.sourcetrail.file_utils import unpersist, unpersis
 from SourceCodeTools.nlp import create_tokenizer
 from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets, adjust_offsets2, \
     resolve_self_collisions2
-from SourceCodeTools.nlp.entity.utils.spacy_tools import isvalid
-
+from SourceCodeTools.nlp.spacy_tools import isvalid
 
 # allowed = {'str', 'bool', 'Optional', 'None', 'int', 'Any', 'Union', 'List', 'Dict', 'Callable', 'ndarray',
 #            'FrameOrSeries', 'bytes', 'DataFrame', 'Matcher', 'float', 'Tuple', 'bool_t', 'Description', 'Type'}
