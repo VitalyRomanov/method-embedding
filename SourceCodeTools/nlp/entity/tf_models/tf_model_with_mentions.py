@@ -16,7 +16,7 @@ from tensorflow.keras import Model
 # https://arxiv.org/pdf/1903.07785v1.pdf
 # https://github.com/tensorflow/models/tree/master/research/cvt_text/model
 
-from SourceCodeTools.nlp.entity.tf_model import DefaultEmbedding, TextCnnLayer
+from SourceCodeTools.nlp.entity.tf_models.tf_model import DefaultEmbedding, TextCnnLayer
 
 
 class TextCnn(Model):

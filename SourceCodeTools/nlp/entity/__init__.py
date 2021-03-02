@@ -57,3 +57,8 @@ def tags_to_mask(tags):
     will return [0., 1., 1., 1., 0.]
     """
     return list(map(lambda t: 1. if t != "O" else 0., tags))
+
+
+def fix_incorrect_tags(tags):
+    while "-" in tags:
+        tags[tags.index("-")] = "O"

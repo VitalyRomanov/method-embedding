@@ -15,54 +15,12 @@ from spacy.gold import biluo_tags_from_offsets
 
 from SourceCodeTools.code.ast_tools import get_declarations
 from SourceCodeTools.models.ClassWeightNormalizer import ClassWeightNormalizer
-from SourceCodeTools.nlp import token_hasher, create_tokenizer, tag_map_from_sentences, TagMap
-from SourceCodeTools.nlp.entity import parse_biluo
+from SourceCodeTools.nlp import token_hasher, create_tokenizer, tag_map_from_sentences, TagMap, try_int
+from SourceCodeTools.nlp.entity import parse_biluo, fix_incorrect_tags
 from SourceCodeTools.nlp.entity.tf_models.params import cnn_params
-from SourceCodeTools.nlp.entity.tf_models.tf_model import TypePredictor, train
+# from SourceCodeTools.nlp.entity.tf_models.tf_model import TypePredictor, train
 from SourceCodeTools.nlp.entity.utils import get_unique_entities, overlap
 from SourceCodeTools.nlp.entity.utils.data import read_data
-
-
-def declarations_to_tags(doc, decls):
-    """
-    Converts the declarations and mentions of a variable into BILUO format
-    :param doc: source code of a function
-    :param decls: dictionary that maps from the variable declarations (first usage) to all the mentions
-                    later in the function
-    :return: List of tuple [(declaration_tags), (mentions_tags)]
-    """
-    declarations = []
-
-    for decl, mentions in decls.items():
-        tag_decl = biluo_tags_from_offsets(doc, [decl])
-        tag_mentions = biluo_tags_from_offsets(doc, mentions)
-
-        assert "-" not in tag_decl
-
-        # while "-" in tag_decl:
-        #     tag_decl[tag_decl.index("-")] = "O"
-
-        # decl_mask = tags_to_mask(tag_decl)
-
-        # assert sum(decl_mask) > 0.
-
-        while "-" in tag_mentions:
-            tag_mentions[tag_mentions.index("-")] = "O"
-
-        # if "-" in tag_mentions:
-        #     for t, tag in zip(doc, tag_mentions):
-        #         print(t, tag, sep="\t")
-
-        declarations.append((tag_decl, tag_mentions))
-
-    return declarations
-
-
-def try_int(val):
-    try:
-        return int(val)
-    except:
-        return val
 
 
 def filter_unlabeled(entities, declarations):
@@ -159,10 +117,6 @@ class PythonBatcher:
         if self.mask_unlabeled_declarations:
             unlabeled_dec = biluo_tags_from_offsets(doc, unlabeled_dec)
 
-        def fix_incorrect_tags(tags):
-            while "-" in tags:
-                tags[tags.index("-")] = "O"
-
         fix_incorrect_tags(ents_tags)
         fix_incorrect_tags(repl_tags)
         if self.mask_unlabeled_declarations:
@@ -239,7 +193,7 @@ class PythonBatcher:
         batch = []
         for sent in self.data:
             batch.append(self.create_batches_with_mask(*self.prepare_sent(json.dumps(sent))))
-            if len(batch) == self.batch_size:
+            if len(batch) >= self.batch_size:
                 yield self.format_batch(batch)
                 batch = []
         yield self.format_batch(batch)
@@ -296,75 +250,107 @@ def write_config(trial_dir, params, extra_params=None):
         config.write(configfile)
 
 
-def train_model(
-        train_data, test_data, params,
-        graph_emb_path=None, word_emb_path=None,
-        output_dir=None, epochs=30, batch_size=32, seq_len=100, finetune=False, trials=1
-):
+class ModelTrainer:
+    def __init__(self, train_data, test_data, params, graph_emb_path=None, word_emb_path=None,
+            output_dir=None, epochs=30, batch_size=32, seq_len=100, finetune=False, trials=1):
+        self.set_batcher_class()
+        self.set_model_class()
 
-    graph_emb = load_pkl_emb(graph_emb_path)
-    word_emb = load_pkl_emb(word_emb_path)
+        self.train_data = train_data
+        self.test_data = test_data
+        self.model_params = params
+        self.graph_emb_path = graph_emb_path
+        self.word_emb_path = word_emb_path
+        self.output_dir = output_dir
+        self.epochs = epochs
+        self.batch_size = batch_size
+        self.finetune = finetune
+        self.trials = trials
+        self.seq_len = seq_len
 
-    suffix_prefix_buckets = params.pop("suffix_prefix_buckets")
+    def set_batcher_class(self):
+        self.batcher = PythonBatcher
 
-    train_batcher = PythonBatcher(
-        train_data, batch_size, seq_len=seq_len, graphmap=graph_emb.ind, wordmap=word_emb.ind, tagmap=None,
-        class_weights=False, element_hash_size=suffix_prefix_buckets
-    )
-    test_batcher = PythonBatcher(
-        test_data, batch_size, seq_len=seq_len, graphmap=graph_emb.ind, wordmap=word_emb.ind,
-        tagmap=train_batcher.tagmap,  # use the same mapping
-        class_weights=False, element_hash_size=suffix_prefix_buckets  # class_weights are not used for testing
-    )
+    def set_model_class(self):
+        from SourceCodeTools.nlp.entity.tf_models.tf_model import TypePredictor
+        self.model = TypePredictor
 
-    print(f"\n\n{params}")
-    lr = params.pop("learning_rate")
-    lr_decay = params.pop("learning_rate_decay")
+    def get_batcher(self, *args, **kwards):
+        return self.batcher(*args, **kwards)
 
-    param_dir = os.path.join(output_dir, str(datetime.now()))
-    os.mkdir(param_dir)
+    def get_model(self, *args, **kwargs):
+        return self.model(*args, **kwargs)
 
-    for trial_ind in range(trials):
-        trial_dir = os.path.join(param_dir, repr(trial_ind))
-        os.mkdir(trial_dir)
+    def train(self, *args, **kwargs):
+        from SourceCodeTools.nlp.entity.tf_models.tf_model import train
+        return train(*args, **kwargs)
 
-        model = TypePredictor(
-            word_emb, graph_emb, train_embeddings=finetune, suffix_prefix_buckets=suffix_prefix_buckets,
-            num_classes=train_batcher.num_classes(), seq_len=seq_len, **params
+
+    def train_model(self):
+
+        graph_emb = load_pkl_emb(self.graph_emb_path)
+        word_emb = load_pkl_emb(self.word_emb_path)
+
+        suffix_prefix_buckets = params.pop("suffix_prefix_buckets")
+
+        train_batcher = self.get_batcher(
+            train_data, self.batch_size, seq_len=self.seq_len, graphmap=graph_emb.ind, wordmap=word_emb.ind, tagmap=None,
+            class_weights=False, element_hash_size=suffix_prefix_buckets
+        )
+        test_batcher = self.get_batcher(
+            test_data, self.batch_size, seq_len=self.seq_len, graphmap=graph_emb.ind, wordmap=word_emb.ind,
+            tagmap=train_batcher.tagmap,  # use the same mapping
+            class_weights=False, element_hash_size=suffix_prefix_buckets  # class_weights are not used for testing
         )
 
-        train_losses, train_f1, test_losses, test_f1 = train(
-            model=model, train_batches=train_batcher, test_batches=test_batcher,
-            epochs=epochs, learning_rate=lr, scorer=lambda pred, true: scorer(pred, true, train_batcher.tagmap),
-            learning_rate_decay=lr_decay, finetune=finetune
-        )
+        print(f"\n\n{params}")
+        lr = params.pop("learning_rate")
+        lr_decay = params.pop("learning_rate_decay")
 
-        checkpoint_path = os.path.join(trial_dir, "checkpoint")
-        model.save_weights(checkpoint_path)
+        param_dir = os.path.join(output_dir, str(datetime.now()))
+        os.mkdir(param_dir)
 
-        metadata = {
-            "train_losses": train_losses,
-            "train_f1": train_f1,
-            "test_losses": test_losses,
-            "test_f1": test_f1,
-            "learning_rate": lr,
-            "learning_rate_decay": lr_decay,
-            "epochs": epochs,
-            "suffix_prefix_buckets": suffix_prefix_buckets,
-            "seq_len": seq_len
-        }
+        for trial_ind in range(self.trials):
+            trial_dir = os.path.join(param_dir, repr(trial_ind))
+            os.mkdir(trial_dir)
 
-        # write_config(trial_dir, params, extra_params={"suffix_prefix_buckets": suffix_prefix_buckets, "seq_len": seq_len})
+            model = self.get_model(
+                word_emb, graph_emb, train_embeddings=self.finetune, suffix_prefix_buckets=suffix_prefix_buckets,
+                num_classes=train_batcher.num_classes(), seq_len=self.seq_len, **params
+            )
 
-        metadata.update(params)
+            train_losses, train_f1, test_losses, test_f1 = self.train(
+                model=model, train_batches=train_batcher, test_batches=test_batcher,
+                epochs=self.epochs, learning_rate=lr, scorer=lambda pred, true: scorer(pred, true, train_batcher.tagmap),
+                learning_rate_decay=lr_decay, finetune=self.finetune
+            )
 
-        with open(os.path.join(trial_dir, "params.json"), "w") as metadata_sink:
-            metadata_sink.write(json.dumps(metadata, indent=4))
+            checkpoint_path = os.path.join(trial_dir, "checkpoint")
+            model.save_weights(checkpoint_path)
 
-        pickle.dump(train_batcher.tagmap, open(os.path.join(trial_dir, "tag_types.pkl"), "wb"))
+            metadata = {
+                "train_losses": train_losses,
+                "train_f1": train_f1,
+                "test_losses": test_losses,
+                "test_f1": test_f1,
+                "learning_rate": lr,
+                "learning_rate_decay": lr_decay,
+                "epochs": self.epochs,
+                "suffix_prefix_buckets": suffix_prefix_buckets,
+                "seq_len": self.seq_len
+            }
+
+            # write_config(trial_dir, params, extra_params={"suffix_prefix_buckets": suffix_prefix_buckets, "seq_len": seq_len})
+
+            metadata.update(params)
+
+            with open(os.path.join(trial_dir, "params.json"), "w") as metadata_sink:
+                metadata_sink.write(json.dumps(metadata, indent=4))
+
+            pickle.dump(train_batcher.tagmap, open(os.path.join(trial_dir, "tag_types.pkl"), "wb"))
 
 
-if __name__ == "__main__":
+def get_type_prediction_arguments():
     import argparse
 
     parser = argparse.ArgumentParser(description='Process some integers.')
@@ -393,6 +379,11 @@ if __name__ == "__main__":
                         help='')
 
     args = parser.parse_args()
+    return args
+
+
+if __name__ == "__main__":
+    args = get_type_prediction_arguments()
 
     output_dir = args.model_output
     if not os.path.isdir(output_dir):
@@ -409,8 +400,9 @@ if __name__ == "__main__":
     unique_entities = get_unique_entities(train_data, field="entities")
 
     for params in cnn_params:
-        train_model(
+        trainer = ModelTrainer(
             train_data, test_data, params, graph_emb_path=args.graph_emb_path, word_emb_path=args.word_emb_path,
             output_dir=output_dir, epochs=args.epochs, batch_size=args.batch_size,
             finetune=args.finetune, trials=args.trials, seq_len=args.max_seq_len,
         )
+        trainer.train_model()
