@@ -265,13 +265,17 @@ class SamplingMultitaskTrainer:
 
                 with torch.set_grad_enabled(False):
 
-                    val_loss, val_acc = objective.evaluate("val")
-                    test_loss, test_acc = objective.evaluate("test")
+                    val_loss, val_acc, val_ndcg = objective.evaluate("val")
+                    test_loss, test_acc, test_ndcg = objective.evaluate("test")
 
                 summary = {
                         f"Accuracy/test/{objective.name}_vs_batch": test_acc,
                         f"Accuracy/val/{objective.name}_vs_batch": val_acc,
                     }
+                if test_ndcg is not None:
+                    summary.update({f"{key}/test/{objective.name}_vs_batch": val for key, val in test_ndcg.items()})
+                if val_ndcg is not None:
+                    summary.update({f"{key}/val/{objective.name}_vs_batch": val for key, val in val_ndcg.items()})
 
                 self.write_summary(summary, self.batch)
                 summary_dict.update(summary)
@@ -332,15 +336,21 @@ class SamplingMultitaskTrainer:
 
             for objective in self.objectives:
 
-                train_loss, train_acc = objective.evaluate("train")
-                val_loss, val_acc = objective.evaluate("val")
-                test_loss, test_acc = objective.evaluate("test")
+                train_loss, train_acc, train_ndcg = objective.evaluate("train")
+                val_loss, val_acc, val_ndcg = objective.evaluate("val")
+                test_loss, test_acc, test_ndcg = objective.evaluate("test")
 
                 summary = {
                     f"Accuracy/train/{objective.name}_final": train_acc,
                     f"Accuracy/test/{objective.name}_final": test_acc,
                     f"Accuracy/val/{objective.name}_final": val_acc,
                 }
+                if train_ndcg is not None:
+                    summary.update({f"{key}/train/{objective.name}_vs_batch": val for key, val in train_ndcg.items()})
+                if val_ndcg is not None:
+                    summary.update({f"{key}/val/{objective.name}_vs_batch": val for key, val in val_ndcg.items()})
+                if test_ndcg is not None:
+                    summary.update({f"{key}/test/{objective.name}_vs_batch": val for key, val in test_ndcg.items()})
 
                 summary_dict.update(summary)
 

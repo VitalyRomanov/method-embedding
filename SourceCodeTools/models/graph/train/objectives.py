@@ -340,6 +340,8 @@ class Objective(nn.Module):
 
         total_loss = 0
         total_acc = 0
+        ndcg_at = [1, 3, 5, 10]
+        total_ndcg = {f"ndcg@{k}": 0. for k in ndcg_at}
         count = 0
 
         for input_nodes, seeds, blocks in getattr(self, f"{data_split}_loader"):
@@ -352,6 +354,10 @@ class Objective(nn.Module):
             src_embs = self._logits_batch(input_nodes, blocks, masked=masked)
             logits, labels = self._logits_embedder(src_embs, ee, lp, seeds, neg_sampling_factor)
 
+            ndcg = self.target_embedder.score_candidates(self.seeds_to_global(seeds), src_embs, at=ndcg_at)
+            for key, val in ndcg.items():
+                total_ndcg[key] = total_ndcg[key] + val
+
             logp = nn.functional.log_softmax(logits, 1)
             loss = nn.functional.cross_entropy(logp, labels)
             acc = _compute_accuracy(logp.argmax(dim=1), labels)
@@ -359,7 +365,7 @@ class Objective(nn.Module):
             total_loss += loss.item()
             total_acc += acc
             count += 1
-        return total_loss / count, total_acc / count
+        return total_loss / count, total_acc / count, {key: val / count for key, val in total_ndcg.items()}
 
     def _evaluate_nodes(self, ee, lp, create_api_call_loader, data_split, neg_sampling_factor=1):
 
@@ -388,7 +394,7 @@ class Objective(nn.Module):
 
     def evaluate(self, data_split, neg_sampling_factor=1):
         if self.type in {"subword_ranker"}:
-            loss, acc = self._evaluate_embedder(
+            loss, acc, ndcg = self._evaluate_embedder(
                 self.target_embedder, self.link_predictor, data_split=data_split, neg_sampling_factor=neg_sampling_factor
             )
         elif self.type in {"graph_link_prediction", "graph_link_classification"}:
@@ -396,10 +402,11 @@ class Objective(nn.Module):
                 self.target_embedder, self.link_predictor, self._create_loader, data_split=data_split,
                 neg_sampling_factor=neg_sampling_factor
             )
+            ndcg = None
         else:
             raise NotImplementedError()
 
-        return loss, acc
+        return loss, acc, ndcg
 
     def parameters(self, recurse: bool = True):
         if self.type in {"subword_ranker"}:

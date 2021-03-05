@@ -1,7 +1,11 @@
+from collections import Iterable
+
 import torch
 import torch.nn as nn
 import numpy as np
 import random as rnd
+
+from sklearn.metrics import ndcg_score
 
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
 
@@ -60,6 +64,11 @@ class ElementEmbedderWithCharNGramSubwords(ElementEmbedderBase, nn.Module):
         self.embed = nn.Embedding(num_buckets, emb_size, padding_idx=0)
 
     def __getitem__(self, ids):
+        """
+        Get possible targets
+        :param ids: Takes a list of original ids
+        :return: Matrix with subwords for passing to embedder
+        """
         candidates = [rnd.choice(self.element_lookup[id]) for id in ids]
         emb_matr = np.array([self.name2repr[c] for c in candidates], dtype=np.int32)
         return torch.LongTensor(emb_matr)
@@ -73,6 +82,32 @@ class ElementEmbedderWithCharNGramSubwords(ElementEmbedderBase, nn.Module):
     def forward(self, input, **kwargs):
         x = self.embed(input)
         return torch.mean(x, dim=1)
+
+    def score_candidates(self, to_score_ids, to_score_embs, at=None):
+        if at is None:
+            at = [1, 3, 5, 10]
+
+        ids = to_score_ids.tolist()
+        candidates = [set(list(self.element_lookup[id])) for id in ids]
+        all_keys = [key for key in self.name2repr]
+        emb_matr = np.array([self.name2repr[key] for key in all_keys], dtype=np.int32)
+        all_emb = self(torch.LongTensor(emb_matr))
+
+        y_true = [[1. if all_keys[i] in cand else 0. for i in range(len(all_keys))] for cand in candidates]
+
+        score_matr = (to_score_embs @ all_emb.t()) / \
+                    to_score_embs.norm(p=2, dim=1, keepdim=True) / \
+                    all_emb.norm(p=2, dim=1, keepdim=True).t()
+        y_pred = score_matr.tolist()
+
+        if isinstance(at, Iterable):
+            scores = {f"ndcg@{k}": ndcg_score(y_true, y_pred, k=k) for k in at}
+        else:
+            scores = {f"ndcg@{at}": ndcg_score(y_true, y_pred, k=at)}
+        return scores
+
+
+
 
 
 class ElementEmbedderWithBpeSubwords(ElementEmbedderWithCharNGramSubwords, nn.Module):
@@ -96,12 +131,32 @@ class ElementEmbedderWithBpeSubwords(ElementEmbedderWithCharNGramSubwords, nn.Mo
         self.embed = nn.Embedding(num_buckets, emb_size, padding_idx=0)
 
 
+def test_ElementEmbedderWithCharNGramSubwords_score_candidates():
+    import pandas as pd
+    test_nodes = pd.DataFrame({
+        "id": [9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
+        "global_graph_id": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        "typed_id": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        "type": ["node_", "node_", "node_", "node_", "node_", "node_", "node_", "node_", "node_", "node_"]
+    })
+    test_data = pd.DataFrame({
+        "src": [0, 1, 2, 3, 4, 4, 5, 9],
+        "dst": ["hello", "how", "are", "you", "doing", "today", "?", "?!"]
+    })
+    ee = ElementEmbedderWithCharNGramSubwords(test_data, test_nodes, 5, max_len=10)
+    # provide original ids as input
+    ee.score_candidates(torch.LongTensor([9, 7, 8]), torch.Tensor(np.random.rand(3, 5)))
+
+
+
+
+
 if __name__ == '__main__':
     import pandas as pd
     test_data = pd.DataFrame({
-        "id": [0, 1, 2, 3, 4, 4, 5],
+        "id": [0, 1, 2, 3, 4, 4, 5, 9],
         # "dst": [6, 11, 12, 11, 14, 15, 16]
-        "dst": ["hello", "how", "are", "you", "doing", "today", "?"]
+        "dst": ["hello", "how", "are", "you", "doing", "today", "?", "?!"]
     })
 
     # ee = ElementEmbedder(test_data, 5)
