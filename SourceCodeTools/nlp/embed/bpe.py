@@ -17,8 +17,8 @@ def create_subword_tokenizer(lang, vs):
     model_file = "{lang}/{lang}.wiki.bpe.vs{vs}.model".format(lang=lang, vs=vs)
     model_file = _load_file(model_file)
     spm = sentencepiece_load(model_file)
-    return lambda text: spm.EncodeAsPieces(re.sub(r"\d", "0", text.lower()))
-    # return lambda text: spm.EncodeAsPieces(text)
+    # return lambda text: spm.EncodeAsPieces(re.sub(r"\d", "0", text.lower()))
+    return lambda text: spm.EncodeAsPieces(text)
 
 
 def load_bpe_model(path):
