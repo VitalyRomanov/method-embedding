@@ -21,30 +21,52 @@ class SubwordMasker:
         edges.eval("src_typed_id = src.map(@node2typed_id.get)", local_dict={"node2typed_id": node2typed_id},
                    inplace=True)
 
-        for dst_type, dst_edges in edges.groupby(by="dst_type"):
-            self.lookup[dst_type] = dict()
-            for dst_id, dst_id_dst_type_edges in dst_edges.groupby(by="dst_typed_id"):
-                self.lookup[dst_type][dst_id] = dict()
-                for src_type, src_type_dst_id_dst_type_edges in dst_id_dst_type_edges.groupby(by="src_type"):
-                    self.lookup[dst_type][dst_id][src_type] = src_type_dst_id_dst_type_edges["src_typed_id"].to_list()
+        for (node_type, dst_id), dst_edges in edges.groupby(by=["dst_type", "dst_typed_id"]):
+            self.lookup[(node_type, dst_id)] = dst_edges[["src_type", "src_typed_id"]].values.tolist()
+
+        # for dst_type, dst_edges in edges.groupby(by="dst_type"):
+        #     self.lookup[dst_type] = dict()
+        #     for dst_id, dst_id_dst_type_edges in dst_edges.groupby(by="dst_typed_id"):
+        #         self.lookup[dst_type][dst_id] = dict()
+        #         for src_type, src_type_dst_id_dst_type_edges in dst_id_dst_type_edges.groupby(by="src_type"):
+        #             self.lookup[dst_type][dst_id][src_type] = src_type_dst_id_dst_type_edges["src_typed_id"].to_list()
+
+    # def get_mask(self, ids):
+    #     if isinstance(ids, dict):
+    #         for_masking = dict()
+    #         for node_type, typed_ids in ids.items():
+    #             for typed_id in typed_ids:
+    #                 for src_type_, src_id in self.lookup[node_type][typed_id].items():
+    #                     if src_type_ in for_masking:
+    #                         for_masking[src_type_].update(src_id)
+    #                     else:
+    #                         for_masking[src_type_] = set(src_id)
+    #     else:
+    #         for_masking = set()
+    #         assert len(self.lookup) == 1
+    #         node_type = next(iter(self.lookup.keys()))
+    #         for typed_id in ids:
+    #             for src_type_, src_id in self.lookup[node_type][typed_id].items():
+    #                 for_masking.update(src_id)
+    #         for_masking = {"node_": for_masking}
+    #
+    #     return for_masking
 
     def get_mask(self, ids):
         if isinstance(ids, dict):
             for_masking = dict()
             for node_type, typed_ids in ids.items():
                 for typed_id in typed_ids:
-                    for src_type_, src_id in self.lookup[node_type][typed_id].items():
+                    for src_type_, src_id in self.lookup[(node_type, typed_id)]:
                         if src_type_ in for_masking:
                             for_masking[src_type_].update(src_id)
                         else:
                             for_masking[src_type_] = set(src_id)
         else:
             for_masking = set()
-            assert len(self.lookup) == 1
-            node_type = next(iter(self.lookup.keys()))
             for typed_id in ids:
-                for src_type_, src_id in self.lookup[node_type][typed_id].items():
-                    for_masking.update(src_id)
+                for src_type_, src_id in self.lookup[("node_", typed_id)]:
+                    for_masking.add(src_id)
             for_masking = {"node_": for_masking}
 
         return for_masking
