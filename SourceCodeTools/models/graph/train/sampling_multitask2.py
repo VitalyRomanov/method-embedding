@@ -322,6 +322,7 @@ class SamplingMultitaskTrainer:
         self.epoch = checkpoint['epoch']
         self.batch = checkpoint['batch']
         logging.info(f"Restored from epoch {checkpoint['epoch']}")
+        # TODO needs test
 
     def final_evaluation(self):
 
@@ -478,8 +479,10 @@ def evaluation_procedure(
     model_params['use_att_checkpoint'] = args.use_att_checkpoint
     model_params['use_gru_checkpoint'] = args.use_gru_checkpoint
 
+    model_params["activation"] = eval(f"nn.functional.{model_params['activation']}")
+
     trainer_params = {
-        'lr': 1e-3,
+        'lr': model_params.pop("lr"),
         'batch_size': args.batch_size,
         'sampling_neighbourhood_size': args.num_per_neigh,
         'neg_sampling_factor': args.neg_sampling_factor,

@@ -22,7 +22,7 @@ class AttentiveAggregator(nn.Module):
 
         self.dummy_tensor = th.ones(1, dtype=th.float32, requires_grad=True)
 
-    def do_stuff(self, query, key, value, dummy):
+    def do_stuff(self, query, key, value, dummy=None):
         att_out, att_w = self.att(query, key, value)
         return att_out, att_w
 
@@ -143,7 +143,7 @@ class OneStepGRU(nn.Module):
         self.use_checkpoint = use_checkpoint
         self.dummy_tensor = th.ones(1, dtype=th.float32, requires_grad=True)
 
-    def do_stuff(self, x, h, dummy_tensor):
+    def do_stuff(self, x, h, dummy_tensor=None):
         r = self.act_r(self.gru_rx(x) + self.gru_rh(h))
         z = self.act_z(self.gru_zx(x) + self.gru_zh(h))
         n = self.act_n(self.gru_nx(x) + self.gru_nh(r * h))

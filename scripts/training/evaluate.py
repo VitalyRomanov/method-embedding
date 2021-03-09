@@ -43,7 +43,7 @@ def main(models, args):
 if __name__ == "__main__":
 
     import argparse
-    from main_sampling import add_train_args
+    from train import add_train_args
 
     parser = argparse.ArgumentParser(description='Process some integers.')
     add_train_args(parser)

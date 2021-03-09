@@ -436,9 +436,18 @@ class Objective(nn.Module):
 
     def custom_load_state_dict(self, state_dicts):
         if self.type in {"subword_ranker"}:
-            self.target_embedder.load_state_dict(state_dicts["target_embedder"])
-            self.link_predictor.load_state_dict(state_dicts["link_predictor"])
+            self.target_embedder.load_state_dict(
+                self.get_prefix("target_embedder", state_dicts)
+            )
+            self.link_predictor.load_state_dict(
+                self.get_prefix("link_predictor", state_dicts)
+            )
         elif self.type in {"graph_link_prediction", "graph_link_classification"}:
-            self.link_predictor.load_state_dict(state_dicts["link_predictor"])
+            self.link_predictor.load_state_dict(
+                self.get_prefix("link_predictor", state_dicts)
+            )
         else:
             raise NotImplementedError()
+
+    def get_prefix(self, prefix, state_dict):
+        return {key.replace(f"{prefix}.", ""): val for key, val in state_dict.items() if key.startswith(prefix)}
