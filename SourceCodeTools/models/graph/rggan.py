@@ -20,7 +20,9 @@ class AttentiveAggregator(nn.Module):
         self.num_query_buckets = num_dst_embeddings
         self.use_checkpoint = use_checkpoint
 
-    def do_stuff(self, query, key, value):
+        self.dummy_tensor = th.ones(1, dtype=th.float32, requires_grad=True)
+
+    def do_stuff(self, query, key, value, dummy):
         att_out, att_w = self.att(query, key, value)
         return att_out, att_w
 
@@ -36,7 +38,7 @@ class AttentiveAggregator(nn.Module):
         key = value = th.stack(list_inputs).squeeze(dim=1)
         query = self.query_emb(th.LongTensor([token_hasher(dsttype, self.num_query_buckets)])).unsqueeze(0).repeat(1, key.shape[1], 1)
         if self.use_checkpoint:
-            att_out, att_w = checkpoint.checkpoint(self.do_stuff, query, key, value)
+            att_out, att_w = checkpoint.checkpoint(self.do_stuff, query, key, value, self.dummy_tensor)
         else:
             att_out, att_w = self.do_stuff(query, key, value)
         # att_out, att_w = self.att(query, key, value)
@@ -141,7 +143,7 @@ class OneStepGRU(nn.Module):
         self.use_checkpoint = use_checkpoint
         self.dummy_tensor = th.ones(1, dtype=th.float32, requires_grad=True)
 
-    def do_stuff(self, x, h):
+    def do_stuff(self, x, h, dummy_tensor):
         r = self.act_r(self.gru_rx(x) + self.gru_rh(h))
         z = self.act_z(self.gru_zx(x) + self.gru_zh(h))
         n = self.act_n(self.gru_nx(x) + self.gru_nh(r * h))
@@ -149,7 +151,7 @@ class OneStepGRU(nn.Module):
 
     def forward(self, x, h):
         if self.use_checkpoint:
-            h = checkpoint.checkpoint(self.do_stuff, x, h)
+            h = checkpoint.checkpoint(self.do_stuff, x, h, self.dummy_tensor)
         else:
             h = self.do_stuff(x, h)
         return h
