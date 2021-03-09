@@ -63,18 +63,22 @@ class MentionTokenizer:
             elif self.bpe is not None and edge["type"] == "__global_name":
                 subwords = self.bpe(edge['src'].name)
                 new_edges.extend(produce_subw_edges(subwords, edge['dst']))
-            elif self.bpe is not None and (
-                    (
-                            edge['src'].type in PythonSharedNodes.tokenizable_types_and_annotations  #tokenizable_types
-                    ) or (
-                    edge['dst'].type in {"Global"} and edge['src'].type != "Constant")
-            ):
+            elif self.bpe is not None and edge['src'].type in PythonSharedNodes.tokenizable_types_and_annotations:
                 new_edges.append(edge)
                 new_edges.append(make_reverse_edge(edge))
 
                 dst = edge['src']
                 subwords = self.bpe(dst.name)
                 new_edges.extend(produce_subw_edges(subwords, dst))
+            # elif self.bpe is not None and edge['dst'].type in {"Global"} and edge['src'].type != "Constant":
+            #     # this brach is disabled because it does not seem to make sense
+            #     # Globals can be referred by Name nodes, but they are already processed in the branch above
+            #     new_edges.append(edge)
+            #     new_edges.append(make_reverse_edge(edge))
+            #
+            #     dst = edge['src']
+            #     subwords = self.bpe(dst.name)
+            #     new_edges.extend(produce_subw_edges(subwords, dst))
             else:
                 new_edges.append(edge)
 
@@ -762,15 +766,18 @@ def standardize_new_edges(edges, node_resolver, mention_tokenizer):
 
 
 def process_code(source_file_content, offsets, node_resolver, mention_tokenizer, node_matcher, track_offsets=False):
+    # replace global occurrences with special tokens to help further parsing with ast package
     replacer = OccurrenceReplacer()
     replacer.perform_replacements(source_file_content, offsets)
 
+    # compute ast edges
     ast_processor = AstProcessor(replacer.source_with_replacements)
     edges = ast_processor.get_edges(as_dataframe=False)
 
     if len(edges) == 0:
         return None, None, None
 
+    # resolve existing node names (primarily for subwords)
     resolve = lambda node: node_resolver.resolve(node, replacer.replacement_index)
 
     for edge in edges:
@@ -779,6 +786,7 @@ def process_code(source_file_content, offsets, node_resolver, mention_tokenizer,
         if "scope" in edge:
             edge["scope"] = resolve(edge["scope"])
 
+    # insert global mentions using replacements that were created on the first step
     edges = add_global_mentions(edges)
 
     edges = standardize_new_edges(edges, node_resolver, mention_tokenizer)
