@@ -65,7 +65,7 @@ class RGANLayer(RelGraphConvLayer):
     def create_conv(self, in_feat, out_feat, rel_names):
         self.attentive_aggregator = AttentiveAggregator(out_feat, use_checkpoint=self.use_att_checkpoint)
         self.conv = dglnn.HeteroGraphConv({
-            rel: CkptGATConv(in_feat, out_feat, num_heads=1, use_checkpoint=self.use_gcn_checkpoint)
+            rel: CkptGATConv((in_feat, in_feat), out_feat, num_heads=1, use_checkpoint=self.use_gcn_checkpoint)
             for rel in rel_names
         }, aggregate=self.attentive_aggregator)
 

@@ -73,8 +73,8 @@ rggan_grids = [
         'num_steps': [5],
         'dropout': [0.0],
         'use_self_loop': [False],
-        'activation': [torch.nn.functional.leaky_relu, torch.nn.functional.hardswish], #[torch.nn.functional.hardtanh], #torch.nn.functional.leaky_relu
-        'lr': [1e-3, 1e-4]
+        'activation': [torch.nn.functional.leaky_relu], # torch.nn.functional.hardswish], #[torch.nn.functional.hardtanh], #torch.nn.functional.leaky_relu
+        'lr': [1e-3], # 1e-4]
     }
 ]
 

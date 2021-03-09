@@ -317,7 +317,7 @@ class SamplingMultitaskTrainer:
         checkpoint = torch.load(join(checkpoint_path, "saved_state.pt"))
         self.graph_model.load_state_dict(checkpoint['graph_model'])
         self.node_embedder.load_state_dict(checkpoint['node_embedder'])
-        for objective in self.objectives():
+        for objective in self.objectives:
             objective.custom_load_state_dict(checkpoint[objective.name])
         self.epoch = checkpoint['epoch']
         self.batch = checkpoint['batch']
