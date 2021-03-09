@@ -316,7 +316,7 @@ class SamplingMultitaskTrainer:
     def restore_from_checkpoint(self, checkpoint_path):
         checkpoint = torch.load(join(checkpoint_path, "saved_state.pt"))
         self.graph_model.load_state_dict(checkpoint['graph_model'])
-        self.node_embedder.load_state_dict(checkpoint['graph_model'])
+        self.node_embedder.load_state_dict(checkpoint['node_embedder'])
         for objective in self.objectives():
             objective.custom_load_state_dict(checkpoint[objective.name])
         self.epoch = checkpoint['epoch']
@@ -346,11 +346,11 @@ class SamplingMultitaskTrainer:
                     f"Accuracy/val/{objective.name}_final": val_acc,
                 }
                 if train_ndcg is not None:
-                    summary.update({f"{key}/train/{objective.name}_vs_batch": val for key, val in train_ndcg.items()})
+                    summary.update({f"{key}/train/{objective.name}_final": val for key, val in train_ndcg.items()})
                 if val_ndcg is not None:
-                    summary.update({f"{key}/val/{objective.name}_vs_batch": val for key, val in val_ndcg.items()})
+                    summary.update({f"{key}/val/{objective.name}_final": val for key, val in val_ndcg.items()})
                 if test_ndcg is not None:
-                    summary.update({f"{key}/test/{objective.name}_vs_batch": val for key, val in test_ndcg.items()})
+                    summary.update({f"{key}/test/{objective.name}_final": val for key, val in test_ndcg.items()})
 
                 summary_dict.update(summary)
 
@@ -465,3 +465,47 @@ def training_procedure(
     trainer.to('cpu')
 
     return trainer, scores
+
+
+def evaluation_procedure(
+        dataset, model_name, model_params, args, model_base_path
+) -> Tuple[SamplingMultitaskTrainer, dict]:
+
+    device = select_device(args)
+
+    model_params['num_classes'] = args.node_emb_size
+    model_params['use_gcn_checkpoint'] = args.use_gcn_checkpoint
+    model_params['use_att_checkpoint'] = args.use_att_checkpoint
+    model_params['use_gru_checkpoint'] = args.use_gru_checkpoint
+
+    trainer_params = {
+        'lr': 1e-3,
+        'batch_size': args.batch_size,
+        'sampling_neighbourhood_size': args.num_per_neigh,
+        'neg_sampling_factor': args.neg_sampling_factor,
+        'epochs': args.epochs,
+        # 'node_name_file': args.fname_file,
+        # 'var_use_file': args.varuse_file,
+        # 'call_seq_file': args.call_seq_file,
+        'elem_emb_size': args.elem_emb_size,
+        'model_base_path': model_base_path,
+        'pretraining_phase': args.pretraining_phase,
+        'use_layer_scheduling': args.use_layer_scheduling,
+        'schedule_layers_every': args.schedule_layers_every,
+        'embedding_table_size': args.embedding_table_size,
+        'save_checkpoints': args.save_checkpoints
+    }
+
+    trainer = SamplingMultitaskTrainer(
+        dataset=dataset,
+        model_name=model_name,
+        model_params=model_params,
+        trainer_params=trainer_params,
+        restore=args.restore_state,
+        device=device,
+        pretrained_embeddings_path=args.pretrained,
+        tokenizer_path=args.tokenizer
+    )
+
+    trainer.eval()
+    scores = trainer.final_evaluation()

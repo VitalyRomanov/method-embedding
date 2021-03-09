@@ -1,5 +1,6 @@
 import pandas as pd
 
+
 class SubwordMasker:
     def __init__(self, nodes: pd.DataFrame, edges: pd.DataFrame):
         edges = edges.copy()
