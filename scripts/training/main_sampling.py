@@ -1,5 +1,6 @@
 import json
 import logging
+from copy import copy
 from datetime import datetime
 from os import mkdir
 from os.path import isdir, join
@@ -34,7 +35,7 @@ def main(models, args):
                     from SourceCodeTools.models.graph.train.sampling_multitask2 import training_procedure
 
                 trainer, scores = \
-                    training_procedure(dataset, model, params, args, model_base)
+                    training_procedure(dataset, model, copy(params), args, model_base)
 
                 trainer.save_checkpoint(model_base)
             else:
@@ -67,11 +68,7 @@ def main(models, args):
             print("done")
 
 
-if __name__ == "__main__":
-
-    import argparse
-
-    parser = argparse.ArgumentParser(description='Process some integers.')
+def add_train_args(parser):
     parser.add_argument('--training_mode', '-tr', dest='training_mode', default=None,
                         help='Selects one of training procedures '
                              '[multitask]')
@@ -133,6 +130,14 @@ if __name__ == "__main__":
     parser.add_argument('--use_gru_checkpoint', action='store_true')
     parser.add_argument('--gpu', dest='gpu', default=-1, type=int,
                         help='')
+
+
+if __name__ == "__main__":
+
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Process some integers.')
+    add_train_args(parser)
 
     args = parser.parse_args()
 
