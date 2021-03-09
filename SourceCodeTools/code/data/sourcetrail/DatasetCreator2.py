@@ -175,6 +175,9 @@ class DatasetCreator:
                 return local2global
 
     def create_output_dirs(self, output_path):
+        if not os.path.isdir(output_path):
+            os.mkdir(output_path)
+
         no_ast_path = join(output_path, "no_ast")
         with_ast_path = join(output_path, "with_ast")
 
