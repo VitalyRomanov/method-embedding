@@ -318,15 +318,16 @@ class SourceGraphDataset:
         new_edges = []
         added_type_nodes = {}
 
-        for ind, row in self.nodes.iterrows():
-            type_node_name = f"node_type_{row['type']}"
-            if type_node_name not in added_type_nodes:
-                added_type_nodes[type_node_name] = node_new_id
+        node_slice = self.nodes[["id", "type"]].values
+
+        for id, type in node_slice:
+            if type not in added_type_nodes:
+                added_type_nodes[type] = node_new_id
                 node_new_id += 1
 
                 new_nodes.append({
-                    "id": added_type_nodes[type_node_name],
-                    "name": f"##{type_node_name}",
+                    "id": added_type_nodes[type],
+                    "name": f"##node_type_{type}",
                     "type": "node_type",
                     "mentioned_in": pd.NA
                 })
@@ -334,8 +335,8 @@ class SourceGraphDataset:
             new_edges.append({
                 "id": edge_new_id,
                 "type": "node_type",
-                "src": added_type_nodes[type_node_name],
-                "dst": row["id"],
+                "src": added_type_nodes[type],
+                "dst": id,
                 "file_id": pd.NA,
                 "mentioned_in": pd.NA
             })
@@ -402,7 +403,15 @@ class SourceGraphDataset:
         # the dictionary stores directed edge lists
         typed_subgraphs = {}
 
-        for ind, row in possible_edge_signatures.iterrows():
+        # node_mapper = lambda old_id: typed_node_id[old_id]
+        # for src_type, type, dst_type, src, dst in edges[['src_type', 'type', 'dst_type', "src", "dst"]].values:
+        #     subgraph_signature = (src_type, type, dst_type)
+        #     if subgraph_signature in typed_subgraphs:
+        #         typed_subgraphs[subgraph_signature].add((node_mapper(src), node_mapper(dst)))
+        #     else:
+        #         typed_subgraphs[subgraph_signature] = {node_mapper(src), node_mapper(dst)}
+
+        for ind, row in possible_edge_signatures.iterrows():  #
             # subgraph_signature = (node_types[row['src_type']], edge_types[row['type']], node_types[row['dst_type']])
             subgraph_signature = (row['src_type'], row['type'], row['dst_type'])
 
