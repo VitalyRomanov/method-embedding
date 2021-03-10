@@ -20,8 +20,13 @@ class ElementEmbedderBase:
             self.elements['emb_id'] = self.elements['dst']
 
         self.element_lookup = {}
-        for name, group in self.elements.groupby('id'):
-            self.element_lookup[name] = group['emb_id'].tolist()
+        # for name, group in self.elements.groupby('id'):
+        #     self.element_lookup[name] = group['emb_id'].tolist()
+        for id_, emb_id in self.elements[["id", "emb_id"]].values:
+            if id_ in self.element_lookup:
+                self.element_lookup[id_].append(emb_id)
+            else:
+                self.element_lookup[id_] = [emb_id]
 
         self.init_neg_sample()
 
