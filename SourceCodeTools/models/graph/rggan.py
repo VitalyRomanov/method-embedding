@@ -256,6 +256,8 @@ class RGGAN(RGAN):
         self.out_dim = num_classes
         self.activation = activation
 
+        assert h_dim == num_classes, f"Parameter h_dim and num_classes should be equal in {self.__class__.__name__}"
+
         self.rel_names = list(set(g.etypes))
         self.rel_names.sort()
         if num_bases < 0 or num_bases > len(self.rel_names):
