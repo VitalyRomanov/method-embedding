@@ -354,7 +354,7 @@ class Objective(nn.Module):
             src_embs = self._logits_batch(input_nodes, blocks, masked=masked)
             logits, labels = self._logits_embedder(src_embs, ee, lp, seeds, neg_sampling_factor)
 
-            ndcg = self.target_embedder.score_candidates(self.seeds_to_global(seeds), src_embs, at=ndcg_at)
+            ndcg = self.target_embedder.score_candidates(self.seeds_to_global(seeds), src_embs, self.link_predictor, at=ndcg_at)
             for key, val in ndcg.items():
                 total_ndcg[key] = total_ndcg[key] + val
 
