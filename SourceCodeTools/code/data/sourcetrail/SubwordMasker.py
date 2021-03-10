@@ -22,8 +22,15 @@ class SubwordMasker:
         edges.eval("src_typed_id = src.map(@node2typed_id.get)", local_dict={"node2typed_id": node2typed_id},
                    inplace=True)
 
-        for (node_type, dst_id), dst_edges in edges.groupby(by=["dst_type", "dst_typed_id"]):
-            self.lookup[(node_type, dst_id)] = dst_edges[["src_type", "src_typed_id"]].values.tolist()
+        # for (node_type, dst_id), dst_edges in edges.groupby(by=["dst_type", "dst_typed_id"]):
+        #     self.lookup[(node_type, dst_id)] = dst_edges[["src_type", "src_typed_id"]].values.tolist()
+
+        for node_type, dst_id, src_type, src_typed_id in edges[["dst_type", "dst_typed_id", "src_type", "src_typed_id"]].values:
+            key = (node_type, dst_id)
+            if key in self.lookup:
+                self.lookup[key].append((src_type, src_typed_id))
+            else:
+                self.lookup[key] = [(src_type, src_typed_id)]
 
         # for dst_type, dst_edges in edges.groupby(by="dst_type"):
         #     self.lookup[dst_type] = dict()
@@ -60,7 +67,7 @@ class SubwordMasker:
                 for typed_id in typed_ids:
                     for src_type_, src_id in self.lookup[(node_type, typed_id)]:
                         if src_type_ in for_masking:
-                            for_masking[src_type_].update(src_id)
+                            for_masking[src_type_].add(src_id)
                         else:
                             for_masking[src_type_] = set(src_id)
         else:
