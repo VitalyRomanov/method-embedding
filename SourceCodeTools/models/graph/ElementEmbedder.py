@@ -83,7 +83,7 @@ class ElementEmbedderWithCharNGramSubwords(ElementEmbedderBase, nn.Module):
         x = self.embed(input)
         return torch.mean(x, dim=1)
 
-    def score_candidates(self, to_score_ids, to_score_embs, at=None):
+    def score_candidates_cosine(self, to_score_ids, to_score_embs, at=None):
         if at is None:
             at = [1, 3, 5, 10]
 
@@ -99,6 +99,30 @@ class ElementEmbedderWithCharNGramSubwords(ElementEmbedderBase, nn.Module):
                     to_score_embs.norm(p=2, dim=1, keepdim=True) / \
                     all_emb.norm(p=2, dim=1, keepdim=True).t()
         y_pred = score_matr.tolist()
+
+        if isinstance(at, Iterable):
+            scores = {f"ndcg@{k}": ndcg_score(y_true, y_pred, k=k) for k in at}
+        else:
+            scores = {f"ndcg@{at}": ndcg_score(y_true, y_pred, k=at)}
+        return scores
+
+    def score_candidates(self, to_score_ids, to_score_embs, link_predictor, at=None):
+        if at is None:
+            at = [1, 3, 5, 10]
+
+        ids = to_score_ids.tolist()
+        candidates = [set(list(self.element_lookup[id])) for id in ids]
+        all_keys = [key for key in self.name2repr]
+        emb_matr = np.array([self.name2repr[key] for key in all_keys], dtype=np.int32)
+        all_emb = self(torch.LongTensor(emb_matr))
+
+        y_true = [[1. if all_keys[i] in cand else 0. for i in range(len(all_keys))] for cand in candidates]
+
+        y_pred = []
+        for i in range(len(to_score_ids)):
+            input_embs = to_score_embs[i, :].repeat((all_emb.shape[0], 1))
+            predictor_input = torch.cat([input_embs, all_emb], dim=1)
+            y_pred.append(link_predictor(predictor_input)[:, 1].tolist())  # 0 - negative, 1 - positive
 
         if isinstance(at, Iterable):
             scores = {f"ndcg@{k}": ndcg_score(y_true, y_pred, k=k) for k in at}
