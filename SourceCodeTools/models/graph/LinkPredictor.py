@@ -18,3 +18,13 @@ class LinkPredictor(nn.Module):
         x = self.norm(x)
         x = F.relu(self.l1(x))
         return self.logits(x)
+
+
+class CosineLinkPredictor(nn.Module):
+    def __init__(self):
+        super(CosineLinkPredictor, self).__init__()
+
+        self.cos = nn.CosineSimilarity()
+
+    def forward(self, x1, x2):
+        return self.cos(x1, x2)
