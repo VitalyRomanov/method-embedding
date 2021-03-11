@@ -84,6 +84,12 @@ def map_id_columns(df, column_names, mapper):
     return df
 
 
+def map_offsets(column, id_map):
+    def map_entry(entry):
+        return [(e[0], e[1], id_map[e[2]]) for e in entry]
+    return [map_entry(entry) for entry in column]
+
+
 def merge_with_file_if_exists(df, merge_with_file):
     if os.path.isfile(merge_with_file):
         original_data = unpersist(merge_with_file)

@@ -1,6 +1,7 @@
 from os.path import join
 from tqdm import tqdm
 
+from SourceCodeTools.code.data.sourcetrail.common import map_offsets
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_map_id_columns import map_columns
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_merge_graphs import get_global_node_info, merge_global_with_local
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_node_local2global import get_local2global
@@ -56,11 +57,13 @@ class DatasetCreator:
             self.create_global_file("edges.bz2", "local2global.bz2", ['target_node_id', 'source_node_id'],
                                     join(no_ast_path, "common_edges.bz2"), message="Merging edges")
             self.create_global_file("source_graph_bodies.bz2", "local2global.bz2", ['id'],
-                                    join(no_ast_path, "common_source_graph_bodies.bz2"), "Merging bodies")
+                                    join(no_ast_path, "common_source_graph_bodies.bz2"), "Merging bodies", columns_special=[("replacement_list", map_offsets)])
             self.create_global_file("function_variable_pairs.bz2", "local2global.bz2", ['src'],
                                     join(no_ast_path, "common_function_variable_pairs.bz2"), "Merging variables")
             self.create_global_file("call_seq.bz2", "local2global.bz2", ['src', 'dst'],
                                     join(no_ast_path, "common_call_seq.bz2"), "Merging call seq")
+            self.create_global_file("name_groups.bz2", "local2global.bz2", [],
+                                    join(no_ast_path, "name_groups.bz2"), "Merging name groups")
 
             global_nodes = self.filter_orphaned_nodes(
                 unpersist(join(no_ast_path, "common_nodes.bz2")), no_ast_path
@@ -83,11 +86,13 @@ class DatasetCreator:
         self.create_global_file("edges_with_ast.bz2", "local2global_with_ast.bz2", ['target_node_id', 'source_node_id', 'mentioned_in'],
                                 join(with_ast_path, "common_edges.bz2"), "Merging edges with ast")
         self.create_global_file("source_graph_bodies.bz2", "local2global_with_ast.bz2", ['id'],
-                                join(with_ast_path, "common_source_graph_bodies.bz2"), "Merging bodies with ast")
+                                join(with_ast_path, "common_source_graph_bodies.bz2"), "Merging bodies with ast", columns_special=[("replacement_list", map_offsets)])
         self.create_global_file("function_variable_pairs.bz2", "local2global_with_ast.bz2", ['src'],
                                 join(with_ast_path, "common_function_variable_pairs.bz2"), "Merging variables with ast")
         self.create_global_file("call_seq.bz2", "local2global_with_ast.bz2", ['src', 'dst'],
                                 join(with_ast_path, "common_call_seq.bz2"), "Merging call seq with ast")
+        self.create_global_file("name_groups.bz2", "local2global_with_ast.bz2", ['src', 'dst'],
+                                join(with_ast_path, "name_groups.bz2"), "Merging name groups")
 
         global_nodes = self.filter_orphaned_nodes(
             unpersist(join(with_ast_path, "common_nodes.bz2")), with_ast_path
@@ -109,6 +114,7 @@ class DatasetCreator:
     def do_extraction(self):
         global_nodes = None
         global_nodes_with_ast = None
+        name_groups = None
 
         for env_path in self.environments:
             logging.info(f"Found {os.path.basename(env_path)}")
@@ -134,7 +140,7 @@ class DatasetCreator:
             edges = add_reverse_edges(edges)
 
             if bodies is not None:
-                ast_nodes, ast_edges, offsets = get_ast_from_modules(
+                ast_nodes, ast_edges, offsets, name_group_tracker = get_ast_from_modules(
                     nodes, edges, source_location, occurrence, filecontent,
                     self.bpe_tokenizer, self.create_subword_instances, self.connect_subwords, self.lang,
                     track_offsets=self.track_offsets
@@ -142,6 +148,10 @@ class DatasetCreator:
                 nodes_with_ast = nodes.append(ast_nodes)
                 edges_with_ast = edges.append(ast_edges)
                 vars = extract_var_names(nodes, bodies, self.lang)
+                if name_groups is None:
+                    name_groups = name_group_tracker
+                else:
+                    name_groups = name_groups.append(name_group_tracker)
             else:
                 nodes_with_ast = nodes
                 edges_with_ast = edges
@@ -160,7 +170,7 @@ class DatasetCreator:
 
             self.write_local(env_path, nodes, edges, bodies, call_seq, vars,
                              nodes_with_ast, edges_with_ast, offsets,
-                             local2global, local2global_with_ast)
+                             local2global, local2global_with_ast, name_groups)
 
     def get_local2global(self, path):
         if path in self.local2global_cache:
@@ -224,7 +234,7 @@ class DatasetCreator:
 
     def write_local(self, dir, nodes, edges, bodies, call_seq, vars,
                     nodes_with_ast, edges_with_ast, offsets,
-                    local2global, local2global_with_ast):
+                    local2global, local2global_with_ast, name_groups):
         write_nodes(nodes, dir)
         write_edges(edges, dir)
         if bodies is not None:
@@ -242,6 +252,9 @@ class DatasetCreator:
                 pass
         persist(local2global, join(dir, "local2global.bz2"))
         persist(local2global_with_ast, join(dir, "local2global_with_ast.bz2"))
+
+        if name_groups is not None:
+            persist(name_groups, join(dir, "name_groups.bz2"))
 
     def get_global_node_info(self, global_nodes):
         if global_nodes is None:
@@ -261,7 +274,7 @@ class DatasetCreator:
 
         return global_nodes
 
-    def merge_files(self, env_path, filename, map_filename, columns_to_map, original):
+    def merge_files(self, env_path, filename, map_filename, columns_to_map, original, columns_special=None):
         input_table_path = join(env_path, filename)
         local2global = self.get_local2global(join(env_path, map_filename))
         if os.path.isfile(input_table_path) and local2global is not None:
@@ -269,7 +282,7 @@ class DatasetCreator:
             if self.only_with_annotations:
                 if not os.path.isfile(join(env_path, "has_annotations")):
                     return original
-            new_table = map_columns(input_table, local2global, columns_to_map)
+            new_table = map_columns(input_table, local2global, columns_to_map, columns_special=columns_special)
             if original is None:
                 return new_table
             else:
@@ -277,14 +290,14 @@ class DatasetCreator:
         else:
             return original
 
-    def create_global_file(self, local_file, local2global_file, columns, output_path, message, ensure_unique_with=None):
+    def create_global_file(self, local_file, local2global_file, columns, output_path, message, ensure_unique_with=None, columns_special=None):
         global_table = None
         for ind, env_path in tqdm(
                 enumerate(self.environments), desc=message, leave=True,
                 dynamic_ncols=True, total=len(self.environments)
         ):
             global_table = self.merge_files(
-                env_path, local_file, local2global_file, columns, global_table
+                env_path, local_file, local2global_file, columns, global_table, columns_special=columns_special
             )
 
         if ensure_unique_with is not None:
