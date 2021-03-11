@@ -14,7 +14,13 @@ class LinkPredictor(nn.Module):
 
         self.logits = nn.Linear(20, 2)
 
-    def forward(self, x, **kwargs):
+    # def forward(self, x, **kwargs):
+    #     x = self.norm(x)
+    #     x = F.relu(self.l1(x))
+    #     return self.logits(x)
+
+    def forward(self, x1, x2, **kwargs):
+        x = torch.cat([x1, x2], dim=1)
         x = self.norm(x)
         x = F.relu(self.l1(x))
         return self.logits(x)
@@ -25,6 +31,8 @@ class CosineLinkPredictor(nn.Module):
         super(CosineLinkPredictor, self).__init__()
 
         self.cos = nn.CosineSimilarity()
+        self.max_margin = torch.Tensor([0.])
 
     def forward(self, x1, x2):
-        return self.cos(x1, x2)
+        logit = torch.maximum(self.cos(x1, x2), self.max_margin).reshape((-1,1))
+        return torch.cat([1 - logit, logit], dim=1)

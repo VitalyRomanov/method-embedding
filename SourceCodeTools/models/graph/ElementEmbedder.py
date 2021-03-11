@@ -121,8 +121,8 @@ class ElementEmbedderWithCharNGramSubwords(ElementEmbedderBase, nn.Module):
         y_pred = []
         for i in range(len(to_score_ids)):
             input_embs = to_score_embs[i, :].repeat((all_emb.shape[0], 1))
-            predictor_input = torch.cat([input_embs, all_emb], dim=1)
-            y_pred.append(link_predictor(predictor_input)[:, 1].tolist())  # 0 - negative, 1 - positive
+            # predictor_input = torch.cat([input_embs, all_emb], dim=1)
+            y_pred.append(link_predictor(input_embs, all_emb)[:, 1].tolist())  # 0 - negative, 1 - positive
 
         if isinstance(at, Iterable):
             scores = {f"ndcg@{k}": ndcg_score(y_true, y_pred, k=k) for k in at}

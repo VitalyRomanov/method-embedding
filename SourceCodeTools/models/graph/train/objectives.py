@@ -8,7 +8,7 @@ import torch
 from SourceCodeTools.code.data.sourcetrail.SubwordMasker import SubwordMasker
 from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedderWithBpeSubwords
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
-from SourceCodeTools.models.graph.LinkPredictor import LinkPredictor
+from SourceCodeTools.models.graph.LinkPredictor import LinkPredictor, CosineLinkPredictor
 
 import torch.nn as nn
 
@@ -64,7 +64,7 @@ class Objective(nn.Module):
             if link_predictor_type == "nn":
                 self.link_predictor = LinkPredictor(target_emb_size + self.graph_model.emb_size).to(self.device)
             elif link_predictor_type == "inner_prod":
-                pass
+                self.link_predictor = CosineLinkPredictor().to(self.device)
             else:
                 raise NotImplementedError()
         else:
@@ -245,21 +245,25 @@ class Objective(nn.Module):
         node_embeddings_batch = node_embeddings
         element_embeddings = elem_embedder(elem_embedder[indices.tolist()].to(self.device))
 
-        positive_batch = torch.cat([node_embeddings_batch, element_embeddings], 1)
         labels_pos = torch.ones(batch_size, dtype=torch.long)
 
         node_embeddings_neg_batch = node_embeddings_batch.repeat(k, 1)
         negative_random = elem_embedder(elem_embedder.sample_negative(batch_size * k).to(self.device))
 
-        negative_batch = torch.cat([node_embeddings_neg_batch, negative_random], 1)
         labels_neg = torch.zeros(batch_size * k, dtype=torch.long)
 
-        batch = torch.cat([positive_batch, negative_batch], 0)
+        # positive_batch = torch.cat([node_embeddings_batch, element_embeddings], 1)
+        # negative_batch = torch.cat([node_embeddings_neg_batch, negative_random], 1)
+        # batch = torch.cat([positive_batch, negative_batch], 0)
+        # labels = torch.cat([labels_pos, labels_neg], 0).to(self.device)
+        #
+        # logits = link_predictor(batch)
+        #
+        # return logits, labels
+        nodes = torch.cat([node_embeddings_batch, node_embeddings_neg_batch], dim=0)
+        embs = torch.cat([element_embeddings, negative_random], dim=0)
         labels = torch.cat([labels_pos, labels_neg], 0).to(self.device)
-
-        logits = link_predictor(batch)
-
-        return logits, labels
+        return nodes, embs, labels
 
     def _logits_nodes(self, node_embeddings,
                       elem_embedder, link_predictor, create_dataloader,
@@ -282,7 +286,6 @@ class Objective(nn.Module):
         assert dst_seeds.tolist() == unique_dst.tolist()
         unique_dst_embeddings = self._logits_batch(input_nodes, blocks, train_embeddings)  # use_types, ntypes)
         next_call_embeddings = unique_dst_embeddings[slice_map.to(self.device)]
-        positive_batch = torch.cat([node_embeddings_batch, next_call_embeddings], 1)
         labels_pos = torch.ones(batch_size, dtype=torch.long)
 
         node_embeddings_neg_batch = node_embeddings_batch.repeat(k, 1)
@@ -298,15 +301,20 @@ class Objective(nn.Module):
         assert dst_seeds.tolist() == unique_negative.tolist()
         unique_negative_random = self._logits_batch(input_nodes, blocks, train_embeddings)  # use_types, ntypes)
         negative_random = unique_negative_random[slice_map.to(self.device)]
-        negative_batch = torch.cat([node_embeddings_neg_batch, negative_random], 1)
         labels_neg = torch.zeros(batch_size * k, dtype=torch.long)
 
-        batch = torch.cat([positive_batch, negative_batch], 0)
+        # positive_batch = torch.cat([node_embeddings_batch, next_call_embeddings], 1)
+        # negative_batch = torch.cat([node_embeddings_neg_batch, negative_random], 1)
+        # batch = torch.cat([positive_batch, negative_batch], 0)
+        # labels = torch.cat([labels_pos, labels_neg], 0).to(self.device)
+        #
+        # logits = link_predictor(batch)
+        #
+        # return logits, labels
+        nodes = torch.cat([node_embeddings_batch, node_embeddings_neg_batch], dim=0)
+        embs = torch.cat([next_call_embeddings, negative_random], dim=0)
         labels = torch.cat([labels_pos, labels_neg], 0).to(self.device)
-
-        logits = link_predictor(batch)
-
-        return logits, labels
+        return nodes, embs, labels
 
     def seeds_to_python(self, seeds):
         if isinstance(seeds, dict):
@@ -323,12 +331,17 @@ class Objective(nn.Module):
             masked = self.masker.get_mask(self.seeds_to_python(seeds))
         graph_emb = self._logits_batch(input_nodes, blocks, train_embeddings, masked=masked)
         if self.type in {"subword_ranker"}:
-            logits, labels = self._logits_embedder(graph_emb, self.target_embedder, self.link_predictor, seeds)
+            # logits, labels = self._logits_embedder(graph_emb, self.target_embedder, self.link_predictor, seeds)
+            node_embs_, element_embs_, labels = self._logits_embedder(graph_emb, self.target_embedder, self.link_predictor, seeds)
         elif self.type in {"graph_link_prediction", "graph_link_classification"}:
-            logits, labels = self._logits_nodes(graph_emb, self.target_embedder, self.link_predictor,
+            # logits, labels = self._logits_nodes(graph_emb, self.target_embedder, self.link_predictor,
+            #                                     self._create_loader, seeds, train_embeddings=train_embeddings)
+            node_embs_, element_embs_, labels = self._logits_nodes(graph_emb, self.target_embedder, self.link_predictor,
                                                 self._create_loader, seeds, train_embeddings=train_embeddings)
         else:
             raise NotImplementedError()
+
+        logits = self.link_predictor(node_embs_, element_embs_)
 
         acc = _compute_accuracy(logits.argmax(dim=1), labels)
         logp = nn.functional.log_softmax(logits, 1)
@@ -352,11 +365,14 @@ class Objective(nn.Module):
                 masked = self.masker.get_mask(self.seeds_to_python(seeds))
 
             src_embs = self._logits_batch(input_nodes, blocks, masked=masked)
-            logits, labels = self._logits_embedder(src_embs, ee, lp, seeds, neg_sampling_factor)
+            # logits, labels = self._logits_embedder(src_embs, ee, lp, seeds, neg_sampling_factor)
+            node_embs_, element_embs_, labels = self._logits_embedder(src_embs, ee, lp, seeds, neg_sampling_factor)
 
             ndcg = self.target_embedder.score_candidates(self.seeds_to_global(seeds), src_embs, self.link_predictor, at=ndcg_at)
             for key, val in ndcg.items():
                 total_ndcg[key] = total_ndcg[key] + val
+
+            logits = self.link_predictor(node_embs_, element_embs_)
 
             logp = nn.functional.log_softmax(logits, 1)
             loss = nn.functional.cross_entropy(logp, labels)
@@ -381,7 +397,10 @@ class Objective(nn.Module):
                 masked = self.masker.get_mask(self.seeds_to_python(seeds))
 
             src_embs = self._logits_batch(input_nodes, blocks, masked=masked)
-            logits, labels = self._logits_nodes(src_embs, ee, lp, create_api_call_loader, seeds, neg_sampling_factor)
+            # logits, labels = self._logits_nodes(src_embs, ee, lp, create_api_call_loader, seeds, neg_sampling_factor)
+            node_embs_, element_embs_, labels = self._logits_nodes(src_embs, ee, lp, create_api_call_loader, seeds, neg_sampling_factor)
+
+            logits = self.link_predictor(node_embs_, element_embs_)
 
             logp = nn.functional.log_softmax(logits, 1)
             loss = nn.functional.cross_entropy(logp, labels)
