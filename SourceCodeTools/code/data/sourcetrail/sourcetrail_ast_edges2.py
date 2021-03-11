@@ -678,6 +678,32 @@ class SourcetrailResolver:
         return pd.DataFrame(records)
 
 
+class NameGroupTracker:
+    def __init__(self):
+        self.group2names = []
+
+    def add_names_from_source(self, group_id, source):
+        raise NotImplementedError()
+
+    def add_names_from_edges(self, edges):
+        allowed_types = PythonSharedNodes.tokenizable_types
+
+        node_names = set()
+        for edge in edges:
+            src = edge["src"]
+            dst = edge["dst"]
+            if src.type in allowed_types:
+                node_names.add(src.name)
+            if dst.type in allowed_types:
+                node_names.add(dst.name)
+
+        self.group2names.append({
+            "names": node_names
+        })
+
+    def to_df(self):
+        return pd.DataFrame(self.group2names)
+
 def global_mention_edges_from_node(node):
     global_edges = []
     if type(node.global_id) is int:
@@ -765,7 +791,7 @@ def standardize_new_edges(edges, node_resolver, mention_tokenizer):
     return edges
 
 
-def process_code(source_file_content, offsets, node_resolver, mention_tokenizer, node_matcher, track_offsets=False):
+def process_code(source_file_content, offsets, node_resolver, mention_tokenizer, node_matcher, named_group_tracker, track_offsets=False):
     # replace global occurrences with special tokens to help further parsing with ast package
     replacer = OccurrenceReplacer()
     replacer.perform_replacements(source_file_content, offsets)
@@ -788,6 +814,8 @@ def process_code(source_file_content, offsets, node_resolver, mention_tokenizer,
 
     # insert global mentions using replacements that were created on the first step
     edges = add_global_mentions(edges)
+
+    named_group_tracker.add_names_from_edges(edges)
 
     edges = standardize_new_edges(edges, node_resolver, mention_tokenizer)
 
@@ -837,6 +865,7 @@ def get_ast_from_modules(
     node_resolver = ReplacementNodeResolver(nodes)
     node_matcher = GlobalNodeMatcher(nodes, add_reverse_edges(edges))
     mention_tokenizer = MentionTokenizer(bpe_tokenizer_path, create_subword_instances, connect_subwords)
+    name_group_tracker = NameGroupTracker()
     all_ast_edges = []
     all_global_references = {}
     all_offsets = []
@@ -856,7 +885,7 @@ def get_ast_from_modules(
         # process code
         # try:
         edges, global_and_ast_offsets, ast_nodes_to_srctrl_nodes = process_code(
-            source_file_content, offsets, node_resolver, mention_tokenizer, node_matcher, track_offsets=track_offsets
+            source_file_content, offsets, node_resolver, mention_tokenizer, node_matcher, name_group_tracker, track_offsets=track_offsets
         )
         # except SyntaxError:
         #     logging.warning(f"Error processing file_id {file_id}")
@@ -941,7 +970,7 @@ def get_ast_from_modules(
     else:
         all_offsets = None
 
-    return all_ast_nodes, all_ast_edges, all_offsets
+    return all_ast_nodes, all_ast_edges, all_offsets, name_group_tracker.to_df()
 
 
 class OccurrenceReplacer:

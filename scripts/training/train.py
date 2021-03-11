@@ -84,7 +84,7 @@ def add_train_args(parser):
     #                     help='Path to the file with nodes')
     # parser.add_argument('--edge_path', '-e', dest='edge_path', default=None,
     #                     help='Path to the file with edges')
-    parser.add_argument('--train_frac', dest='train_frac', default=0.6, type=float,
+    parser.add_argument('--train_frac', dest='train_frac', default=0.9, type=float,
                         help='')
     # parser.add_argument('--call_seq_file', dest='call_seq_file', default=None,
     #                     help='Path to the file with edges that represent API call sequence. '
@@ -141,7 +141,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(module)s:%(lineno)d:%(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s:%(levelname)s:%(module)s:%(lineno)d:%(message)s")
 
     models_ = {
         # GCNSampling: gcnsampling_params,
