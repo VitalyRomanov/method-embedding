@@ -91,7 +91,7 @@ class DatasetCreator:
                                 join(with_ast_path, "common_function_variable_pairs.bz2"), "Merging variables with ast")
         self.create_global_file("call_seq.bz2", "local2global_with_ast.bz2", ['src', 'dst'],
                                 join(with_ast_path, "common_call_seq.bz2"), "Merging call seq with ast")
-        self.create_global_file("name_groups.bz2", "local2global_with_ast.bz2", ['src', 'dst'],
+        self.create_global_file("name_groups.bz2", "local2global_with_ast.bz2", [],
                                 join(with_ast_path, "name_groups.bz2"), "Merging name groups")
 
         global_nodes = self.filter_orphaned_nodes(

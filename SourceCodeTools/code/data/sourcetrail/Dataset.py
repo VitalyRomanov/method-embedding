@@ -1,8 +1,15 @@
+# from collections import Counter
+# from itertools import chain
+
 import pandas
 import numpy
 import pickle
 
 from os.path import join
+
+# from dgl.dataloading import MultiLayerFullNeighborSampler, NodeDataLoader
+# from networkx import ego_graph
+# from torch import Tensor, LongTensor
 
 from SourceCodeTools.code.data.sourcetrail.SubwordMasker import SubwordMasker
 from SourceCodeTools.code.data.sourcetrail.file_utils import *
@@ -515,17 +522,58 @@ class SourceGraphDataset:
         path = join(self.data_path, "common_call_seq.bz2")
         return unpersist(path)
 
-    def load_token_prediction(self):
+    def load_token_prediction(self, k_hop_neigh=6):
         if self.use_edge_types:
             edges = self.edges.query("type == 'subword_'")
         else:
             edges = self.edges.query("type_backup == 'subword_'")
+
+        # name_groups = unpersist(join(self.data_path, "name_groups.bz2"))
+        #
+        # def get_name_cooccurr_freq(name_groups):
+        #     unique_names = set()
+        #     for group in name_groups["names"]:
+        #         unique_names.update(group)
+        #
+        #     name_cooccurr_freq = {}
+        #     for name in unique_names:
+        #         name_cooccurr_freq[name] = Counter()
+        #         for group in name_groups["names"]:
+        #             if name in group:
+        #                 name_cooccurr_freq[name] += Counter(group)
+        #     return name_cooccurr_freq
+        #
+        # name_cooccurr_freq = get_name_cooccurr_freq((name_groups))
+
 
         target_nodes = set(edges["dst"].to_list())
         target_nodes = self.nodes.query("id in @target_nodes", local_dict={"target_nodes": target_nodes})[["id", "name"]]
         name_extr = lambda x: x.split('@')[0]
         target_nodes.eval("name = name.map(@name_extr)", local_dict={"name_extr": name_extr}, inplace=True)
         target_nodes.rename({"id": "src", "name": "dst"}, axis=1, inplace=True)
+        # target_nodes.eval("cooccurr = dst.map(@occ)", local_dict={"occ": lambda name: name_cooccurr_freq.get(name, Counter())}, inplace=True)
+
+        # id2global = dict(zip(self.nodes["id"], self.nodes["global_graph_id"]))
+        # global2name = dict(zip(self.nodes["global_graph_id"], self.nodes["name"]))
+        # unique_names = set(name for name in target_nodes["dst"])
+        #
+        # sampler = MultiLayerFullNeighborSampler(k_hop_neigh)
+        #
+        # logging.warning(f"Using {k_hop_neigh} neighbours for name groups")
+        # logging.info(f"Searching for neighbours...")
+        # cooccur = []
+        # for id_ in target_nodes["src"]:
+        #     dataloader = NodeDataLoader(
+        #         self.g,
+        #         LongTensor([id2global[id_]]),
+        #         sampler)
+        #     ego_nodes, _, _ = next(iter(dataloader))
+        #     ego_nodes = ego_nodes.tolist()
+        #     ego_names = [name_extr(global2name[node]) for node in ego_nodes]
+        #     cooccur.append(list(filter(lambda name: name in unique_names, ego_names)))
+        #
+        # target_nodes["cooccur"] = cooccur
+        # logging.info(f"Neighbours found")
         return target_nodes
 
     def buckets_from_pretrained_embeddings(self, pretrained_path, n_buckets):
