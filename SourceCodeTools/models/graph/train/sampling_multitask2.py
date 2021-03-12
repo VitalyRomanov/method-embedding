@@ -170,7 +170,9 @@ class SamplingMultitaskTrainer:
         return self.trainer_params['model_base_path']
 
     @property
-    def pretraining(self):
+    def finetune(self):
+        if self.trainer_params['pretraining_phase'] == -1:
+            return False
         return self.epoch >= self.trainer_params['pretraining_phase']
 
     @property
@@ -234,7 +236,7 @@ class SamplingMultitaskTrainer:
                 self.optimizer.zero_grad()
                 for objective, (input_nodes, seeds, blocks) in zip(self.objectives, loaders):
 
-                    loss, acc = objective(input_nodes, seeds, blocks, train_embeddings=self.pretraining)
+                    loss, acc = objective(input_nodes, seeds, blocks, train_embeddings=self.finetune)
 
                     loss = loss / len(self.objectives)  # assumes the same batch size for all objectives
                     loss_accum += loss.item()
