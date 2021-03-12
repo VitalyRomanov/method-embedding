@@ -20,7 +20,8 @@ class Objective(nn.Module):
     def __init__(
             self, name, objective_type, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
-            tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker=None
+            tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker=None,
+            measure_ndcg=False, dilate_ndcg=1
     ):
         """
         :param name: name for reference
@@ -44,6 +45,8 @@ class Objective(nn.Module):
         self.device = device
         self.masker = masker
         self.link_predictor_type = link_predictor_type
+        self.measure_ndcg = measure_ndcg
+        self.dilate_ndcg = dilate_ndcg
 
         if self.type not in {"graph_link_prediction", "graph_link_classification", "subword_ranker", "classification"}:
             raise NotImplementedError()
@@ -381,7 +384,7 @@ class Objective(nn.Module):
 
         return loss, acc
 
-    def _evaluate_embedder(self, ee, lp, data_split, neg_sampling_factor=1, dilate_ndcg=200):
+    def _evaluate_embedder(self, ee, lp, data_split, neg_sampling_factor=1):
 
         total_loss = 0
         total_acc = 0
@@ -390,8 +393,9 @@ class Objective(nn.Module):
         ndcg_count = 0
         count = 0
 
-        if self.link_predictor == "inner_prod":
-            self.target_embedder.prepare_index()
+        if self.measure_ndcg:
+            if self.link_predictor == "inner_prod":
+                self.target_embedder.prepare_index()
 
         for input_nodes, seeds, blocks in getattr(self, f"{data_split}_loader"):
             blocks = [blk.to(self.device) for blk in blocks]
@@ -404,11 +408,12 @@ class Objective(nn.Module):
             # logits, labels = self._logits_embedder(src_embs, ee, lp, seeds, neg_sampling_factor)
             node_embs_, element_embs_, labels = self._logits_embedder(src_embs, ee, lp, seeds, neg_sampling_factor)
 
-            # if count % dilate_ndcg == 0:
-            #     ndcg = self.target_embedder.score_candidates(self.seeds_to_global(seeds), src_embs, self.link_predictor, at=ndcg_at, type=self.link_predictor_type)
-            #     for key, val in ndcg.items():
-            #         total_ndcg[key] = total_ndcg[key] + val
-            #     ndcg_count += 1
+            if self.measure_ndcg:
+                if count % self.dilate_ndcg == 0:
+                    ndcg = self.target_embedder.score_candidates(self.seeds_to_global(seeds), src_embs, self.link_predictor, at=ndcg_at, type=self.link_predictor_type)
+                    for key, val in ndcg.items():
+                        total_ndcg[key] = total_ndcg[key] + val
+                    ndcg_count += 1
 
             # logits = self.link_predictor(node_embs_, element_embs_)
             #
@@ -421,7 +426,7 @@ class Objective(nn.Module):
             total_loss += loss.item()
             total_acc += acc
             count += 1
-        return total_loss / count, total_acc / count, None # {key: val / ndcg_count for key, val in total_ndcg.items()}
+        return total_loss / count, total_acc / count, {key: val / ndcg_count for key, val in total_ndcg.items()} if self.measure_ndcg else None
 
     def _evaluate_nodes(self, ee, lp, create_api_call_loader, data_split, neg_sampling_factor=1):
 

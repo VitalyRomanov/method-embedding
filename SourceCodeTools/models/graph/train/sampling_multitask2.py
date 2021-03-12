@@ -65,7 +65,8 @@ class SamplingMultitaskTrainer:
                 dataset.load_token_prediction, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="nn",
-                masker=dataset.create_subword_masker()
+                masker=dataset.create_subword_masker(), measure_ndcg=self.trainer_params["measure_ndcg"],
+                dilate_ndcg=self.trainer_params["dilate_ndcg"]
             )
         )
 
@@ -284,7 +285,7 @@ class SamplingMultitaskTrainer:
 
                 objective.train()
 
-            self.write_hyperparams({k.replace("vs_batch", "vs_epoch"): v for k, v in summary_dict.items()}, self.epoch)
+            # self.write_hyperparams({k.replace("vs_batch", "vs_epoch"): v for k, v in summary_dict.items()}, self.epoch)
 
             end = time()
 
@@ -357,7 +358,7 @@ class SamplingMultitaskTrainer:
 
                 summary_dict.update(summary)
 
-        self.write_hyperparams(summary_dict, self.epoch)
+        # self.write_hyperparams(summary_dict, self.epoch)
 
         scores_str = ", ".join([f"{k}: {v}" for k, v in summary_dict.items()])
 
@@ -441,7 +442,9 @@ def training_procedure(
         'use_layer_scheduling': args.use_layer_scheduling,
         'schedule_layers_every': args.schedule_layers_every,
         'embedding_table_size': args.embedding_table_size,
-        'save_checkpoints': args.save_checkpoints
+        'save_checkpoints': args.save_checkpoints,
+        'measure_ndcg': args.measure_ndcg,
+        'dilate_ndcg': args.dilate_ndcg
     }
 
     trainer = SamplingMultitaskTrainer(
@@ -498,7 +501,9 @@ def evaluation_procedure(
         'use_layer_scheduling': args.use_layer_scheduling,
         'schedule_layers_every': args.schedule_layers_every,
         'embedding_table_size': args.embedding_table_size,
-        'save_checkpoints': args.save_checkpoints
+        'save_checkpoints': args.save_checkpoints,
+        'measure_ndcg': args.measure_ndcg,
+        'dilate_ndcg': args.dilate_ndcg
     }
 
     trainer = SamplingMultitaskTrainer(
