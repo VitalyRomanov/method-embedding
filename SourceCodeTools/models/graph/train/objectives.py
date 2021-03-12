@@ -4,6 +4,7 @@ from itertools import chain
 
 import dgl
 import torch
+from torch.nn import CosineEmbeddingLoss
 
 from SourceCodeTools.code.data.sourcetrail.SubwordMasker import SubwordMasker
 from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedderWithBpeSubwords
@@ -19,7 +20,7 @@ class Objective(nn.Module):
     def __init__(
             self, name, objective_type, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
-            tokenizer_path=None, target_emb_size=None, link_predictor_type="nn", masker: SubwordMasker=None
+            tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker=None
     ):
         """
         :param name: name for reference
@@ -42,6 +43,7 @@ class Objective(nn.Module):
         self.node_embedder = node_embedder
         self.device = device
         self.masker = masker
+        self.link_predictor_type = link_predictor_type
 
         if self.type not in {"graph_link_prediction", "graph_link_classification", "subword_ranker", "classification"}:
             raise NotImplementedError()
@@ -65,6 +67,7 @@ class Objective(nn.Module):
                 self.link_predictor = LinkPredictor(target_emb_size + self.graph_model.emb_size).to(self.device)
             elif link_predictor_type == "inner_prod":
                 self.link_predictor = CosineLinkPredictor().to(self.device)
+                self.cosine_loss = CosineEmbeddingLoss()
             else:
                 raise NotImplementedError()
         else:
@@ -189,6 +192,19 @@ class Objective(nn.Module):
                 train_embeddings=train_embeddings, masked=masked
             ).to(self.device)
         return emb
+
+    def compute_acc_loss(self, node_embs_, element_embs_, labels):
+        logits = self.link_predictor(node_embs_, element_embs_)
+
+        acc = _compute_accuracy(logits.argmax(dim=1), labels)
+
+        if self.link_predictor_type == "nn":
+            logp = nn.functional.log_softmax(logits, 1)
+            loss = nn.functional.nll_loss(logp, labels)
+        else:
+            loss = self.cosine_loss(node_embs_, element_embs_, labels)
+        return acc, loss
+
 
     def _logits_batch(self, input_nodes, blocks, train_embeddings=True, masked=None):
 
@@ -341,21 +357,25 @@ class Objective(nn.Module):
         else:
             raise NotImplementedError()
 
-        logits = self.link_predictor(node_embs_, element_embs_)
-
-        acc = _compute_accuracy(logits.argmax(dim=1), labels)
-        logp = nn.functional.log_softmax(logits, 1)
-        loss = nn.functional.nll_loss(logp, labels)
+        # logits = self.link_predictor(node_embs_, element_embs_)
+        #
+        # acc = _compute_accuracy(logits.argmax(dim=1), labels)
+        # logp = nn.functional.log_softmax(logits, 1)
+        # loss = nn.functional.nll_loss(logp, labels)
+        acc, loss = self.compute_acc_loss(node_embs_, element_embs_, labels)
 
         return loss, acc
 
-    def _evaluate_embedder(self, ee, lp, data_split, neg_sampling_factor=1):
+    def _evaluate_embedder(self, ee, lp, data_split, neg_sampling_factor=1, dilate_ndcg=200):
 
         total_loss = 0
         total_acc = 0
         ndcg_at = [1, 3, 5, 10]
         total_ndcg = {f"ndcg@{k}": 0. for k in ndcg_at}
+        ndcg_count = 0
         count = 0
+
+        self.target_embedder.prepare_index()
 
         for input_nodes, seeds, blocks in getattr(self, f"{data_split}_loader"):
             blocks = [blk.to(self.device) for blk in blocks]
@@ -368,20 +388,24 @@ class Objective(nn.Module):
             # logits, labels = self._logits_embedder(src_embs, ee, lp, seeds, neg_sampling_factor)
             node_embs_, element_embs_, labels = self._logits_embedder(src_embs, ee, lp, seeds, neg_sampling_factor)
 
-            ndcg = self.target_embedder.score_candidates(self.seeds_to_global(seeds), src_embs, self.link_predictor, at=ndcg_at)
-            for key, val in ndcg.items():
-                total_ndcg[key] = total_ndcg[key] + val
+            # if count % dilate_ndcg == 0:
+            #     ndcg = self.target_embedder.score_candidates(self.seeds_to_global(seeds), src_embs, self.link_predictor, at=ndcg_at, type=self.link_predictor_type)
+            #     for key, val in ndcg.items():
+            #         total_ndcg[key] = total_ndcg[key] + val
+            #     ndcg_count += 1
 
-            logits = self.link_predictor(node_embs_, element_embs_)
+            # logits = self.link_predictor(node_embs_, element_embs_)
+            #
+            # logp = nn.functional.log_softmax(logits, 1)
+            # loss = nn.functional.cross_entropy(logp, labels)
+            # acc = _compute_accuracy(logp.argmax(dim=1), labels)
 
-            logp = nn.functional.log_softmax(logits, 1)
-            loss = nn.functional.cross_entropy(logp, labels)
-            acc = _compute_accuracy(logp.argmax(dim=1), labels)
+            acc, loss = self.compute_acc_loss(node_embs_, element_embs_, labels)
 
             total_loss += loss.item()
             total_acc += acc
             count += 1
-        return total_loss / count, total_acc / count, {key: val / count for key, val in total_ndcg.items()}
+        return total_loss / count, total_acc / count, None # {key: val / ndcg_count for key, val in total_ndcg.items()}
 
     def _evaluate_nodes(self, ee, lp, create_api_call_loader, data_split, neg_sampling_factor=1):
 
@@ -400,11 +424,13 @@ class Objective(nn.Module):
             # logits, labels = self._logits_nodes(src_embs, ee, lp, create_api_call_loader, seeds, neg_sampling_factor)
             node_embs_, element_embs_, labels = self._logits_nodes(src_embs, ee, lp, create_api_call_loader, seeds, neg_sampling_factor)
 
-            logits = self.link_predictor(node_embs_, element_embs_)
+            # logits = self.link_predictor(node_embs_, element_embs_)
+            #
+            # logp = nn.functional.log_softmax(logits, 1)
+            # loss = nn.functional.cross_entropy(logp, labels)
+            # acc = _compute_accuracy(logp.argmax(dim=1), labels)
 
-            logp = nn.functional.log_softmax(logits, 1)
-            loss = nn.functional.cross_entropy(logp, labels)
-            acc = _compute_accuracy(logp.argmax(dim=1), labels)
+            acc, loss = self.compute_acc_loss(node_embs_, element_embs_, labels)
 
             total_loss += loss.item()
             total_acc += acc
