@@ -31,8 +31,8 @@ class CosineLinkPredictor(nn.Module):
         super(CosineLinkPredictor, self).__init__()
 
         self.cos = nn.CosineSimilarity()
-        self.max_margin = torch.Tensor([0.])
+        self.max_margin = torch.Tensor([0.4])
 
     def forward(self, x1, x2):
-        logit = torch.maximum(self.cos(x1, x2), self.max_margin).reshape((-1,1))
+        logit = (self.cos(x1, x2) > self.max_margin).float().unsqueeze(1)
         return torch.cat([1 - logit, logit], dim=1)
