@@ -111,6 +111,8 @@ def add_train_args(parser):
                         help='Number of epochs')
     parser.add_argument('--batch_size', dest='batch_size', default=128, type=int,
                         help='Batch size')
+    parser.add_argument('--dilate_ndcg', dest='dilate_ndcg', default=200, type=int,
+                        help='')
     parser.add_argument('--embedding_table_size', dest='embedding_table_size', default=200000, type=int,
                         help='Batch size')
     parser.add_argument('--note', dest='note', default="",
@@ -118,6 +120,7 @@ def add_train_args(parser):
     parser.add_argument('model_output_dir',
                         help='Location of the final model')
     parser.add_argument('--no_checkpoints', dest="save_checkpoints", action='store_false')
+    parser.add_argument('--measure_ndcg', action='store_true')
     parser.add_argument('--use_node_types', action='store_true')
     parser.add_argument('--use_edge_types', action='store_true')
     parser.add_argument('--restore_state', action='store_true')

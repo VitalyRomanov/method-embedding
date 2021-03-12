@@ -20,7 +20,8 @@ class Objective(nn.Module):
     def __init__(
             self, name, objective_type, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
-            tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker=None
+            tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker=None,
+            measure_ndcg=False, dilate_ndcg=1
     ):
         """
         :param name: name for reference
@@ -44,9 +45,14 @@ class Objective(nn.Module):
         self.device = device
         self.masker = masker
         self.link_predictor_type = link_predictor_type
+        self.measure_ndcg = measure_ndcg
+        self.dilate_ndcg = dilate_ndcg
 
         if self.type not in {"graph_link_prediction", "graph_link_classification", "subword_ranker", "classification"}:
             raise NotImplementedError()
+
+        if link_predictor_type == "inner_prod":
+            assert target_emb_size == self.graph_model.emb_size, "Graph embedding and target embedder dimensionality should match for `inner_prod` type of link predictor."
 
         # create target embedder
         if self.type == "graph_link_prediction" or self.type == "graph_link_classification":
@@ -65,9 +71,15 @@ class Objective(nn.Module):
         if self.type in {"graph_link_prediction", "graph_link_classification", "subword_ranker"}:
             if link_predictor_type == "nn":
                 self.link_predictor = LinkPredictor(target_emb_size + self.graph_model.emb_size).to(self.device)
+                self.positive_label = 1
+                self.negative_label = 0
+                self.label_dtype = torch.long
             elif link_predictor_type == "inner_prod":
                 self.link_predictor = CosineLinkPredictor().to(self.device)
-                self.cosine_loss = CosineEmbeddingLoss()
+                self.cosine_loss = CosineEmbeddingLoss(margin=0.4)
+                self.positive_label = 1.
+                self.negative_label = -1.
+                self.label_dtype = torch.float32
             else:
                 raise NotImplementedError()
         else:
@@ -196,13 +208,15 @@ class Objective(nn.Module):
     def compute_acc_loss(self, node_embs_, element_embs_, labels):
         logits = self.link_predictor(node_embs_, element_embs_)
 
-        acc = _compute_accuracy(logits.argmax(dim=1), labels)
-
         if self.link_predictor_type == "nn":
-            logp = nn.functional.log_softmax(logits, 1)
+            logp = nn.functional.log_softmax(logits, dim=1)
             loss = nn.functional.nll_loss(logp, labels)
         else:
             loss = self.cosine_loss(node_embs_, element_embs_, labels)
+            labels[labels < 0] = 0
+
+        acc = _compute_accuracy(logits.argmax(dim=1), labels)
+
         return acc, loss
 
 
@@ -261,12 +275,14 @@ class Objective(nn.Module):
         node_embeddings_batch = node_embeddings
         element_embeddings = elem_embedder(elem_embedder[indices.tolist()].to(self.device))
 
-        labels_pos = torch.ones(batch_size, dtype=torch.long)
+        # labels_pos = torch.ones(batch_size, dtype=torch.long)
+        labels_pos = torch.full((batch_size,), self.positive_label, dtype=self.label_dtype)
 
         node_embeddings_neg_batch = node_embeddings_batch.repeat(k, 1)
         negative_random = elem_embedder(elem_embedder.sample_negative(batch_size * k).to(self.device))
 
-        labels_neg = torch.zeros(batch_size * k, dtype=torch.long)
+        # labels_neg = torch.zeros(batch_size * k, dtype=torch.long)
+        labels_neg = torch.full((batch_size * k,), self.negative_label, dtype=self.label_dtype)
 
         # positive_batch = torch.cat([node_embeddings_batch, element_embeddings], 1)
         # negative_batch = torch.cat([node_embeddings_neg_batch, negative_random], 1)
@@ -302,7 +318,8 @@ class Objective(nn.Module):
         assert dst_seeds.tolist() == unique_dst.tolist()
         unique_dst_embeddings = self._logits_batch(input_nodes, blocks, train_embeddings)  # use_types, ntypes)
         next_call_embeddings = unique_dst_embeddings[slice_map.to(self.device)]
-        labels_pos = torch.ones(batch_size, dtype=torch.long)
+        # labels_pos = torch.ones(batch_size, dtype=torch.long)
+        labels_pos = torch.full((batch_size,), self.positive_label, dtype=self.label_dtype)
 
         node_embeddings_neg_batch = node_embeddings_batch.repeat(k, 1)
         negative_indices = torch.tensor(elem_embedder.sample_negative(
@@ -317,7 +334,8 @@ class Objective(nn.Module):
         assert dst_seeds.tolist() == unique_negative.tolist()
         unique_negative_random = self._logits_batch(input_nodes, blocks, train_embeddings)  # use_types, ntypes)
         negative_random = unique_negative_random[slice_map.to(self.device)]
-        labels_neg = torch.zeros(batch_size * k, dtype=torch.long)
+        # labels_neg = torch.zeros(batch_size * k, dtype=torch.long)
+        labels_neg = torch.full((batch_size * k,), self.negative_label, dtype=self.label_dtype)
 
         # positive_batch = torch.cat([node_embeddings_batch, next_call_embeddings], 1)
         # negative_batch = torch.cat([node_embeddings_neg_batch, negative_random], 1)
@@ -366,7 +384,7 @@ class Objective(nn.Module):
 
         return loss, acc
 
-    def _evaluate_embedder(self, ee, lp, data_split, neg_sampling_factor=1, dilate_ndcg=200):
+    def _evaluate_embedder(self, ee, lp, data_split, neg_sampling_factor=1):
 
         total_loss = 0
         total_acc = 0
@@ -375,7 +393,9 @@ class Objective(nn.Module):
         ndcg_count = 0
         count = 0
 
-        self.target_embedder.prepare_index()
+        if self.measure_ndcg:
+            if self.link_predictor == "inner_prod":
+                self.target_embedder.prepare_index()
 
         for input_nodes, seeds, blocks in getattr(self, f"{data_split}_loader"):
             blocks = [blk.to(self.device) for blk in blocks]
@@ -388,11 +408,12 @@ class Objective(nn.Module):
             # logits, labels = self._logits_embedder(src_embs, ee, lp, seeds, neg_sampling_factor)
             node_embs_, element_embs_, labels = self._logits_embedder(src_embs, ee, lp, seeds, neg_sampling_factor)
 
-            # if count % dilate_ndcg == 0:
-            #     ndcg = self.target_embedder.score_candidates(self.seeds_to_global(seeds), src_embs, self.link_predictor, at=ndcg_at, type=self.link_predictor_type)
-            #     for key, val in ndcg.items():
-            #         total_ndcg[key] = total_ndcg[key] + val
-            #     ndcg_count += 1
+            if self.measure_ndcg:
+                if count % self.dilate_ndcg == 0:
+                    ndcg = self.target_embedder.score_candidates(self.seeds_to_global(seeds), src_embs, self.link_predictor, at=ndcg_at, type=self.link_predictor_type)
+                    for key, val in ndcg.items():
+                        total_ndcg[key] = total_ndcg[key] + val
+                    ndcg_count += 1
 
             # logits = self.link_predictor(node_embs_, element_embs_)
             #
@@ -405,7 +426,7 @@ class Objective(nn.Module):
             total_loss += loss.item()
             total_acc += acc
             count += 1
-        return total_loss / count, total_acc / count, None # {key: val / ndcg_count for key, val in total_ndcg.items()}
+        return total_loss / count, total_acc / count, {key: val / ndcg_count for key, val in total_ndcg.items()} if self.measure_ndcg else None
 
     def _evaluate_nodes(self, ee, lp, create_api_call_loader, data_split, neg_sampling_factor=1):
 
