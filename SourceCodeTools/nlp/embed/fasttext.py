@@ -84,11 +84,11 @@ def train_fasttext(corpus_path, output_path, tokenizer=None):
     train_embedding_model(FastText, params, corpus_path, output_path, tokenizer)
 
 
-def train_wor2vec(corpus_path, output_path, tokenizer=None):
+def train_wor2vec(corpus_path, output_path, tokenizer=None, emb_size=100):
     from gensim.models import Word2Vec
 
     params = {
-        'size': 100,
+        'size': emb_size,
         'window': 15,
         'min_count': 1,
         'workers': 4,
