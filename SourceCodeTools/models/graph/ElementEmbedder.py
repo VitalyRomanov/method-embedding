@@ -6,6 +6,8 @@ import numpy as np
 import random as rnd
 
 from sklearn.metrics import ndcg_score
+from sklearn.neighbors._ball_tree import BallTree
+from sklearn.preprocessing import normalize
 
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
 
@@ -83,6 +85,13 @@ class ElementEmbedderWithCharNGramSubwords(ElementEmbedderBase, nn.Module):
         x = self.embed(input)
         return torch.mean(x, dim=1)
 
+    def prepare_index(self):
+        all_keys = [key for key in self.name2repr]
+        emb_matr = np.array([self.name2repr[key] for key in all_keys], dtype=np.int32)
+        all_emb = self(torch.LongTensor(emb_matr)).detach().numpy()
+        self.all_emb = normalize(all_emb, axis=1)
+        self.ball_tree = BallTree(all_emb)
+
     def score_candidates_cosine(self, to_score_ids, to_score_embs, at=None):
         if at is None:
             at = [1, 3, 5, 10]
@@ -90,15 +99,32 @@ class ElementEmbedderWithCharNGramSubwords(ElementEmbedderBase, nn.Module):
         ids = to_score_ids.tolist()
         candidates = [set(list(self.element_lookup[id])) for id in ids]
         all_keys = [key for key in self.name2repr]
-        emb_matr = np.array([self.name2repr[key] for key in all_keys], dtype=np.int32)
-        all_emb = self(torch.LongTensor(emb_matr))
+        # emb_matr = np.array([self.name2repr[key] for key in all_keys], dtype=np.int32)
+        # all_emb = self(torch.LongTensor(emb_matr)).detach().numpy()
+        # all_emb = normalize(all_emb, axis=1)
+        # ball_tree = BallTree(all_emb)
 
         y_true = [[1. if all_keys[i] in cand else 0. for i in range(len(all_keys))] for cand in candidates]
 
-        score_matr = (to_score_embs @ all_emb.t()) / \
-                    to_score_embs.norm(p=2, dim=1, keepdim=True) / \
-                    all_emb.norm(p=2, dim=1, keepdim=True).t()
-        y_pred = score_matr.tolist()
+        y_pred = []
+        to_score_embs = to_score_embs.detach().numpy()
+        to_score_embs = normalize(to_score_embs, axis=1)
+        for ind in range(to_score_embs.shape[0]):
+            curr_to_score = to_score_embs[ind].reshape(1, -1)
+            _, closest = self.ball_tree.query(curr_to_score, k=at if type(at) is int else max(at))
+            scores = (curr_to_score @ self.all_emb[closest.ravel(), :].T).ravel()
+            closest = closest.ravel().tolist()
+            y_pred.append([])
+            for i in range(len(all_keys)):
+                if i in closest:
+                    y_pred[-1].append(scores[closest.index(i)])
+                else:
+                    y_pred[-1].append(-1.)
+
+        # score_matr = (to_score_embs @ all_emb.t()) / \
+        #             to_score_embs.norm(p=2, dim=1, keepdim=True) / \
+        #             all_emb.norm(p=2, dim=1, keepdim=True).t()
+        # y_pred = score_matr.tolist()
 
         if isinstance(at, Iterable):
             scores = {f"ndcg@{k}": ndcg_score(y_true, y_pred, k=k) for k in at}
@@ -106,7 +132,7 @@ class ElementEmbedderWithCharNGramSubwords(ElementEmbedderBase, nn.Module):
             scores = {f"ndcg@{at}": ndcg_score(y_true, y_pred, k=at)}
         return scores
 
-    def score_candidates(self, to_score_ids, to_score_embs, link_predictor, at=None):
+    def score_candidates_lp(self, to_score_ids, to_score_embs, link_predictor, at=None):
         if at is None:
             at = [1, 3, 5, 10]
 
@@ -128,6 +154,15 @@ class ElementEmbedderWithCharNGramSubwords(ElementEmbedderBase, nn.Module):
             scores = {f"ndcg@{k}": ndcg_score(y_true, y_pred, k=k) for k in at}
         else:
             scores = {f"ndcg@{at}": ndcg_score(y_true, y_pred, k=at)}
+        return scores
+
+    def score_candidates(self, to_score_ids, to_score_embs, link_predictor=None, at=None, type=None):
+        if type == "nn":
+            scores = self.score_candidates_lp(to_score_ids, to_score_embs, link_predictor, at=at)
+        elif type == "inner_prod":
+            scores = self.score_candidates_cosine(to_score_ids, to_score_embs, at=at)
+        else:
+            raise ValueError(f"`type` can be either `nn` or `inner_prod` but `{type}` given")
         return scores
 
 
