@@ -548,7 +548,30 @@ class SourceGraphDataset:
 
         target_nodes = set(edges["dst"].to_list())
         target_nodes = self.nodes.query("id in @target_nodes", local_dict={"target_nodes": target_nodes})[["id", "name"]]
+
+        # names_by_groups = {}
+        # for id_, name_ in target_nodes.values:
+        #     parts = name_.split("@")
+        #     if len(parts) == 1:
+        #         continue
+        #     elif len(parts) == 2:
+        #         local_name, group = parts
+        #         if group not in names_by_groups:
+        #             names_by_groups[group] = []
+        #
+        #         names_by_groups[group].append((id_, local_name))
+
+        def get_group(name):
+            parts = name.split("@")
+            if len(parts) == 1:
+                return pd.NA
+            elif len(parts) == 2:
+                local_name, group = parts
+                return group
+
         name_extr = lambda x: x.split('@')[0]
+        target_nodes.eval("group = name.map(@get_group)", local_dict={"get_group": get_group}, inplace=True)
+        target_nodes.dropna(axis=0, inplace=True)
         target_nodes.eval("name = name.map(@name_extr)", local_dict={"name_extr": name_extr}, inplace=True)
         target_nodes.rename({"id": "src", "name": "dst"}, axis=1, inplace=True)
         # target_nodes.eval("cooccurr = dst.map(@occ)", local_dict={"occ": lambda name: name_cooccurr_freq.get(name, Counter())}, inplace=True)
