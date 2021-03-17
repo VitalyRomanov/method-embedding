@@ -190,6 +190,19 @@ class ElementEmbedderWithBpeSubwords(ElementEmbedderWithCharNGramSubwords, nn.Mo
         self.embed = nn.Embedding(num_buckets, emb_size, padding_idx=0)
 
 
+class NameEmbedderWithGroups(ElementEmbedderWithBpeSubwords):
+    def __init__(self, elements, nodes, emb_size, tokenizer_path, num_buckets=100000, max_len=10):
+        super(NameEmbedderWithGroups, self).__init__(elements, nodes, emb_size, tokenizer_path, num_buckets, max_len)
+
+        self.group_lookup = {}
+        for id_, group_ in self.elements[["dst", "group"]].values:
+            if id_ not in self.element_lookup:
+                self.group_lookup[group_] = []
+
+            self.group_lookup[group_].append(id_)
+
+
+
 def test_ElementEmbedderWithCharNGramSubwords_score_candidates():
     import pandas as pd
     test_nodes = pd.DataFrame({
