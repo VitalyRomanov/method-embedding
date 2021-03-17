@@ -31,6 +31,15 @@ class ElementEmbedderBase:
         self.init_neg_sample()
 
     def preprocess_element_data(self, element_data, nodes, compact_dst, dst_to_global=False):
+        """
+        Takes the mapping from the original ids in the graph to the target embedding, maps dataset ids to graph ids,
+        creates structures that will allow mapping from the global graph id to the desired embedding
+        :param element_data:
+        :param nodes:
+        :param compact_dst:
+        :param dst_to_global:
+        :return:
+        """
         if len(element_data) == 0:
             logging.error(f"Not enough data for the embedder: {len(element_data)}. Exiting...")
             sys.exit()
@@ -39,15 +48,39 @@ class ElementEmbedderBase:
         id2typedid = dict(zip(nodes['id'].tolist(), nodes['typed_id'].tolist()))
         id2type = dict(zip(nodes['id'].tolist(), nodes['type'].tolist()))
 
+        def get_node_pools(element_data):
+            node_typed_pools = {}
+            for orig_node_id in element_data['src']:
+                global_id = id2nodeid.get(orig_node_id, None)
+
+                if global_id is None:
+                    continue
+
+                src_type = id2type.get(orig_node_id, None)
+                src_typed_id = id2typedid.get(orig_node_id, None)
+
+                if src_type not in node_typed_pools:
+                    node_typed_pools[src_type] = []
+
+                node_typed_pools[src_type].append(src_typed_id)
+
+            return node_typed_pools
+
+        self.node_typed_pools = get_node_pools(element_data)
+
+        # map to global graph id
         element_data['id'] = element_data['src'].apply(lambda x: id2nodeid.get(x, None))
-        element_data['src_type'] = element_data['src'].apply(lambda x: id2type.get(x, None))
-        element_data['src_typed_id'] = element_data['src'].apply(lambda x: id2typedid.get(x, None))
+        # # save type id to allow pooling nodes of certain types
+        # element_data['src_type'] = element_data['src'].apply(lambda x: id2type.get(x, None))
+        # element_data['src_typed_id'] = element_data['src'].apply(lambda x: id2typedid.get(x, None))
+
         if dst_to_global:
             element_data['dst'] = element_data['dst'].apply(lambda x: id2nodeid.get(x, None))
+
         element_data = element_data.astype({
             'id': 'Int32',
-            'src_type': 'category',
-            'src_typed_id': 'Int32',
+            # 'src_type': 'category',
+            # 'src_typed_id': 'Int32',
         })
 
         if compact_dst is False:  # creating api call embedder
@@ -90,7 +123,8 @@ class ElementEmbedderBase:
         :param ntypes:
         :return:
         """
-        return {ntype: set(self.elements.query(f"src_type == '{ntype}'")['src_typed_id'].tolist()) for ntype in ntypes}
+        return {ntype: set(self.node_typed_pools[ntype]) for ntype in ntypes}
+        # return {ntype: set(self.elements.query(f"src_type == '{ntype}'")['src_typed_id'].tolist()) for ntype in ntypes}
 
     def _create_pools(self, train_idx, val_idx, test_idx, pool) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         train_idx = np.fromiter(pool.intersection(train_idx.tolist()), dtype=np.int64)
