@@ -26,6 +26,15 @@ def main(models, args):
 
             dataset = read_or_create_dataset(args=args, model_base=model_base)
 
+            def write_params(args, params):
+                args = copy(args.__dict__)
+                args.update(params)
+                args['activation'] = args['activation'].__name__
+                with open(join(model_base, "params.json"), "w") as mdata:
+                    mdata.write(json.dumps(args, indent=4))
+
+            write_params(args, params)
+
             if args.training_mode == "multitask":
 
                 if args.intermediate_supervision:

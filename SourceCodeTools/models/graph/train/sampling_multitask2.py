@@ -236,6 +236,7 @@ class SamplingMultitaskTrainer:
 
                 self.optimizer.zero_grad()
                 for objective, (input_nodes, seeds, blocks) in zip(self.objectives, loaders):
+                    blocks = [blk.to(self.device) for blk in blocks]
 
                     loss, acc = objective(input_nodes, seeds, blocks, train_embeddings=self.finetune)
 

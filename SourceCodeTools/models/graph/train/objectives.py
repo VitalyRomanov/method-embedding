@@ -410,7 +410,7 @@ class Objective(nn.Module):
 
             if self.measure_ndcg:
                 if count % self.dilate_ndcg == 0:
-                    ndcg = self.target_embedder.score_candidates(self.seeds_to_global(seeds), src_embs, self.link_predictor, at=ndcg_at, type=self.link_predictor_type)
+                    ndcg = self.target_embedder.score_candidates(self.seeds_to_global(seeds), src_embs, self.link_predictor, at=ndcg_at, type=self.link_predictor_type, device=self.device)
                     for key, val in ndcg.items():
                         total_ndcg[key] = total_ndcg[key] + val
                     ndcg_count += 1
