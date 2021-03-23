@@ -16,11 +16,11 @@ class AttentiveAggregator(nn.Module):
     def __init__(self, emb_dim, num_dst_embeddings=3000, dropout=0., use_checkpoint=False):
         super(AttentiveAggregator, self).__init__()
         self.att = nn.MultiheadAttention(emb_dim, num_heads=1, dropout=dropout)
-        # self.query_emb = nn.Embedding(num_dst_embeddings, emb_dim)
+        self.query_emb = nn.Embedding(num_dst_embeddings, emb_dim)
         self.num_query_buckets = num_dst_embeddings
         self.use_checkpoint = use_checkpoint
 
-        self.query_emb = nn.ParameterList([nn.Parameter(th.Tensor(1, emb_dim, )) for i in range(num_dst_embeddings)])
+        # self.query_emb = nn.ParameterList([nn.Parameter(th.Tensor(1, emb_dim, )) for i in range(num_dst_embeddings)])
 
         self.dummy_tensor = th.ones(1, dtype=th.float32, requires_grad=True)
 
@@ -38,8 +38,8 @@ class AttentiveAggregator(nn.Module):
         if len(list_inputs) == 1:
             return list_inputs[0]
         key = value = th.stack(list_inputs).squeeze(dim=1)
-        # query = self.query_emb(th.LongTensor([token_hasher(dsttype, self.num_query_buckets)])).unsqueeze(0).repeat(1, key.shape[1], 1)
-        query = self.query_emb[token_hasher(dsttype, self.num_query_buckets)].unsqueeze(0).repeat(1, key.shape[1], 1)
+        query = self.query_emb(th.LongTensor([token_hasher(dsttype, self.num_query_buckets)]).to(self.dummy_tensor.device)).unsqueeze(0).repeat(1, key.shape[1], 1)
+        # query = self.query_emb[token_hasher(dsttype, self.num_query_buckets)].unsqueeze(0).repeat(1, key.shape[1], 1)
         if self.use_checkpoint:
             att_out, att_w = checkpoint.checkpoint(self.do_stuff, query, key, value, self.dummy_tensor)
         else:
