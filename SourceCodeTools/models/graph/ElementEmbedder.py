@@ -119,7 +119,7 @@ class ElementEmbedderWithCharNGramSubwords(ElementEmbedderBase, nn.Module, Score
         all_keys = self.get_keys_for_scoring()
         emb_matr = np.array([self.name2repr[key] for key in all_keys], dtype=np.int32)
         with torch.set_grad_enabled(False):
-            self.scorer_all_emb = self(torch.LongTensor(emb_matr).to(self.embed.weight.device)).detach().numpy()
+            self.scorer_all_emb = self(torch.LongTensor(emb_matr).to(self.embed.weight.device)).detach().cpu().numpy()
 
     def prepare_index(self):
         self.set_embed()

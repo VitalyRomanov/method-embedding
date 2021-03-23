@@ -100,7 +100,7 @@ class GraphLinkObjective(AbstractObjective):
         unique_negative, slice_map = self._handle_non_unique(negative_indices)
         assert unique_negative[slice_map].tolist() == negative_indices.tolist()
 
-        self.target_embedder.set_embed(unique_dst.detach().numpy(), unique_dst_embeddings.detach().numpy())
+        self.target_embedder.set_embed(unique_dst.detach().cpu().numpy(), unique_dst_embeddings.detach().cpu().numpy())
 
         dataloader = create_dataloader(unique_negative)
         input_nodes, dst_seeds, blocks = next(iter(dataloader))
@@ -111,7 +111,7 @@ class GraphLinkObjective(AbstractObjective):
         negative_random = unique_negative_random[slice_map.to(self.device)]
         labels_neg = torch.full((batch_size * k,), self.negative_label, dtype=self.label_dtype)
 
-        self.target_embedder.set_embed(unique_negative.detach().numpy(), unique_negative_random.detach().numpy())
+        self.target_embedder.set_embed(unique_negative.detach().cpu().numpy(), unique_negative_random.detach().cpu().numpy())
 
         nodes = torch.cat([node_embeddings_batch, node_embeddings_neg_batch], dim=0)
         embs = torch.cat([next_call_embeddings, negative_random], dim=0)

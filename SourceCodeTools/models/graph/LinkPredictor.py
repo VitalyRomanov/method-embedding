@@ -53,5 +53,7 @@ class CosineLinkPredictor(nn.Module):
         self.max_margin = torch.Tensor([0.4])
 
     def forward(self, x1, x2):
+        if self.max_margin.device != x1.device:
+            self.max_margin = self.max_margin.to(x1.device)
         logit = (self.cos(x1, x2) > self.max_margin).float().unsqueeze(1)
         return torch.cat([1 - logit, logit], dim=1)
