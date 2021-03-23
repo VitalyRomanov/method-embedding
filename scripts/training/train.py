@@ -122,6 +122,8 @@ def add_train_args(parser):
                         help='Batch size')
     parser.add_argument('--dilate_ndcg', dest='dilate_ndcg', default=200, type=int,
                         help='')
+    parser.add_argument('--min_count_for_objectives', dest='min_count_for_objectives', default=5, type=int,
+                        help='')
     parser.add_argument('--embedding_table_size', dest='embedding_table_size', default=200000, type=int,
                         help='Batch size')
     parser.add_argument('--note', dest='note', default="",
