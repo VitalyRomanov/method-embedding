@@ -1,5 +1,6 @@
 # from collections import Counter
 # from itertools import chain
+from collections import Counter
 
 import pandas
 import numpy
@@ -7,11 +8,7 @@ import pickle
 
 from os.path import join
 
-# from dgl.dataloading import MultiLayerFullNeighborSampler, NodeDataLoader
-# from networkx import ego_graph
-# from torch import Tensor, LongTensor
-
-from SourceCodeTools.code.data.sourcetrail.SubwordMasker import SubwordMasker
+from SourceCodeTools.code.data.sourcetrail.SubwordMasker import SubwordMasker, NodeNameMasker
 from SourceCodeTools.code.data.sourcetrail.file_utils import *
 from SourceCodeTools.code.python_ast import PythonSharedNodes
 from SourceCodeTools.nlp.embed.bpe import make_tokenizer, load_bpe_model
@@ -40,10 +37,21 @@ def load_data(node_path, edge_path):
     return nodes_, edges_
 
 
-# def create_mask(size, idx):
-#     mask = numpy.full((size,), False, dtype=numpy.bool)
-#     mask[idx] = True
-#     return mask
+def get_name_group(name):
+    parts = name.split("@")
+    if len(parts) == 1:
+        return pd.NA
+    elif len(parts) == 2:
+        local_name, group = parts
+        return group
+    return pd.NA
+
+
+def filter_dst_by_freq(elements, freq=1):
+    counter = Counter(elements["dst"])
+    allowed = {item for item, count in counter.items() if count >= freq}
+    target = elements.query("dst in @allowed", local_dict={"allowed": allowed})
+    return target
 
 
 def create_train_val_test_masks(nodes, train_idx, val_idx, test_idx):
@@ -53,6 +61,8 @@ def create_train_val_test_masks(nodes, train_idx, val_idx, test_idx):
     nodes.loc[val_idx, 'val_mask'] = True
     nodes['test_mask'] = False
     nodes.loc[test_idx, 'test_mask'] = True
+    starts_with = lambda x: x.startswith("##node_type")
+    nodes.loc[nodes.eval("name.map(@starts_with)", local_dict={"starts_with": starts_with}), ['train_mask', 'val_mask', 'test_mask']] = False
 
 
 def get_train_val_test_indices(indices, train_frac=0.6, random_seed=None):
@@ -94,7 +104,7 @@ class SourceGraphDataset:
     def __init__(self, data_path,
                  label_from, use_node_types=False,
                  use_edge_types=False, filter=None, self_loops=False,
-                 train_frac=0.6, random_seed=None, tokenizer_path=None):
+                 train_frac=0.6, random_seed=None, tokenizer_path=None, min_count_for_objectives=1):
         """
         Prepares the data for training GNN model. The graph is prepared in the following way:
             1. Edges are split into the train set and holdout set. Holdout set is used in the future experiments.
@@ -125,6 +135,7 @@ class SourceGraphDataset:
         self.labels_from = label_from
         self.data_path = data_path
         self.tokenizer_path = tokenizer_path
+        self.min_count_for_objectives = min_count_for_objectives
 
         nodes_path = join(data_path, "nodes.bz2")
         edges_path = join(data_path, "edges.bz2")
@@ -503,100 +514,58 @@ class SourceGraphDataset:
         return self.node_id_to_global_id[node_id]
 
     def load_node_names(self):
+        """
+        :return: DataFrame that contains mappings from nodes to names that appear more than once in the graph
+        """
         for_training = self.nodes[
             self.nodes['train_mask'] | self.nodes['test_mask'] | self.nodes['val_mask']
         ][['id', 'type_backup', 'name']]\
             .rename({"name": "serialized_name", "type_backup": "type"}, axis=1)
 
-        node_names = extract_node_names(for_training, 1)
+        node_names = extract_node_names(for_training, 2)
+        node_names = filter_dst_by_freq(node_names, freq=self.min_count_for_objectives)
 
         return node_names
         # path = join(self.data_path, "node_names.bz2")
         # return unpersist(path)
 
     def load_var_use(self):
+        """
+        :return: DataFrame that contains mapping from function ids to variable names that appear in those functions
+        """
         path = join(self.data_path, "common_function_variable_pairs.bz2")
-        return unpersist(path)
+        var_use = unpersist(path)
+        var_use = filter_dst_by_freq(var_use, freq=self.min_count_for_objectives)
+        return var_use
 
     def load_api_call(self):
         path = join(self.data_path, "common_call_seq.bz2")
-        return unpersist(path)
+        api_call = unpersist(path)
+        api_call = filter_dst_by_freq(api_call, freq=self.min_count_for_objectives)
+        return api_call
 
-    def load_token_prediction(self, k_hop_neigh=6):
+    def load_token_prediction(self):
+        """
+        Return names for all nodes that represent local mentions
+        :return: DataFrame that contains mappings from local mentions to names that these mentions represent. Applies
+            only to nodes that have subwords and have appeared in a scope (names have `@` in their names)
+        """
         if self.use_edge_types:
             edges = self.edges.query("type == 'subword_'")
         else:
             edges = self.edges.query("type_backup == 'subword_'")
 
-        # name_groups = unpersist(join(self.data_path, "name_groups.bz2"))
-        #
-        # def get_name_cooccurr_freq(name_groups):
-        #     unique_names = set()
-        #     for group in name_groups["names"]:
-        #         unique_names.update(group)
-        #
-        #     name_cooccurr_freq = {}
-        #     for name in unique_names:
-        #         name_cooccurr_freq[name] = Counter()
-        #         for group in name_groups["names"]:
-        #             if name in group:
-        #                 name_cooccurr_freq[name] += Counter(group)
-        #     return name_cooccurr_freq
-        #
-        # name_cooccurr_freq = get_name_cooccurr_freq((name_groups))
-
-
         target_nodes = set(edges["dst"].to_list())
         target_nodes = self.nodes.query("id in @target_nodes", local_dict={"target_nodes": target_nodes})[["id", "name"]]
 
-        # names_by_groups = {}
-        # for id_, name_ in target_nodes.values:
-        #     parts = name_.split("@")
-        #     if len(parts) == 1:
-        #         continue
-        #     elif len(parts) == 2:
-        #         local_name, group = parts
-        #         if group not in names_by_groups:
-        #             names_by_groups[group] = []
-        #
-        #         names_by_groups[group].append((id_, local_name))
-
-        def get_group(name):
-            parts = name.split("@")
-            if len(parts) == 1:
-                return pd.NA
-            elif len(parts) == 2:
-                local_name, group = parts
-                return group
-
         name_extr = lambda x: x.split('@')[0]
-        target_nodes.eval("group = name.map(@get_group)", local_dict={"get_group": get_group}, inplace=True)
-        target_nodes.dropna(axis=0, inplace=True)
+        # target_nodes.eval("group = name.map(@get_group)", local_dict={"get_group": get_name_group}, inplace=True)
+        # target_nodes.dropna(axis=0, inplace=True)
         target_nodes.eval("name = name.map(@name_extr)", local_dict={"name_extr": name_extr}, inplace=True)
         target_nodes.rename({"id": "src", "name": "dst"}, axis=1, inplace=True)
+        target_nodes = filter_dst_by_freq(target_nodes, freq=self.min_count_for_objectives)
         # target_nodes.eval("cooccurr = dst.map(@occ)", local_dict={"occ": lambda name: name_cooccurr_freq.get(name, Counter())}, inplace=True)
 
-        # id2global = dict(zip(self.nodes["id"], self.nodes["global_graph_id"]))
-        # global2name = dict(zip(self.nodes["global_graph_id"], self.nodes["name"]))
-        # unique_names = set(name for name in target_nodes["dst"])
-        #
-        # sampler = MultiLayerFullNeighborSampler(k_hop_neigh)
-        #
-        # logging.warning(f"Using {k_hop_neigh} neighbours for name groups")
-        # logging.info(f"Searching for neighbours...")
-        # cooccur = []
-        # for id_ in target_nodes["src"]:
-        #     dataloader = NodeDataLoader(
-        #         self.g,
-        #         LongTensor([id2global[id_]]),
-        #         sampler)
-        #     ego_nodes, _, _ = next(iter(dataloader))
-        #     ego_nodes = ego_nodes.tolist()
-        #     ego_names = [name_extr(global2name[node]) for node in ego_nodes]
-        #     cooccur.append(list(filter(lambda name: name in unique_names, ego_names)))
-        #
-        # target_nodes["cooccur"] = cooccur
-        # logging.info(f"Neighbours found")
         return target_nodes
 
     def buckets_from_pretrained_embeddings(self, pretrained_path, n_buckets):
@@ -633,24 +602,24 @@ class SourceGraphDataset:
         return embs_init
 
     def create_subword_masker(self):
+        """
+        :return: SubwordMasker for all nodes that have subwords. Suitable for token prediction objective.
+        """
         return SubwordMasker(self.nodes, self.edges)
 
-# def split(edges, holdout_frac, random_seed=None):
-#     if random_seed is not None:
-#         edges_shuffled = edges.sample(frac=1., random_state=42)
-#         logging.warning("Random state for splitting edges is fixed")
-#     else:
-#         edges_shuffled = edges.sample(frac=1.)
-#
-#     train_frac = int(edges_shuffled.shape[0] * (1. - holdout_frac))
-#
-#     train = edges_shuffled.iloc[:train_frac]
-#     test = edges_shuffled.iloc[train_frac:]
-#     logging.info(
-#         f"Splitting edges into train and test set. "
-#         f"Train: {train.shape[0]}. Test: {test.shape[0]}. Fraction: {holdout_frac}"
-#     )
-#     return train, test
+    def create_variable_name_masker(self, tokenizer_path):
+        """
+        :param tokenizer_path: path to bpe tokenizer
+        :return: SubwordMasker for function nodes. Suitable for variable name use prediction objective
+        """
+        return NodeNameMasker(self.nodes, self.edges, self.load_var_use(), tokenizer_path)
+
+    def create_node_name_masker(self, tokenizer_path):
+        """
+        :param tokenizer_path: path to bpe tokenizer
+        :return: SubwordMasker for function nodes. Suitable for node name use prediction objective
+        """
+        return NodeNameMasker(self.nodes, self.edges, self.load_node_names(), tokenizer_path)
 
 
 def ensure_connectedness(nodes: pandas.DataFrame, edges: pandas.DataFrame):
@@ -726,7 +695,8 @@ def read_or_create_dataset(args, model_base, labels_from="type"):
             self_loops=args.self_loops,
             train_frac=args.train_frac,
             tokenizer_path=args.tokenizer,
-            random_seed=args.random_seed
+            random_seed=args.random_seed,
+            min_count_for_objectives=args.min_count_for_objectives
         )
 
         # save dataset state for recovery
