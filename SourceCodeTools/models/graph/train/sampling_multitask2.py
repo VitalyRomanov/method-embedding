@@ -11,7 +11,8 @@ from os.path import join
 import logging
 
 from SourceCodeTools.models.Embedder import Embedder
-from SourceCodeTools.models.graph.train.objectives import Objective
+from SourceCodeTools.models.graph.train.objectives import VariableNameUsePrediction, TokenNamePrediction, \
+    NextCallPrediction, NodeNamePrediction
 from SourceCodeTools.models.graph.NodeEmbedder import NodeEmbedder
 
 
@@ -60,11 +61,11 @@ class SamplingMultitaskTrainer:
 
     def create_token_pred_objective(self, dataset, tokenizer_path):
         self.objectives.append(
-            Objective(
-                "token_name", "subword_ranker", self.graph_model, self.node_embedder, dataset.nodes,
+            TokenNamePrediction(
+                self.graph_model, self.node_embedder, dataset.nodes,
                 dataset.load_token_prediction, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
-                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="nn",
+                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
                 masker=dataset.create_subword_masker(), measure_ndcg=self.trainer_params["measure_ndcg"],
                 dilate_ndcg=self.trainer_params["dilate_ndcg"]
             )
@@ -72,31 +73,39 @@ class SamplingMultitaskTrainer:
 
     def create_node_name_objective(self, dataset, tokenizer_path):
         self.objectives.append(
-            Objective(
-                "node_name", "subword_ranker", self.graph_model, self.node_embedder, dataset.nodes,
+            NodeNamePrediction(
+                self.graph_model, self.node_embedder, dataset.nodes,
                 dataset.load_node_names, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
-                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="nn"
+                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="nn",
+                masker=dataset.create_node_name_masker(tokenizer_path),
+                measure_ndcg=self.trainer_params["measure_ndcg"],
+                dilate_ndcg=self.trainer_params["dilate_ndcg"]
             )
         )
 
     def create_var_use_objective(self, dataset, tokenizer_path):
         self.objectives.append(
-            Objective(
-                "var_use", "subword_ranker", self.graph_model, self.node_embedder, dataset.nodes,
+            VariableNameUsePrediction(
+                self.graph_model, self.node_embedder, dataset.nodes,
                 dataset.load_var_use, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
-                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="nn"
+                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="nn",
+                masker=dataset.create_variable_name_masker(tokenizer_path),
+                measure_ndcg=self.trainer_params["measure_ndcg"],
+                dilate_ndcg=self.trainer_params["dilate_ndcg"]
             )
         )
 
     def create_api_call_objective(self, dataset, tokenizer_path):
         self.objectives.append(
-            Objective(
-                "api_call", "graph_link_prediction", self.graph_model, self.node_embedder, dataset.nodes,
+            NextCallPrediction(
+                self.graph_model, self.node_embedder, dataset.nodes,
                 dataset.load_api_call, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
-                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="nn"
+                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="nn",
+                measure_ndcg=self.trainer_params["measure_ndcg"],
+                dilate_ndcg=self.trainer_params["dilate_ndcg"]
             )
         )
 
@@ -215,6 +224,10 @@ class SamplingMultitaskTrainer:
 
         summary_dict = {}
 
+        for objective in self.objectives:
+            with torch.set_grad_enabled(False):
+                objective.target_embedder.prepare_index()  # need this to update sampler for the next epoch
+
         for epoch in range(self.epoch, self.epochs):
             self.epoch = epoch
 
@@ -268,6 +281,7 @@ class SamplingMultitaskTrainer:
                 objective.eval()
 
                 with torch.set_grad_enabled(False):
+                    objective.target_embedder.prepare_index()  # need this to update sampler for the next epoch
 
                     val_loss, val_acc, val_ndcg = objective.evaluate("val")
                     test_loss, test_acc, test_ndcg = objective.evaluate("test")
