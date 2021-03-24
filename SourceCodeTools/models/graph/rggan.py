@@ -38,7 +38,7 @@ class AttentiveAggregator(nn.Module):
         if len(list_inputs) == 1:
             return list_inputs[0]
         key = value = th.stack(list_inputs).squeeze(dim=1)
-        query = self.query_emb(th.LongTensor([token_hasher(dsttype, self.num_query_buckets)]).to(self.dummy_tensor.device)).unsqueeze(0).repeat(1, key.shape[1], 1)
+        query = self.query_emb(th.LongTensor([token_hasher(dsttype, self.num_query_buckets)]).to(self.att.in_proj_bias.device)).unsqueeze(0).repeat(1, key.shape[1], 1)
         # query = self.query_emb[token_hasher(dsttype, self.num_query_buckets)].unsqueeze(0).repeat(1, key.shape[1], 1)
         if self.use_checkpoint:
             att_out, att_w = checkpoint.checkpoint(self.do_stuff, query, key, value, self.dummy_tensor)
