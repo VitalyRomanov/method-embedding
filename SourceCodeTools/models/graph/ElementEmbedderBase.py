@@ -123,7 +123,7 @@ class ElementEmbedderBase:
         :param ntypes:
         :return:
         """
-        return {ntype: set(self.node_typed_pools[ntype]) for ntype in ntypes}
+        return {ntype: set(self.node_typed_pools[ntype]) for ntype in ntypes if ntype in self.node_typed_pools}
         # return {ntype: set(self.elements.query(f"src_type == '{ntype}'")['src_typed_id'].tolist()) for ntype in ntypes}
 
     def _create_pools(self, train_idx, val_idx, test_idx, pool) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -151,10 +151,11 @@ class ElementEmbedderBase:
         pool = self.get_src_pool(ntypes=node_types)
 
         for ntype in train_idx.keys():
-            train, test, val = self._create_pools(train_idx[ntype], val_idx[ntype], test_idx[ntype], pool[ntype])
-            train_pool[ntype] = train
-            test_pool[ntype] = test
-            val_pool[ntype] = val
+            if ntype in pool:
+                train, test, val = self._create_pools(train_idx[ntype], val_idx[ntype], test_idx[ntype], pool[ntype])
+                train_pool[ntype] = train
+                test_pool[ntype] = test
+                val_pool[ntype] = val
 
         return train_pool, val_pool, test_pool
         # else:
