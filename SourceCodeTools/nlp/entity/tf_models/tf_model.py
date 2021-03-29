@@ -415,7 +415,9 @@ def test_step(model, token_ids, prefix, suffix, graph_ids, labels, lengths, extr
     return loss, p, r, f1
 
 
-def train(model, train_batches, test_batches, epochs, report_every=10, scorer=None, learning_rate=0.01, learning_rate_decay=1., finetune=False):
+def train(model, train_batches, test_batches, epochs, report_every=10, scorer=None, learning_rate=0.01, learning_rate_decay=1., finetune=False, summary_writer=None):
+
+    assert summary_writer is not None
 
     lr = tf.Variable(learning_rate, trainable=False)
     optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
@@ -425,50 +427,62 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
     train_f1s = []
     test_f1s = []
 
+    num_train_batches = len(train_batches)
+    num_test_batches = len(test_batches)
+
     try:
 
-        for e in range(epochs):
-            losses = []
-            ps = []
-            rs = []
-            f1s = []
+        with summary_writer.as_default():
 
-            for ind, batch in enumerate(train_batches):
-                # token_ids, graph_ids, labels, class_weights, lengths = b
-                loss, p, r, f1 = train_step_finetune(model=model, optimizer=optimizer, token_ids=batch['tok_ids'],
-                                            prefix=batch['prefix'], suffix=batch['suffix'],
-                                            graph_ids=batch['graph_ids'],
-                                            labels=batch['tags'],
-                                            lengths=batch['lens'],
-                                            extra_mask=batch['hide_mask'],
-                                            # class_weights=batch['class_weights'],
-                                            scorer=scorer,
-                                            finetune=finetune and e/epochs > 0.6)
-                losses.append(loss.numpy())
-                ps.append(p)
-                rs.append(r)
-                f1s.append(f1)
+            for e in range(epochs):
+                losses = []
+                ps = []
+                rs = []
+                f1s = []
 
-            for ind, batch in enumerate(test_batches):
-                # token_ids, graph_ids, labels, class_weights, lengths = b
-                test_loss, test_p, test_r, test_f1 = test_step(model=model, token_ids=batch['tok_ids'],
-                                            prefix=batch['prefix'], suffix=batch['suffix'],
-                                            graph_ids=batch['graph_ids'],
-                                            labels=batch['tags'],
-                                            lengths=batch['lens'],
-                                            extra_mask=batch['hide_mask'],
-                                            # class_weights=batch['class_weights'],
-                                            scorer=scorer)
+                for ind, batch in enumerate(train_batches):
+                    # token_ids, graph_ids, labels, class_weights, lengths = b
+                    loss, p, r, f1 = train_step_finetune(
+                        model=model, optimizer=optimizer, token_ids=batch['tok_ids'],
+                        prefix=batch['prefix'], suffix=batch['suffix'], graph_ids=batch['graph_ids'],
+                        labels=batch['tags'], lengths=batch['lens'], extra_mask=batch['hide_mask'],
+                        # class_weights=batch['class_weights'],
+                        scorer=scorer, finetune=finetune and e/epochs > 0.6
+                    )
+                    losses.append(loss.numpy())
+                    ps.append(p)
+                    rs.append(r)
+                    f1s.append(f1)
 
-            print(f"Epoch: {e}, Train Loss: {sum(losses) / len(losses)}, Train P: {sum(ps) / len(ps)}, Train R: {sum(rs) / len(rs)}, Train F1: {sum(f1s) / len(f1s)}, "
-                  f"Test loss: {test_loss}, Test P: {test_p}, Test R: {test_r}, Test F1: {test_f1}")
+                    tf.summary.scalar("Loss/Train", loss, step=e * num_train_batches + ind)
+                    tf.summary.scalar("Precision/Train", p, step=e * num_train_batches + ind)
+                    tf.summary.scalar("Recall/Train", r, step=e * num_train_batches + ind)
+                    tf.summary.scalar("F1/Train", f1, step=e * num_train_batches + ind)
 
-            train_losses.append(float(sum(losses) / len(losses)))
-            train_f1s.append(float(sum(f1s) / len(f1s)))
-            test_losses.append(float(test_loss))
-            test_f1s.append(float(test_f1))
+                for ind, batch in enumerate(test_batches):
+                    # token_ids, graph_ids, labels, class_weights, lengths = b
+                    test_loss, test_p, test_r, test_f1 = test_step(
+                        model=model, token_ids=batch['tok_ids'],
+                        prefix=batch['prefix'], suffix=batch['suffix'], graph_ids=batch['graph_ids'],
+                        labels=batch['tags'], lengths=batch['lens'], extra_mask=batch['hide_mask'],
+                        # class_weights=batch['class_weights'],
+                        scorer=scorer
+                    )
 
-            lr.assign(lr * learning_rate_decay)
+                    tf.summary.scalar("Loss/Test", test_loss, step=e * num_test_batches + ind)
+                    tf.summary.scalar("Precision/Test", test_p, step=e * num_test_batches + ind)
+                    tf.summary.scalar("Recall/Test", test_r, step=e * num_test_batches + ind)
+                    tf.summary.scalar("F1/Test", test_f1, step=e * num_test_batches + ind)
+
+                print(f"Epoch: {e}, Train Loss: {sum(losses) / len(losses)}, Train P: {sum(ps) / len(ps)}, Train R: {sum(rs) / len(rs)}, Train F1: {sum(f1s) / len(f1s)}, "
+                      f"Test loss: {test_loss}, Test P: {test_p}, Test R: {test_r}, Test F1: {test_f1}")
+
+                train_losses.append(float(sum(losses) / len(losses)))
+                train_f1s.append(float(sum(f1s) / len(f1s)))
+                test_losses.append(float(test_loss))
+                test_f1s.append(float(test_f1))
+
+                lr.assign(lr * learning_rate_decay)
 
     except KeyboardInterrupt:
         pass
