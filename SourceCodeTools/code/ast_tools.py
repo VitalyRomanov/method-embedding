@@ -1,6 +1,7 @@
 import ast
 
-from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets, resolve_self_collision
+from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets, resolve_self_collision, adjust_offsets2
+
 
 def get_mentions(function, root, mention):
     """
@@ -16,7 +17,7 @@ def get_mentions(function, root, mention):
         if isinstance(node, ast.Name): # a variable or a ...
             if node.id == mention:
                 offset = to_offsets(function,
-                                    [(node.lineno-1, node.end_lineno-1, node.col_offset, node.end_col_offset, "mention")])
+                                    [(node.lineno-1, node.end_lineno-1, node.col_offset, node.end_col_offset, "mention")], as_bytes=True)
 
                 mentions.extend(offset)
 
@@ -33,22 +34,30 @@ def get_descendants(function, children):
     descendants = []
 
     for chld in children:
-        for node in ast.walk(chld):
-            if isinstance(node, ast.Name):
-                offset = to_offsets(function,
-                                    [(node.lineno-1, node.end_lineno-1, node.col_offset, node.end_col_offset, "new_var")])
-                descendants.append((node.id, offset[-1]))
+        # for node in ast.walk(chld):
+        node = chld
+        if isinstance(node, ast.Attribute) or isinstance(node, ast.Name):
+        # if isinstance(node, ast.Name):
+            offset = to_offsets(function,
+                                [(node.lineno-1, node.end_lineno-1, node.col_offset, node.end_col_offset, "new_var")], as_bytes=True)
+            # descendants.append((node.id, offset[-1]))
+            descendants.append((function[offset[-1][0]:offset[-1][1]], offset[-1]))
+        else:
+            raise Exception("")
 
     return descendants
 
 
 
-def get_declarations(function):
+def get_declarations(function_):
     """
 
     :param function:
     :return:
     """
+    function = function_.lstrip()
+    initial_strip = function_[:len(function_) - len(function)]
+
     root = ast.parse(function)
 
     declarations = {}
@@ -60,7 +69,7 @@ def get_declarations(function):
             # not quite sure why this if statement was needed, but there should be no annotations in the code
             if node.annotation is None:
                 offset = to_offsets(function,
-                                    [(node.lineno-1, node.end_lineno-1, node.col_offset, node.end_col_offset, "arg")])
+                                    [(node.lineno-1, node.end_lineno-1, node.col_offset, node.end_col_offset, "arg")], as_bytes=True)
 
                 assert function[offset[-1][0]:offset[-1][1]] == node.arg, f"{function[offset[-1][0]:offset[-1][1]]} != {node.arg}"
 
@@ -75,6 +84,11 @@ def get_declarations(function):
                     valid_mentions = list(filter(lambda mention: mention[0] >= d[1][0], mentions))
                     declarations[d[1]] = valid_mentions
                     added.add(d[0])
+
+    initial_strip_len = len(initial_strip)
+    declarations = {
+        adjust_offsets2([key], initial_strip_len)[0]: adjust_offsets2(val, initial_strip_len) for key, val in declarations.items()
+    }
 
     return declarations
 
