@@ -461,7 +461,7 @@ def main():
         data.extend(process_package(working_directory=pkg_path, global_names=global_names))
 
     if args.format == "jsonl":  # jsonl format is used by spacy
-        with open(args.output_dataset, "a") as sink:
+        with open(args.output_dataset, "w") as sink:
             for entry in data:
                 sink.write(f"{json.dumps(entry)}\n")
     elif args.format == "csv":
