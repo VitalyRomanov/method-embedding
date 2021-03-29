@@ -136,7 +136,10 @@ def filter_entities(data, field, allowed, behaviour):
     if behaviour == "drop":
         assert len(unique_entities - allowed) == 0
     else:
-        assert unique_entities - allowed == {"Other"}
+        _l = len(unique_entities - allowed)
+        assert _l <= 1
+        if _l == 1:
+            assert unique_entities - allowed == {"Other"}
 
 
 def read_data_classes(data_path):
