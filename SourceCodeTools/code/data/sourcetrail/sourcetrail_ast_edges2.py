@@ -65,7 +65,8 @@ class MentionTokenizer:
                 new_edges.extend(produce_subw_edges(subwords, edge['dst']))
             elif self.bpe is not None and edge['src'].type in PythonSharedNodes.tokenizable_types_and_annotations:
                 new_edges.append(edge)
-                new_edges.append(make_reverse_edge(edge))
+                if edge['type'] != "global_mention_rev":
+                    new_edges.append(make_reverse_edge(edge))
 
                 dst = edge['src']
                 subwords = self.bpe(dst.name)
@@ -166,7 +167,7 @@ class GlobalNodeMatcher:
         from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types
         # filter function, classes, methods, and modules
         self.allowed_node_types = set([node_types[tt] for tt in [8, 128, 4096, 8192]])
-        self.allowed_edge_types = {"defines_rev"}
+        self.allowed_edge_types = {"defined_in"}  #{"defines_rev"}
 
         self.allowed_ast_node_types = {"FunctionDef", "ClassDef", "Module", "mention"}
         self.allowed_ast_edge_types = {"function_name", "class_name", "global_mention_rev"}
@@ -252,7 +253,7 @@ class GlobalNodeMatcher:
                     continue
                 new_node_ids[node] = gid
                 # new_node_ids[gid] = node
-                module_candidate = find_global_id(self.global_graph, gid, ["defines_rev"])
+                module_candidate = find_global_id(self.global_graph, gid, ["defined_in"])  # ["defines_rev"])
                 if module_candidate is not None and module_candidate in self.global_types and self.global_types[module_candidate] == "module":
                     module_candidates.append(module_candidate)
             return new_node_ids, module_candidates
@@ -863,7 +864,7 @@ def get_ast_from_modules(
 
     srctrl_resolver = SourcetrailResolver(nodes, edges, source_location, occurrence, file_content, lang)
     node_resolver = ReplacementNodeResolver(nodes)
-    node_matcher = GlobalNodeMatcher(nodes, add_reverse_edges(edges))
+    node_matcher = GlobalNodeMatcher(nodes, edges)  # add_reverse_edges(edges))
     mention_tokenizer = MentionTokenizer(bpe_tokenizer_path, create_subword_instances, connect_subwords)
     name_group_tracker = NameGroupTracker()
     all_ast_edges = []

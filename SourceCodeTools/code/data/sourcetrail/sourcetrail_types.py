@@ -10,10 +10,20 @@ node_types = {
 }
 
 edge_types = {
-    1: "defines",
-    8: "calls",
-    2: "uses_type",
+    1: "defines",       # from module to function
+    8: "calls",         # from caller to callee
+    2: "uses_type",     # from user to type
     16: "inheritance",
-    4: "uses",
-    512: "imports"
+    4: "uses",          # from user to item
+    512: "imports"      # from module to imported object
 }
+
+
+special_mapping = {
+        "defines": "defined_in",
+        "calls": "called_by",
+        "uses_type": "type_used_by",
+        "inheritance": "inherited_by",
+        "uses": "used_by",
+        "imports": "imported_by"
+    }
