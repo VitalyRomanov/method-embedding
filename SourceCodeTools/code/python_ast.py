@@ -1,6 +1,6 @@
 import ast
 from copy import copy
-
+from enum import Enum
 from pprint import pprint
 from time import time_ns
 from collections.abc import Iterable
@@ -8,20 +8,20 @@ import pandas as pd
 # import os
 
 
-class PythonSyntheticNodeTypes:
-    Name = "Name"
-    mention = "mention"
-    ast_Literal = "ast_Literal"
-    type_annotation = "type_annotation"
-    NameConstant = "NameConstant"
-    Constant = "Constant"
-    Op = "Op"
-    CtlFlowInstance = "CtlFlowInstance"
-    CtlFlow = "CtlFlow"
-    JoinedStr = "JoinedStr"
-    comprehension = "comprehension"
-    keyword_prop = "#keyword#"
-    attr_prop = "#attr#"
+class PythonSyntheticNodeTypes(Enum):  # TODO NOT USED
+    NAME = 1  # "Name"
+    MENTION = 2  # "mention"
+    AST_LITERAL = 3  # "ast_Literal"
+    TYPE_ANNOTATION = 4  # "type_annotation"
+    NAME_CONSTANT = 5  # "NameConstant"
+    CONSTANT = 6  # "Constant"
+    OP = 7  # "Op"
+    CTL_FLOW_INSTANCE = 8  # "CtlFlowInstance"
+    CTL_FLOW = 9  # "CtlFlow"
+    JOINED_STR = 10  # "JoinedStr"
+    COMPREHENSION = 11  # "comprehension"
+    KEYWORD_PROP = 12  # "#keyword#"
+    ATTR_PROP = 13  # "#attr#"
 
 
 class PythonSyntheticEdgeTypes:
@@ -209,6 +209,8 @@ class AstGraphGenerator(object):
         mention_name = GNode(name=name + "@" + self.scope[-1].name, type="mention")
         name = GNode(name=name, type="Name")
         # mention_name = (name + "@" + self.scope[-1], "mention")
+
+        # edge from name to mention in a function
         edges = [
             {"scope": copy(self.scope[-1]), "src": name, "dst": mention_name, "type": "local_mention"},
             # {"scope": copy(self.scope[-1]), "src": self.scope[-1], "dst": mention_name, "type": "mention_scope"}
