@@ -86,6 +86,23 @@ def get_train_val_test_indices(indices, train_frac=0.6, random_seed=None):
     return indices[:train], indices[train: test], indices[test:]
 
 
+def get_global_edges():
+    """
+    :return: Set of global edges and their reverses
+    """
+    from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import special_mapping, node_types
+    types = set()
+
+    for key, value in special_mapping.items():
+        types.add(key)
+        types.add(value)
+
+    for _, value in node_types.items():
+        types.add(value + "_name")
+
+    return types
+
+
 class SourceGraphDataset:
     g = None
     nodes = None
@@ -104,7 +121,8 @@ class SourceGraphDataset:
     def __init__(self, data_path,
                  label_from, use_node_types=False,
                  use_edge_types=False, filter=None, self_loops=False,
-                 train_frac=0.6, random_seed=None, tokenizer_path=None, min_count_for_objectives=1):
+                 train_frac=0.6, random_seed=None, tokenizer_path=None, min_count_for_objectives=1,
+                 no_global_edges=False):
         """
         Prepares the data for training GNN model. The graph is prepared in the following way:
             1. Edges are split into the train set and holdout set. Holdout set is used in the future experiments.
@@ -136,6 +154,7 @@ class SourceGraphDataset:
         self.data_path = data_path
         self.tokenizer_path = tokenizer_path
         self.min_count_for_objectives = min_count_for_objectives
+        self.no_global_edges = no_global_edges
 
         nodes_path = join(data_path, "nodes.bz2")
         edges_path = join(data_path, "edges.bz2")
@@ -153,6 +172,9 @@ class SourceGraphDataset:
             for e_type in filter:
                 logging.info(f"Filtering edge type {e_type}")
                 self.edges = self.edges.query(f"type != {e_type}")
+
+        if self.no_global_edges:
+            self.remove_global_edges()
 
         if use_node_types is False and use_edge_types is False:
             new_nodes, new_edges = self.create_nodetype_edges()
@@ -362,6 +384,21 @@ class SourceGraphDataset:
 
         return pd.DataFrame(new_nodes), pd.DataFrame(new_edges)
 
+    def remove_ast_edges(self):
+        global_edges = get_global_edges()
+        global_edges.add("subword")
+        is_global = lambda type: type in global_edges
+        edges = self.edges.query("type_backup.map(@is_global)", local_dict={"is_global": is_global})
+        self.nodes, self.edges = ensure_connectedness(self.nodes, edges)
+
+    def remove_global_edges(self):
+        global_edges = get_global_edges()
+        global_edges.add("global_mention")
+        is_ast = lambda type: type not in global_edges
+        edges = self.edges.query("type.map(@is_ast)", local_dict={"is_ast": is_ast})
+        self.edges = edges
+        # self.nodes, self.edges = ensure_connectedness(self.nodes, edges)
+
     def update_global_id(self):
         orig_id = []
         graph_id = []
@@ -568,6 +605,29 @@ class SourceGraphDataset:
 
         return target_nodes
 
+    def load_global_edges_prediction(self):
+
+        nodes_path = join(self.data_path, "nodes.bz2")
+        edges_path = join(self.data_path, "edges.bz2")
+
+        _, edges = load_data(nodes_path, edges_path)
+
+        global_edges = get_global_edges()
+        global_edges = global_edges - {"defines", "defined_in"}  # these edges are already in AST?
+        global_edges.add("global_mention")
+
+        is_global = lambda type: type in global_edges
+        edges = edges.query("type.map(@is_global)", local_dict={"is_global": is_global})
+
+        edges.rename(
+            {
+                "source_node_id": "src",
+                "target_node_id": "dst"
+            }, inplace=True, axis=1
+        )
+
+        return edges[["src", "dst"]]
+
     def buckets_from_pretrained_embeddings(self, pretrained_path, n_buckets):
 
         from SourceCodeTools.nlp.embed.fasttext import load_w2v_map
@@ -696,7 +756,8 @@ def read_or_create_dataset(args, model_base, labels_from="type"):
             train_frac=args.train_frac,
             tokenizer_path=args.tokenizer,
             random_seed=args.random_seed,
-            min_count_for_objectives=args.min_count_for_objectives
+            min_count_for_objectives=args.min_count_for_objectives,
+            no_global_edges=args.no_global_edges
         )
 
         # save dataset state for recovery

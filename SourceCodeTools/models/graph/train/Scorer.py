@@ -14,7 +14,7 @@ class Scorer:
         self.scorer_emb_size = emb_size
         self.scorer_src2dst = src2dst
 
-        self.scorer_all_emb = np.zeros((num_embs, emb_size))
+        self.scorer_all_emb = np.ones((num_embs, emb_size))
         self.scorer_all_keys = self.get_cand_to_score_against(None)
         self.scorer_key_order = dict(zip(self.scorer_all_keys, range(len(self.scorer_all_keys))))
         self.scorer_ball_tree = None

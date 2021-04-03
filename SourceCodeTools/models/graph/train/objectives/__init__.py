@@ -63,6 +63,21 @@ class NextCallPrediction(GraphLinkObjective):
         )
 
 
+class GlobalLinkPrediction(GraphLinkObjective):
+    def __init__(
+            self, graph_model, node_embedder, nodes, data_loading_func, device,
+            sampling_neighbourhood_size, batch_size,
+            tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
+            measure_ndcg=False, dilate_ndcg=1
+    ):
+        super(GlobalLinkPrediction, self).__init__(
+            "GlobalLinkPrediction", graph_model, node_embedder, nodes, data_loading_func, device,
+            sampling_neighbourhood_size, batch_size,
+            tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
+            masker=masker, measure_ndcg=measure_ndcg, dilate_ndcg=dilate_ndcg
+        )
+
+
 class LinkTypePrediction(GraphLinkTypeObjective):
     def __init__(
             self, graph_model, node_embedder, nodes, data_loading_func, device,

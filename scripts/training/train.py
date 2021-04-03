@@ -86,6 +86,7 @@ def add_data_arguments(parser):
     parser.add_argument('--use_node_types', action='store_true')
     parser.add_argument('--use_edge_types', action='store_true')
     parser.add_argument('--restore_state', action='store_true')
+    parser.add_argument('--no_global_edges', action='store_true')
 
 
 def add_pretraining_arguments(parser):

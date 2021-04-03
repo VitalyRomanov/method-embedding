@@ -12,7 +12,7 @@ import logging
 
 from SourceCodeTools.models.Embedder import Embedder
 from SourceCodeTools.models.graph.train.objectives import VariableNameUsePrediction, TokenNamePrediction, \
-    NextCallPrediction, NodeNamePrediction
+    NextCallPrediction, NodeNamePrediction, GlobalLinkPrediction
 from SourceCodeTools.models.graph.NodeEmbedder import NodeEmbedder
 
 
@@ -54,10 +54,11 @@ class SamplingMultitaskTrainer:
 
     def create_objectives(self, dataset, tokenizer_path):
         self.objectives = nn.ModuleList()
-        self.create_token_pred_objective(dataset, tokenizer_path)
+        # self.create_token_pred_objective(dataset, tokenizer_path)
         # self.create_node_name_objective(dataset, tokenizer_path)
         # self.create_var_use_objective(dataset, tokenizer_path)
         # self.create_api_call_objective(dataset, tokenizer_path)
+        self.create_global_link_objective(dataset, tokenizer_path)
 
     def create_token_pred_objective(self, dataset, tokenizer_path):
         self.objectives.append(
@@ -77,7 +78,7 @@ class SamplingMultitaskTrainer:
                 self.graph_model, self.node_embedder, dataset.nodes,
                 dataset.load_node_names, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
-                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="nn",
+                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
                 masker=dataset.create_node_name_masker(tokenizer_path),
                 measure_ndcg=self.trainer_params["measure_ndcg"],
                 dilate_ndcg=self.trainer_params["dilate_ndcg"]
@@ -90,7 +91,7 @@ class SamplingMultitaskTrainer:
                 self.graph_model, self.node_embedder, dataset.nodes,
                 dataset.load_var_use, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
-                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="nn",
+                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
                 masker=dataset.create_variable_name_masker(tokenizer_path),
                 measure_ndcg=self.trainer_params["measure_ndcg"],
                 dilate_ndcg=self.trainer_params["dilate_ndcg"]
@@ -103,7 +104,21 @@ class SamplingMultitaskTrainer:
                 self.graph_model, self.node_embedder, dataset.nodes,
                 dataset.load_api_call, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
-                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="nn",
+                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
+                measure_ndcg=self.trainer_params["measure_ndcg"],
+                dilate_ndcg=self.trainer_params["dilate_ndcg"]
+            )
+        )
+
+    def create_global_link_objective(self, dataset, tokenizer_path):
+        assert dataset.no_global_edges is True
+
+        self.objectives.append(
+            GlobalLinkPrediction(
+                self.graph_model, self.node_embedder, dataset.nodes,
+                dataset.load_global_edges_prediction, self.device,
+                self.sampling_neighbourhood_size, self.batch_size,
+                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
                 measure_ndcg=self.trainer_params["measure_ndcg"],
                 dilate_ndcg=self.trainer_params["dilate_ndcg"]
             )
