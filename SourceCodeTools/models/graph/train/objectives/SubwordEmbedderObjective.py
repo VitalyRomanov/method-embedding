@@ -35,7 +35,7 @@ class SubwordEmbedderObjective(AbstractObjective):
             raise NotImplementedError()
 
     def forward(self, input_nodes, seeds, blocks, train_embeddings=True):
-        masked = self.masker.get_mask(self.seeds_to_python(seeds))
+        masked = self.masker.get_mask(self.seeds_to_python(seeds)) if self.masker is not None else None
         graph_emb = self._logits_batch(input_nodes, blocks, train_embeddings, masked=masked)
         node_embs_, element_embs_, labels = self._logits_embedder(
             graph_emb, self.target_embedder, self.link_predictor, seeds
