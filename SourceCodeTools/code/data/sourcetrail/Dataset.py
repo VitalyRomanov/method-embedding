@@ -628,6 +628,29 @@ class SourceGraphDataset:
 
         return edges[["src", "dst"]]
 
+    def load_docstring(self):
+
+        docstrings_path = os.path.join(self.data_path, "common_source_graph_bodies.bz2")
+
+        dosctrings = unpersist(docstrings_path)[["id", "docstring"]]
+
+        from nltk import sent_tokenize
+
+        def normalize(text):
+            if text is None or len(text.strip()) == 0:
+                return pd.NA
+            return "\n".join(sent_tokenize(text)[:3]).replace("\n", " ")
+
+        dosctrings.eval("docstring = docstring.map(@normalize)", local_dict={"normalize": normalize}, inplace=True)
+        dosctrings.dropna(axis=0, inplace=True)
+
+        dosctrings.rename({
+            "id": "src",
+            "docstring": "dst"
+        }, axis=1, inplace=True)
+
+        return dosctrings
+
     def buckets_from_pretrained_embeddings(self, pretrained_path, n_buckets):
 
         from SourceCodeTools.nlp.embed.fasttext import load_w2v_map

@@ -12,6 +12,7 @@ from sklearn.preprocessing import normalize
 
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
 from SourceCodeTools.models.graph.train.Scorer import Scorer
+from SourceCodeTools.models.nlp.Encoder import LSTMEncoder
 
 
 class GraphLinkSampler(ElementEmbedderBase, Scorer):
@@ -218,6 +219,20 @@ class ElementEmbedderWithBpeSubwords(ElementEmbedderWithCharNGramSubwords, nn.Mo
         self.name2repr = dict(zip(names, reprs))
 
         self.embed = nn.Embedding(num_buckets, self.emb_size, padding_idx=0)
+
+
+class DocstringEmbedder(ElementEmbedderWithBpeSubwords):
+    def __init__(self, elements, nodes, emb_size, tokenizer_path, num_buckets=100000, max_len=100):
+        super().__init__(
+            elements=elements, nodes=nodes, emb_size=emb_size, tokenizer_path=tokenizer_path,
+            num_buckets=num_buckets, max_len=max_len
+        )
+        self.encoder = LSTMEncoder(embed_dim=emb_size, num_layers=1, dropout_in=0.1, dropout_out=0.1)
+
+    def forward(self, input, **kwargs):
+        x = self.embed(input)
+        x = self.encoder(x)
+        return torch.mean(x, dim=1)  #x[:,-1,:]
 
 
 class NameEmbedderWithGroups(ElementEmbedderWithBpeSubwords):

@@ -11,6 +11,8 @@ requitements = [
       'numpy>=1.19.2',
       'scipy',
       'networkx',
+      'sacrebleu',
+      'datasets'
       # 'pygraphviz'
       # 'javac_parser'
 ]
