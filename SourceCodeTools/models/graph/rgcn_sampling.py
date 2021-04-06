@@ -1,5 +1,5 @@
 """RGCN layer implementation"""
-
+import torch
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
@@ -241,17 +241,20 @@ class RGCNSampling(nn.Module):
 
         # self.embed_layer = RelGraphEmbed(g, self.h_dim)
         self.layers = nn.ModuleList()
+        self.layer_norm = nn.ModuleList()
         # i2h
         self.layers.append(RelGraphConvLayer(
             self.h_dim, self.h_dim, self.rel_names,
             self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
             dropout=self.dropout, weight=False, use_gcn_checkpoint=use_gcn_checkpoint))
+        self.layer_norm.append(nn.LayerNorm([self.h_dim]))
         # h2h
         for i in range(self.num_hidden_layers):
             self.layers.append(RelGraphConvLayer(
                 self.h_dim, self.h_dim, self.rel_names,
                 self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
                 dropout=self.dropout, weight=False, use_gcn_checkpoint=use_gcn_checkpoint)) # changed weight for GATConv
+            self.layer_norm.append(nn.LayerNorm([self.h_dim]))
             # TODO
             # think of possibility switching to GAT
             # weight=False
@@ -260,6 +263,7 @@ class RGCNSampling(nn.Module):
             self.h_dim, self.out_dim, self.rel_names,
             self.num_bases, activation=None,
             self_loop=self.use_self_loop, weight=False, use_gcn_checkpoint=use_gcn_checkpoint)) # changed weight for GATConv
+        self.layer_norm.append(nn.LayerNorm([self.out_dim]))
         # TODO
         # think of possibility switching to GAT
         # weight=False
@@ -291,6 +295,9 @@ class RGCNSampling(nn.Module):
             return h
         return custom_forward
 
+    def normalize(self, h):
+        return {key: val / torch.linalg.norm(val, dim=1, keepdim=True) for key, val in h.items()}
+
     def forward(self, h, blocks=None,
                 return_all=False): # added this as an experimental feature for intermediate supervision
         # if h is None:
@@ -309,6 +316,7 @@ class RGCNSampling(nn.Module):
         for layer, block in zip(self.layers, blocks):
             # h = checkpoint.checkpoint(self.custom(layer), block, h)
             h = layer(block, h)
+            # h = self.normalize(h)
             all_layers.append(h) # added this as an experimental feature for intermediate supervision
 
         if return_all: # added this as an experimental feature for intermediate supervision
@@ -356,6 +364,7 @@ class RGCNSampling(nn.Module):
 
                     h = {k: x[k][input_nodes[k]].to(device) for k in input_nodes.keys()}
                     h = layer(block, h)
+                    # h = self.normalize(h)
 
                     for k in h.keys():
                         y[k][output_nodes[k]] = h[k].cpu()
