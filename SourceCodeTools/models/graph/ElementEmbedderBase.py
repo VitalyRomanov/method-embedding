@@ -14,7 +14,7 @@ class ElementEmbedderBase:
         self.elements = self.preprocess_element_data(elements.copy(), nodes, compact_dst, dst_to_global=dst_to_global)
 
         if compact_dst:
-            elem2id = compact_property(elements['dst'])
+            elem2id, self.inverse_dst_map = compact_property(elements['dst'], return_order=True)
             self.elements['emb_id'] = self.elements['dst'].apply(lambda x: elem2id[x])
         else:
             self.elements['emb_id'] = self.elements['dst']

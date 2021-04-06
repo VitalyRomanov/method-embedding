@@ -1,5 +1,6 @@
 from SourceCodeTools.code.data.sourcetrail.SubwordMasker import SubwordMasker
 from SourceCodeTools.models.graph.train.objectives.GraphLinkObjective import GraphLinkObjective, GraphLinkTypeObjective
+from SourceCodeTools.models.graph.train.objectives.NodeClassificationObjective import NodeNameClassifier
 from SourceCodeTools.models.graph.train.objectives.SubwordEmbedderObjective import SubwordEmbedderObjective
 from SourceCodeTools.models.graph.train.objectives.TextPredictionObjective import GraphTextPrediction, GraphTextGeneration
 

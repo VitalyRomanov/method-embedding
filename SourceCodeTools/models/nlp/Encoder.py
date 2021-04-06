@@ -1,7 +1,33 @@
+import torch
 from torch import nn
 from torch.nn import Embedding
 import torch.nn.functional as F
 from torch.autograd import Variable
+
+
+class Encoder(nn.Module):
+    def __init__(self, encoder_dim, out_dim, nheads=1, layers=1):
+        super(Encoder, self).__init__()
+        # self.embed = nn.Embedding(vocab_size, encoder_dim)
+        self.encoder_lauer = nn.TransformerEncoderLayer(encoder_dim, nheads, dim_feedforward=encoder_dim)
+        self.encoder = nn.TransformerEncoder(self.encoder_lauer, num_layers=layers)
+        self.out_adapter = nn.Linear(encoder_dim, out_dim)
+
+    def get_mask(self, max_seq_len, lengths):
+        length_mask = torch.arange(max_seq_len).to(self.device).expand(len(lengths), max_seq_len) < lengths.unsqueeze(1)
+        mask = torch.zeros_like(length_mask)
+        mask.float().masked_fill(mask == False, float('-inf')).masked_fill(mask == True, float(0.0))
+        return mask
+
+    def forward(self, input, lengths=None):
+        # input = self.embed(input_seq).permute(1, 0, 2)
+        input = input.permute(1, 0, 2)
+        # mask = self.get_mask(input.size(0), lengths)
+        out = self.encoder(input) #, src_key_padding_mask=mask)
+
+        out = self.out_adapter(out)
+        return out.permute(1, 0, 2)
+
 
 
 class LSTMEncoder(nn.Module):

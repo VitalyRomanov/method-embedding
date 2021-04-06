@@ -2,7 +2,6 @@ from collections import OrderedDict
 from itertools import chain
 
 import datasets
-import sacrebleu
 import torch
 from torch import nn
 from torch.nn import CrossEntropyLoss, NLLLoss
@@ -12,7 +11,7 @@ from SourceCodeTools.models.graph.ElementEmbedder import DocstringEmbedder, crea
     ElementEmbedderWithBpeSubwords
 from SourceCodeTools.models.graph.train.objectives import SubwordEmbedderObjective
 from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective, _compute_accuracy
-from SourceCodeTools.models.nlp.Decoder import LSTMDecoder
+from SourceCodeTools.models.nlp.Decoder import LSTMDecoder, Decoder
 from SourceCodeTools.models.nlp.Vocabulary import Vocabulary
 from SourceCodeTools.nlp.embed.bpe import load_bpe_model
 import numpy as np
@@ -44,9 +43,9 @@ class GraphTextGeneration(SubwordEmbedderObjective):
             self, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
-            measure_ndcg=False, dilate_ndcg=1, max_len=3
+            measure_ndcg=False, dilate_ndcg=1, max_len=20
     ):
-        self.max_len = max_len
+        self.max_len = max_len + 2  # add pad and eos
         super().__init__(
             "GraphTextGeneration", graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
@@ -61,14 +60,20 @@ class GraphTextGeneration(SubwordEmbedderObjective):
         ).to(self.device)
 
     def create_link_predictor(self):
-        self.decoder = LSTMDecoder(
-            self.target_embedder.num_buckets, padding=self.target_embedder.pad_id,
-            encoder_embed_dim=self.target_emb_size, num_layers=2
-        )
+        # self.decoder = LSTMDecoder(
+        #     self.target_embedder.num_buckets, padding=self.target_embedder.pad_id,
+        #     encoder_embed_dim=self.target_emb_size, num_layers=2
+        # ).to(self.device)
+
+        self.decoder = Decoder(
+            self.target_emb_size, decoder_dim=100, out_dim=self.target_embedder.num_buckets,
+            vocab_size=self.target_embedder.num_buckets, nheads=1, layers=1
+        ).to(self.device)
 
     def compute_logits(self, graph_emb, labels):
         prev_tokens = labels
-        logits = self.decoder(prev_tokens, graph_emb)[:, :-1, :]
+        # logits = self.decoder(prev_tokens, graph_emb)[:, :-1, :]
+        logits = self.decoder(graph_emb.unsqueeze(1), prev_tokens)[:, :-1, :]
         return logits
 
     def compute_acc_loss(self, graph_emb, labels, lengths, return_logits=False):
@@ -78,7 +83,7 @@ class GraphTextGeneration(SubwordEmbedderObjective):
         labels = labels[:, 1:]
 
         max_len = logits.shape[1]
-        length_mask = torch.arange(max_len).expand(len(lengths), max_len) < lengths.unsqueeze(1)
+        length_mask = torch.arange(max_len).to(self.device).expand(len(lengths), max_len) < lengths.unsqueeze(1)
 
         loss_fct = CrossEntropyLoss(ignore_index=-100)
         # mask_ = length_mask.reshape(-1,)

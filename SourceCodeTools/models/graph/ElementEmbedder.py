@@ -6,13 +6,9 @@ import torch.nn as nn
 import numpy as np
 import random as rnd
 
-from sklearn.metrics import ndcg_score
-from sklearn.neighbors._ball_tree import BallTree
-from sklearn.preprocessing import normalize
-
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
 from SourceCodeTools.models.graph.train.Scorer import Scorer
-from SourceCodeTools.models.nlp.Encoder import LSTMEncoder
+from SourceCodeTools.models.nlp.Encoder import LSTMEncoder, Encoder
 
 
 class GraphLinkSampler(ElementEmbedderBase, Scorer):
@@ -126,77 +122,6 @@ class ElementEmbedderWithCharNGramSubwords(ElementEmbedderBase, nn.Module, Score
         self.set_embed()
         Scorer.prepare_index(self)
 
-    # def score_candidates_cosine(self, to_score_ids, to_score_embs, keys_to_score_against, embs_to_score_against, at=None):
-    #
-    #     # y_pred = []
-    #     # to_score_embs = to_score_embs.detach().numpy()
-    #     # to_score_embs = normalize(to_score_embs, axis=1)
-    #     # for ind in range(to_score_embs.shape[0]):
-    #     #     curr_to_score = to_score_embs[ind].reshape(1, -1)
-    #     #     _, closest = self.ball_tree.query(curr_to_score, k=at if type(at) is int else max(at))
-    #     #     scores = (curr_to_score @ self.all_emb[closest.ravel(), :].T).ravel()
-    #     #     closest = closest.ravel().tolist()
-    #     #     y_pred.append([])
-    #     #     for i in range(len(keys_to_score_against)):
-    #     #         if i in closest:
-    #     #             y_pred[-1].append(scores[closest.index(i)])
-    #     #         else:
-    #     #             y_pred[-1].append(-1.)
-    #
-    #     score_matr = (to_score_embs @ embs_to_score_against.t()) / \
-    #                 to_score_embs.norm(p=2, dim=1, keepdim=True) / \
-    #                 embs_to_score_against.norm(p=2, dim=1, keepdim=True).t()
-    #     y_pred = score_matr.tolist()
-    #
-    #     return y_pred
-    #
-    # def score_candidates_lp(self, to_score_ids, to_score_embs, keys_to_score_against, embs_to_score_against, link_predictor, at=None, device="cpu"):
-    #
-    #     y_pred = []
-    #     for i in range(len(to_score_ids)):
-    #         input_embs = to_score_embs[i, :].repeat((embs_to_score_against.shape[0], 1))
-    #         # predictor_input = torch.cat([input_embs, all_emb], dim=1)
-    #         y_pred.append(link_predictor(input_embs, embs_to_score_against)[:, 1].tolist())  # 0 - negative, 1 - positive
-    #
-    #     return y_pred
-
-    # def get_embeddings_for_scoring(self, device, **kwargs):
-    #     emb_matr = np.array([self.name2repr[key] for key in self.get_keys_for_scoring()], dtype=np.int32)
-    #     embs_to_score_against = self(torch.LongTensor(self.scorer_all_emb).to(device))
-    #     return embs_to_score_against
-
-    # def get_keys_for_scoring(self):
-    #     return self.scorer_all_keys
-
-    # def score_candidates(self, to_score_ids, to_score_embs, link_predictor=None, at=None, type=None, device="cpu"):
-    #
-    #     if at is None:
-    #         at = [1, 3, 5, 10]
-    #
-    #     to_score_ids = to_score_ids.tolist()
-    #
-    #     candidates = self.get_gt_candidates(to_score_ids)
-    #     keys_to_score_against = self.get_keys_for_scoring()
-    #
-    #     y_true = [[1. if key in cand else 0. for key in keys_to_score_against] for cand in candidates]
-    #
-    #     embs_to_score_against = self.get_embeddings_for_scoring(device=to_score_embs.device)
-    #     # emb_matr = np.array([self.name2repr[key] for key in keys_to_score_against], dtype=np.int32)
-    #     # embs_to_score_against = self(torch.LongTensor(emb_matr).to(to_score_embs.device))
-    #
-    #     if type == "nn":
-    #         y_pred = self.score_candidates_lp(to_score_ids, to_score_embs, keys_to_score_against, embs_to_score_against, link_predictor, at=at, device=device)
-    #     elif type == "inner_prod":
-    #         y_pred = self.score_candidates_cosine(to_score_ids, to_score_embs, keys_to_score_against, embs_to_score_against, at=at)
-    #     else:
-    #         raise ValueError(f"`type` can be either `nn` or `inner_prod` but `{type}` given")
-    #
-    #     if isinstance(at, Iterable):
-    #         scores = {f"ndcg@{k}": ndcg_score(y_true, y_pred, k=k) for k in at}
-    #     else:
-    #         scores = {f"ndcg@{at}": ndcg_score(y_true, y_pred, k=at)}
-    #     return scores
-
 
 class ElementEmbedderWithBpeSubwords(ElementEmbedderWithCharNGramSubwords, nn.Module):
     def __init__(self, elements, nodes, emb_size, tokenizer_path, num_buckets=100000, max_len=10):
@@ -228,6 +153,7 @@ class DocstringEmbedder(ElementEmbedderWithBpeSubwords):
             num_buckets=num_buckets, max_len=max_len
         )
         self.encoder = LSTMEncoder(embed_dim=emb_size, num_layers=1, dropout_in=0.1, dropout_out=0.1)
+        # self.encoder = Encoder(emb_size, emb_size, nheads=1, layers=1)
 
     def forward(self, input, **kwargs):
         x = self.embed(input)

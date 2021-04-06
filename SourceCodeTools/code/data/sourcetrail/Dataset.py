@@ -122,7 +122,7 @@ class SourceGraphDataset:
                  label_from, use_node_types=False,
                  use_edge_types=False, filter=None, self_loops=False,
                  train_frac=0.6, random_seed=None, tokenizer_path=None, min_count_for_objectives=1,
-                 no_global_edges=False):
+                 no_global_edges=False, remove_reverse=False):
         """
         Prepares the data for training GNN model. The graph is prepared in the following way:
             1. Edges are split into the train set and holdout set. Holdout set is used in the future experiments.
@@ -155,6 +155,7 @@ class SourceGraphDataset:
         self.tokenizer_path = tokenizer_path
         self.min_count_for_objectives = min_count_for_objectives
         self.no_global_edges = no_global_edges
+        self.remove_reverse = remove_reverse
 
         nodes_path = join(data_path, "nodes.bz2")
         edges_path = join(data_path, "edges.bz2")
@@ -172,6 +173,9 @@ class SourceGraphDataset:
             for e_type in filter:
                 logging.info(f"Filtering edge type {e_type}")
                 self.edges = self.edges.query(f"type != {e_type}")
+
+        if self.remove_reverse:
+            self.remove_reverse_edges()
 
         if self.no_global_edges:
             self.remove_global_edges()
@@ -398,6 +402,14 @@ class SourceGraphDataset:
         edges = self.edges.query("type.map(@is_ast)", local_dict={"is_ast": is_ast})
         self.edges = edges
         # self.nodes, self.edges = ensure_connectedness(self.nodes, edges)
+
+    def remove_reverse_edges(self):
+        from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import special_mapping
+        global_reverse = {val for _, val in special_mapping.items()}
+
+        not_reverse = lambda type: not (type.endswith("_rev") or type in global_reverse)
+        edges = self.edges.query("type.map(@not_reverse)", local_dict={"not_reverse": not_reverse})
+        self.edges = edges
 
     def update_global_id(self):
         orig_id = []
@@ -780,7 +792,8 @@ def read_or_create_dataset(args, model_base, labels_from="type"):
             tokenizer_path=args.tokenizer,
             random_seed=args.random_seed,
             min_count_for_objectives=args.min_count_for_objectives,
-            no_global_edges=args.no_global_edges
+            no_global_edges=args.no_global_edges,
+            remove_reverse=args.remove_reverse
         )
 
         # save dataset state for recovery
