@@ -8,20 +8,37 @@ from sklearn.neighbors._ball_tree import BallTree
 from sklearn.preprocessing import normalize
 
 
+class FaissIndex:
+    def __init__(self, X, *args, **kwargs):
+        import faiss
+        self.index = faiss.IndexFlatL2(X.shape[1])
+        self.index.add(X.astype(np.float32))
+
+    def query(self, X, k):
+        return self.index.search(X.astype(np.float32), k=k)
+
+
 class Scorer:
-    def __init__(self, num_embs, emb_size, src2dst, neighbours_to_sample=5):
+    def __init__(self, num_embs, emb_size, src2dst, neighbours_to_sample=5, index_backend="sklearn"):
         self.scorer_num_emb = num_embs
         self.scorer_emb_size = emb_size
         self.scorer_src2dst = src2dst
+        self.scorer_index_backend = index_backend
 
         self.scorer_all_emb = np.ones((num_embs, emb_size))
         self.scorer_all_keys = self.get_cand_to_score_against(None)
         self.scorer_key_order = dict(zip(self.scorer_all_keys, range(len(self.scorer_all_keys))))
-        self.scorer_ball_tree = None
+        self.scorer_index = None
         self.neighbours_to_sample = min(neighbours_to_sample, self.scorer_num_emb)
 
     def prepare_index(self):
-        self.scorer_ball_tree = BallTree(normalize(self.scorer_all_emb, axis=1))
+        if self.scorer_index_backend == "sklearn":
+            self.scorer_index = BallTree(self.scorer_all_emb, leaf_size=1)
+            # self.scorer_index = BallTree(normalize(self.scorer_all_emb, axis=1), leaf_size=1)
+        elif self.scorer_index_backend == "faiss":
+            self.scorer_index = FaissIndex(self.scorer_all_emb)
+        else:
+            raise ValueError(f"Unsupported backend: {self.scorer_index_backend}. Supported backends are: sklearn|faiss")
 
     def sample_closest_negative(self, ids, k=None):
         if k is None:
@@ -42,7 +59,7 @@ class Scorer:
         for key_group in key_groups:
             closest_keys = []
             for key in key_group:
-                _, closest = self.scorer_ball_tree.query(
+                _, closest = self.scorer_index.query(
                     self.scorer_all_emb[self.scorer_key_order[key]].reshape(1, -1), k=k
                 )
                 closest_keys.extend(self.scorer_all_keys[c] for c in closest.ravel())
@@ -58,7 +75,7 @@ class Scorer:
     def set_embed(self, ids, embs):
 
         ids = np.array(list(map(self.scorer_key_order.get, ids.tolist())))
-        self.scorer_all_emb[ids, :] = embs
+        self.scorer_all_emb[ids, :] = embs# normalize(embs, axis=1)
 
         # for ind, id in enumerate(ids):
         #     self.all_embs[self.key_order[id], :] = embs[ind, :]
@@ -66,8 +83,8 @@ class Scorer:
     def score_candidates_cosine(self, to_score_ids, to_score_embs, keys_to_score_against, embs_to_score_against, at=None):
 
         score_matr = (to_score_embs @ embs_to_score_against.t()) / \
-                    to_score_embs.norm(p=2, dim=1, keepdim=True) / \
-                    embs_to_score_against.norm(p=2, dim=1, keepdim=True).t()
+                     to_score_embs.norm(p=2, dim=1, keepdim=True) / \
+                     embs_to_score_against.norm(p=2, dim=1, keepdim=True).t()
         y_pred = score_matr.tolist()
 
         return y_pred
