@@ -139,24 +139,27 @@ class DatasetCreator:
 
             edges = add_reverse_edges(edges)
 
+            # if bodies is not None:
+            ast_nodes, ast_edges, offsets, name_group_tracker = get_ast_from_modules(
+                nodes, edges, source_location, occurrence, filecontent,
+                self.bpe_tokenizer, self.create_subword_instances, self.connect_subwords, self.lang,
+                track_offsets=self.track_offsets
+            )
+            nodes_with_ast = nodes.append(ast_nodes)
+            edges_with_ast = edges.append(ast_edges)
             if bodies is not None:
-                ast_nodes, ast_edges, offsets, name_group_tracker = get_ast_from_modules(
-                    nodes, edges, source_location, occurrence, filecontent,
-                    self.bpe_tokenizer, self.create_subword_instances, self.connect_subwords, self.lang,
-                    track_offsets=self.track_offsets
-                )
-                nodes_with_ast = nodes.append(ast_nodes)
-                edges_with_ast = edges.append(ast_edges)
                 vars = extract_var_names(nodes, bodies, self.lang)
-                if name_groups is None:
-                    name_groups = name_group_tracker
-                else:
-                    name_groups = name_groups.append(name_group_tracker)
             else:
-                nodes_with_ast = nodes
-                edges_with_ast = edges
                 vars = None
-                offsets = None
+            if name_groups is None:
+                name_groups = name_group_tracker
+            else:
+                name_groups = name_groups.append(name_group_tracker)
+            # else:
+            #     nodes_with_ast = nodes
+            #     edges_with_ast = edges
+            #     vars = None
+            #     offsets = None
 
             global_nodes = self.merge_with_global(global_nodes, nodes)
             global_nodes_with_ast = self.merge_with_global(global_nodes_with_ast, nodes_with_ast)
@@ -303,10 +306,11 @@ class DatasetCreator:
         if ensure_unique_with is not None:
             global_table = global_table.drop_duplicates(subset=ensure_unique_with)
 
-        global_table.reset_index(drop=True, inplace=True)
-        assert len(global_table) == len(global_table.index.unique())
+        if global_table is not None:
+            global_table.reset_index(drop=True, inplace=True)
+            assert len(global_table) == len(global_table.index.unique())
 
-        persist(global_table, output_path)
+            persist(global_table, output_path)
 
     def filter_orphaned_nodes(self, global_nodes, output_dir):
         edges = unpersist(join(output_dir, "common_edges.bz2"))

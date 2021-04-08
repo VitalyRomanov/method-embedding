@@ -788,6 +788,9 @@ def standardize_new_edges(edges, node_resolver, mention_tokenizer):
         edge["dst"] = extract_id(edge["dst"])
         if "scope" in edge:
             edge["scope"] = extract_id(edge["scope"])
+        else:
+            edge["scope"] = pd.NA
+        edge["file_id"] = pd.NA
 
     return edges
 
@@ -1178,7 +1181,7 @@ if __name__ == "__main__":
     edges = read_edges(working_directory)
     file_content = read_filecontent(working_directory)
 
-    ast_nodes, ast_edges, offsets = get_ast_from_modules(nodes, edges, source_location, occurrence, file_content,
+    ast_nodes, ast_edges, offsets, ng = get_ast_from_modules(nodes, edges, source_location, occurrence, file_content,
                                                          args.bpe_tokenizer, args.create_subword_instances,
                                                          args.connect_subwords, args.lang)
 
