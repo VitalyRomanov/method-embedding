@@ -34,12 +34,13 @@ class ElementEmbedder(ElementEmbedderBase, nn.Module):
         self.emb_size = emb_size
         n_elems = self.elements['emb_id'].unique().size
         self.embed = nn.Embedding(n_elems, emb_size)
+        self.norm = nn.LayerNorm(emb_size)
 
     def __getitem__(self, ids):
         return torch.LongTensor(ElementEmbedderBase.__getitem__(self, ids=ids))
 
     def forward(self, input, **kwargs):
-        return self.embed(input)
+        return self.norm(self.embed(input))
 
 
 # def hashstr(s, num_buckets):
@@ -84,6 +85,7 @@ class ElementEmbedderWithCharNGramSubwords(ElementEmbedderBase, nn.Module, Score
         self.name2repr = dict(zip(names, reprs))
 
         self.embed = nn.Embedding(num_buckets, self.emb_size, padding_idx=0)
+        self.norm = nn.LayerNorm(self.emb_size)
 
     def __getitem__(self, ids):
         """
@@ -110,7 +112,7 @@ class ElementEmbedderWithCharNGramSubwords(ElementEmbedderBase, nn.Module, Score
 
     def forward(self, input, **kwargs):
         x = self.embed(input)
-        return torch.mean(x, dim=1)
+        return self.norm(torch.mean(x, dim=1))
 
     def set_embed(self):
         all_keys = self.get_keys_for_scoring()
@@ -144,6 +146,7 @@ class ElementEmbedderWithBpeSubwords(ElementEmbedderWithCharNGramSubwords, nn.Mo
         self.name2repr = dict(zip(names, reprs))
 
         self.embed = nn.Embedding(num_buckets, self.emb_size, padding_idx=0)
+        self.norm = nn.LayerNorm(self.emb_size)
 
 
 class DocstringEmbedder(ElementEmbedderWithBpeSubwords):
@@ -153,12 +156,13 @@ class DocstringEmbedder(ElementEmbedderWithBpeSubwords):
             num_buckets=num_buckets, max_len=max_len
         )
         self.encoder = LSTMEncoder(embed_dim=emb_size, num_layers=1, dropout_in=0.1, dropout_out=0.1)
+        self.norm = nn.LayerNorm(emb_size)
         # self.encoder = Encoder(emb_size, emb_size, nheads=1, layers=1)
 
     def forward(self, input, **kwargs):
         x = self.embed(input)
         x = self.encoder(x)
-        return torch.mean(x, dim=1)  #x[:,-1,:]
+        return self.norm(torch.mean(x, dim=1))  #x[:,-1,:]
 
 
 class NameEmbedderWithGroups(ElementEmbedderWithBpeSubwords):

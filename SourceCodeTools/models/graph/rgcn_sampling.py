@@ -295,8 +295,9 @@ class RGCNSampling(nn.Module):
             return h
         return custom_forward
 
-    def normalize(self, h):
-        return {key: val / torch.linalg.norm(val, dim=1, keepdim=True) for key, val in h.items()}
+    def normalize(self, h, layer):
+        return {key: layer(val) for key, val in h.items()}
+        # return {key: val / torch.linalg.norm(val, dim=1, keepdim=True) for key, val in h.items()}
 
     def forward(self, h, blocks=None,
                 return_all=False): # added this as an experimental feature for intermediate supervision
@@ -313,10 +314,10 @@ class RGCNSampling(nn.Module):
         #         all_layers.append(h) # added this as an experimental feature for intermediate supervision
         # else:
         # minibatch training
-        for layer, block in zip(self.layers, blocks):
+        for layer, norm, block in zip(self.layers, self.layer_norm, blocks):
             # h = checkpoint.checkpoint(self.custom(layer), block, h)
             h = layer(block, h)
-            # h = self.normalize(h)
+            h = self.normalize(h, norm)
             all_layers.append(h) # added this as an experimental feature for intermediate supervision
 
         if return_all: # added this as an experimental feature for intermediate supervision
@@ -337,7 +338,7 @@ class RGCNSampling(nn.Module):
             # if x is None:
             #     x = self.embed_layer()
 
-            for l, layer in enumerate(self.layers):
+            for l, layer, norm in enumerate(self.layers, self.layer_norm):
                 y = {
                     k: th.zeros(
                         self.g.number_of_nodes(k),
@@ -364,7 +365,7 @@ class RGCNSampling(nn.Module):
 
                     h = {k: x[k][input_nodes[k]].to(device) for k in input_nodes.keys()}
                     h = layer(block, h)
-                    # h = self.normalize(h)
+                    h = self.normalize(h, norm)
 
                     for k in h.keys():
                         y[k][output_nodes[k]] = h[k].cpu()

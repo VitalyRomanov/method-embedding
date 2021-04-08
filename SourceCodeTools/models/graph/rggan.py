@@ -285,3 +285,4 @@ class RGGAN(RGAN):
         self.emb_size = num_classes
         self.num_layers = num_steps
         self.layers = [self.layer] * num_steps
+        self.layer_norm = nn.ModuleList([nn.LayerNorm([self.h_dim]) for _ in range(self.num_layers)])
