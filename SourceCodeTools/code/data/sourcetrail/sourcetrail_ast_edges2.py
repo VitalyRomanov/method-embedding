@@ -802,7 +802,10 @@ def process_code(source_file_content, offsets, node_resolver, mention_tokenizer,
 
     # compute ast edges
     ast_processor = AstProcessor(replacer.source_with_replacements)
-    edges = ast_processor.get_edges(as_dataframe=False)
+    try: # TODO recursion error does not appear consistently. The issue is probably with library versions...
+        edges = ast_processor.get_edges(as_dataframe=False)
+    except RecursionError:
+        return None, None, None
 
     if len(edges) == 0:
         return None, None, None
