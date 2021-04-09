@@ -12,7 +12,9 @@ requitements = [
       'scipy',
       'networkx',
       'sacrebleu',
-      'datasets'
+      'datasets',
+      'spacy==2.3.2',
+      'pytest'
       # 'pygraphviz'
       # 'javac_parser'
 ]

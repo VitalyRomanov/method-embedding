@@ -67,7 +67,7 @@ class GraphTextGeneration(SubwordEmbedderObjective):
 
         self.decoder = Decoder(
             self.target_emb_size, decoder_dim=100, out_dim=self.target_embedder.num_buckets,
-            vocab_size=self.target_embedder.num_buckets, nheads=1, layers=1
+            vocab_size=self.target_embedder.num_buckets, nheads=4, layers=4
         ).to(self.device)
 
     def compute_logits(self, graph_emb, labels):

@@ -45,6 +45,16 @@ class LinkClassifier(nn.Module):
         return self.logits(x)
 
 
+class BilinearLinkPedictor(nn.Module):
+    def __init__(self, embedding_dim_1, embedding_dim_2, target_classes=2):
+        super(BilinearLinkPedictor, self).__init__()
+
+        self.bilinear = nn.Bilinear(embedding_dim_1, embedding_dim_2, target_classes)
+
+    def forward(self, x1, x2):
+        return self.bilinear(x1, x2)
+
+
 class CosineLinkPredictor(nn.Module):
     def __init__(self):
         super(CosineLinkPredictor, self).__init__()

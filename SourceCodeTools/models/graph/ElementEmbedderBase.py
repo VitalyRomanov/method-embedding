@@ -10,11 +10,12 @@ from SourceCodeTools.tabular.common import compact_property
 
 class ElementEmbedderBase:
     def __init__(self, elements, nodes, compact_dst=True, dst_to_global=False):
-
         self.elements = self.preprocess_element_data(elements.copy(), nodes, compact_dst, dst_to_global=dst_to_global)
+        self.init(compact_dst)
 
+    def init(self, compact_dst):
         if compact_dst:
-            elem2id, self.inverse_dst_map = compact_property(elements['dst'], return_order=True)
+            elem2id, self.inverse_dst_map = compact_property(self.elements['dst'], return_order=True)
             self.elements['emb_id'] = self.elements['dst'].apply(lambda x: elem2id[x])
         else:
             self.elements['emb_id'] = self.elements['dst']

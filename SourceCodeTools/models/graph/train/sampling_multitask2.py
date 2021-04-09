@@ -52,7 +52,7 @@ class SamplingMultitaskTrainer:
         self.optimizer = self._create_optimizer()
 
         self.lr_scheduler = ExponentialLR(self.optimizer, gamma=1.0)
-        # self.lr_scheduler = ReduceLROnPlateau(self.optimizer)
+        # self.lr_scheduler = ReduceLROnPlateau(self.optimizer, patience=10, cooldown=20)
 
     def create_objectives(self, dataset, tokenizer_path):
         self.objectives = nn.ModuleList()
@@ -265,8 +265,9 @@ class SamplingMultitaskTrainer:
         parameters = nn.ParameterList(self.graph_model.parameters())
         parameters.extend(self.node_embedder.parameters())
         [parameters.extend(objective.parameters()) for objective in self.objectives]
-
-        optimizer = torch.optim.Adam(
+        # AdaHessian  TODO could not run
+        # optimizer = Yogi(parameters, lr=self.lr)
+        optimizer = torch.optim.AdamW(
             [{"params": parameters}], lr=self.lr
         )
         return optimizer
@@ -310,7 +311,10 @@ class SamplingMultitaskTrainer:
 
                     loss = loss / len(self.objectives)  # assumes the same batch size for all objectives
                     loss_accum += loss.item()
-                    loss.backward()
+                    # for groups in self.optimizer.param_groups:
+                    #     for param in groups["params"]:
+                    #         torch.nn.utils.clip_grad_norm_(param, max_norm=1.)
+                    loss.backward()  # create_graph = True
 
                     summary.update({
                         f"Loss/train/{objective.name}_vs_batch": loss.item(),

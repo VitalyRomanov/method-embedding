@@ -11,7 +11,7 @@ from SourceCodeTools.code.data.sourcetrail.SubwordMasker import SubwordMasker
 from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedderWithBpeSubwords, NameEmbedderWithGroups, \
     GraphLinkSampler
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
-from SourceCodeTools.models.graph.LinkPredictor import LinkPredictor, CosineLinkPredictor
+from SourceCodeTools.models.graph.LinkPredictor import LinkPredictor, CosineLinkPredictor, BilinearLinkPedictor
 
 import torch.nn as nn
 
@@ -99,7 +99,8 @@ class AbstractObjective(nn.Module):
         raise NotImplementedError()
 
     def create_nn_link_predictor(self):
-        self.link_predictor = LinkPredictor(self.target_emb_size + self.graph_model.emb_size).to(self.device)
+        # self.link_predictor = LinkPredictor(self.target_emb_size + self.graph_model.emb_size).to(self.device)
+        self.link_predictor = BilinearLinkPedictor(self.target_emb_size, self.graph_model.emb_size, 2).to(self.device)
         self.positive_label = 1
         self.negative_label = 0
         self.label_dtype = torch.long

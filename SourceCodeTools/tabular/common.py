@@ -1,9 +1,16 @@
 import numpy
 
 
-def compact_property(values, return_order=False):
+def compact_property(values, return_order=False, index_from_one=False):
     uniq = numpy.unique(values)
-    prop2pid = dict(zip(uniq, range(uniq.size)))
+    if index_from_one:
+        index = range(1, uniq.size + 1)
+    else:
+        index = range(uniq.size)
+    prop2pid = dict(zip(uniq, index))
     if return_order:
-        return prop2pid, uniq.tolist()
+        inv_index = uniq.tolist()
+        if index_from_one:
+            inv_index.insert(0, "NA")
+        return prop2pid,
     return prop2pid

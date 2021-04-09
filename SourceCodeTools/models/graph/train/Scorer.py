@@ -19,6 +19,11 @@ class FaissIndex:
 
 
 class Scorer:
+    """
+    Implements sampler for hard triplet loss. This sampler is useful when the loss is based on the neighbourhood
+    similarity. It becomes less useful when the decision is made by neural network because it does not need to mode
+    points to learn how to make correct decisions.
+    """
     def __init__(self, num_embs, emb_size, src2dst, neighbours_to_sample=5, index_backend="sklearn"):
         self.scorer_num_emb = num_embs
         self.scorer_emb_size = emb_size
@@ -95,7 +100,7 @@ class Scorer:
         for i in range(len(to_score_ids)):
             input_embs = to_score_embs[i, :].repeat((embs_to_score_against.shape[0], 1))
             # predictor_input = torch.cat([input_embs, all_emb], dim=1)
-            y_pred.append(link_predictor(input_embs, embs_to_score_against)[:, 1].tolist())  # 0 - negative, 1 - positive
+            y_pred.append(torch.nn.functional.softmax(link_predictor(input_embs, embs_to_score_against), dim=1)[:, 1].tolist())  # 0 - negative, 1 - positive
 
         return y_pred
 
