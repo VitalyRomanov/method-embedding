@@ -338,7 +338,7 @@ class RGCNSampling(nn.Module):
             # if x is None:
             #     x = self.embed_layer()
 
-            for l, layer, norm in enumerate(self.layers, self.layer_norm):
+            for l, (layer, norm) in enumerate(zip(self.layers, self.layer_norm)):
                 y = {
                     k: th.zeros(
                         self.g.number_of_nodes(k),
