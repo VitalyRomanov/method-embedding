@@ -62,8 +62,8 @@ class DatasetCreator:
                                     join(no_ast_path, "common_function_variable_pairs.bz2"), "Merging variables")
             self.create_global_file("call_seq.bz2", "local2global.bz2", ['src', 'dst'],
                                     join(no_ast_path, "common_call_seq.bz2"), "Merging call seq")
-            self.create_global_file("name_groups.bz2", "local2global.bz2", [],
-                                    join(no_ast_path, "name_groups.bz2"), "Merging name groups")
+            # self.create_global_file("name_groups.bz2", "local2global.bz2", [],
+            #                         join(no_ast_path, "name_groups.bz2"), "Merging name groups")
 
             global_nodes = self.filter_orphaned_nodes(
                 unpersist(join(no_ast_path, "common_nodes.bz2")), no_ast_path
@@ -72,7 +72,8 @@ class DatasetCreator:
             node_names = extract_node_names(
                 global_nodes, min_count=2
             )
-            persist(node_names, join(no_ast_path, "node_names.bz2"))
+            if node_names is not None:
+                persist(node_names, join(no_ast_path, "node_names.bz2"))
 
             if self.visualize:
                 self.visualize_func(
@@ -91,8 +92,8 @@ class DatasetCreator:
                                 join(with_ast_path, "common_function_variable_pairs.bz2"), "Merging variables with ast")
         self.create_global_file("call_seq.bz2", "local2global_with_ast.bz2", ['src', 'dst'],
                                 join(with_ast_path, "common_call_seq.bz2"), "Merging call seq with ast")
-        self.create_global_file("name_groups.bz2", "local2global_with_ast.bz2", [],
-                                join(with_ast_path, "name_groups.bz2"), "Merging name groups")
+        # self.create_global_file("name_groups.bz2", "local2global_with_ast.bz2", [],
+        #                         join(with_ast_path, "name_groups.bz2"), "Merging name groups")
 
         global_nodes = self.filter_orphaned_nodes(
             unpersist(join(with_ast_path, "common_nodes.bz2")), with_ast_path
@@ -101,7 +102,8 @@ class DatasetCreator:
         node_names = extract_node_names(
             global_nodes, min_count=2
         )
-        persist(node_names, join(with_ast_path, "node_names.bz2"))
+        if node_names is not None:
+            persist(node_names, join(with_ast_path, "node_names.bz2"))
 
         if self.visualize:
             self.visualize_func(
