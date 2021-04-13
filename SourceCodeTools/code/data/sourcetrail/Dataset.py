@@ -229,9 +229,9 @@ class SourceGraphDataset:
             self.nodes, self.edges = SourceGraphDataset.assess_need_for_self_loops(self.nodes, self.edges)
 
         if filter is not None:
-            for e_type in filter:
+            for e_type in filter.split(","):
                 logging.info(f"Filtering edge type {e_type}")
-                self.edges = self.edges.query(f"type != {e_type}")
+                self.edges = self.edges.query(f"type != '{e_type}'")
 
         if self.remove_reverse:
             self.remove_reverse_edges()
