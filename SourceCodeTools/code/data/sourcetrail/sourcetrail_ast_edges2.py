@@ -406,8 +406,12 @@ class ReplacementNodeResolver(NodeResolver):
                 else:
                     assert node.type == "#attr#"
                     type_ = node.type
-                new_node = GNode(name=real_name, type=type_, global_name=global_name, global_id=global_node_id,
-                                 global_type=global_type)
+                if hasattr(node, "scope"):
+                    new_node = GNode(name=real_name, type=type_, global_name=global_name, global_id=global_node_id,
+                                     global_type=global_type, scope=node.scope)
+                else:
+                    new_node = GNode(name=real_name, type=type_, global_name=global_name, global_id=global_node_id,
+                                     global_type=global_type)
         else:
             new_node = node
         return new_node
@@ -744,16 +748,18 @@ def edges_for_global_node_names(nodes):
         #     "dst": GNode(id=id, type="__global", name=""),
         #     "type": "__global_name"
         # })
-        mention = GNode(type="mention", name=f"{name}@{name}_0x")
+        mention = GNode(type="mention", name=f"{name}@{name}_0x", scope=GNode(id=id))
         edges.append({
             "src": GNode(type="Name", name=name),
             "dst": mention,
-            "type": "local_mention"
+            "type": "local_mention",
+            "scope": GNode(id=id)
         })
         edges.append({
             "src": mention,
             "dst": GNode(id=id, type="__global", name=""),
-            "type": type + "_name"
+            "type": type + "_name",
+            "scope": GNode(id=id)
         })
     return edges
 

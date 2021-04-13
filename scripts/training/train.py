@@ -82,6 +82,7 @@ def add_data_arguments(parser):
     parser.add_argument('--train_frac', dest='train_frac', default=0.9, type=float, help='')
     parser.add_argument('--filter_edges', dest='filter_edges', default=None, help='Edges filtered before training')
     parser.add_argument('--min_count_for_objectives', dest='min_count_for_objectives', default=5, type=int, help='')
+    parser.add_argument('--packages_file', dest='packages_file', default=None, type=str, help='')
     parser.add_argument('--self_loops', action='store_true')
     parser.add_argument('--use_node_types', action='store_true')
     parser.add_argument('--use_edge_types', action='store_true')

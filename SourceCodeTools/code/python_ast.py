@@ -206,7 +206,7 @@ class AstGraphGenerator(object):
             self.condition_status.pop(-1)
 
     def parse_as_mention(self, name):
-        mention_name = GNode(name=name + "@" + self.scope[-1].name, type="mention")
+        mention_name = GNode(name=name + "@" + self.scope[-1].name, type="mention", scope=copy(self.scope[-1]))
         name = GNode(name=name, type="Name")
         # mention_name = (name + "@" + self.scope[-1], "mention")
 

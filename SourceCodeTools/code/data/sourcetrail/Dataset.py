@@ -86,6 +86,65 @@ def get_train_val_test_indices(indices, train_frac=0.6, random_seed=None):
     return indices[:train], indices[train: test], indices[test:]
 
 
+def get_train_val_test_indices_on_packages(nodes, package_names, train_frac=0.6, random_seed=None):
+    if random_seed is not None:
+        numpy.random.seed(random_seed)
+        logging.warning("Random state for splitting dataset is fixed")
+    else:
+        logging.info("Random state is not set")
+
+    nodes = nodes.copy()
+
+    package_names = [name.replace("\n", "").replace("-","_").replace(".","_") for name in package_names]
+
+    package_names = numpy.array(package_names)
+    numpy.random.shuffle(package_names)
+
+    train = int(package_names.size * train_frac)
+    test = int(package_names.size * (train_frac + (1 - train_frac) / 2))
+
+    logging.info(
+        f"Splitting into train {train}, validation {test - train}, and test {package_names.size - test} packages"
+    )
+
+    train, valid, test = package_names[:train], package_names[train: test], package_names[test:]
+
+    train = set(train.tolist())
+    valid = set(valid.tolist())
+    test = set(test.tolist())
+
+    nodes["node_package_names"] = nodes["name"].map(lambda name: name.split(".")[0])
+
+    def get_split_indices(split):
+        global_types = {val for _, val in node_types.items()}
+
+        def is_global_type(type):
+            return type in global_types
+
+        def in_split(name):
+            return name in split
+
+        global_nodes = nodes.query(
+            "node_package_names.map(@in_split) and type_backup.map(@is_global_type)",
+            local_dict={"in_split": in_split, "is_global_type": is_global_type}
+        )["id"]
+        global_nodes = set(global_nodes.tolist())
+
+        def in_global(node_id):
+            return node_id in global_nodes
+
+        ast_nodes = nodes.query("mentioned_in.map(@in_global)", local_dict={"in_global": in_global})["id"]
+
+        split_nodes = global_nodes | set(ast_nodes.tolist())
+
+        def nodes_in_split(node_id):
+            return node_id in split_nodes
+
+        return nodes.query("id.map(@nodes_in_split)", local_dict={"nodes_in_split": nodes_in_split}).index
+
+    return get_split_indices(train), get_split_indices(valid), get_split_indices(test)
+
+
 def get_global_edges():
     """
     :return: Set of global edges and their reverses
@@ -122,7 +181,7 @@ class SourceGraphDataset:
                  label_from, use_node_types=False,
                  use_edge_types=False, filter=None, self_loops=False,
                  train_frac=0.6, random_seed=None, tokenizer_path=None, min_count_for_objectives=1,
-                 no_global_edges=False, remove_reverse=False):
+                 no_global_edges=False, remove_reverse=False, package_names=None):
         """
         Prepares the data for training GNN model. The graph is prepared in the following way:
             1. Edges are split into the train set and holdout set. Holdout set is used in the future experiments.
@@ -211,7 +270,7 @@ class SourceGraphDataset:
         # self.nodes, self.label_map = self.add_compact_labels()
         self.add_typed_ids()
 
-        self.add_splits(train_frac=train_frac)
+        self.add_splits(train_frac=train_frac, package_names=package_names)
 
         # self.mark_leaf_nodes()
 
@@ -291,7 +350,7 @@ class SourceGraphDataset:
         # self.nodes.eval("name_alter_tokens = name.map(@op_tokenize)",
         #                 local_dict={"op_tokenize": op_tokenize}, inplace=True)
 
-    def add_splits(self, train_frac):
+    def add_splits(self, train_frac, package_names=None):
         """
         Generates train, validation, and test masks
         Store the masks is pandas table for nodes
@@ -302,10 +361,17 @@ class SourceGraphDataset:
         assert len(self.nodes.index) == self.nodes.index.max() + 1
         # generate splits for all nodes, additional filtering will be applied later
         # by an objective
-        splits = get_train_val_test_indices(
-            self.nodes.index,
-            train_frac=train_frac, random_seed=self.random_seed
-        )
+
+        if package_names is None:
+            splits = get_train_val_test_indices(
+                self.nodes.index,
+                train_frac=train_frac, random_seed=self.random_seed
+            )
+        else:
+            splits = get_train_val_test_indices_on_packages(
+                self.nodes, package_names,
+                train_frac=train_frac, random_seed=self.random_seed
+            )
 
         create_train_val_test_masks(self.nodes, *splits)
 
@@ -793,7 +859,8 @@ def read_or_create_dataset(args, model_base, labels_from="type"):
             random_seed=args.random_seed,
             min_count_for_objectives=args.min_count_for_objectives,
             no_global_edges=args.no_global_edges,
-            remove_reverse=args.remove_reverse
+            remove_reverse=args.remove_reverse,
+            package_names=open(args.packages_file).readlines() if args.packages_file is not None else None
         )
 
         # save dataset state for recovery
