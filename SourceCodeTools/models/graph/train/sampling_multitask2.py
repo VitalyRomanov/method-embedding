@@ -56,8 +56,8 @@ class SamplingMultitaskTrainer:
 
     def create_objectives(self, dataset, tokenizer_path):
         self.objectives = nn.ModuleList()
-        self.create_token_pred_objective(dataset, tokenizer_path)
-        # self.create_node_name_objective(dataset, tokenizer_path)
+        # self.create_token_pred_objective(dataset, tokenizer_path)
+        self.create_node_name_objective(dataset, tokenizer_path)
         # self.create_var_use_objective(dataset, tokenizer_path)
         # self.create_api_call_objective(dataset, tokenizer_path)
         # self.create_global_link_objective(dataset, tokenizer_path)
