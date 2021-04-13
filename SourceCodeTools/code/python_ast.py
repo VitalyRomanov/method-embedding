@@ -179,7 +179,7 @@ class AstGraphGenerator(object):
 
                 last_node = s[1]
 
-                for cond_name, cond_stat in zip(self.current_condition, self.condition_status):
+                for cond_name, cond_stat in zip(self.current_condition[-1:], self.condition_status[-1:]):
                     edges.append({"scope": copy(self.scope[-1]), "src": last_node, "dst": cond_name, "type": "defined_in_" + cond_stat})
                     edges.append({"scope": copy(self.scope[-1]), "src": cond_name, "dst": last_node, "type": "defined_in_" + cond_stat + "_rev"})
                     # edges.append({"scope": copy(self.scope[-1]), "src": cond_name, "dst": last_node, "type": "execute_when_" + cond_stat})
