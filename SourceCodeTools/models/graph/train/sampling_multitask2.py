@@ -56,14 +56,22 @@ class SamplingMultitaskTrainer:
 
     def create_objectives(self, dataset, tokenizer_path):
         self.objectives = nn.ModuleList()
-        # self.create_token_pred_objective(dataset, tokenizer_path)
-        self.create_node_name_objective(dataset, tokenizer_path)
-        # self.create_var_use_objective(dataset, tokenizer_path)
-        # self.create_api_call_objective(dataset, tokenizer_path)
-        # self.create_global_link_objective(dataset, tokenizer_path)
-        # self.create_text_prediction_objective(dataset, tokenizer_path)
-        # self.create_text_generation_objective(dataset, tokenizer_path)
-        # self.create_node_name_classifier_objective(dataset, tokenizer_path)
+        if "token_pred" in self.trainer_params["objectives"]:
+            self.create_token_pred_objective(dataset, tokenizer_path)
+        if "node_name_pred" in self.trainer_params["objectives"]:
+            self.create_node_name_objective(dataset, tokenizer_path)
+        if "var_use_pred" in self.trainer_params["objectives"]:
+            self.create_var_use_objective(dataset, tokenizer_path)
+        if "next_call_pred" in self.trainer_params["objectives"]:
+            self.create_api_call_objective(dataset, tokenizer_path)
+        if "global_link_pred" in self.trainer_params["objectives"]:
+            self.create_global_link_objective(dataset, tokenizer_path)
+        if "doc_pred" in self.trainer_params["objectives"]:
+            self.create_text_prediction_objective(dataset, tokenizer_path)
+        if "doc_gen" in self.trainer_params["objectives"]:
+            self.create_text_generation_objective(dataset, tokenizer_path)
+        if "node_clf" in self.trainer_params["objectives"]:
+            self.create_node_name_classifier_objective(dataset, tokenizer_path)
 
     def create_token_pred_objective(self, dataset, tokenizer_path):
         self.objectives.append(
@@ -518,7 +526,8 @@ def training_procedure(
         'embedding_table_size': args.embedding_table_size,
         'save_checkpoints': args.save_checkpoints,
         'measure_ndcg': args.measure_ndcg,
-        'dilate_ndcg': args.dilate_ndcg
+        'dilate_ndcg': args.dilate_ndcg,
+        "objectives": args.objectives.split(",")
     }
 
     trainer = SamplingMultitaskTrainer(
