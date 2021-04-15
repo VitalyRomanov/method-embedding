@@ -15,6 +15,13 @@ def main(models, args):
     for model, param_grid in models.items():
         for params in param_grid:
 
+            if args.h_dim is None:
+                params["h_dim"] = args.node_emb_size
+            else:
+                params["h_dim"] = args.h_dim
+
+            params["num_steps"] = args.n_layers
+
             date_time = str(datetime.now())
             print("\n\n")
             print(date_time)
@@ -111,6 +118,10 @@ def add_training_arguments(parser):
 
     parser.add_argument('--epochs', dest='epochs', default=100, type=int, help='Number of epochs')
     parser.add_argument('--batch_size', dest='batch_size', default=128, type=int, help='Batch size')
+
+    parser.add_argument("--h_dim", dest="h_dim", default=None, type=int)
+    parser.add_argument("--n_layers", dest="n_layers", default=5, type=int)
+    parser.add_argument("--objectives", dest="objectives", default=None, type=str)
 
 
 def add_scoring_arguments(parser):
