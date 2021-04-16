@@ -55,13 +55,12 @@ def filter_dst_by_freq(elements, freq=1):
 
 
 def create_train_val_test_masks(nodes, train_idx, val_idx, test_idx):
-    nodes['train_mask'] = True
-    # nodes.loc[train_idx, 'train_mask'] = True
+    nodes['train_mask'] = False
+    nodes.loc[train_idx, 'train_mask'] = True
     nodes['val_mask'] = False
     nodes.loc[val_idx, 'val_mask'] = True
     nodes['test_mask'] = False
     nodes.loc[test_idx, 'test_mask'] = True
-    nodes['train_mask'] = nodes['train_mask'] ^ (nodes['val_mask'] | nodes['test_mask'])
     starts_with = lambda x: x.startswith("##node_type")
     nodes.loc[nodes.eval("name.map(@starts_with)", local_dict={"starts_with": starts_with}), ['train_mask', 'val_mask', 'test_mask']] = False
 
