@@ -20,7 +20,7 @@ class FaissIndex:
 
 class Scorer:
     """
-    Implements sampler for hard triplet loss. This sampler is useful when the loss is based on the neighbourhood
+    Implements sampler for triplet loss. This sampler is useful when the loss is based on the neighbourhood
     similarity. It becomes less useful when the decision is made by neural network because it does not need to mode
     points to learn how to make correct decisions.
     """
