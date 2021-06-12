@@ -472,7 +472,8 @@ class SourceGraphDataset:
 
     def remove_reverse_edges(self):
         from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import special_mapping
-        global_reverse = {val for _, val in special_mapping.items()}
+        # TODO test this change
+        global_reverse = {key for key, val in special_mapping.items()}
 
         not_reverse = lambda type: not (type.endswith("_rev") or type in global_reverse)
         edges = self.edges.query("type.map(@not_reverse)", local_dict={"not_reverse": not_reverse})
