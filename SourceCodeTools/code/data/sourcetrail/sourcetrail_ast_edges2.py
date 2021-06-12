@@ -9,6 +9,7 @@ from SourceCodeTools.code.data.sourcetrail.common import *
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_add_reverse_edges import add_reverse_edges
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_ast_edges import NodeResolver, make_reverse_edge
 from SourceCodeTools.code.python_ast import AstGraphGenerator, GNode, PythonSharedNodes
+# from SourceCodeTools.code.python_ast_cf import AstGraphGenerator
 from SourceCodeTools.nlp.entity.annotator.annotator_utils import adjust_offsets2
 from SourceCodeTools.nlp.entity.annotator.annotator_utils import overlap as range_overlap
 from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets, get_cum_lens
