@@ -1,5 +1,5 @@
 import spacy
-from SourceCodeTools.nlp.entity.util import inject_tokenizer
+from SourceCodeTools.nlp import create_tokenizer
 
 html_template = """<!DOCTYPE html>
 <html lang="en"><head>
@@ -57,7 +57,7 @@ def annotate(doc, entities):
 
 
 def render_annotations(annotations):
-    nlp = inject_tokenizer(spacy.blank("en"))
+    nlp = create_tokenizer("spacy")
     entries = ""
     for annotation in annotations:
         text, predicted, annotated = annotation
