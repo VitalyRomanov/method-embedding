@@ -49,10 +49,13 @@ class BilinearLinkPedictor(nn.Module):
     def __init__(self, embedding_dim_1, embedding_dim_2, target_classes=2):
         super(BilinearLinkPedictor, self).__init__()
 
-        self.bilinear = nn.Bilinear(embedding_dim_1, embedding_dim_2, target_classes)
+        self.l1 = nn.Linear(embedding_dim_1, 300)
+        self.l2 = nn.Linear(embedding_dim_2, 300)
+        self.act = nn.Sigmoid()
+        self.bilinear = nn.Bilinear(300, 300, target_classes)
 
     def forward(self, x1, x2):
-        return self.bilinear(x1, x2)
+        return self.bilinear(self.act(self.l1(x1)), self.act(self.l2(x2)))
 
 
 class CosineLinkPredictor(nn.Module):
