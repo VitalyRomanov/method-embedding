@@ -19,7 +19,7 @@ class Decoder(nn.Module):
     def forward(self, encoder_out, target):
         encoder_out = self.encoder_adapter(encoder_out).permute(1, 0, 2)
         target = self.embed(target).permute(1, 0, 2)
-        if self.mask.size(0) != target.size(0):
+        if self.mask.size(0) != target.size(0):  # for self-attention
             self.mask = self.generate_square_subsequent_mask(target.size(0)).to(encoder_out.device)
         out = self.decoder(target, encoder_out, tgt_mask=self.mask)
 
