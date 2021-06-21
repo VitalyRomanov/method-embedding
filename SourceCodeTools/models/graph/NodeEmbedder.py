@@ -3,6 +3,29 @@ import torch
 import torch.nn as nn
 
 
+class TrivialNodeEmbedder(nn.Module):
+    def __init__(self, nodes=None, emb_size=None, dtype=None, n_buckets=500000, pretrained=None):
+        super(TrivialNodeEmbedder, self).__init__()
+
+        self.emb_size = emb_size
+        self.dtype = dtype
+        if dtype is None:
+            self.dtype = torch.float32
+        self.n_buckets = n_buckets
+
+    def _create_buckets(self):
+        self.buckets = nn.Embedding(self.n_buckets + 1, self.emb_size, padding_idx=self.n_buckets)
+
+    def get_embeddings(self, node_type=None, node_ids=None, masked=None):
+        return self.buckets[node_ids]
+
+    def forward(self, node_type=None, node_ids=None, train_embeddings=True, masked=None):
+        if train_embeddings:
+            return self.get_embeddings(node_type, node_ids.tolist(), masked=masked)
+        else:
+            with torch.set_grad_enabled(False):
+                return self.get_embeddings(node_type, node_ids.tolist(), masked=masked)
+
 class NodeEmbedder(nn.Module):
     def __init__(self, nodes, emb_size, dtype=None, n_buckets=500000, pretrained=None):
         super(NodeEmbedder, self).__init__()
