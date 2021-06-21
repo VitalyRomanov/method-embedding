@@ -12,5 +12,5 @@ def compact_property(values, return_order=False, index_from_one=False):
         inv_index = uniq.tolist()
         if index_from_one:
             inv_index.insert(0, "NA")
-        return prop2pid,
+        return prop2pid, inv_index
     return prop2pid
