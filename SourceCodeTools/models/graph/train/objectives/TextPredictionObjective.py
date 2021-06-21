@@ -85,11 +85,15 @@ class GraphTextGeneration(SubwordEmbedderObjective):
         max_len = logits.shape[1]
         length_mask = torch.arange(max_len).to(self.device).expand(len(lengths), max_len) < lengths.unsqueeze(1)
 
+        logits_unrolled = logits[length_mask, :]
+        labels_unrolled = labels[length_mask]
+
         loss_fct = CrossEntropyLoss(ignore_index=-100)
+        loss = loss_fct(logits_unrolled, labels_unrolled)
         # mask_ = length_mask.reshape(-1,)
         # loss_fct = NLLLoss(reduction="sum")
-        loss = loss_fct(logits.reshape(-1, logits.size(-1)),#[mask_, :],
-                        labels.reshape(-1))  #[mask_])
+        # loss = loss_fct(logits.reshape(-1, logits.size(-1)),#[mask_, :],
+        #                 labels.reshape(-1))  #[mask_])
 
         def masked_accuracy(pred, true, mask):
             mask = mask.reshape(-1,)
