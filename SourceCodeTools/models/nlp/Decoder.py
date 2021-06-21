@@ -64,6 +64,7 @@ class LSTMDecoder(nn.Module):
     def __init__(self, num_buckets, padding=0, encoder_embed_dim=100, embed_dim=100,
                  out_embed_dim=100, num_layers=1, dropout_in=0.1,
                  dropout_out=0.1, use_cuda=True):
+        embed_dim = out_embed_dim = encoder_embed_dim
         super(LSTMDecoder, self).__init__()
         self.use_cuda = use_cuda
         self.dropout_in = dropout_in
@@ -73,7 +74,7 @@ class LSTMDecoder(nn.Module):
         padding_idx = padding
         self.embed_tokens = Embedding(num_embeddings, embed_dim, padding_idx)
 
-        self.create_layers(embed_dim, embed_dim, num_layers)
+        self.create_layers(encoder_embed_dim, embed_dim, num_layers)
 
         self.attention = AttentionLayer(out_embed_dim, encoder_embed_dim, embed_dim)
         if embed_dim != out_embed_dim:
@@ -82,8 +83,12 @@ class LSTMDecoder(nn.Module):
 
     def create_layers(self, encoder_embed_dim, embed_dim, num_layers):
         self.layers = nn.ModuleList([
-            LSTMCell(encoder_embed_dim + embed_dim if layer == 0 else embed_dim, embed_dim)
+            LSTMCell(encoder_embed_dim + embed_dim if layer == 0 else encoder_embed_dim, encoder_embed_dim if layer == 0 else embed_dim)
             for layer in range(num_layers)
+        ])
+
+        self.norms = nn.ModuleList([
+            nn.LayerNorm(encoder_embed_dim + embed_dim if layer == 0 else encoder_embed_dim) for layer in range(num_layers)
         ])
 
     def forward(self, prev_output_tokens, encoder_out, incremental_state=None, inference=False):
@@ -112,9 +117,9 @@ class LSTMDecoder(nn.Module):
         else:
             # _, encoder_hiddens, encoder_cells = encoder_out
             num_layers = len(self.layers)
-            prev_hiddens = [Variable(x.data.new(bsz, embed_dim).zero_()) for i in range(num_layers)]
-            prev_cells = [Variable(x.data.new(bsz, embed_dim).zero_()) for i in range(num_layers)]
-            input_feed = Variable(x.data.new(bsz, embed_dim).zero_())
+            prev_hiddens = [Variable(x.data.new(bsz, embed_dim).zero_()) if i != 0 else encoder_outs[0] for i in range(num_layers)]
+            prev_cells = [Variable(x.data.new(bsz, embed_dim if i!=0 else encoder_outs.size(-1)).zero_()) for i in range(num_layers)]
+            input_feed = Variable(x.data.new(bsz, encoder_outs.size(-1)).zero_())
 
         attn_scores = Variable(x.data.new(srclen, seqlen, bsz).zero_())
         outs = []
@@ -122,8 +127,9 @@ class LSTMDecoder(nn.Module):
             # input feeding: concatenate context vector from previous time step
             input = torch.cat((x[j, :, :], input_feed), dim=1)
 
-            for i, rnn in enumerate(self.layers):
+            for i, (rnn, lnorm) in enumerate(zip(self.layers, self.norms)):
                 # recurrent cell
+                input = lnorm(input)
                 hidden, cell = rnn(input, (prev_hiddens[i], prev_cells[i]))
 
                 # hidden state becomes the input to the next layer
