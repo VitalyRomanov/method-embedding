@@ -87,6 +87,12 @@ class SamplingMultitaskTrainer:
 
     def create_node_name_objective(self, dataset, tokenizer_path):
         self.objectives.append(
+            # GraphTextGeneration(
+            #     self.graph_model, self.node_embedder, dataset.nodes,
+            #     dataset.load_node_names, self.device,
+            #     self.sampling_neighbourhood_size, self.batch_size,
+            #     tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size,
+            # )
             NodeNamePrediction(
                 self.graph_model, self.node_embedder, dataset.nodes,
                 dataset.load_node_names, self.device,
