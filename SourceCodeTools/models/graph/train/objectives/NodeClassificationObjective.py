@@ -19,13 +19,13 @@ class NodeNameClassifier(AbstractObjective):
             self, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=None, target_emb_size=None, link_predictor_type=None, masker: SubwordMasker = None,
-            measure_ndcg=False, dilate_ndcg=1
+            measure_ndcg=False, dilate_ndcg=1, early_stopping=False, early_stopping_tolerance=20
     ):
         super().__init__(
             "NodeNameClassifier", graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
-            masker=masker, measure_ndcg=measure_ndcg, dilate_ndcg=dilate_ndcg
+            masker=masker, measure_ndcg=measure_ndcg, dilate_ndcg=dilate_ndcg, early_stopping=early_stopping, early_stopping_tolerance=early_stopping_tolerance
         )
 
     def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
@@ -95,6 +95,8 @@ class NodeNameClassifier(AbstractObjective):
 
     def evaluate(self, data_split, neg_sampling_factor=1):
         loss, acc, bleu = self.evaluate_generation(data_split)
+        if data_split == "val":
+            self.check_early_stopping(acc)
         return loss, acc, bleu
 
     def parameters(self, recurse: bool = True):
