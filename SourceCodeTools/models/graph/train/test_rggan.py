@@ -8,14 +8,14 @@ from os.path import isdir, join
 from typing import Tuple
 import pandas as pd
 
-from dgl.data import FB15k237Dataset, AIFBDataset
+from dgl.data import WN18Dataset, FB15kDataset, FB15k237Dataset, AIFBDataset, MUTAGDataset, BGSDataset, AMDataset
 import torch
 from sklearn.model_selection import ParameterGrid
 
 from SourceCodeTools.code.data.sourcetrail.Dataset import SourceGraphDataset
 from SourceCodeTools.models.graph import RGGAN
 from SourceCodeTools.models.graph.NodeEmbedder import NodeIdEmbedder
-from SourceCodeTools.models.graph.train.sampling_multitask2 import SamplingMultitaskTrainer, select_device
+from SourceCodeTools.models.graph.train.sampling_multitask2 import SamplingMultitaskTrainer
 from SourceCodeTools.models.graph.train.utils import get_name, get_model_base
 from SourceCodeTools.models.training_options import add_gnn_train_args, verify_arguments
 
@@ -39,8 +39,8 @@ rggan_params = list(
 
 
 
-class TestGraph(SourceGraphDataset):
-    def __init__(self, data_path=None,
+class TestNodeClfGraph(SourceGraphDataset):
+    def __init__(self, data_loader,
                  label_from=None, use_node_types=True,
                  use_edge_types=True, filter=None, self_loops=False,
                  train_frac=0.6, random_seed=None, tokenizer_path=None, min_count_for_objectives=1,
@@ -49,13 +49,17 @@ class TestGraph(SourceGraphDataset):
         self.nodes_have_types = use_node_types
         self.edges_have_types = use_edge_types
         self.labels_from = label_from
-        self.data_path = data_path
+        # self.data_path = data_path
         self.tokenizer_path = tokenizer_path
         self.min_count_for_objectives = min_count_for_objectives
         self.no_global_edges = no_global_edges
         self.remove_reverse = remove_reverse
 
-        dataset = AIFBDataset()
+        # dataset = AIFBDataset()
+        # dataset = MUTAGDataset()
+        # dataset = BGSDataset()
+        # dataset = AMDataset()
+        dataset = data_loader()
 
         self.nodes, self.edges, self.typed_id_map = self.create_nodes_edges_df(dataset)
 
@@ -205,6 +209,79 @@ class TestGraph(SourceGraphDataset):
         return labels
 
 
+class TestLinkPredGraph(TestNodeClfGraph):
+    def create_nodes_edges_df(self, dataset):
+        graph = dataset[0]
+        nodes_df = None
+
+        node_id_map = {}
+        typed_id_map = {}
+
+        for ntype in graph.ntypes:
+            typed_id = graph.nodes(ntype=ntype).tolist()
+            type = [ntype] * len(typed_id)
+            name = list(map(lambda x: ntype + f"_{x}", typed_id))
+            id_ = graph.nodes[ntype].data["_ID"].tolist()
+            node_dict = {"id": id_, "type": type, "name": name, "typed_id": typed_id}
+
+            node_id_map[ntype] = dict(zip(typed_id, id_))
+            typed_id_map[ntype] = dict(zip(id_, typed_id))
+
+            if "labels" in graph.nodes[ntype].data:
+                node_dict["labels"] = graph.nodes[ntype].data["labels"].tolist()
+            else:
+                node_dict["labels"] = [-1] * len(typed_id)
+
+            if "train_mask" in graph.nodes[ntype].data:
+                node_dict["train_mask"] = graph.nodes[ntype].data["train_mask"].bool().tolist()
+            else:
+                node_dict["train_mask"] = [False] * len(typed_id)
+
+            if "test_mask" in graph.nodes[ntype].data:
+                node_dict["test_mask"] = graph.nodes[ntype].data["test_mask"].bool().tolist()
+            else:
+                node_dict["test_mask"] = [False] * len(typed_id)
+
+            if "val_mask" in graph.nodes[ntype].data:
+                node_dict["val_mask"] = graph.nodes[ntype].data["val_mask"].bool().tolist()
+            else:
+                node_dict["val_mask"] = [False] * len(typed_id)
+
+            if nodes_df is None:
+                nodes_df = pd.DataFrame.from_dict(node_dict)
+            else:
+                nodes_df = nodes_df.append(pd.DataFrame.from_dict(node_dict))
+
+        assert len(nodes_df["id"]) == len(nodes_df["id"].unique())
+
+        nodes_df = nodes_df.reset_index(drop=True)
+        # contiguous_node_index = dict(zip(nodes_df["index"], nodes_df.index))
+
+        edges_df = None
+        for srctype, etype, dsttype in graph.canonical_etypes:
+            src, dst = graph.edges(etype=(srctype, etype, dsttype))
+            src = list(map(lambda x: node_id_map[srctype][x], src.tolist()))
+            dst = list(map(lambda x: node_id_map[dsttype][x], dst.tolist()))
+
+            edge_data = {
+                "id": graph.edata["_ID"][(srctype, etype, dsttype)].tolist(),
+                "type": [etype] * len(src),
+                "src": src,
+                "dst": dst
+            }
+
+            if edges_df is None:
+                edges_df = pd.DataFrame.from_dict(edge_data)
+            else:
+                edges_df = edges_df.append(pd.DataFrame.from_dict(edge_data))
+
+        assert len(edges_df["id"]) == len(edges_df["id"].unique())
+
+        edges_df = edges_df.reset_index(drop=True)
+
+        return nodes_df, edges_df, typed_id_map
+
+
 class TestTrainer(SamplingMultitaskTrainer):
     def __init__(self, *args, **kwargs):
         super(TestTrainer, self).__init__(*args, **kwargs)
@@ -214,11 +291,11 @@ class TestTrainer(SamplingMultitaskTrainer):
             nodes=dataset.nodes,
             emb_size=n_dims,
             dtype=self.dtype,
-            n_buckets=n_buckets
+            n_buckets=len(dataset.nodes) + 1 # override this because bucket size should be the same as number of nodes for this embedder
         )
 
 
-def main(models, args):
+def main_node_clf(models, args, data_loader):
     for model, param_grid in models.items():
         for params in param_grid:
 
@@ -238,53 +315,46 @@ def main(models, args):
 
             model_base = get_model_base(args, model_attempt)
 
-            dataset = TestGraph()
+            dataset = TestNodeClfGraph(data_loader=data_loader)
 
-            def write_params(args, params):
-                args = copy(args.__dict__)
-                args.update(params)
-                args['activation'] = args['activation'].__name__
-                with open(join(model_base, "params.json"), "w") as mdata:
-                    mdata.write(json.dumps(args, indent=4))
+            args.objectives = "node_clf"
 
-            write_params(args, params)
+            from SourceCodeTools.models.graph.train.sampling_multitask2 import training_procedure
 
-            if args.training_mode == "multitask":
+            trainer, scores = training_procedure(dataset, model, copy(params), args, model_base, trainer=TestTrainer)
 
-                from SourceCodeTools.models.graph.train.sampling_multitask2 import training_procedure
+            return scores
 
-                trainer, scores = training_procedure(dataset, model, copy(params), args, model_base, trainer=TestTrainer)
 
-                trainer.save_checkpoint(model_base)
+def main_link_pred(models, args, data_loader):
+    for model, param_grid in models.items():
+        for params in param_grid:
+
+            if args.h_dim is None:
+                params["h_dim"] = args.node_emb_size
             else:
-                raise ValueError("Unknown training mode:", args.training_mode)
+                params["h_dim"] = args.h_dim
 
-            print("Saving...", end="")
+            params["num_steps"] = args.n_layers
 
-            params['activation'] = params['activation'].__name__
+            date_time = str(datetime.now())
+            print("\n\n")
+            print(date_time)
+            print(f"Model: {model.__name__}, Params: {params}")
 
-            metadata = {
-                "base": model_base,
-                "name": model_attempt,
-                "parameters": params,
-                "layers": "embeddings.pkl",
-                "mappings": "nodes.csv",
-                "state": "state_dict.pt",
-                "scores": scores,
-                "time": date_time,
-            }
+            model_attempt = get_name(model, date_time)
 
-            metadata.update(args.__dict__)
+            model_base = get_model_base(args, model_attempt)
 
-            # pickle.dump(dataset, open(join(model_base, "dataset.pkl"), "wb"))
-            import pickle
-            pickle.dump(trainer.get_embeddings(), open(join(model_base, metadata['layers']), "wb"))
+            dataset = TestLinkPredGraph(data_loader=data_loader)
 
-            with open(join(model_base, "metadata.json"), "w") as mdata:
-                mdata.write(json.dumps(metadata, indent=4))
+            args.objectives = "link_pred"
 
-            print("done")
+            from SourceCodeTools.models.graph.train.sampling_multitask2 import training_procedure
 
+            trainer, scores = training_procedure(dataset, model, copy(params), args, model_base, trainer=TestTrainer)
+
+            return scores
 
 def format_data(dataset):
     graph = dataset[0]
@@ -295,15 +365,7 @@ def format_data(dataset):
     train_labels = labels[train_mask]
     test_labels = labels[test_mask]
 
-def node_clf():
-    import argparse
-
-    parser = argparse.ArgumentParser(description='Process some integers.')
-    add_gnn_train_args(parser)
-
-    args = parser.parse_args()
-    verify_arguments(args)
-
+def node_clf(args):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s:%(levelname)s:%(module)s:%(lineno)d:%(message)s")
 
     models_ = {
@@ -317,8 +379,38 @@ def node_clf():
 
     if not isdir(args.model_output_dir):
         mkdir(args.model_output_dir)
+    args.save_checkpoints = False
 
-    main(models_, args)
+    data_loaders = [AIFBDataset, MUTAGDataset, BGSDataset, AMDataset]
+
+    for dl in data_loaders:
+        print(dl.__name__)
+        scores = main_node_clf(models_, args, data_loader=dl)
+        print("\t", scores)
+
+
+def link_pred(args):
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s:%(levelname)s:%(module)s:%(lineno)d:%(message)s")
+
+    models_ = {
+        # GCNSampling: gcnsampling_params,
+        # GATSampler: gatsampling_params,
+        # RGCNSampling: rgcnsampling_params,
+        # RGAN: rgcnsampling_params,
+        RGGAN: rggan_params
+
+    }
+
+    if not isdir(args.model_output_dir):
+        mkdir(args.model_output_dir)
+    args.save_checkpoints = False
+
+    data_loaders = [WN18Dataset, FB15kDataset, FB15k237Dataset]
+
+    for dl in data_loaders:
+        print(dl.__name__)
+        scores = main_link_pred(models_, args, data_loader=dl)
+        print("\t", scores)
 
 
     # dataset = AIFBDataset()
@@ -354,4 +446,13 @@ def node_clf():
 #     print()
 
 if __name__=="__main__":
-    node_clf()
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Process some integers.')
+    add_gnn_train_args(parser)
+
+    args = parser.parse_args()
+    verify_arguments(args)
+
+    node_clf(args)
+    # link_pred(args)
