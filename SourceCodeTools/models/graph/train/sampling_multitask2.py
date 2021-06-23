@@ -71,7 +71,7 @@ class SamplingMultitaskTrainer:
         if "doc_gen" in self.trainer_params["objectives"]:
             self.create_text_generation_objective(dataset, tokenizer_path)
         if "node_clf" in self.trainer_params["objectives"]:
-            self.create_node_name_classifier_objective(dataset, tokenizer_path)
+            self.create_node_classifier_objective(dataset, tokenizer_path)
 
     def create_token_pred_objective(self, dataset, tokenizer_path):
         self.objectives.append(
@@ -175,6 +175,19 @@ class SamplingMultitaskTrainer:
                 dataset.load_docstring, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size,
+            )
+        )
+
+    def create_node_classifier_objective(self, dataset, tokenizer_path):
+        self.objectives.append(
+            NodeNameClassifier(
+                self.graph_model, self.node_embedder, dataset.nodes,
+                dataset.load_node_classes, self.device,
+                self.sampling_neighbourhood_size, self.batch_size,
+                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size,
+                masker=None,
+                measure_ndcg=self.trainer_params["measure_ndcg"],
+                dilate_ndcg=self.trainer_params["dilate_ndcg"]
             )
         )
 
@@ -505,8 +518,11 @@ def select_device(args):
 
 
 def training_procedure(
-        dataset, model_name, model_params, args, model_base_path
+        dataset, model_name, model_params, args, model_base_path, trainer=None
 ) -> Tuple[SamplingMultitaskTrainer, dict]:
+
+    if trainer is None:
+        trainer = SamplingMultitaskTrainer
 
     device = select_device(args)
 
@@ -536,7 +552,7 @@ def training_procedure(
         "objectives": args.objectives.split(",")
     }
 
-    trainer = SamplingMultitaskTrainer(
+    trainer = trainer(
         dataset=dataset,
         model_name=model_name,
         model_params=model_params,
@@ -563,8 +579,11 @@ def training_procedure(
 
 
 def evaluation_procedure(
-        dataset, model_name, model_params, args, model_base_path
+        dataset, model_name, model_params, args, model_base_path, trainer=None
 ) -> Tuple[SamplingMultitaskTrainer, dict]:
+
+    if trainer is None:
+        trainer = SamplingMultitaskTrainer
 
     device = select_device(args)
 
@@ -595,7 +614,7 @@ def evaluation_procedure(
         'dilate_ndcg': args.dilate_ndcg
     }
 
-    trainer = SamplingMultitaskTrainer(
+    trainer = trainer( #SamplingMultitaskTrainer(
         dataset=dataset,
         model_name=model_name,
         model_params=model_params,
