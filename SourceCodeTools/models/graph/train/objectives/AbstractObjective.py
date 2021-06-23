@@ -20,13 +20,36 @@ def _compute_accuracy(pred_: torch.Tensor, true_: torch.Tensor):
     return torch.sum(pred_ == true_).item() / len(true_)
 
 
+class EarlyStoppingTracker:
+    def __init__(self, early_stopping_tolerance):
+        self.early_stopping_tolerance = early_stopping_tolerance
+        self.early_stopping_counter = 0
+        self.early_stopping_value = 0.
+        self.early_stopping_trigger = False
+
+    def should_stop(self, metric):
+        if metric <= self.early_stopping_value:
+            self.early_stopping_counter += 1
+            if self.early_stopping_counter >= self.early_stopping_tolerance:
+                return True
+        else:
+            self.early_stopping_counter = 0
+            self.early_stopping_value = metric
+        return False
+
+    def reset(self):
+        self.early_stopping_counter = 0
+        self.early_stopping_value = 0.
+
+
+
 class AbstractObjective(nn.Module):
     def __init__(
             # self, name, objective_type, graph_model, node_embedder, nodes, data_loading_func, device,
             self, name, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker=None,
-            measure_ndcg=False, dilate_ndcg=1
+            measure_ndcg=False, dilate_ndcg=1, early_stopping=False, early_stopping_tolerance=20
     ):
         """
         :param name: name for reference
@@ -57,6 +80,8 @@ class AbstractObjective(nn.Module):
         self.link_predictor_type = link_predictor_type
         self.measure_ndcg = measure_ndcg
         self.dilate_ndcg = dilate_ndcg
+        self.early_stopping_tracker = EarlyStoppingTracker(early_stopping_tolerance) if early_stopping else None
+        self.early_stopping_trigger = False
 
         self.verify_parameters()
 
@@ -520,8 +545,19 @@ class AbstractObjective(nn.Module):
             count += 1
         return total_loss / count, total_acc / count, {key: val / ndcg_count for key, val in total_ndcg.items()} if self.measure_ndcg else None
 
+    def check_early_stopping(self, metric):
+        """
+        Checks the metric value and raises Early Stopping when the metric stops increasing.
+            Assumes that the metric grows. Uses accuracy as a metric by default. Check implementation of child classes.
+        :param metric: metric value
+        :return: Nothing
+        """
+        if self.early_stopping_tracker is not None:
+            self.early_stopping_trigger = self.early_stopping_tracker.should_stop(metric)
+
+
     @abstractmethod
-    def evaluate(self, data_split, neg_sampling_factor=1):
+    def evaluate(self, data_split, neg_sampling_factor=1, early_stopping=False, early_stopping_tolerance=20):
         # if self.type in {"subword_ranker"}:
         #     loss, acc, ndcg = self._evaluate_embedder(
         #         self.target_embedder, self.link_predictor, data_split=data_split, neg_sampling_factor=neg_sampling_factor

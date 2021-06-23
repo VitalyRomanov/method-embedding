@@ -21,6 +21,11 @@ def _compute_accuracy(pred_, true_):
     return torch.sum(pred_ == true_).item() / len(true_)
 
 
+class EarlyStopping(Exception):
+    def __init__(self, *args, **kwargs):
+        super(EarlyStopping, self).__init__(*args, **kwargs)
+
+
 class SamplingMultitaskTrainer:
 
     def __init__(self,
@@ -187,7 +192,9 @@ class SamplingMultitaskTrainer:
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size,
                 masker=None,
                 measure_ndcg=self.trainer_params["measure_ndcg"],
-                dilate_ndcg=self.trainer_params["dilate_ndcg"]
+                dilate_ndcg=self.trainer_params["dilate_ndcg"],
+                early_stopping=self.trainer_params["early_stopping"],
+                early_stopping_tolerance=self.trainer_params["early_stopping_tolerance"]
             )
         )
 
@@ -363,6 +370,9 @@ class SamplingMultitaskTrainer:
             for objective in self.objectives:
                 objective.reset_iterator("train")
 
+            if self.do_save:
+                self.save_checkpoint(self.model_base_path)
+
             for objective in self.objectives:
                 objective.eval()
 
@@ -384,6 +394,9 @@ class SamplingMultitaskTrainer:
                 self.write_summary(summary, self.batch)
                 summary_dict.update(summary)
 
+                if objective.early_stopping_trigger is True:
+                    raise EarlyStopping()
+
                 objective.train()
 
             # self.write_hyperparams({k.replace("vs_batch", "vs_epoch"): v for k, v in summary_dict.items()}, self.epoch)
@@ -392,9 +405,6 @@ class SamplingMultitaskTrainer:
 
             print(f"Epoch: {self.epoch}, Time: {int(end - start)} s", end="\t")
             print(summary_dict)
-
-            if self.do_save:
-                self.save_checkpoint(self.model_base_path)
 
             self.lr_scheduler.step()
 
@@ -436,6 +446,7 @@ class SamplingMultitaskTrainer:
             objective.reset_iterator("train")
             objective.reset_iterator("val")
             objective.reset_iterator("test")
+            # objective.early_stopping = False
 
         with torch.set_grad_enabled(False):
 
@@ -531,6 +542,10 @@ def training_procedure(
     model_params['use_att_checkpoint'] = args.use_att_checkpoint
     model_params['use_gru_checkpoint'] = args.use_gru_checkpoint
 
+    if len(args.objectives.split(",")) > 1 and args.early_stopping is True:
+        print("Early stopping disabled when several objectives are used")
+        args.early_stopping = False
+
     trainer_params = {
         'lr': model_params.pop('lr'),
         'batch_size': args.batch_size,
@@ -549,7 +564,9 @@ def training_procedure(
         'save_checkpoints': args.save_checkpoints,
         'measure_ndcg': args.measure_ndcg,
         'dilate_ndcg': args.dilate_ndcg,
-        "objectives": args.objectives.split(",")
+        "objectives": args.objectives.split(","),
+        "early_stopping": args.early_stopping,
+        "early_stopping_tolerance": args.early_stopping_tolerance
     }
 
     trainer = trainer(
@@ -566,7 +583,9 @@ def training_procedure(
     try:
         trainer.train_all()
     except KeyboardInterrupt:
-        print("Training interrupted")
+        logging.info("Training interrupted")
+    except EarlyStopping:
+        logging.info("Early stopping triggered")
     except Exception as e:
         raise e
 
