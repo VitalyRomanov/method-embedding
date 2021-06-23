@@ -3,33 +3,13 @@ import torch
 import torch.nn as nn
 
 
-class TrivialNodeEmbedder(nn.Module):
-    def __init__(self, nodes=None, emb_size=None, dtype=None, n_buckets=500000, pretrained=None):
-        super(TrivialNodeEmbedder, self).__init__()
-
-        self.emb_size = emb_size
-        self.dtype = dtype
-        if dtype is None:
-            self.dtype = torch.float32
-        self.n_buckets = n_buckets
-
-    def _create_buckets(self):
-        self.buckets = nn.Embedding(self.n_buckets + 1, self.emb_size, padding_idx=self.n_buckets)
-
-    def get_embeddings(self, node_type=None, node_ids=None, masked=None):
-        return self.buckets[node_ids]
-
-    def forward(self, node_type=None, node_ids=None, train_embeddings=True, masked=None):
-        if train_embeddings:
-            return self.get_embeddings(node_type, node_ids.tolist(), masked=masked)
-        else:
-            with torch.set_grad_enabled(False):
-                return self.get_embeddings(node_type, node_ids.tolist(), masked=masked)
-
 class NodeEmbedder(nn.Module):
     def __init__(self, nodes, emb_size, dtype=None, n_buckets=500000, pretrained=None):
         super(NodeEmbedder, self).__init__()
 
+        self.init(nodes, emb_size, dtype, n_buckets, pretrained)
+
+    def init(self, nodes, emb_size, dtype=None, n_buckets=500000, pretrained=None):
         self.emb_size = emb_size
         self.dtype = dtype
         if dtype is None:
@@ -114,6 +94,40 @@ class NodeEmbedder(nn.Module):
         else:
             with torch.set_grad_enabled(False):
                 return self.get_embeddings(node_type, node_ids.tolist(), masked=masked)
+
+
+class NodeIdEmbedder(NodeEmbedder):
+    def __init__(self, nodes=None, emb_size=None, dtype=None, n_buckets=500000, pretrained=None):
+        super(NodeIdEmbedder, self).__init__(nodes, emb_size, dtype, n_buckets, pretrained)
+
+    def init(self, nodes, emb_size, dtype=None, n_buckets=500000, pretrained=None):
+        self.emb_size = emb_size
+        self.dtype = dtype
+        if dtype is None:
+            self.dtype = torch.float32
+        self.n_buckets = n_buckets
+
+        self.buckets = None
+
+        nodes_with_embeddings = nodes.query("embeddable == True")[
+            ['global_graph_id', 'typed_id', 'type', 'type_backup', 'name']
+        ]
+
+        self.to_global_map = {}
+        for global_graph_id, typed_id, type_, type_backup, name in nodes_with_embeddings.values:
+            if type_ not in self.to_global_map:
+                self.to_global_map[type_] = {}
+
+            self.to_global_map[type_][typed_id] = global_graph_id
+
+        self._create_buckets()
+
+    def get_embeddings(self, node_type=None, node_ids=None, masked=None):
+        assert node_ids is not None
+        if node_type is not None:
+            node_ids = list(map(lambda local_id: self.to_global_map[node_type][local_id], node_ids))
+
+        return self.buckets(torch.LongTensor(node_ids))
 
 
 # class SimpleNodeEmbedder(nn.Module):
