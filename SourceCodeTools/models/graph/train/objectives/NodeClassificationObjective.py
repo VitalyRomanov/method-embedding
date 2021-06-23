@@ -88,6 +88,9 @@ class NodeNameClassifier(AbstractObjective):
             total_loss += loss.item()
             total_acc += acc
             count += 1
+
+        if count == 0:
+            count += 1
         return total_loss / count, total_acc / count, {key: val / ndcg_count for key, val in total_ndcg.items()} if self.measure_ndcg else None
 
     def evaluate(self, data_split, neg_sampling_factor=1):
