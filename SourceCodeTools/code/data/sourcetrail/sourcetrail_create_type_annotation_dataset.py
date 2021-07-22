@@ -161,6 +161,9 @@ def unpack_returns(body: str, labels: pd.DataFrame):
     :param labels: DataFrame with information about return type annotation
     :return: Trimmed body and list of return types (normally one).
     """
+    if labels is None:
+        return [], []
+
     returns = []
 
     for ind, row in labels.iterrows():
@@ -201,6 +204,9 @@ def unpack_annotations(body, labels):
     :param labels: DataFrame with information about type annotations
     :return: Trimmed body and list of annotations.
     """
+    if labels is None:
+        return [], []
+
     variables = []
     annotations = []
 
@@ -270,8 +276,8 @@ def process_body(nlp, body: str, replacements=None):
 
     initial_labels = get_initial_labels(body_)
 
-    if initial_labels is None:
-        return None
+    # if initial_labels is None:
+    #     return None
 
     returns, return_cuts = unpack_returns(body_, initial_labels)
     annotations, annotation_cuts = unpack_annotations(body_, initial_labels)
@@ -456,8 +462,6 @@ def iterate_functions(offsets, nodes, filecontent):
                 yield body, adjusted_entity_offsets
 
 
-
-
 def get_node_maps(nodes):
     return dict(zip(nodes["id"], zip(nodes["serialized_name"], nodes["type"])))
 
@@ -471,6 +475,8 @@ def group_offsets(offsets):
     :param offsets: Dataframe with offsets
     :return: offsets grouped first by package name and file id, and then by the entity in which they occur.
     """
+    # This function will process all function that have graph annotations. If there are no
+    # annotations - the function is not processed.
     offsets_grouped = {}
 
     for file_id, start, end, node_id, mentioned_in, package in offsets.values:
@@ -502,17 +508,20 @@ def create_from_dataset():
     filecontent = get_filecontent_maps(unpersist(join(args.dataset_path, "common_filecontent.bz2")))
     offsets = group_offsets(unpersist(join(args.dataset_path, "common_offsets.bz2")))
 
-    iterate_functions(offsets, node_maps, filecontent)
+    data = []
+    nlp = create_tokenizer("spacy")
 
+    for f_body, f_offsets in iterate_functions(offsets, node_maps, filecontent):
+        data.append(process_body(nlp, f_body, replacements=f_offsets))
 
-
+    store(data, args)
 
 
 def create_from_environments():
     from argparse import ArgumentParser
     parser = ArgumentParser()
     parser.add_argument("packages", type=str, help="")
-    parser.add_argument("output_dataset", type=str, help="")
+    parser.add_argument("output_path", type=str, help="")
     parser.add_argument("--format", "-f", dest="format", default="jsonl", help="jsonl|csv")
     parser.add_argument("--global_nodes", "-g", dest="global_nodes", default=None)
 
@@ -529,16 +538,20 @@ def create_from_environments():
 
         data.extend(process_package(working_directory=pkg_path, global_names=global_names))
 
+    store(data, args)
+
+
+def store(data, args):
     if args.format == "jsonl":  # jsonl format is used by spacy
-        with open(args.output_dataset, "w") as sink:
+        with open(args.output_path, "w") as sink:
             for entry in data:
                 sink.write(f"{json.dumps(entry)}\n")
     elif args.format == "csv":
-        if os.path.isfile(args.output_dataset):
+        if os.path.isfile(args.output_path):
             header = False
         else:
             header = True
-        pd.DataFrame(data).to_csv(args.output_dataset, index=False, header=header)
+        pd.DataFrame(data).to_csv(args.output_path, index=False, header=header)
 
 
 if __name__ == "__main__":
