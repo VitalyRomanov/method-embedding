@@ -28,6 +28,11 @@ class MentionTokenizer:
         self.connect_subwords = connect_subwords
 
     def replace_mentions_with_subwords(self, edges):
+        """
+        Process edges and tokenize certain node types
+        :param edges: List of edges
+        :return: List of edges, including new edges for subword tokenization
+        """
 
         if self.create_subword_instances:
             def produce_subw_edges(subwords, dst):
@@ -202,6 +207,13 @@ class GlobalNodeMatcher:
         return id2type
 
     def match_with_global_nodes(self, nodes, edges):
+        """
+        Match AST nodes that represent functions, classes. and modules with nodes from global graph.
+        This information is not stored explicitly and need to walk the graph to resolve.
+        :param nodes:
+        :param edges:
+        :return: Mapping from AST nodes to corresponding global nodes
+        """
         nodes = pd.DataFrame([node for node in nodes if node["type"] in self.allowed_ast_node_types])
         edges = pd.DataFrame([edge for edge in edges if edge["type"] in self.allowed_ast_edge_types])
 
@@ -217,8 +229,8 @@ class GlobalNodeMatcher:
 
         def find_global_id(graph, def_id, motif):
             """
-            Do function or class global id lookup
-            :param graph:
+            Perform function or class global id lookup. Need this because
+            :param graph: nx graph
             :param def_id:
             :param motif: list with edge types, return None if path does not exist
             :return:
@@ -330,6 +342,10 @@ class ReplacementNodeResolver(NodeResolver):
         self.stashed_nodes = []
 
     def stash_new_nodes(self):
+        """
+        Put new nodes into temporary storage.
+        :return: Nothing
+        """
         self.stashed_nodes.extend(self.new_nodes)
         self.new_nodes = []
 
@@ -423,12 +439,19 @@ class ReplacementNodeResolver(NodeResolver):
         return new_node
 
     def resolve(self, node, replacement2srctrl):
+        """
+        :param node: string that represents node
+        :param replacement2srctrl: dictionary of {sourcetrail_node: original name}
+        :return: resolved string with original node name
+        """
+        # this function is defined in this class instead of SourceTrail resolver because it needs access to
+        # global node ids
 
         if node.type == "type_annotation":
             new_node = self.resolve_substrings(node, replacement2srctrl)
         else:
             new_node = self.resolve_regular_replacement(node, replacement2srctrl)
-            if "srctrlrpl_" in new_node.name:  # hack to process imports
+            if "srctrlrpl_" in new_node.name:  # hack to process imports TODO maybe need to use while to resolve everything?
                 new_node = self.resolve_substrings(node, replacement2srctrl)
 
         assert "srctrlrpl_" not in new_node.name
@@ -436,6 +459,12 @@ class ReplacementNodeResolver(NodeResolver):
         return new_node
 
     def resolve_node_id(self, node, **kwargs):
+        """
+        Resolve node id from name and type, create new node is no nodes like that found.
+        :param node: node
+        :param kwargs:
+        :return: updated node (return object with the save reference as input)
+        """
         if not hasattr(node, "id"):
             node_repr = (node.name.strip(), node.type.strip())
 
@@ -615,6 +644,11 @@ class AstProcessor(AstGraphGenerator):
 
 
 class SourcetrailResolver:
+    """
+    Helper class to work with source code stored in Sourcetrail database. Implements functions of
+    - Iterating over files
+    - Preserving Sourcetrail nodes
+    """
     def __init__(self, nodes, edges, source_location, occurrence, file_content, lang):
         self.nodes = nodes
         self.node2name = dict(zip(nodes['id'], nodes['serialized_name']))
@@ -628,6 +662,9 @@ class SourcetrailResolver:
 
     @property
     def occurrence_groups(self):
+        """
+        :return: Iterator for occurrences grouped by file id.
+        """
         if self._occurrence_groups is None:
             self._occurrence_groups = get_occurrence_groups(self.nodes, self.edges, self.source_location, self.occurrence)
         return self._occurrence_groups
@@ -715,11 +752,18 @@ class NameGroupTracker:
     def to_df(self):
         return pd.DataFrame(self.group2names)
 
+
 def global_mention_edges_from_node(node):
+    """
+    Construct a new edge that will link to a global node.
+    :param node:
+    :return:
+    """
     global_edges = []
     if type(node.global_id) is int:
         id_type = [(node.global_id, node.global_type)]
     else:
+        # in case there are many global references
         id_type = zip(node.global_id, node.global_type)
 
     for gid, gtype in id_type:
@@ -733,7 +777,13 @@ def global_mention_edges_from_node(node):
         global_edges.append(make_reverse_edge(global_mention))
     return global_edges
 
+
 def add_global_mentions(edges):
+    """
+    :param edges: List of dictionaries that represent edges
+    :return: Original edges with additional edges for global references (e.g. global_mention edge
+    for function calls)
+    """
     new_edges = []
     for edge in edges:
         if edge['src'].type in {"#attr#", "Name"}:
@@ -783,6 +833,13 @@ def produce_nodes_without_name(global_nodes, ast_edges):
 
 
 def standardize_new_edges(edges, node_resolver, mention_tokenizer):
+    """
+    Tokenize relevant node names, assign id to every node, collapse edge representation to id-based
+    :param edges: list of edges
+    :param node_resolver: helper class that tracks node ids
+    :param mention_tokenizer: helper class that performs tokenization of relevant nodes
+    :return:
+    """
 
     edges = mention_tokenizer.replace_mentions_with_subwords(edges)
 
@@ -807,7 +864,19 @@ def standardize_new_edges(edges, node_resolver, mention_tokenizer):
     return edges
 
 
-def process_code(source_file_content, offsets, node_resolver, mention_tokenizer, node_matcher, named_group_tracker, track_offsets=False):
+def process_code(source_file_content, offsets, node_resolver, mention_tokenizer, node_matcher, track_offsets=False):
+    """
+
+    :param source_file_content: String for a file from SOurcetrail database
+    :param offsets: List of global occurrences in this file
+    :param node_resolver:
+    :param mention_tokenizer:
+    :param node_matcher:
+    :param track_offsets: Flag that tells whether to perform offset tracking.
+    :return: Tuple that stores egdes, list of global and ast offsets for the current file in the format
+     (start, end, node_id, set(offsets for functions where the current offset occurs),
+     mapping from AST nodes to corresponding global nodes (will be used to replace one with the other).
+    """
     # replace global occurrences with special tokens to help further parsing with ast package
     replacer = OccurrenceReplacer()
     replacer.perform_replacements(source_file_content, offsets)
@@ -822,7 +891,7 @@ def process_code(source_file_content, offsets, node_resolver, mention_tokenizer,
     if len(edges) == 0:
         return None, None, None
 
-    # resolve existing node names (primarily for subwords)
+    # resolve sourcetrail nodes ans replace with original
     resolve = lambda node: node_resolver.resolve(node, replacer.replacement_index)
 
     for edge in edges:
@@ -834,23 +903,32 @@ def process_code(source_file_content, offsets, node_resolver, mention_tokenizer,
     # insert global mentions using replacements that were created on the first step
     edges = add_global_mentions(edges)
 
-    named_group_tracker.add_names_from_edges(edges)
+    # It seems I do not need this feature
+    # named_group_tracker.add_names_from_edges(edges)
 
+    # tokenize names, replace nodes with their ids
     edges = standardize_new_edges(edges, node_resolver, mention_tokenizer)
 
     if track_offsets:
         def get_valid_offsets(edges):
+            """
+            :param edges: Dictionary that represents edge. Information is tored in edges but is related to source node
+            :return: Information about location of this edge (offset) in the source file in fromat (start, end, node_id)
+            """
             return [(edge["offsets"][0], edge["offsets"][1], edge["src"]) for edge in edges if edge["offsets"] is not None]
 
+        # recover ast offsets for the current file
         ast_offsets = replacer.recover_offsets_with_edits2(get_valid_offsets(edges))
 
         def merge_global_and_ast_offsets(ast_offsets, global_offsets, definitions):
             """
-            Merge local and global offsets and add information about the scope
-            :param ast_offsets:
-            :param global_offsets:
-            :param definitions:
-            :return:
+            Merge local and global offsets and add information about the scope. Preserve the information that
+            indicates a function where the occurrence takes place.
+            :param ast_offsets: List of offsets in format (start, end, node_id)
+            :param global_offsets: List of offsets in format (start, end, node_id)
+            :param definitions: offsets for function declarations
+            :return: List of offsets in format [start, end, node_id, set(function_offset)]. Each offset can belong to
+             several functions in the case of nested functions.
             """
             offsets = [[*offset, set()] for offset in ast_offsets]
             offsets = offsets + [[*offset, set()] for offset in global_offsets]
@@ -870,6 +948,7 @@ def process_code(source_file_content, offsets, node_resolver, mention_tokenizer,
     else:
         global_and_ast_offsets = None
 
+    # Get mapping from AST nodes to global nodes
     ast_nodes_to_srctrl_nodes = node_matcher.match_with_global_nodes(node_resolver.new_nodes, edges)
 
     return edges, global_and_ast_offsets, ast_nodes_to_srctrl_nodes
@@ -879,12 +958,27 @@ def get_ast_from_modules(
         nodes, edges, source_location, occurrence, file_content,
         bpe_tokenizer_path, create_subword_instances, connect_subwords, lang, track_offsets=False
 ):
-
+    """
+    Create edges from source code and methe them wit hthe global graph. Prepare all offsets in the uniform format.
+    :param nodes: DataFrame with nodes
+    :param edges: DataFrame with edges
+    :param source_location: Dataframe that links nodes to source files
+    :param occurrence: Dataframe with records about occurrences
+    :param file_content: Dataframe with sources
+    :param bpe_tokenizer_path: path to sentencepiece model
+    :param create_subword_instances:
+    :param connect_subwords:
+    :param lang:
+    :param track_offsets:
+    :return: Tuple:
+        - Dataframe with all nodes. Schema: id, type, name, mentioned_in (global and AST)
+        - Dataframe with all edges. Schema: id, type, src, dst, file_id, mentioned_in
+        - Dataframe with all_offsets. Schema: file_id, start, end, node_id, mentioned_in
+    """
     srctrl_resolver = SourcetrailResolver(nodes, edges, source_location, occurrence, file_content, lang)
     node_resolver = ReplacementNodeResolver(nodes)
     node_matcher = GlobalNodeMatcher(nodes, edges)  # add_reverse_edges(edges))
     mention_tokenizer = MentionTokenizer(bpe_tokenizer_path, create_subword_instances, connect_subwords)
-    name_group_tracker = NameGroupTracker()
     all_ast_edges = []
     all_global_references = {}
     all_offsets = []
@@ -904,7 +998,7 @@ def get_ast_from_modules(
         # process code
         # try:
         edges, global_and_ast_offsets, ast_nodes_to_srctrl_nodes = process_code(
-            source_file_content, offsets, node_resolver, mention_tokenizer, node_matcher, name_group_tracker, track_offsets=track_offsets
+            source_file_content, offsets, node_resolver, mention_tokenizer, node_matcher, track_offsets=track_offsets
         )
         # except SyntaxError:
         #     logging.warning(f"Error processing file_id {file_id}")
@@ -924,6 +1018,12 @@ def get_ast_from_modules(
         node_matcher.merge_global_references(all_global_references, ast_nodes_to_srctrl_nodes)
 
         def format_offsets(global_and_ast_offsets, target):
+            """
+            Format offset as a record and add to the common storage for offsets
+            :param global_and_ast_offsets:
+            :param target: List where all other offsets are stored.
+            :return: Nothing
+            """
             if global_and_ast_offsets is not None:
                 for offset in global_and_ast_offsets:
                     target.append({
@@ -966,7 +1066,14 @@ def get_ast_from_modules(
             }, from_stashed=True
         )
         node_resolver.map_mentioned_in_to_global(all_global_references, from_stashed=True)
+        # TODO since some function definitions and modules are dropped, need to rename decorated nodes as well
+        # find old name in node_resolver.stashed nodes, go over all nodes and replace corresponding substrings in names
         node_resolver.drop_nodes(set(all_global_references.keys()), from_stashed=True)
+
+        for offset in all_offsets:
+            offset["node_id"] = all_global_references.get(offset["node_id"], offset["node_id"])
+            offset["mentioned_in"] = [(e[0], e[1], all_global_references.get(e[2], e[2])) for e in offset["mentioned_in"]]
+
 
     prepare_new_nodes(node_resolver)
 
@@ -989,7 +1096,7 @@ def get_ast_from_modules(
     else:
         all_offsets = None
 
-    return all_ast_nodes, all_ast_edges, all_offsets, name_group_tracker.to_df()
+    return all_ast_nodes, all_ast_edges, all_offsets
 
 
 class OccurrenceReplacer:
@@ -1196,7 +1303,7 @@ if __name__ == "__main__":
     edges = read_edges(working_directory)
     file_content = read_filecontent(working_directory)
 
-    ast_nodes, ast_edges, offsets, ng = get_ast_from_modules(nodes, edges, source_location, occurrence, file_content,
+    ast_nodes, ast_edges, offsets = get_ast_from_modules(nodes, edges, source_location, occurrence, file_content,
                                                          args.bpe_tokenizer, args.create_subword_instances,
                                                          args.connect_subwords, args.lang)
 

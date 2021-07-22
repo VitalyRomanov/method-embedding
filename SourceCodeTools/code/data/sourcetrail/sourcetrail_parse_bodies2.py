@@ -100,6 +100,15 @@ def get_range_for_replacement(occurrence, start_col, end_col, line, nodeid2name)
 
 
 def process_body(body, local_occurrences, nodeid2name, f_id, f_start):
+    """
+    Extract the list
+    :param body:
+    :param local_occurrences:
+    :param nodeid2name:
+    :param f_id:
+    :param f_start:
+    :return:
+    """
     body_lines = body.split("\n")
 
     local_occurrences = sort_occurrences(local_occurrences)
@@ -141,6 +150,16 @@ def process_body(body, local_occurrences, nodeid2name, f_id, f_start):
 
 
 def process_bodies(nodes, edges, source_location, occurrence, file_content, lang):
+    """
+    :param nodes:
+    :param edges:
+    :param source_location:
+    :param occurrence:
+    :param file_content:
+    :param lang:
+    :return: Dataframe with columns id, body, sourcetrail_node_offsets. Node offsets are not resolved from the
+        global graph.
+    """
 
     occurrence_groups = get_occurrence_groups(nodes, edges, source_location, occurrence)
 

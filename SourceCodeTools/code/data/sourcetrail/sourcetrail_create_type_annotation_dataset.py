@@ -2,6 +2,7 @@ import ast
 import json
 import logging
 import os
+from os.path import join
 
 import pandas as pd
 from tqdm import tqdm
@@ -439,7 +440,75 @@ def process_package(working_directory, global_names=None):
     return data
 
 
-def main():
+def iterate_functions(offsets, nodes, filecontent):
+
+    allowed_entity_types = {"class_method", "function"}
+
+    for package_id in offsets:
+        content = filecontent[package_id]
+
+        # entry is a function or a class
+        for (entity_start, entity_end, entity_node_id), entity_offsets in offsets[package_id].items():
+            if nodes[entity_node_id][1] in allowed_entity_types:
+                body = content[entity_start: entity_end]
+                adjusted_entity_offsets = adjust_offsets2(entity_offsets, -entity_start)
+
+                yield body, adjusted_entity_offsets
+
+
+
+
+def get_node_maps(nodes):
+    return dict(zip(nodes["id"], zip(nodes["serialized_name"], nodes["type"])))
+
+
+def get_filecontent_maps(filecontent):
+    return dict(zip(zip(filecontent["package"], filecontent["id"]), filecontent["content"]))
+
+
+def group_offsets(offsets):
+    """
+    :param offsets: Dataframe with offsets
+    :return: offsets grouped first by package name and file id, and then by the entity in which they occur.
+    """
+    offsets_grouped = {}
+
+    for file_id, start, end, node_id, mentioned_in, package in offsets.values:
+        package_id = (package, file_id)
+        if package_id not in offsets_grouped:
+            offsets_grouped[package_id] = {}
+
+        offset_ent = (start, end, node_id)
+
+        for e in mentioned_in:
+            if e not in offsets_grouped[package_id]:
+                offsets_grouped[package_id][e] = []
+
+            offsets_grouped[package_id][e].append(offset_ent)
+
+    return offsets_grouped
+
+
+def create_from_dataset():
+    from argparse import ArgumentParser
+    parser = ArgumentParser()
+    parser.add_argument("dataset_path", type=str, help="")
+    parser.add_argument("output_path", type=str, help="")
+    parser.add_argument("--format", "-f", dest="format", default="jsonl", help="jsonl|csv")
+
+    args = parser.parse_args()
+
+    node_maps = get_node_maps(unpersist(join(args.dataset_path, "common_nodes.bz2")))
+    filecontent = get_filecontent_maps(unpersist(join(args.dataset_path, "common_filecontent.bz2")))
+    offsets = group_offsets(unpersist(join(args.dataset_path, "common_offsets.bz2")))
+
+    iterate_functions(offsets, node_maps, filecontent)
+
+
+
+
+
+def create_from_environments():
     from argparse import ArgumentParser
     parser = ArgumentParser()
     parser.add_argument("packages", type=str, help="")
@@ -473,4 +542,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # create_from_environments()
+    create_from_dataset()

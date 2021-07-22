@@ -1,6 +1,7 @@
 from __future__ import unicode_literals, print_function
 
 import json
+import logging
 import os
 import pickle
 from copy import copy
@@ -184,11 +185,11 @@ def get_type_prediction_arguments():
 
     parser = argparse.ArgumentParser(description='Process some integers.')
     parser.add_argument('--data_path', dest='data_path', default=None,
-                        help='Path to the file with nodes')
+                        help='Path to the dataset folder')
     parser.add_argument('--graph_emb_path', dest='graph_emb_path', default=None,
-                        help='Path to the file with edges')
+                        help='Path to the file with graph embeddings')
     parser.add_argument('--word_emb_path', dest='word_emb_path', default=None,
-                        help='Path to the file with edges')
+                        help='Path to the file with token embeddings')
     parser.add_argument('--learning_rate', dest='learning_rate', default=0.01, type=float,
                         help='')
     parser.add_argument('--learning_rate_decay', dest='learning_rate_decay', default=1.0, type=float,
@@ -199,8 +200,8 @@ def get_type_prediction_arguments():
                         help='')
     parser.add_argument('--max_seq_len', dest='max_seq_len', default=100, type=int,
                         help='')
-    # parser.add_argument('--pretrain_phase', dest='pretrain_phase', default=20, type=int,
-    #                     help='')
+    parser.add_argument('--pretraining_epochs', dest='pretraining_epochs', default=0, type=int,
+                        help='')
     parser.add_argument('--epochs', dest='epochs', default=500, type=int,
                         help='')
     parser.add_argument('--trials', dest='trials', default=1, type=int,
@@ -210,6 +211,10 @@ def get_type_prediction_arguments():
                         help='')
 
     args = parser.parse_args()
+
+    if args.finetune is False and args.pretraining_epochs > 0:
+        logging.info(f"Finetuning is disabled, but the the number of pretraining epochs is {args.pretraining_epochs}. Setting pretraining epochs to 0.")
+        args.pretraining_epochs = 0
     return args
 
 
