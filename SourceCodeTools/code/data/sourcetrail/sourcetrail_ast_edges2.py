@@ -310,19 +310,24 @@ class GlobalNodeMatcher:
 
 
 class ReplacementNodeResolver(NodeResolver):
-    def __init__(self, nodes):
+    def __init__(self, nodes=None):
 
-        self.nodeid2name = dict(zip(nodes['id'].tolist(), nodes['serialized_name'].tolist()))
-        self.nodeid2type = dict(zip(nodes['id'].tolist(), nodes['type'].tolist()))
+        if nodes is not None:
+            self.nodeid2name = dict(zip(nodes['id'].tolist(), nodes['serialized_name'].tolist()))
+            self.nodeid2type = dict(zip(nodes['id'].tolist(), nodes['type'].tolist()))
+            self.valid_new_node = nodes['id'].max() + 1
+            self.old_nodes = nodes.copy()
+            self.old_nodes['mentioned_in'] = pd.NA
+            self.old_nodes = self.old_nodes.astype({'mentioned_in': 'Int32'})
+        else:
+            self.nodeid2name = dict()
+            self.nodeid2type = dict()
+            self.valid_new_node = 0
+            self.old_nodes = pd.DataFrame()
 
-        self.valid_new_node = nodes['id'].max() + 1
         self.node_ids = {}
         self.new_nodes = []
         self.stashed_nodes = []
-
-        self.old_nodes = nodes.copy()
-        self.old_nodes['mentioned_in'] = pd.NA
-        self.old_nodes = self.old_nodes.astype({'mentioned_in': 'Int32'})
 
     def stash_new_nodes(self):
         self.stashed_nodes.extend(self.new_nodes)
