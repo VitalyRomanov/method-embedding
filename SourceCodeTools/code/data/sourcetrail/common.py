@@ -26,6 +26,14 @@ class SQLTable:
 
 
 def get_occurrence_groups(nodes, edges, source_location, occurrence):
+    """
+    Group nodes based on file id. Return dataset that contains node ids and their offsets in the source code.
+    :param nodes: dataframe with nodes
+    :param edges: dataframe with edges
+    :param source_location: dataframe with sources
+    :param occurrence: dataframe with with offsets
+    :return: Result of group by file id
+    """
     edges = edges.rename(columns={'type': 'e_type'})
     edges = edges.query("id >= 0")  # filter reverse edges
 

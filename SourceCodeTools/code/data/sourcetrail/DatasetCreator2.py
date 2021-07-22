@@ -1,3 +1,4 @@
+import shelve
 from os.path import join
 from tqdm import tqdm
 
@@ -38,10 +39,15 @@ class DatasetCreator:
         paths = (os.path.join(path, dir) for dir in os.listdir(path))
         self.environments = sorted(list(filter(lambda path: os.path.isdir(path), paths)), key=lambda x: x.lower())
 
-        self.local2global_cache = {}
+        self.local2global_cache_filename = "local2global_cache.db"
+        self.local2global_cache = shelve.open(self.local2global_cache_filename)
 
         from SourceCodeTools.code.data.sourcetrail.common import UNRESOLVED_SYMBOL
         self.unsolved_symbol = UNRESOLVED_SYMBOL
+
+    def __del__(self):
+        self.local2global_cache.close()
+        os.remove(self.local2global_cache_filename)
 
     def merge(self, output_directory):
 
@@ -62,8 +68,6 @@ class DatasetCreator:
                                     join(no_ast_path, "common_function_variable_pairs.bz2"), "Merging variables")
             self.create_global_file("call_seq.bz2", "local2global.bz2", ['src', 'dst'],
                                     join(no_ast_path, "common_call_seq.bz2"), "Merging call seq")
-            # self.create_global_file("name_groups.bz2", "local2global.bz2", [],
-            #                         join(no_ast_path, "name_groups.bz2"), "Merging name groups")
 
             global_nodes = self.filter_orphaned_nodes(
                 unpersist(join(no_ast_path, "common_nodes.bz2")), no_ast_path
@@ -92,8 +96,11 @@ class DatasetCreator:
                                 join(with_ast_path, "common_function_variable_pairs.bz2"), "Merging variables with ast")
         self.create_global_file("call_seq.bz2", "local2global_with_ast.bz2", ['src', 'dst'],
                                 join(with_ast_path, "common_call_seq.bz2"), "Merging call seq with ast")
-        # self.create_global_file("name_groups.bz2", "local2global_with_ast.bz2", [],
-        #                         join(with_ast_path, "name_groups.bz2"), "Merging name groups")
+        self.create_global_file("offsets.bz2", "local2global_with_ast.bz2", ['node_id'],
+                                join(with_ast_path, "common_offsets.bz2"), "Merging offsets with ast",
+                                columns_special=[("mentioned_in", map_offsets)])
+        self.create_global_file("filecontent_with_package.bz2", "local2global_with_ast.bz2", [],
+                                join(with_ast_path, "common_filecontent.bz2"), "Merging filecontents")
 
         global_nodes = self.filter_orphaned_nodes(
             unpersist(join(with_ast_path, "common_nodes.bz2")), with_ast_path
@@ -116,7 +123,6 @@ class DatasetCreator:
     def do_extraction(self):
         global_nodes = None
         global_nodes_with_ast = None
-        name_groups = None
 
         for env_path in self.environments:
             logging.info(f"Found {os.path.basename(env_path)}")
@@ -142,26 +148,22 @@ class DatasetCreator:
             edges = add_reverse_edges(edges)
 
             # if bodies is not None:
-            ast_nodes, ast_edges, offsets, name_group_tracker = get_ast_from_modules(
+            ast_nodes, ast_edges, offsets = get_ast_from_modules(
                 nodes, edges, source_location, occurrence, filecontent,
                 self.bpe_tokenizer, self.create_subword_instances, self.connect_subwords, self.lang,
                 track_offsets=self.track_offsets
             )
+
+            if offsets is not None:
+                offsets["package"] = os.path.basename(env_path)
+
             nodes_with_ast = nodes.append(ast_nodes)
             edges_with_ast = edges.append(ast_edges)
+
             if bodies is not None:
                 vars = extract_var_names(nodes, bodies, self.lang)
             else:
                 vars = None
-            if name_groups is None:
-                name_groups = name_group_tracker
-            else:
-                name_groups = name_groups.append(name_group_tracker)
-            # else:
-            #     nodes_with_ast = nodes
-            #     edges_with_ast = edges
-            #     vars = None
-            #     offsets = None
 
             global_nodes = self.merge_with_global(global_nodes, nodes)
             global_nodes_with_ast = self.merge_with_global(global_nodes_with_ast, nodes_with_ast)
@@ -175,7 +177,7 @@ class DatasetCreator:
 
             self.write_local(env_path, nodes, edges, bodies, call_seq, vars,
                              nodes_with_ast, edges_with_ast, offsets,
-                             local2global, local2global_with_ast, name_groups)
+                             local2global, local2global_with_ast)
 
     def get_local2global(self, path):
         if path in self.local2global_cache:
@@ -239,7 +241,7 @@ class DatasetCreator:
 
     def write_local(self, dir, nodes, edges, bodies, call_seq, vars,
                     nodes_with_ast, edges_with_ast, offsets,
-                    local2global, local2global_with_ast, name_groups):
+                    local2global, local2global_with_ast):
         write_nodes(nodes, dir)
         write_edges(edges, dir)
         if bodies is not None:
@@ -258,10 +260,16 @@ class DatasetCreator:
         persist(local2global, join(dir, "local2global.bz2"))
         persist(local2global_with_ast, join(dir, "local2global_with_ast.bz2"))
 
-        if name_groups is not None:
-            persist(name_groups, join(dir, "name_groups.bz2"))
+        # add package name to filecontent
+        filecontent = read_filecontent(dir)
+        filecontent["package"] = os.path.basename(dir)
+        persist(filecontent, join(dir, "filecontent_with_package.bz2"))
 
     def get_global_node_info(self, global_nodes):
+        """
+        :param global_nodes: nodes from a global merged graph
+        :return: Set of existing nodes represented with (type, node_name), minimal available free id
+        """
         if global_nodes is None:
             existing_nodes, next_valid_id = set(), 0
         else:
@@ -269,6 +277,12 @@ class DatasetCreator:
         return existing_nodes, next_valid_id
 
     def merge_with_global(self, global_nodes, local_nodes):
+        """
+        Merge nodes obtained from the source code with the previously existing nodes.
+        :param global_nodes: Nodes from a global inter-package graph
+        :param local_nodes: Nodes from a local file-level graph
+        :return: Updated version of the global inter-package graph
+        """
         existing_nodes, next_valid_id = self.get_global_node_info(global_nodes)
         new_nodes = merge_global_with_local(existing_nodes, next_valid_id, local_nodes)
 
