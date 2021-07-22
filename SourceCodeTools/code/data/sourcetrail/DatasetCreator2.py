@@ -47,7 +47,7 @@ class DatasetCreator:
 
     def __del__(self):
         self.local2global_cache.close()
-        os.remove(self.local2global_cache_filename)
+        # os.remove(self.local2global_cache_filename) # TODO nofile on linux, need to check
 
     def merge(self, output_directory):
 
