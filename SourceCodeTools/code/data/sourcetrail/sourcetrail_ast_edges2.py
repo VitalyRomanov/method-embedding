@@ -1061,6 +1061,8 @@ def get_ast_from_modules(
             }, from_stashed=True
         )
         node_resolver.map_mentioned_in_to_global(all_global_references, from_stashed=True)
+        # TODO since some function definitions and modules are dropped, need to rename decorated nodes as well
+        # find old name in node_resolver.stashed nodes, go over all nodes and replace corresponding substrings in names
         node_resolver.drop_nodes(set(all_global_references.keys()), from_stashed=True)
 
         for offset in all_offsets:
