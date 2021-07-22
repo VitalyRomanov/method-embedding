@@ -57,10 +57,22 @@ def to_offsets(body: str, entities: Iterable[Iterable], as_bytes=False, cum_lens
 
 
 def adjust_offsets(offsets, amount):
+    """
+    Adjust offset by subtracting certain amount from the start and end positions
+    :param offsets: iterable with offsets
+    :param amount: adjustment amount
+    :return: list of adjusted offsets
+    """
     return [(offset[0] - amount, offset[1] - amount, offset[2]) for offset in offsets]
 
 
 def adjust_offsets2(offsets, amount):
+    """
+    Adjust offset by adding certain amount to the start and end positions
+    :param offsets: iterable with offsets
+    :param amount: adjustment amount
+    :return: list of adjusted offsets
+    """
     return [(offset[0] + amount, offset[1] + amount, offset[2]) for offset in offsets]
 
 
