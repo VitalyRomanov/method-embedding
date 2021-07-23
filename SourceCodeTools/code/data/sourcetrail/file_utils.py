@@ -139,7 +139,7 @@ def write_processed_bodies(df, base_path):
 
 
 def persist(df: pd.DataFrame, path: str, **kwargs):
-    if path.endswith(".csv"):
+    if path.endswith(".csv") or path.endswith(".tsv"):
         write_csv(df, path, **kwargs)
     elif path.endswith(".pkl") or path.endswith(".bz2"):
         write_pickle(df, path, **kwargs)
