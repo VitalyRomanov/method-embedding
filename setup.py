@@ -47,5 +47,6 @@ setup(name='SourceCodeTools',
             'SourceCodeTools/code/data/sourcetrail/pandas_format_converter.py',
             'SourceCodeTools/code/data/sourcetrail/sourcetrail_create_type_annotation_dataset.py',
             'SourceCodeTools/nlp/embed/converters/convert_fasttext_format_bin_to_vec.py',
+            'SourceCodeTools/models/graph/utils/prepare_dglke_format.py',
       ],
 )
