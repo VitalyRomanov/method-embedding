@@ -3,6 +3,7 @@ from os.path import join
 from tqdm import tqdm
 
 from SourceCodeTools.code.data.sourcetrail.common import map_offsets
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_filter_type_edges import filter_type_edges
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_map_id_columns import map_columns
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_merge_graphs import get_global_node_info, merge_global_with_local
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_node_local2global import get_local2global
@@ -24,7 +25,7 @@ class DatasetCreator:
             self, path, lang,
             bpe_tokenizer, create_subword_instances,
             connect_subwords, only_with_annotations,
-            do_extraction=False, visualize=False, track_offsets=False
+            do_extraction=False, visualize=False, track_offsets=False, remove_type_annotations=False
     ):
         self.indexed_path = path
         self.lang = lang
@@ -35,6 +36,7 @@ class DatasetCreator:
         self.extract = do_extraction
         self.visualize = visualize
         self.track_offsets = track_offsets
+        self.remove_type_annotations = remove_type_annotations
 
         paths = (os.path.join(path, dir) for dir in os.listdir(path))
         self.environments = sorted(list(filter(lambda path: os.path.isdir(path), paths)), key=lambda x: x.lower())
@@ -111,6 +113,16 @@ class DatasetCreator:
         )
         if node_names is not None:
             persist(node_names, join(with_ast_path, "node_names.bz2"))
+
+        if self.remove_type_annotations:
+            no_annotations, annotations = filter_type_edges(
+                unpersist(join(with_ast_path, "common_nodes.bz2")),
+                unpersist(join(with_ast_path, "common_edges.bz2"))
+            )
+            persist(no_annotations, join(with_ast_path, "common_edges.bz2"))
+            if annotations is not None:
+                persist(annotations, join(with_ast_path, "type_annotations.bz2"))
+
 
         if self.visualize:
             self.visualize_func(
@@ -359,6 +371,7 @@ if __name__ == "__main__":
     parser.add_argument('--do_extraction', action='store_true', default=False, help="")
     parser.add_argument('--visualize', action='store_true', default=False, help="")
     parser.add_argument('--track_offsets', action='store_true', default=False, help="")
+    parser.add_argument('--remove_type_annotations', action='store_true', default=False, help="")
 
 
     args = parser.parse_args()
@@ -368,5 +381,5 @@ if __name__ == "__main__":
     dataset = DatasetCreator(args.indexed_environments, args.language,
                              args.bpe_tokenizer, args.create_subword_instances,
                              args.connect_subwords, args.only_with_annotations,
-                             args.do_extraction, args.visualize, args.track_offsets)
+                             args.do_extraction, args.visualize, args.track_offsets, args.remove_type_annotations)
     dataset.merge(args.output_directory)
