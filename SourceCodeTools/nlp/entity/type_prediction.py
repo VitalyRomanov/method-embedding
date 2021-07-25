@@ -117,17 +117,21 @@ class ModelTrainer:
 
     def train_model(self):
 
-        graph_emb = load_pkl_emb(self.graph_emb_path)
+        graph_emb = load_pkl_emb(self.graph_emb_path) if self.graph_emb_path is not None else None
         word_emb = load_pkl_emb(self.word_emb_path)
 
         suffix_prefix_buckets = params.pop("suffix_prefix_buckets")
 
         train_batcher = self.get_batcher(
-            train_data, self.batch_size, seq_len=self.seq_len, graphmap=graph_emb.ind, wordmap=word_emb.ind, tagmap=None,
+            train_data, self.batch_size, seq_len=self.seq_len,
+            graphmap=graph_emb.ind if graph_emb is not None else None,
+            wordmap=word_emb.ind, tagmap=None,
             class_weights=False, element_hash_size=suffix_prefix_buckets
         )
         test_batcher = self.get_batcher(
-            test_data, self.batch_size, seq_len=self.seq_len, graphmap=graph_emb.ind, wordmap=word_emb.ind,
+            test_data, self.batch_size, seq_len=self.seq_len,
+            graphmap=graph_emb.ind if graph_emb is not None else None,
+            wordmap=word_emb.ind,
             tagmap=train_batcher.tagmap,  # use the same mapping
             class_weights=False, element_hash_size=suffix_prefix_buckets  # class_weights are not used for testing
         )
@@ -200,6 +204,8 @@ def get_type_prediction_arguments():
                         help='')
     parser.add_argument('--max_seq_len', dest='max_seq_len', default=100, type=int,
                         help='')
+    parser.add_argument('--min_entity_count', dest='min_entity_count', default=3, type=int,
+                        help='')
     parser.add_argument('--pretraining_epochs', dest='pretraining_epochs', default=0, type=int,
                         help='')
     parser.add_argument('--epochs', dest='epochs', default=500, type=int,
@@ -236,7 +242,7 @@ if __name__ == "__main__":
 
     train_data, test_data = read_data(
         open(args.data_path, "r").readlines(), normalize=True, allowed=None, include_replacements=True, include_only="entities",
-        min_entity_count=1, random_seed=args.random_seed
+        min_entity_count=args.min_entity_count, random_seed=args.random_seed
     )
 
     unique_entities = get_unique_entities(train_data, field="entities")
