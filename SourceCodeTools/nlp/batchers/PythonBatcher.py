@@ -36,7 +36,7 @@ def filter_unlabeled(entities, declarations):
 class PythonBatcher:
     def __init__(
             self, data, batch_size: int, seq_len: int,
-            graphmap: Dict[str, int], wordmap: Dict[str, int], tagmap: Optional[TagMap] = None,
+            wordmap: Dict[str, int], *, graphmap: Optional[Dict[str, int]], tagmap: Optional[TagMap] = None,
             mask_unlabeled_declarations=True,
             class_weights=False, element_hash_size=1000
     ):
@@ -55,13 +55,13 @@ class PythonBatcher:
         else:
             self.tagmap = tagmap
 
-        self.graphpad = len(graphmap)
+        self.graphpad = len(graphmap) if graphmap is not None else None
         self.wordpad = len(wordmap)
         self.tagpad = self.tagmap["O"]
         self.prefpad = element_hash_size
         self.suffpad = element_hash_size
 
-        self.graphmap_func = lambda g: graphmap.get(g, len(graphmap))
+        self.graphmap_func = lambda g: graphmap.get(g, len(graphmap)) if graphmap is not None else None
         self.wordmap_func = lambda w: wordmap.get(w, len(wordmap))
         self.tagmap_func = lambda t: self.tagmap.get(t, len(self.tagmap))
         self.prefmap_func = lambda w: token_hasher(w[:3], element_hash_size)
@@ -151,7 +151,7 @@ class PythonBatcher:
         pref = encode(sent, self.prefmap_func, self.prefpad)
         suff = encode(sent, self.suffmap_func, self.suffpad)
         s = encode(sent, self.wordmap_func, self.wordpad)
-        r = encode(repl, self.graphmap_func, self.graphpad)  # TODO test
+        r = encode(repl, self.graphmap_func, self.graphpad) if self.graphmap_func is not None else None
 
         # labels
         t = encode(tags, self.tagmap_func, self.tagpad)
@@ -169,7 +169,7 @@ class PythonBatcher:
 
         output = {
             "tok_ids": s,
-            "graph_ids": r,
+            # "graph_ids": r,
             "prefix": pref,
             "suffix": suff,
             "tags": t,
@@ -177,6 +177,9 @@ class PythonBatcher:
             "hide_mask": hidem,
             "lens": len(s) if len(s) < self.seq_len else self.seq_len
         }
+
+        if r is not None:
+            output["graph_ids"] = r
 
         self.batch_cache[input_json] = output
         return output
@@ -190,6 +193,9 @@ class PythonBatcher:
         for sent in batch:
             for key, val in sent.items():
                 fbatch[key].append(val)
+
+        if len(fbatch["graph_ids"]) == 0:
+            fbatch.pop("graph_ids")
 
         return {key: np.stack(val) if key != "lens" else np.array(val, dtype=np.int32) for key, val in fbatch.items()}
 
