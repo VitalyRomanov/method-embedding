@@ -95,7 +95,8 @@ def correct_entities(entities, removed_offsets):
             elif offset[0] <= entity[1] <= offset[1] or offset[0] <= entity[0] <= offset[1]:
                 pass  # likely to be a type annotation being removed
             else:
-                raise Exception("Invalid data?")
+                logging.warning(f"Encountered invalid offset: {entity}")
+                # raise Exception("Invalid data?")
 
         for_correction = new_entities
 
@@ -511,7 +512,7 @@ def create_from_dataset():
     data = []
     nlp = create_tokenizer("spacy")
 
-    for f_body, f_offsets in iterate_functions(offsets, node_maps, filecontent):
+    for ind, (f_body, f_offsets) in enumerate(iterate_functions(offsets, node_maps, filecontent)):
         data.append(process_body(nlp, f_body, replacements=f_offsets))
 
     store(data, args)

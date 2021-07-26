@@ -30,9 +30,18 @@ def get_mentions(function, root, mention):
 
 
 def get_descendants(function, children):
+    """
 
+    :param function: function string
+    :param children: List of targets.
+    :return: Offsets for attributes or names that are used as target for assignment operation. Subscript, Tuple and List
+    targets are skipped.
+    """
     descendants = []
 
+    # if isinstance(children, ast.Tuple):
+    #     descendants.extend(get_descendants(function, children.elts))
+    # else:
     for chld in children:
         # for node in ast.walk(chld):
         node = chld
@@ -42,6 +51,10 @@ def get_descendants(function, children):
                                 [(node.lineno-1, node.end_lineno-1, node.col_offset, node.end_col_offset, "new_var")], as_bytes=True)
             # descendants.append((node.id, offset[-1]))
             descendants.append((function[offset[-1][0]:offset[-1][1]], offset[-1]))
+        # elif isinstance(node, ast.Tuple):
+        #     descendants.extend(get_descendants(function, node.elts))
+        elif isinstance(node, ast.Subscript) or isinstance(node, ast.Tuple) or isinstance(node, ast.List):
+            pass # skip for now
         else:
             raise Exception("")
 
