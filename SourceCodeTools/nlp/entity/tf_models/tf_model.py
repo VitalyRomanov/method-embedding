@@ -54,8 +54,8 @@ class DefaultEmbedding(Model):
 class PositionalEncoding(Model):
     def __init__(self, seq_len, pos_emb_size):
         """
-        Create positional embedding matrix for tokens. Currently not using because it results in N^2 computational
-        complexity. Should move this functionality to batch preparation.
+        Create positional embedding with a trainable embedding matrix. Currently not using because it results
+         in N^2 computational complexity. Should move this functionality to batch preparation.
         :param seq_len: maximum sequence length
         :param pos_emb_size: the dimensionality of positional embeddings
         """
@@ -78,9 +78,6 @@ class PositionalEncoding(Model):
 
 
 class TextCnnLayer(Model):
-    """
-
-    """
     def __init__(self, out_dim, kernel_shape, activation=None):
         super(TextCnnLayer, self).__init__()
 
@@ -335,7 +332,7 @@ class TypePredictor(Model):
         :param logits: shape (?, seq_len, num_classes)
         :param labels: ids of token labels, shape (?, seq_len)
         :param lengths: tensor of actual sentence lengths, shape (?,)
-        :param scorer: scorer function, takes `pred_labels` and `true_labels` as aguments
+        :param scorer: scorer function, takes `pred_labels` and `true_labels` as arguments
         :param extra_mask: mask for hiding some of the token labels, not counting them towards the score, shape (?, seq_len)
         :return:
         """
