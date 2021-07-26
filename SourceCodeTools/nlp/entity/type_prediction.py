@@ -18,9 +18,10 @@ from SourceCodeTools.nlp.entity.utils.data import read_data
 
 def load_pkl_emb(path):
     """
-
-    :param path:
-    :return:
+    Load graph embeddings from a pickle file. Embeddigns are stored in class Embedder or in a list of Embedders. The
+        last embedder in the list is returned.
+    :param path: path to graph embeddigs stored as Embedder pickle
+    :return: Embedder object
     """
     embedder = pickle.load(open(path, "rb"))
     if isinstance(embedder, list):
@@ -185,7 +186,7 @@ def get_type_prediction_arguments():
 
     parser = argparse.ArgumentParser(description='Process some integers.')
     parser.add_argument('--data_path', dest='data_path', default=None,
-                        help='Path to the dataset folder')
+                        help='Path to the dataset file')
     parser.add_argument('--graph_emb_path', dest='graph_emb_path', default=None,
                         help='Path to the file with graph embeddings')
     parser.add_argument('--word_emb_path', dest='word_emb_path', default=None,
@@ -215,6 +216,10 @@ def get_type_prediction_arguments():
     if args.finetune is False and args.pretraining_epochs > 0:
         logging.info(f"Finetuning is disabled, but the the number of pretraining epochs is {args.pretraining_epochs}. Setting pretraining epochs to 0.")
         args.pretraining_epochs = 0
+
+    if not os.path.isfile(args.graph_emb_path):
+        logging.warning(f"File with graph embeddings does not exist: {args.graph_emb_path}")
+        args.graph_emb_path = None
     return args
 
 
