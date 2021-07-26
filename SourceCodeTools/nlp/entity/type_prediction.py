@@ -223,7 +223,7 @@ def get_type_prediction_arguments():
         logging.info(f"Finetuning is disabled, but the the number of pretraining epochs is {args.pretraining_epochs}. Setting pretraining epochs to 0.")
         args.pretraining_epochs = 0
 
-    if not os.path.isfile(args.graph_emb_path):
+    if args.graph_emb_path is not None and not os.path.isfile(args.graph_emb_path):
         logging.warning(f"File with graph embeddings does not exist: {args.graph_emb_path}")
         args.graph_emb_path = None
     return args
