@@ -124,13 +124,13 @@ class ModelTrainer:
         suffix_prefix_buckets = params.pop("suffix_prefix_buckets")
 
         train_batcher = self.get_batcher(
-            train_data, self.batch_size, seq_len=self.seq_len,
+            self.train_data, self.batch_size, seq_len=self.seq_len,
             graphmap=graph_emb.ind if graph_emb is not None else None,
             wordmap=word_emb.ind, tagmap=None,
             class_weights=False, element_hash_size=suffix_prefix_buckets
         )
         test_batcher = self.get_batcher(
-            test_data, self.batch_size, seq_len=self.seq_len,
+            self.test_data, self.batch_size, seq_len=self.seq_len,
             graphmap=graph_emb.ind if graph_emb is not None else None,
             wordmap=word_emb.ind,
             tagmap=train_batcher.tagmap,  # use the same mapping
