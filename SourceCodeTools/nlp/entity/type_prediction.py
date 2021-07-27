@@ -116,13 +116,7 @@ class ModelTrainer:
     #     with self.summary_writer.as_default():
     #         tensorflow.summary.scalar(value_name, value, step=step)
 
-    def train_model(self):
-
-        graph_emb = load_pkl_emb(self.graph_emb_path) if self.graph_emb_path is not None else None
-        word_emb = load_pkl_emb(self.word_emb_path)
-
-        suffix_prefix_buckets = params.pop("suffix_prefix_buckets")
-
+    def get_dataloaders(self, word_emb, graph_emb, suffix_prefix_buckets):
         train_batcher = self.get_batcher(
             self.train_data, self.batch_size, seq_len=self.seq_len,
             graphmap=graph_emb.ind if graph_emb is not None else None,
@@ -136,6 +130,16 @@ class ModelTrainer:
             tagmap=train_batcher.tagmap,  # use the same mapping
             class_weights=False, element_hash_size=suffix_prefix_buckets  # class_weights are not used for testing
         )
+        return train_batcher, test_batcher
+
+    def train_model(self):
+
+        graph_emb = load_pkl_emb(self.graph_emb_path) if self.graph_emb_path is not None else None
+        word_emb = load_pkl_emb(self.word_emb_path)
+
+        suffix_prefix_buckets = params.pop("suffix_prefix_buckets")
+
+        train_batcher, test_batcher = self.get_dataloaders(word_emb, graph_emb, suffix_prefix_buckets)
 
         print(f"\n\n{params}")
         lr = params.pop("learning_rate")

@@ -81,16 +81,16 @@ class PythonBatcher:
         else:
             self.classw_func = lambda t: 1.
 
-    def __del__(self):
-        self.sent_cache.close()
-        self.batch_cache.close()
+    # def __del__(self):
+    #     self.sent_cache.close()
+    #     self.batch_cache.close()
 
     def create_cache(self):
-        # self.tmp_dir = tempfile.TemporaryDirectory()
-        # self.sent_cache = shelve.open(os.path.join(self.tmp_dir.name, "sent_cache.db"))
-        # self.batch_cache = shelve.open(os.path.join(self.tmp_dir.name, "batch_cache.db"))
-        self.sent_cache = shelve.open("sent_cache.db")
-        self.batch_cache = shelve.open("batch_cache.db")
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.sent_cache = shelve.open(os.path.join(self.tmp_dir.name, "sent_cache.db"))
+        self.batch_cache = shelve.open(os.path.join(self.tmp_dir.name, "batch_cache.db"))
+        # self.sent_cache = shelve.open("sent_cache.db")
+        # self.batch_cache = shelve.open("batch_cache.db")
 
     def num_classes(self):
         return len(self.tagmap)

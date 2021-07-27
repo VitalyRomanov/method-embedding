@@ -9,7 +9,7 @@ class Encoder(nn.Module):
     def __init__(self, encoder_dim, out_dim, nheads=1, layers=1):
         super(Encoder, self).__init__()
         # self.embed = nn.Embedding(vocab_size, encoder_dim)
-        self.encoder_lauer = nn.TransformerEncoderLayer(encoder_dim, nheads, dim_feedforward=encoder_dim)
+        self.encoder_layer = nn.TransformerEncoderLayer(encoder_dim, nheads, dim_feedforward=encoder_dim)
         self.encoder = nn.TransformerEncoder(self.encoder_lauer, num_layers=layers)
         self.out_adapter = nn.Linear(encoder_dim, out_dim)
 
@@ -27,7 +27,6 @@ class Encoder(nn.Module):
 
         out = self.out_adapter(out)
         return out.permute(1, 0, 2)
-
 
 
 class LSTMEncoder(nn.Module):

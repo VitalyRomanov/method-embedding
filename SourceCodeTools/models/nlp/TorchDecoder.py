@@ -1,24 +1,32 @@
+import logging
+
 import torch
 from torch import nn
 from torch.nn import Embedding
 import torch.nn.functional as F
 from torch.autograd import Variable
 
+from SourceCodeTools.models.nlp.common import positional_encoding
+
 
 class Decoder(nn.Module):
-    def __init__(self, encoder_out_dim, decoder_dim, out_dim, vocab_size, nheads=1, layers=1):
+    def __init__(self, encoder_out_dim, decoder_dim, out_dim, vocab_size, seq_len, nheads=1, layers=1):
         super(Decoder, self).__init__()
         self.encoder_adapter = nn.Linear(encoder_out_dim, decoder_dim)
         self.embed = nn.Embedding(vocab_size, decoder_dim)
         self.decoder_layer = nn.TransformerDecoderLayer(decoder_dim, nheads, dim_feedforward=decoder_dim)
         self.decoder = nn.TransformerDecoder(self.decoder_layer, num_layers=layers)
         self.mask = self.generate_square_subsequent_mask(1)
+        self.seq_len = seq_len
+
+        self.position_encoding = positional_encoding(self.seq_len, decoder_dim).permute(1, 0, 2)
 
         self.fc = nn.Linear(decoder_dim, out_dim)
 
     def forward(self, encoder_out, target):
         encoder_out = self.encoder_adapter(encoder_out).permute(1, 0, 2)
         target = self.embed(target).permute(1, 0, 2)
+        target = target + self.position_encoding[:target.shape[0]]
         if self.mask.size(0) != target.size(0):  # for self-attention
             self.mask = self.generate_square_subsequent_mask(target.size(0)).to(encoder_out.device)
         out = self.decoder(target, encoder_out, tgt_mask=self.mask)
