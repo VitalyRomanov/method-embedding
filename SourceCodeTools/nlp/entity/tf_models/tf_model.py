@@ -12,6 +12,7 @@ import tensorflow_addons as tfa
 
 from tensorflow.keras.layers import Dense, Conv2D, Flatten, Input, Embedding, concatenate
 from tensorflow.keras import Model
+from tensorflow.keras.layers import Layer
 # from tensorflow.keras import regularizers
 
 # from spacy.gold import offsets_from_biluo_tags
@@ -21,191 +22,10 @@ from tensorflow.keras import Model
 # https://github.com/dhiraa/tener/tree/master/src/tener/models
 # https://arxiv.org/pdf/1903.07785v1.pdf
 # https://github.com/tensorflow/models/tree/master/research/cvt_text/model
+from tensorflow_addons.layers import MultiHeadAttention
 
-
-class DefaultEmbedding(Model):
-    """
-    Creates an embedder that provides the default value for the index -1. The default value is a zero-vector
-    """
-    def __init__(self, init_vectors=None, shape=None, trainable=True):
-        super(DefaultEmbedding, self).__init__()
-
-        if init_vectors is not None:
-            self.embs = tf.Variable(init_vectors, dtype=tf.float32,
-                           trainable=trainable, name="default_embedder_var")
-            shape = init_vectors.shape
-        else:
-            # TODO
-            # the default value is no longer constant. need to replace this with a standard embedder
-            self.embs = tf.Variable(tf.random.uniform(shape=(shape[0], shape[1]), dtype=tf.float32),
-                               name="default_embedder_pad")
-        # self.pad = tf.zeros(shape=(1, init_vectors.shape[1]), name="default_embedder_pad")
-        # self.pad = tf.random.uniform(shape=(1, init_vectors.shape[1]), name="default_embedder_pad")
-        self.pad = tf.Variable(tf.random.uniform(shape=(1, shape[1]), dtype=tf.float32),
-                               name="default_embedder_pad")
-
-
-    def __call__(self, ids):
-        emb_matr = tf.concat([self.embs, self.pad], axis=0)
-        return tf.nn.embedding_lookup(params=emb_matr, ids=ids)
-        # return tf.expand_dims(tf.nn.embedding_lookup(params=self.emb_matr, ids=ids), axis=3)
-
-
-class PositionalEncoding(Model):
-    def __init__(self, seq_len, pos_emb_size):
-        """
-        Create positional embedding with a trainable embedding matrix. Currently not using because it results
-         in N^2 computational complexity. Should move this functionality to batch preparation.
-        :param seq_len: maximum sequence length
-        :param pos_emb_size: the dimensionality of positional embeddings
-        """
-        super(PositionalEncoding, self).__init__()
-
-        positions = list(range(seq_len * 2))
-        position_splt = positions[:seq_len]
-        position_splt.reverse()
-        self.position_encoding = tf.constant(toeplitz(position_splt, positions[seq_len:]),
-                                        dtype=tf.int32,
-                                        name="position_encoding")
-        # self.position_embedding = tf.random.uniform(name="position_embedding", shape=(seq_len * 2, pos_emb_size), dtype=tf.float32)
-        self.position_embedding = tf.Variable(tf.random.uniform(shape=(seq_len * 2, pos_emb_size), dtype=tf.float32),
-                               name="position_embedding")
-        # self.position_embedding = tf.Variable(name="position_embedding", shape=(seq_len * 2, pos_emb_size), dtype=tf.float32)
-
-    def __call__(self):
-        # return tf.nn.embedding_lookup(self.position_embedding, self.position_encoding, name="position_lookup")
-        return tf.nn.embedding_lookup(self.position_embedding, self.position_encoding, name="position_lookup")
-
-
-class TextCnnLayer(Model):
-    def __init__(self, out_dim, kernel_shape, activation=None):
-        super(TextCnnLayer, self).__init__()
-
-        self.kernel_shape = kernel_shape
-        self.out_dim = out_dim
-
-        self.textConv = Conv2D(filters=out_dim, kernel_size=kernel_shape,
-                                  activation=activation, data_format='channels_last')
-
-        padding_size = (self.kernel_shape[0] - 1) // 2
-        assert padding_size * 2 + 1 == self.kernel_shape[0]
-        self.pad_constant = tf.constant([[0, 0], [padding_size, padding_size], [0, 0], [0, 0]])
-
-    def __call__(self, x):
-        padded = tf.pad(x, self.pad_constant)
-        # emb_sent_exp = tf.expand_dims(input, axis=3)
-        convolve = self.textConv(padded)
-        return tf.squeeze(convolve, axis=-2)
-
-
-class TextCnn(Model):
-    """
-    TextCnn model for classifying tokens in a sequence. The model uses following pipeline:
-
-    token_embeddings (provided from outside) ->
-    several convolutional layers, get representations for all tokens ->
-    pass representation for all tokens through a dense network ->
-    classify each token
-    """
-    def __init__(self, input_size, h_sizes, seq_len,
-                 pos_emb_size, cnn_win_size, dense_size, num_classes,
-                 activation=None, dense_activation=None, drop_rate=0.2):
-        """
-
-        :param input_size: dimensionality of input embeddings
-        :param h_sizes: sizes of hidden CNN layers, internal dimensionality of token embeddings
-        :param seq_len: maximum sequence length
-        :param pos_emb_size: dimensionality of positional embeddings
-        :param cnn_win_size: width of cnn window
-        :param dense_size: number of unius in dense network
-        :param num_classes: number of output units
-        :param activation: activation for cnn
-        :param dense_activation: activation for dense layers
-        :param drop_rate: dropout rate for dense network
-        """
-        super(TextCnn, self).__init__()
-
-        self.seq_len = seq_len
-        self.h_sizes = h_sizes
-        self.dense_size = dense_size
-        self.num_classes = num_classes
-
-        def infer_kernel_sizes(h_sizes):
-            """
-            Compute kernel sizes from the desired dimensionality of hidden layers
-            :param h_sizes:
-            :return:
-            """
-            kernel_sizes = copy(h_sizes)
-            kernel_sizes.pop(-1) # pop last because it is the output of the last CNN layer
-            kernel_sizes.insert(0, input_size) # the first kernel size should be (cnn_win_size, input_size)
-            kernel_sizes = [(cnn_win_size, ks) for ks in kernel_sizes]
-            return kernel_sizes
-
-        kernel_sizes = infer_kernel_sizes(h_sizes)
-
-        self.layers_tok = [ TextCnnLayer(out_dim=h_size, kernel_shape=kernel_size, activation=activation)
-            for h_size, kernel_size in zip(h_sizes, kernel_sizes)]
-
-        # self.layers_pos = [TextCnnLayer(out_dim=h_size, kernel_shape=(cnn_win_size, pos_emb_size), activation=activation)
-        #                for h_size, _ in zip(h_sizes, kernel_sizes)]
-
-        # self.positional = PositionalEncoding(seq_len=seq_len, pos_emb_size=pos_emb_size)
-
-        if dense_activation is None:
-            dense_activation = activation
-
-        # self.attention = tfa.layers.MultiHeadAttention(head_size=200, num_heads=1)
-
-        self.dense_1 = Dense(dense_size, activation=dense_activation)
-        self.dropout_1 = tf.keras.layers.Dropout(rate=drop_rate)
-        self.dense_2 = Dense(num_classes, activation=None) # logits
-        self.dropout_2 = tf.keras.layers.Dropout(rate=drop_rate)
-
-    def __call__(self, embs, training=True):
-
-        temp_cnn_emb = embs # shape (?, seq_len, input_size)
-
-        # pass embeddings through several CNN layers
-        for l in self.layers_tok:
-            temp_cnn_emb = l(tf.expand_dims(temp_cnn_emb, axis=3)) # shape (?, seq_len, h_size)
-
-        # TODO
-        # simplify to one CNN and one attention
-
-        # pos_cnn = self.positional()
-        # for l in self.layers_pos:
-        #     pos_cnn = l(tf.expand_dims(pos_cnn, axis=3))
-        #
-        # cnn_pool_feat = []
-        # for i in range(self.seq_len):
-        #     # slice tensor for the line that corresponds to the current position in the sentence
-        #     position_features = tf.expand_dims(pos_cnn[i, ...], axis=0, name="exp_dim_%d" % i)
-        #     # convolution without activation can be combined later, hence: temp_cnn_emb + position_features
-        #     cnn_pool_feat.append(
-        #         tf.expand_dims(tf.nn.tanh(tf.reduce_max(temp_cnn_emb + position_features, axis=1)), axis=1))
-        #     # cnn_pool_feat.append(
-        #     #     tf.expand_dims(tf.nn.tanh(tf.reduce_max(tf.concat([temp_cnn_emb, position_features], axis=-1), axis=1)), axis=1))
-        #
-        # cnn_pool_features = tf.concat(cnn_pool_feat, axis=1)
-        cnn_pool_features = temp_cnn_emb
-
-        # cnn_pool_features = self.attention([cnn_pool_features, cnn_pool_features])
-
-        # token_features = self.dropout_1(
-        #     tf.reshape(cnn_pool_features, shape=(-1, self.h_sizes[-1]))
-        #     , training=training)
-
-        # reshape before passing through a dense network
-        token_features = tf.reshape(cnn_pool_features, shape=(-1, self.h_sizes[-1])) # shape (? * seq_len, h_size[-1])
-
-        # local_h2 = self.dropout_2(
-        #     self.dense_1(token_features)
-        #     , training=training)
-        local_h2 = self.dense_1(token_features) # shape (? * seq_len, dense_size)
-        tag_logits = self.dense_2(local_h2) # shape (? * seq_len, num_classes)
-
-        return tf.reshape(tag_logits, (-1, self.seq_len, self.num_classes)) # reshape back, shape (?, seq_len, num_classes)
+from SourceCodeTools.models.nlp.TFDecoder import ConditionalAttentionDecoder, FlatDecoder
+from SourceCodeTools.models.nlp.TFEncoder import DefaultEmbedding, TextCnnEncoder, GRUEncoder
 
 
 class TypePredictor(Model):
@@ -221,7 +41,7 @@ class TypePredictor(Model):
                  seq_len=100, pos_emb_size=30, cnn_win_size=3,
                  crf_transitions=None, suffix_prefix_dims=50, suffix_prefix_buckets=1000):
         """
-        Initialize TypePredictor. Model initializes embedding layers and then passes embeddings to TextCnn model
+        Initialize TypePredictor. Model initializes embedding layers and then passes embeddings to TextCnnEncoder model
         :param tok_embedder: Embedder for tokens
         :param graph_embedder: Embedder for graph nodes
         :param train_embeddings: whether to finetune embeddings
@@ -252,6 +72,8 @@ class TypePredictor(Model):
         self.prefix_emb = DefaultEmbedding(shape=(suffix_prefix_buckets, suffix_prefix_dims))
         self.suffix_emb = DefaultEmbedding(shape=(suffix_prefix_buckets, suffix_prefix_dims))
 
+        # self.concat = EmbeddingConcatenator()
+
         # self.tok_emb = Embedding(input_dim=tok_embedder.e.shape[0],
         #                          output_dim=tok_embedder.e.shape[1],
         #                          weights=tok_embedder.e, trainable=train_embeddings,
@@ -265,16 +87,24 @@ class TypePredictor(Model):
         # compute final embedding size after concatenation
         input_dim = tok_embedder.e.shape[1] + suffix_prefix_dims * 2 + graph_embedder.e.shape[1]
 
-        self.text_cnn = TextCnn(input_size=input_dim, h_sizes=h_sizes,
+        self.encoder = TextCnnEncoder(input_size=input_dim, h_sizes=h_sizes,
                                 seq_len=seq_len, pos_emb_size=pos_emb_size,
                                 cnn_win_size=cnn_win_size, dense_size=dense_size,
-                                num_classes=num_classes, activation=tf.nn.relu,
+                                out_dim=input_dim, activation=tf.nn.relu,
                                 dense_activation=tf.nn.tanh)
+        # self.encoder = GRUEncoder(input_dim=input_dim, out_dim=input_dim, num_layers=1, dropout=0.1)
+
+        self.decoder = ConditionalAttentionDecoder(
+            input_dim, out_dim=num_classes, num_layers=1, num_heads=1,
+            ff_hidden=100, target_vocab_size=num_classes, maximum_position_encoding=self.seq_len
+        )
+        # self.decoder = FlatDecoder(out_dims=num_classes)
 
         self.crf_transition_params = None
 
+        self.supports_masking = True
 
-    def __call__(self, token_ids, prefix_ids, suffix_ids, graph_ids, training=True):
+    def __call__(self, token_ids, prefix_ids, suffix_ids, graph_ids, target=None, training=True, mask=None):
         """
         Inference
         :param token_ids: ids for tokens, shape (?, seq_len)
@@ -294,12 +124,15 @@ class TypePredictor(Model):
                           prefix_emb,
                           suffix_emb], axis=-1)
 
-        logits = self.text_cnn(embs, training=training)
+        encoded = self.encoder(embs, training=training, mask=mask)
+        if target is None:
+            logits = self.decoder.seq_decode(encoded, training=training, mask=mask)
+        else:
+            logits, _ = self.decoder((encoded, target), training=training, mask=mask) # consider sending input instead of target
 
         return logits
 
-
-    def loss(self, logits, labels, lengths, class_weights=None, extra_mask=None):
+    def loss(self, logits, labels, class_weights=None, extra_mask=None):
         """
         Compute cross-entropy loss for each meaningful tokens. Mask padded tokens.
         :param logits: shape (?, seq_len, num_classes)
@@ -310,7 +143,7 @@ class TypePredictor(Model):
         :return: average cross-entropy loss
         """
         losses = tf.nn.softmax_cross_entropy_with_logits(tf.one_hot(labels, depth=logits.shape[-1]), logits, axis=-1)
-        seq_mask = tf.sequence_mask(lengths, self.seq_len)
+        seq_mask = logits._keras_mask# tf.sequence_mask(lengths, self.seq_len)
         if extra_mask is not None:
             seq_mask = tf.math.logical_and(seq_mask, extra_mask)
         if class_weights is None:
@@ -326,7 +159,7 @@ class TypePredictor(Model):
 
         return loss
 
-    def score(self, logits, labels, lengths, scorer=None, extra_mask=None):
+    def score(self, logits, labels, scorer=None, extra_mask=None):
         """
         Compute precision, recall and f1 scores using the provided scorer function
         :param logits: shape (?, seq_len, num_classes)
@@ -336,7 +169,7 @@ class TypePredictor(Model):
         :param extra_mask: mask for hiding some of the token labels, not counting them towards the score, shape (?, seq_len)
         :return:
         """
-        mask = tf.sequence_mask(lengths, self.seq_len)
+        mask = logits._keras_mask # tf.sequence_mask(lengths, self.seq_len)
         if extra_mask is not None:
             mask = tf.math.logical_and(mask, extra_mask)
         true_labels = tf.boolean_mask(labels, mask)
@@ -376,9 +209,9 @@ def train_step_finetune(model, optimizer, token_ids, prefix, suffix, graph_ids, 
     :return: values for loss, precision, recall and f1-score
     """
     with tf.GradientTape() as tape:
-        logits = model(token_ids, prefix, suffix, graph_ids, training=True)
-        loss = model.loss(logits, labels, lengths, class_weights=class_weights, extra_mask=extra_mask)
-        p, r, f1 = model.score(logits, labels, lengths, scorer=scorer, extra_mask=extra_mask)
+        logits = model(token_ids, prefix, suffix, graph_ids, target=labels, training=True, mask=tf.sequence_mask(lengths, model.seq_len))
+        loss = model.loss(logits, labels, class_weights=class_weights, extra_mask=extra_mask)
+        p, r, f1 = model.score(logits, labels, scorer=scorer, extra_mask=extra_mask)
         gradients = tape.gradient(loss, model.trainable_variables)
         if not finetune:
             # do not update embeddings
@@ -405,9 +238,9 @@ def test_step(model, token_ids, prefix, suffix, graph_ids, labels, lengths, extr
     :param scorer: scorer function, takes `pred_labels` and `true_labels` as aguments
     :return: values for loss, precision, recall and f1-score
     """
-    logits = model(token_ids, prefix, suffix, graph_ids, training=False)
-    loss = model.loss(logits, labels, lengths, class_weights=class_weights, extra_mask=extra_mask)
-    p, r, f1 = model.score(logits, labels, lengths, scorer=scorer, extra_mask=extra_mask)
+    logits = model(token_ids, prefix, suffix, graph_ids, target=labels, training=False, mask=tf.sequence_mask(lengths, model.seq_len))
+    loss = model.loss(logits, labels, class_weights=class_weights, extra_mask=extra_mask)
+    p, r, f1 = model.score(logits, labels, scorer=scorer, extra_mask=extra_mask)
 
     return loss, p, r, f1
 
