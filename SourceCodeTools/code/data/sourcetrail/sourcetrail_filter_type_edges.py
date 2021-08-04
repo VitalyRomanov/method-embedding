@@ -5,8 +5,8 @@ from SourceCodeTools.code.data.sourcetrail.file_utils import *
 
 
 def filter_type_edges(nodes, edges, keep_proportion=0.0):
-    annotations = edges.query(f"type == 'annotation_for' or type == 'returned_by'")
-    no_annotations = edges.query(f"type != 'annotation_for' and type != 'returned_by'")
+    annotations = edges.query(f"type == 'annotation_for' or type == 'returned_by' or type == 'annotation_for_rev' or type == 'returned_by_rev'")
+    no_annotations = edges.query(f"type != 'annotation_for' and type != 'returned_by' and type != 'annotation_for_rev' and type != 'returned_by_rev'")
 
     to_keep = int(len(annotations) * keep_proportion)
     if to_keep == 0:
