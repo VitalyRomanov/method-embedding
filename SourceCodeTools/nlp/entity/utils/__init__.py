@@ -24,7 +24,7 @@ from spacy.gold import biluo_tags_from_offsets, offsets_from_biluo_tags
 
 
 def normalize_entities(entities):
-    norm = lambda x: x.split("[")[0].split(".")[-1]
+    norm = lambda x: x.strip("\"").strip("'").split("[")[0].split(".")[-1]
 
     if len(entities) == 0:
         return entities
