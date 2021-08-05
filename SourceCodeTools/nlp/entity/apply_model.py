@@ -4,6 +4,9 @@ import json
 import os
 import pickle
 
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
+
 import tensorflow as tf
 
 from SourceCodeTools.nlp.entity import parse_biluo
@@ -120,5 +123,5 @@ if __name__ == "__main__":
 
     apply_to_dataset(
         test_data, PythonBatcher, TypePredictor, graph_emb_path=args.graph_emb_path, word_emb_path=args.word_emb_path,
-        checkpoint_path=args.checkpoint_path, batch_size=10
+        checkpoint_path=args.checkpoint_path, batch_size=32
     )
