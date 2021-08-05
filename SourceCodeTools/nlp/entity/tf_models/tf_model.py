@@ -85,7 +85,7 @@ class TypePredictor(Model):
         #                          mask_zero=True)
 
         # compute final embedding size after concatenation
-        input_dim = tok_embedder.e.shape[1] + suffix_prefix_dims * 2 + graph_embedder.e.shape[1]
+        input_dim = tok_embedder.e.shape[1] + suffix_prefix_dims * 2 #+ graph_embedder.e.shape[1]
 
         self.encoder = TextCnnEncoder(input_size=input_dim, h_sizes=h_sizes,
                                 seq_len=seq_len, pos_emb_size=pos_emb_size,
@@ -115,20 +115,20 @@ class TypePredictor(Model):
         :return: logits for token classes, shape (?, seq_len, num_classes)
         """
         tok_emb = self.tok_emb(token_ids)
-        graph_emb = self.graph_emb(graph_ids)
+        # graph_emb = self.graph_emb(graph_ids)
         prefix_emb = self.prefix_emb(prefix_ids)
         suffix_emb = self.suffix_emb(suffix_ids)
 
         embs = tf.concat([tok_emb,
-                          graph_emb,
+                          # graph_emb,
                           prefix_emb,
                           suffix_emb], axis=-1)
 
         encoded = self.encoder(embs, training=training, mask=mask)
-        if target is None:
-            logits = self.decoder.seq_decode(encoded, training=training, mask=mask)
-        else:
-            logits, _ = self.decoder((encoded, target), training=training, mask=mask) # consider sending input instead of target
+        # if target is None:
+        #     logits = self.decoder.seq_decode(encoded, training=training, mask=mask)
+        # else:
+        logits, _ = self.decoder((encoded, target), training=training, mask=mask) # consider sending input instead of target
 
         return logits
 
@@ -209,7 +209,7 @@ def train_step_finetune(model, optimizer, token_ids, prefix, suffix, graph_ids, 
     :return: values for loss, precision, recall and f1-score
     """
     with tf.GradientTape() as tape:
-        logits = model(token_ids, prefix, suffix, graph_ids, target=labels, training=True, mask=tf.sequence_mask(lengths, model.seq_len))
+        logits = model(token_ids, prefix, suffix, graph_ids, target=None, training=True, mask=tf.sequence_mask(lengths, model.seq_len))
         loss = model.loss(logits, labels, class_weights=class_weights, extra_mask=extra_mask)
         p, r, f1 = model.score(logits, labels, scorer=scorer, extra_mask=extra_mask)
         gradients = tape.gradient(loss, model.trainable_variables)
@@ -238,7 +238,7 @@ def test_step(model, token_ids, prefix, suffix, graph_ids, labels, lengths, extr
     :param scorer: scorer function, takes `pred_labels` and `true_labels` as aguments
     :return: values for loss, precision, recall and f1-score
     """
-    logits = model(token_ids, prefix, suffix, graph_ids, target=labels, training=False, mask=tf.sequence_mask(lengths, model.seq_len))
+    logits = model(token_ids, prefix, suffix, graph_ids, target=None, training=False, mask=tf.sequence_mask(lengths, model.seq_len))
     loss = model.loss(logits, labels, class_weights=class_weights, extra_mask=extra_mask)
     p, r, f1 = model.score(logits, labels, scorer=scorer, extra_mask=extra_mask)
 
@@ -304,8 +304,8 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
                     tf.summary.scalar("Recall/Test", test_r, step=e * num_test_batches + ind)
                     tf.summary.scalar("F1/Test", test_f1, step=e * num_test_batches + ind)
 
-                print(f"Epoch: {e}, Train Loss: {sum(losses) / len(losses)}, Train P: {sum(ps) / len(ps)}, Train R: {sum(rs) / len(rs)}, Train F1: {sum(f1s) / len(f1s)}, "
-                      f"Test loss: {test_loss}, Test P: {test_p}, Test R: {test_r}, Test F1: {test_f1}")
+                print(f"Epoch: {e}, Train Loss: {sum(losses) / len(losses): .4f}, Train P: {sum(ps) / len(ps): .4f}, Train R: {sum(rs) / len(rs): .4f}, Train F1: {sum(f1s) / len(f1s): .4f}, "
+                      f"Test loss: {test_loss: .4f}, Test P: {test_p: .4f}, Test R: {test_r: .4f}, Test F1: {test_f1: .4f}")
 
                 train_losses.append(float(sum(losses) / len(losses)))
                 train_f1s.append(float(sum(f1s) / len(f1s)))
