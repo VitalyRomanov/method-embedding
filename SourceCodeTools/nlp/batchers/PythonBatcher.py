@@ -43,7 +43,7 @@ class PythonBatcher:
 
         self.create_cache()
 
-        self.data = data
+        self.data = sorted(data, key=lambda x: len(x[0]))
         self.batch_size = batch_size
         self.seq_len = seq_len
         self.class_weights = None
@@ -81,16 +81,16 @@ class PythonBatcher:
         else:
             self.classw_func = lambda t: 1.
 
-    # def __del__(self):
-    #     self.sent_cache.close()
-    #     self.batch_cache.close()
+    def __del__(self):
+        self.sent_cache.close()
+        self.batch_cache.close()
 
     def create_cache(self):
-        self.tmp_dir = tempfile.TemporaryDirectory()
-        self.sent_cache = shelve.open(os.path.join(self.tmp_dir.name, "sent_cache.db"))
-        self.batch_cache = shelve.open(os.path.join(self.tmp_dir.name, "batch_cache.db"))
-        # self.sent_cache = shelve.open("sent_cache.db")
-        # self.batch_cache = shelve.open("batch_cache.db")
+        # self.tmp_dir = tempfile.TemporaryDirectory()
+        # self.sent_cache = shelve.open(os.path.join(self.tmp_dir.name, "sent_cache.db"))
+        # self.batch_cache = shelve.open(os.path.join(self.tmp_dir.name, "batch_cache.db"))
+        self.sent_cache = shelve.open("sent_cache")
+        self.batch_cache = shelve.open("batch_cache")
 
     def num_classes(self):
         return len(self.tagmap)
@@ -181,7 +181,7 @@ class PythonBatcher:
             "tags": t,
             "class_weights": classw,
             "hide_mask": hidem,
-            "lens": len(s) if len(s) < self.seq_len else self.seq_len
+            "lens": len(sent) if len(sent) < self.seq_len else self.seq_len
         }
 
         if r is not None:
@@ -203,7 +203,9 @@ class PythonBatcher:
         if len(fbatch["graph_ids"]) == 0:
             fbatch.pop("graph_ids")
 
-        return {key: np.stack(val) if key != "lens" else np.array(val, dtype=np.int32) for key, val in fbatch.items()}
+        max_len = max(fbatch["lens"])
+
+        return {key: np.stack(val)[:,:max_len] if key != "lens" else np.array(val, dtype=np.int32) for key, val in fbatch.items()}
 
     def generate_batches(self):
         batch = []
