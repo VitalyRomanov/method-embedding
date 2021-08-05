@@ -28,23 +28,26 @@ def main():
     for s, v in zip(steps, buffer_pos):
         plt.plot(np.log10(s), np.log10(v))
     plt.xlabel("Step")
-    plt.xlabel("Loss")
+    plt.ylabel("Loss")
     plt.legend(model_names)
     plt.savefig("positive_loss.png")
+    plt.close()
 
     for s, v in zip(steps, buffer_neg):
         plt.plot(np.log10(s), np.log10(v))
     plt.xlabel("Step")
-    plt.xlabel("Loss")
+    plt.ylabel("Loss")
     plt.legend(model_names)
     plt.savefig("negative_loss.png")
+    plt.close()
 
     for s, v, n in zip(steps, buffer_pos, buffer_neg):
         plt.plot(np.log10(s), np.log10(np.array(v) + np.array(n)))
     plt.xlabel("Step")
-    plt.xlabel("Loss")
+    plt.ylabel("Loss")
     plt.legend(model_names)
     plt.savefig("overall_loss.png")
+    plt.close()
 
 
 
