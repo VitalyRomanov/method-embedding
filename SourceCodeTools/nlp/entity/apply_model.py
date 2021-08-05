@@ -76,7 +76,8 @@ def apply_to_dataset(data, Batcher, Model, graph_emb_path=None, word_emb_path=No
     params.pop("learning_rate_decay")
 
     model = Model(
-        word_emb, graph_emb, train_embeddings=False, num_classes=len(tagmap), seq_len=seq_len, **params
+        word_emb, graph_emb, train_embeddings=False, num_classes=len(tagmap), seq_len=seq_len,
+        suffix_prefix_buckets=suffix_prefix_buckets, **params
     )
 
     model.load_weights(os.path.join(checkpoint_path, "checkpoint"))
@@ -119,5 +120,5 @@ if __name__ == "__main__":
 
     apply_to_dataset(
         test_data, PythonBatcher, TypePredictor, graph_emb_path=args.graph_emb_path, word_emb_path=args.word_emb_path,
-        checkpoint_path=args.checkpoint_path, batch_size=args.batch_size
+        checkpoint_path=args.checkpoint_path, batch_size=10
     )
