@@ -75,16 +75,26 @@ class ConditionalAttentionDecoder(tf.keras.layers.Layer):
         return mask
 
     def call(self, inputs, training=None, mask=None):
-        encoder_out, target = inputs
+        if len(inputs) == 2:
+            encoder_out, target = inputs
+        elif len(inputs) == 1:
+            encoder_out = inputs
+            target = None
+        else:
+            raise ValueError("Incorrect number of parameters")
 
-        seq_len = tf.shape(target)[1]
+        if target is None:
+            seq_len = tf.shape(encoder_out)[1]
+            x = encoder_out
+        else:
+            seq_len = tf.shape(target)[1]
+            x = self.embedding(target)  # (batch_size, target_seq_len, d_model)
+        x += self.pos_encoding[:, :seq_len, :]
+
         if self.look_ahead_mask.shape[0] != seq_len:
             self.look_ahead_mask = self.create_look_ahead_mask(seq_len)
 
         attention_weights = {}
-
-        x = self.embedding(target)  # (batch_size, target_seq_len, d_model)
-        x += self.pos_encoding[:, :seq_len, :]
 
         x = self.dropout(x, training=training)
 
