@@ -7,6 +7,9 @@ import pickle
 from copy import copy
 from datetime import datetime
 
+# os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
+
 import tensorflow
 
 from SourceCodeTools.nlp.batchers import PythonBatcher
