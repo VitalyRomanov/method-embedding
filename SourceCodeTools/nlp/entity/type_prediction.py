@@ -148,7 +148,7 @@ class ModelTrainer:
         lr = params.pop("learning_rate")
         lr_decay = params.pop("learning_rate_decay")
 
-        param_dir = os.path.join(output_dir, str(datetime.now()))
+        param_dir = os.path.join(output_dir, str(datetime.now())).replace(":","-").replace(" ","_")
         os.mkdir(param_dir)
 
         for trial_ind in range(self.trials):
