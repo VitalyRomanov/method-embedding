@@ -94,11 +94,11 @@ class TypePredictor(Model):
                                 dense_activation=tf.nn.tanh)
         # self.encoder = GRUEncoder(input_dim=input_dim, out_dim=input_dim, num_layers=1, dropout=0.1)
 
-        self.decoder = ConditionalAttentionDecoder(
-            input_dim, out_dim=num_classes, num_layers=1, num_heads=1,
-            ff_hidden=100, target_vocab_size=num_classes, maximum_position_encoding=self.seq_len
-        )
-        # self.decoder = FlatDecoder(out_dims=num_classes)
+        # self.decoder = ConditionalAttentionDecoder(
+        #     input_dim, out_dim=num_classes, num_layers=1, num_heads=1,
+        #     ff_hidden=100, target_vocab_size=num_classes, maximum_position_encoding=self.seq_len
+        # )
+        self.decoder = FlatDecoder(out_dims=num_classes)
 
         self.crf_transition_params = None
 
@@ -209,7 +209,7 @@ def train_step_finetune(model, optimizer, token_ids, prefix, suffix, graph_ids, 
     :return: values for loss, precision, recall and f1-score
     """
     with tf.GradientTape() as tape:
-        logits = model(token_ids, prefix, suffix, graph_ids, target=None, training=True, mask=tf.sequence_mask(lengths, model.seq_len))
+        logits = model(token_ids, prefix, suffix, graph_ids, target=None, training=True, mask=tf.sequence_mask(lengths, token_ids.shape[1]))
         loss = model.loss(logits, labels, class_weights=class_weights, extra_mask=extra_mask)
         p, r, f1 = model.score(logits, labels, scorer=scorer, extra_mask=extra_mask)
         gradients = tape.gradient(loss, model.trainable_variables)
@@ -238,7 +238,7 @@ def test_step(model, token_ids, prefix, suffix, graph_ids, labels, lengths, extr
     :param scorer: scorer function, takes `pred_labels` and `true_labels` as aguments
     :return: values for loss, precision, recall and f1-score
     """
-    logits = model(token_ids, prefix, suffix, graph_ids, target=None, training=False, mask=tf.sequence_mask(lengths, model.seq_len))
+    logits = model(token_ids, prefix, suffix, graph_ids, target=None, training=False, mask=tf.sequence_mask(lengths, token_ids.shape[1]))
     loss = model.loss(logits, labels, class_weights=class_weights, extra_mask=extra_mask)
     p, r, f1 = model.score(logits, labels, scorer=scorer, extra_mask=extra_mask)
 
