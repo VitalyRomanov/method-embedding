@@ -193,15 +193,15 @@ class TextCnnEncoder(Model):
         #     , training=training)
 
         # reshape before passing through a dense network
-        token_features = tf.reshape(cnn_pool_features, shape=(-1, self.h_sizes[-1])) # shape (? * seq_len, h_size[-1])
+        # token_features = tf.reshape(cnn_pool_features, shape=(-1, self.h_sizes[-1])) # shape (? * seq_len, h_size[-1])
 
         # local_h2 = self.dropout_2(
         #     self.dense_1(token_features)
         #     , training=training)
-        local_h2 = self.dense_1(token_features) # shape (? * seq_len, dense_size)
+        local_h2 = self.dense_1(cnn_pool_features) # shape (? * seq_len, dense_size)
         tag_logits = self.dense_2(local_h2) # shape (? * seq_len, num_classes)
 
-        return tf.reshape(tag_logits, (-1, self.seq_len, self.out_dim)) # reshape back, shape (?, seq_len, num_classes)
+        return tag_logits  # tf.reshape(tag_logits, (-1, seq_len, self.out_dim)) # reshape back, shape (?, seq_len, num_classes)
 
 
 class GRUEncoder(Model):
