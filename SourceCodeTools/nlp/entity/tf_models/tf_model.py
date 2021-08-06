@@ -211,6 +211,7 @@ def train_step_finetune(model, optimizer, token_ids, prefix, suffix, graph_ids, 
     with tf.GradientTape() as tape:
         logits = model(token_ids, prefix, suffix, graph_ids, target=None, training=True, mask=tf.sequence_mask(lengths, token_ids.shape[1]))
         loss = model.loss(logits, labels, class_weights=class_weights, extra_mask=extra_mask)
+        # token_acc = tf.reduce_sum(tf.cast(tf.argmax(logits, axis=-1) == labels, tf.float32)) / (token_ids.shape[0] * token_ids.shape[1])
         p, r, f1 = model.score(logits, labels, scorer=scorer, extra_mask=extra_mask)
         gradients = tape.gradient(loss, model.trainable_variables)
         if not finetune:

@@ -81,18 +81,23 @@ class PythonBatcher:
         else:
             self.classw_func = lambda t: 1.
 
-    # def __del__(self):
-    #     self.sent_cache.close()
-    #     self.batch_cache.close()
+    def __del__(self):
+        self.sent_cache.close()
+        self.batch_cache.close()
+
+        from shutil import rmtree
+        rmtree(self.tmp_dir, ignore_errors=True)
 
     def create_cache(self):
-        self.sent_cache = None
-        self.batch_cache = None
-        self.tmp_dir = tempfile.TemporaryDirectory()
-        self.sent_cache = shelve.open(os.path.join(self.tmp_dir.name, "sent_cache"))
-        self.batch_cache = shelve.open(os.path.join(self.tmp_dir.name, "batch_cache"))
-        # self.sent_cache = shelve.open("sent_cache")
-        # self.batch_cache = shelve.open("batch_cache")
+        char_ranges = [chr(i) for i in range(ord("a"), ord("a")+26)] + [chr(i) for i in range(ord("A"), ord("A")+26)] + [chr(i) for i in range(ord("0"), ord("0")+10)]
+        from random import sample
+        rnd_name = "".join(sample(char_ranges, k=10))
+
+        self.tmp_dir = os.path.join(tempfile.gettempdir(), rnd_name)
+        os.mkdir(self.tmp_dir)
+
+        self.sent_cache = shelve.open(os.path.join(self.tmp_dir, "sent_cache"))
+        self.batch_cache = shelve.open(os.path.join(self.tmp_dir, "batch_cache"))
 
     def num_classes(self):
         return len(self.tagmap)
