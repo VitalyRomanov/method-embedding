@@ -1,6 +1,8 @@
 # import tensorflow as tf
 # import sys
 # from gensim.models import Word2Vec
+from time import time
+
 import numpy as np
 # from collections import Counter
 from scipy.linalg import toeplitz
@@ -104,6 +106,7 @@ class TypePredictor(Model):
 
         self.supports_masking = True
 
+    # @tf.function
     def __call__(self, token_ids, prefix_ids, suffix_ids, graph_ids, target=None, training=True, mask=None):
         """
         Inference
@@ -132,7 +135,13 @@ class TypePredictor(Model):
 
         return logits
 
-    def loss(self, logits, labels, class_weights=None, extra_mask=None):
+    def compute_mask(self, inputs, mask=None):
+        mask = self.encoder.compute_mask(None, mask=mask)
+        return self.decoder.compute_mask(None, mask=mask)
+
+
+    # @tf.function()
+    def loss(self, logits, labels, mask, class_weights=None, extra_mask=None):
         """
         Compute cross-entropy loss for each meaningful tokens. Mask padded tokens.
         :param logits: shape (?, seq_len, num_classes)
@@ -143,7 +152,7 @@ class TypePredictor(Model):
         :return: average cross-entropy loss
         """
         losses = tf.nn.softmax_cross_entropy_with_logits(tf.one_hot(labels, depth=logits.shape[-1]), logits, axis=-1)
-        seq_mask = logits._keras_mask# tf.sequence_mask(lengths, self.seq_len)
+        seq_mask = mask # logits._keras_mask# tf.sequence_mask(lengths, self.seq_len)
         if extra_mask is not None:
             seq_mask = tf.math.logical_and(seq_mask, extra_mask)
         if class_weights is None:
@@ -159,7 +168,7 @@ class TypePredictor(Model):
 
         return loss
 
-    def score(self, logits, labels, scorer=None, extra_mask=None):
+    def score(self, logits, labels, mask, scorer=None, extra_mask=None):
         """
         Compute precision, recall and f1 scores using the provided scorer function
         :param logits: shape (?, seq_len, num_classes)
@@ -169,16 +178,23 @@ class TypePredictor(Model):
         :param extra_mask: mask for hiding some of the token labels, not counting them towards the score, shape (?, seq_len)
         :return:
         """
-        mask = logits._keras_mask # tf.sequence_mask(lengths, self.seq_len)
+        # mask = logits._keras_mask # tf.sequence_mask(lengths, self.seq_len)
         if extra_mask is not None:
             mask = tf.math.logical_and(mask, extra_mask)
         true_labels = tf.boolean_mask(labels, mask)
         argmax = tf.math.argmax(logits, axis=-1)
         estimated_labels = tf.cast(tf.boolean_mask(argmax, mask), tf.int32)
 
-        p, r, f1 = scorer(estimated_labels.numpy(), true_labels.numpy())
+        p, r, f1 = scorer(to_numpy(estimated_labels), to_numpy(true_labels))
 
         return p, r, f1
+
+
+def to_numpy(tensor):
+    if hasattr(tensor, "numpy"):
+        return tensor.numpy()
+    else:
+        return tf.make_ndarray(tf.make_tensor_proto(tensor))
 
 
 # def estimate_crf_transitions(batches, n_tags):
@@ -189,7 +205,7 @@ class TypePredictor(Model):
 #
 #     return np.stack(transitions, axis=0).mean(axis=0)
 
-
+# @tf.function
 def train_step_finetune(model, optimizer, token_ids, prefix, suffix, graph_ids, labels, lengths,
                    extra_mask=None, class_weights=None, scorer=None, finetune=False):
     """
@@ -209,10 +225,11 @@ def train_step_finetune(model, optimizer, token_ids, prefix, suffix, graph_ids, 
     :return: values for loss, precision, recall and f1-score
     """
     with tf.GradientTape() as tape:
-        logits = model(token_ids, prefix, suffix, graph_ids, target=None, training=True, mask=tf.sequence_mask(lengths, token_ids.shape[1]))
-        loss = model.loss(logits, labels, class_weights=class_weights, extra_mask=extra_mask)
+        seq_mask = tf.sequence_mask(lengths, token_ids.shape[1])
+        logits = model(token_ids, prefix, suffix, graph_ids, target=None, training=True, mask=seq_mask)
+        loss = model.loss(logits, labels, mask=seq_mask, class_weights=class_weights, extra_mask=extra_mask)
         # token_acc = tf.reduce_sum(tf.cast(tf.argmax(logits, axis=-1) == labels, tf.float32)) / (token_ids.shape[0] * token_ids.shape[1])
-        p, r, f1 = model.score(logits, labels, scorer=scorer, extra_mask=extra_mask)
+        p, r, f1 = model.score(logits, labels, mask=seq_mask, scorer=scorer, extra_mask=extra_mask)
         gradients = tape.gradient(loss, model.trainable_variables)
         if not finetune:
             # do not update embeddings
@@ -239,9 +256,10 @@ def test_step(model, token_ids, prefix, suffix, graph_ids, labels, lengths, extr
     :param scorer: scorer function, takes `pred_labels` and `true_labels` as aguments
     :return: values for loss, precision, recall and f1-score
     """
-    logits = model(token_ids, prefix, suffix, graph_ids, target=None, training=False, mask=tf.sequence_mask(lengths, token_ids.shape[1]))
-    loss = model.loss(logits, labels, class_weights=class_weights, extra_mask=extra_mask)
-    p, r, f1 = model.score(logits, labels, scorer=scorer, extra_mask=extra_mask)
+    seq_mask = tf.sequence_mask(lengths, token_ids.shape[1])
+    logits = model(token_ids, prefix, suffix, graph_ids, target=None, training=False, mask=seq_mask)
+    loss = model.loss(logits, labels, mask=seq_mask, class_weights=class_weights, extra_mask=extra_mask)
+    p, r, f1 = model.score(logits, labels, mask=seq_mask, scorer=scorer, extra_mask=extra_mask)
 
     return loss, p, r, f1
 
@@ -270,6 +288,8 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
                 ps = []
                 rs = []
                 f1s = []
+
+                start = time()
 
                 for ind, batch in enumerate(train_batches):
                     # token_ids, graph_ids, labels, class_weights, lengths = b
@@ -305,7 +325,9 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
                     tf.summary.scalar("Recall/Test", test_r, step=e * num_test_batches + ind)
                     tf.summary.scalar("F1/Test", test_f1, step=e * num_test_batches + ind)
 
-                print(f"Epoch: {e}, Train Loss: {sum(losses) / len(losses): .4f}, Train P: {sum(ps) / len(ps): .4f}, Train R: {sum(rs) / len(rs): .4f}, Train F1: {sum(f1s) / len(f1s): .4f}, "
+                epoch_time = time() - start
+
+                print(f"Epoch: {e}, {epoch_time} s, Train Loss: {sum(losses) / len(losses): .4f}, Train P: {sum(ps) / len(ps): .4f}, Train R: {sum(rs) / len(rs): .4f}, Train F1: {sum(f1s) / len(f1s): .4f}, "
                       f"Test loss: {test_loss: .4f}, Test P: {test_p: .4f}, Test R: {test_r: .4f}, Test F1: {test_f1: .4f}")
 
                 train_losses.append(float(sum(losses) / len(losses)))

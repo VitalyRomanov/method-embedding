@@ -173,7 +173,7 @@ class PythonBatcher:
         hidem = encode(
             list(range(len(sent))) if unlabeled_decls is None else unlabeled_decls,
             self.mask_unlbl_func, self.mask_unlblpad
-        )
+        ).astype(np.bool)
 
         # class weights
         classw = encode(tags, self.classw_func, self.classwpad)
