@@ -179,7 +179,8 @@ class ModelTrainer:
                 "learning_rate_decay": lr_decay,
                 "epochs": self.epochs,
                 "suffix_prefix_buckets": suffix_prefix_buckets,
-                "seq_len": self.seq_len
+                "seq_len": self.seq_len,
+                "batch_size": self.batch_size
             }
 
             # write_config(trial_dir, params, extra_params={"suffix_prefix_buckets": suffix_prefix_buckets, "seq_len": seq_len})
