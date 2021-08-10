@@ -107,7 +107,7 @@ class TypePredictor(Model):
         self.supports_masking = True
 
     # @tf.function
-    def __call__(self, token_ids, prefix_ids, suffix_ids, graph_ids, target=None, training=True, mask=None):
+    def __call__(self, token_ids, prefix_ids, suffix_ids, graph_ids, target=None, training=False, mask=None):
         """
         Inference
         :param token_ids: ids for tokens, shape (?, seq_len)
