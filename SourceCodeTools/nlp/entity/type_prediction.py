@@ -32,6 +32,17 @@ def load_pkl_emb(path):
     return embedder
 
 
+def span_f1(pred_spans, true_spans, eps=1e-8):
+    tp = len(pred_spans.intersection(true_spans))
+    fp = len(pred_spans - true_spans)
+    fn = len(true_spans - pred_spans)
+
+    precision = tp / (tp + fp + eps)
+    recall = tp / (tp + fn + eps)
+    f1 = 2 * precision * recall / (precision + recall + eps)
+    return precision, recall, f1
+
+
 def scorer(pred, labels, tagmap, eps=1e-8):
     """
     Compute f1 score, precision, and recall from BILUO labels
@@ -50,13 +61,7 @@ def scorer(pred, labels, tagmap, eps=1e-8):
     pred_spans = set(parse_biluo(pred_biluo))
     true_spans = set(parse_biluo(labels_biluo))
 
-    tp = len(pred_spans.intersection(true_spans))
-    fp = len(pred_spans - true_spans)
-    fn = len(true_spans - pred_spans)
-
-    precision = tp / (tp + fp + eps)
-    recall = tp / (tp + fn + eps)
-    f1 = 2 * precision * recall / (precision + recall + eps)
+    precision, recall, f1 = span_f1(pred_spans, true_spans, eps=eps)
 
     return precision, recall, f1
 
