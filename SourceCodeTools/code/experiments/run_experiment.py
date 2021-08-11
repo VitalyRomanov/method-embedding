@@ -70,7 +70,7 @@ def run_experiment(e, experiment_name, args):
     test_loss = tf.keras.metrics.Mean(name='test_loss')
     test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='test_accuracy')
 
-    @tf.function
+    # @tf.function
     def train_step(batch):
         with tf.GradientTape() as tape:
             # training=True is only needed if there are layers with different
@@ -83,7 +83,7 @@ def run_experiment(e, experiment_name, args):
         train_loss(loss)
         train_accuracy(batch["y"], predictions)
 
-    @tf.function
+    # @tf.function
     def test_step(batch):
         # training=False is only needed if there are layers with different
         # behavior during training versus inference (e.g. Dropout).
@@ -151,6 +151,7 @@ if __name__ == "__main__":
     parser.add_argument("--element_predictor_h_size", default=50, type=int, help="")
     parser.add_argument("--link_predictor_h_size", default="[20]", type=str, help="")
     parser.add_argument("--node_classifier_h_size", default="[30,15]", type=str, help="")
+    parser.add_argument("--embeddings", default=None)
     parser.add_argument('--random', action='store_true')
     parser.add_argument('--test_embedder', action='store_true')
     args = parser.parse_args()
@@ -166,6 +167,7 @@ if __name__ == "__main__":
                     function_name_path=None,
                     type_ann=args.type_ann,
                     gnn_layer=-1,
+                    embeddings_path=args.embeddings
                     )
 
     experiments = args.experiment.split(",")
@@ -174,7 +176,7 @@ if __name__ == "__main__":
         print(f"\n{experiment_name}:")
         try:
             train_acc, test_acc = run_experiment(e, experiment_name, args)
-            print("Train Accuracy: {:.4f}, Test Accuracy: {:.4f}".format(train_acc, test_acc))
+            print(f"Train Accuracy: {train_acc:.4f}, Test Accuracy: {test_acc:.4f}")
         except ValueError as err:
             print(err)
         print("\n")
