@@ -55,7 +55,7 @@ def predict_one(model, input, tagmap):
         )
 
 
-def apply_to_dataset(data, Batcher, Model, graph_emb_path=None, word_emb_path=None, checkpoint_path=None, batch_size=1):
+def apply_to_dataset(data, Batcher, Model, graph_emb_path=None, word_emb_path=None, checkpoint_path=None):
     graph_emb = load_pkl_emb(graph_emb_path)
     word_emb = load_pkl_emb(word_emb_path)
 
@@ -67,6 +67,7 @@ def apply_to_dataset(data, Batcher, Model, graph_emb_path=None, word_emb_path=No
 
     seq_len = params.pop("seq_len")
     suffix_prefix_buckets = params.pop("suffix_prefix_buckets")
+    batch_size = params.pop("batch_size")
 
     data_batcher = Batcher(
         data, batch_size, seq_len=seq_len, wordmap=word_emb.ind, graphmap=graph_emb.ind, tagmap=tagmap,
@@ -107,7 +108,10 @@ def apply_to_dataset(data, Batcher, Model, graph_emb_path=None, word_emb_path=No
 
     precision, recall, f1 = span_f1(set(pred_scoring), set(true_scoring))
 
-    print(f"Precision: {precision: .2f}, Recall: {recall: .2f}, f1: {f1: .2f}")
+    with open(os.path.join(args.checkpoint_path, "scores.txt"), "w") as scores_sink:
+        scores_str = f"Precision: {precision: .2f}, Recall: {recall: .2f}, f1: {f1: .2f}"
+        print(scores_str)
+        scores_sink.write(f"{scores_str}\n")
 
     from SourceCodeTools.nlp.entity.entity_render import render_annotations
 
@@ -194,5 +198,5 @@ if __name__ == "__main__":
 
     apply_to_dataset(
         test_data, PythonBatcher, TypePredictor, graph_emb_path=args.graph_emb_path, word_emb_path=args.word_emb_path,
-        checkpoint_path=args.checkpoint_path, batch_size=8
+        checkpoint_path=args.checkpoint_path
     )
