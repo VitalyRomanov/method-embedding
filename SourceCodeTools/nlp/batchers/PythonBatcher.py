@@ -38,12 +38,12 @@ class PythonBatcher:
             self, data, batch_size: int, seq_len: int,
             wordmap: Dict[str, int], *, graphmap: Optional[Dict[str, int]], tagmap: Optional[TagMap] = None,
             mask_unlabeled_declarations=True,
-            class_weights=False, element_hash_size=1000
+            class_weights=False, element_hash_size=1000, len_sort=True
     ):
 
         self.create_cache()
 
-        self.data = sorted(data, key=lambda x: len(x[0]))
+        self.data = sorted(data, key=lambda x: len(x[0])) if len_sort else data
         self.batch_size = batch_size
         self.seq_len = seq_len
         self.class_weights = None

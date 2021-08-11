@@ -107,7 +107,7 @@ class TypePredictor(Model):
         self.supports_masking = True
 
     # @tf.function
-    def __call__(self, token_ids, prefix_ids, suffix_ids, graph_ids, target=None, training=True, mask=None):
+    def __call__(self, token_ids, prefix_ids, suffix_ids, graph_ids, target=None, training=False, mask=None):
         """
         Inference
         :param token_ids: ids for tokens, shape (?, seq_len)
@@ -140,7 +140,7 @@ class TypePredictor(Model):
         return self.decoder.compute_mask(None, mask=mask)
 
 
-    # @tf.function()
+    # @tf.function
     def loss(self, logits, labels, mask, class_weights=None, extra_mask=None):
         """
         Compute cross-entropy loss for each meaningful tokens. Mask padded tokens.
@@ -327,7 +327,7 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
 
                 epoch_time = time() - start
 
-                print(f"Epoch: {e}, {epoch_time} s, Train Loss: {sum(losses) / len(losses): .4f}, Train P: {sum(ps) / len(ps): .4f}, Train R: {sum(rs) / len(rs): .4f}, Train F1: {sum(f1s) / len(f1s): .4f}, "
+                print(f"Epoch: {e}, {epoch_time: .2f} s, Train Loss: {sum(losses) / len(losses): .4f}, Train P: {sum(ps) / len(ps): .4f}, Train R: {sum(rs) / len(rs): .4f}, Train F1: {sum(f1s) / len(f1s): .4f}, "
                       f"Test loss: {test_loss: .4f}, Test P: {test_p: .4f}, Test R: {test_r: .4f}, Test F1: {test_f1: .4f}")
 
                 train_losses.append(float(sum(losses) / len(losses)))
