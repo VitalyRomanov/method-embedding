@@ -117,6 +117,8 @@ class TypePredictor(Model):
         :param training: whether to finetune embeddings
         :return: logits for token classes, shape (?, seq_len, num_classes)
         """
+        assert mask is not None, "Mask is required"
+
         tok_emb = self.tok_emb(token_ids)
         # graph_emb = self.graph_emb(graph_ids)
         prefix_emb = self.prefix_emb(prefix_ids)
@@ -264,7 +266,10 @@ def test_step(model, token_ids, prefix, suffix, graph_ids, labels, lengths, extr
     return loss, p, r, f1
 
 
-def train(model, train_batches, test_batches, epochs, report_every=10, scorer=None, learning_rate=0.01, learning_rate_decay=1., finetune=False, summary_writer=None):
+def train(
+        model, train_batches, test_batches, epochs, report_every=10, scorer=None, learning_rate=0.01,
+        learning_rate_decay=1., finetune=False, summary_writer=None, save_ckpt_fn=None
+):
 
     assert summary_writer is not None
 
@@ -278,6 +283,8 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
 
     num_train_batches = len(train_batches)
     num_test_batches = len(test_batches)
+
+    best_f1 = 0.
 
     try:
 
@@ -334,6 +341,10 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
                 train_f1s.append(float(sum(f1s) / len(f1s)))
                 test_losses.append(float(test_loss))
                 test_f1s.append(float(test_f1))
+
+                if save_ckpt_fn is not None and float(test_f1) > best_f1:
+                    save_ckpt_fn()
+                    best_f1 = float(test_f1)
 
                 lr.assign(lr * learning_rate_decay)
 
