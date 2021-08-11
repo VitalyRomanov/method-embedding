@@ -87,7 +87,7 @@ class TypePredictor(Model):
         #                          mask_zero=True)
 
         # compute final embedding size after concatenation
-        input_dim = tok_embedder.e.shape[1] + suffix_prefix_dims * 2 #+ graph_embedder.e.shape[1]
+        input_dim = tok_embedder.e.shape[1] + suffix_prefix_dims * 2# + graph_embedder.e.shape[1]
 
         self.encoder = TextCnnEncoder(input_size=input_dim, h_sizes=h_sizes,
                                 seq_len=seq_len, pos_emb_size=pos_emb_size,

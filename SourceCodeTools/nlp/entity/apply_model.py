@@ -115,10 +115,10 @@ def apply_to_dataset(data, Batcher, Model, graph_emb_path=None, word_emb_path=No
     with open(os.path.join(args.checkpoint_path, "render.html"), "w") as render:
         render.write(html)
 
-    estiamte_confusion(all_estimated, all_true)
+    estimate_confusion(all_estimated, all_true)
 
 
-def estiamte_confusion(pred, true):
+def estimate_confusion(pred, true):
     pred_filtered = []
     true_filtered = []
     for p, t in zip(pred, true):
