@@ -64,7 +64,7 @@ class PythonBatcher:
 
         self.graphmap_func = lambda g: graphmap.get(g, len(graphmap)) if graphmap is not None else None
         self.wordmap_func = lambda w: wordmap.get(w, len(wordmap))
-        self.tagmap_func = lambda t: self.tagmap.get(t, len(self.tagmap))
+        self.tagmap_func = lambda t: self.tagmap.get(t, self.tagmap["O"])
         self.prefmap_func = lambda w: token_hasher(w[:3], element_hash_size)
         self.suffmap_func = lambda w: token_hasher(w[-3:], element_hash_size)
 
