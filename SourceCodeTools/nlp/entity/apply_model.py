@@ -48,7 +48,7 @@ def predict_one(model, input, tagmap):
     return logits_to_annotations(
             tf.math.argmax(model(
                 token_ids=input['tok_ids'], prefix_ids=input['prefix'], suffix_ids=input['suffix'],
-                graph_ids=input['graph_ids'], training=False
+                graph_ids=input['graph_ids'], training=False, mask=tf.sequence_mask(input["lens"], input["tok_ids"].shape[1])
             ), axis=-1),
             input['lens'],
             tagmap
@@ -181,12 +181,14 @@ if __name__ == "__main__":
     parser.add_argument('--word_emb_path', dest='word_emb_path', default=None,
                         help='Path to the file with edges')
     parser.add_argument('checkpoint_path', default=None, help='')
+    parser.add_argument('--random_seed', dest='random_seed', default=None, type=int,
+                        help='')
 
     args = parser.parse_args()
 
     train_data, test_data = read_data(
         open(args.data_path, "r").readlines(), normalize=True, allowed=None, include_replacements=True,
-        include_only="entities",
+        include_only="entities", random_seed=args.random_seed,
         min_entity_count=3
     )
 
