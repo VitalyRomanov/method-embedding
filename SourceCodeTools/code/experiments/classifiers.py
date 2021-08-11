@@ -1,3 +1,5 @@
+import logging
+
 import tensorflow as tf
 
 from tensorflow.keras.layers import Dense, Flatten, Conv2D, Input, Embedding, concatenate
@@ -95,6 +97,9 @@ class NodeClassifier(Model):
     def __init__(self, node_emb_size, n_classes, h_size=None):
         super(NodeClassifier, self).__init__()
 
+        self.proj = Dense(node_emb_size, use_bias=False)
+        logging.warning("Using projection matrix")
+
         if h_size is None:
             h_size = [30, 15]
 
@@ -115,7 +120,7 @@ class NodeClassifier(Model):
         # self.logits = Dense(n_classes, input_shape=(h_size[1],))
 
     def __call__(self, x, **kwargs):
-        h = x
+        h = self.proj(x)
         for l in self.layers_:
             h = l(h)
         return h
