@@ -1,4 +1,6 @@
 # %%
+from typing import Iterable
+
 import pandas
 from os.path import join
 
@@ -6,6 +8,9 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 
 # from graphtools import Embedder
+from SourceCodeTools.code.data.sourcetrail.Dataset import get_train_val_test_indices, create_train_val_test_masks, \
+    filter_dst_by_freq
+from SourceCodeTools.code.data.sourcetrail.file_utils import unpersist
 from SourceCodeTools.models.Embedder import Embedder
 import pickle
 
@@ -47,7 +52,8 @@ class Experiments:
                  variable_use_path=None,
                  function_name_path=None,
                  type_ann=None,
-                 gnn_layer=-1):
+                 gnn_layer=-1,
+                 embeddings_path=None):
         """
 
         :param base_path: path tp trained gnn model
@@ -78,7 +84,9 @@ class Experiments:
         # self.splits = torch.load(os.path.join(self.base_path, "state_dict.pt"))["splits"]
 
         if base_path is not None:
-            self.embed = pickle.load(open(join(self.base_path, "embeddings.pkl"), "rb"))[gnn_layer]
+            self.embed = pickle.load(open(embeddings_path, "rb"))
+            if isinstance(self.embed, Iterable):
+                self.embed = self.embed[gnn_layer]
             # alternative_nodes = pickle.load(open("nodes.pkl", "rb"))
             # self.embed.e = alternative_nodes
             # self.embed.e = np.random.randn(self.embed.e.shape[0], self.embed.e.shape[1])
@@ -112,12 +120,14 @@ class Experiments:
         :param type: str description of the experiment
         :return: Experiment object
         """
-        nodes = pandas.read_csv(join(self.base_path, "nodes.csv"))
-        edges = pandas.read_csv(join(self.base_path, "held.csv")).astype({"src": "int32", "dst": "int32"})
+
+        nodes = unpersist(join(self.base_path, "nodes.bz2"))
+        # edges = pandas.read_csv(join(self.base_path, "held.csv")).astype({"src": "int32", "dst": "int32"})
+        edges = unpersist(join(self.base_path, "edges.bz2"))
 
         from SourceCodeTools.code.data.sourcetrail.Dataset import SourceGraphDataset
 
-        self.splits = SourceGraphDataset.get_global_graph_id_splits(nodes)
+        # self.splits = SourceGraphDataset.get_global_graph_id_splits(nodes)
         # global_ids = nodes['global_graph_id'].values
         # self.splits = (
         #     global_ids[nodes['train_mask'].values],
@@ -200,17 +210,57 @@ class Experiments:
                               compact_dst=False)
 
         elif type == "typeann":
-            type_ann = pandas.read_csv(self.experiments['typeann']).astype({"src": "int32", "dst": "str"})
+            import os
+            from SourceCodeTools.nlp.entity.utils.data import read_data
 
-            # node_pool = set(self.splits[2]).union(self.splits[1]).union(self.splits[0])
-            # node_pool = set(nodes['id'].values.tolist())
-            # node_pool = set(get_nodes_with_split_ids(nodes, set(self.splits[2]).union(self.splits[1]).union(self.splits[0])))
-            node_pool = set(
-                get_nodes_with_split_ids(self.embed, set(self.splits[2]).union(self.splits[1]).union(self.splits[0])))
+            random_seed = 42
+            min_entity_count = 3
+
+            type_ann = unpersist(self.experiments['typeann'])
+
+            filter_rule = lambda name: "0x" not in name
 
             type_ann = type_ann[
-                type_ann['src'].apply(lambda nid: nid in node_pool)
+                type_ann["dst"].apply(filter_rule)
             ]
+
+            node2id = dict(zip(nodes["id"], nodes["type"]))
+            type_ann["src_type"] = type_ann["src"].apply(lambda x: node2id[x])
+
+            type_ann = type_ann[
+                type_ann["src_type"].apply(lambda type_: type_ in {"arg", "AnnAssign"})
+            ]
+
+            norm = lambda x: x.strip("\"").strip("'").split("[")[0].split(".")[-1]
+
+            type_ann["dst"] = type_ann["dst"].apply(norm)
+            type_ann = filter_dst_by_freq(type_ann, min_entity_count)
+            type_ann = type_ann[["src", "dst"]]
+
+            # splits = get_train_val_test_indices(nodes.index)
+            # create_train_val_test_masks(nodes, *splits)
+
+            # train_data, test_data = read_data(
+            #     open(os.path.join(self.base_path, "function_annotations.jsonl"), "r").readlines(),
+            #     normalize=True, allowed=None, include_replacements=True,
+            #     include_only="entities",
+            #     min_entity_count=min_entity_count, random_seed=random_seed
+            # )
+            #
+            # train_nodes = set()
+            # for _, ann in train_data:
+            #     for _, _, nid in ann["replacements"]:
+            #         train_nodes.add(nid)
+            #
+            # test_nodes = set()
+            # for _, ann in test_data:
+            #     for _, _, nid in ann["replacements"]:
+            #         test_nodes.add(nid)
+            #
+            # type_nodes = set(type_ann["src"])
+            #
+            # train_nodes = train_nodes.intersection(type_nodes)
+            # test_nodes = test_nodes.intersection(type_nodes)
 
             # return Experiment2(self.embed, nodes, edges, type_ann, split_on="nodes", neg_sampling_strategy="word2vec")
 
@@ -704,8 +754,8 @@ class Experiment3(Experiment2):
         train_positive = self.target.iloc[self.train_edge_ind].values
         test_positive = self.target.iloc[self.test_edge_ind].values
 
-        X_train, y_train = train_positive[:, 0].reshape(-1, 1), train_positive[:, 1].reshape(-1, 1)
-        X_test, y_test = test_positive[:, 0].reshape(-1, 1), test_positive[:, 1].reshape(-1, 1)
+        X_train, y_train = train_positive[:, 0].reshape(-1, 1).astype(np.int32), train_positive[:, 1].reshape(-1, 1).astype(np.int32)
+        X_test, y_test = test_positive[:, 0].reshape(-1, 1).astype(np.int32), test_positive[:, 1].reshape(-1, 1).astype(np.int32)
 
         def shuffle(X, y):
             ind_shuffle = np.arange(0, X.shape[0])
