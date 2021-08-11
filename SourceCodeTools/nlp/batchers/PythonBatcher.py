@@ -1,6 +1,7 @@
 import json
 import os
 import shelve
+import shutil
 import tempfile
 from functools import lru_cache
 from math import ceil
@@ -94,6 +95,8 @@ class PythonBatcher:
         rnd_name = "".join(sample(char_ranges, k=10))
 
         self.tmp_dir = os.path.join(tempfile.gettempdir(), rnd_name)
+        if os.path.isdir(self.tmp_dir):
+            shutil.rmtree(self.tmp_dir)
         os.mkdir(self.tmp_dir)
 
         self.sent_cache = shelve.open(os.path.join(self.tmp_dir, "sent_cache"))
