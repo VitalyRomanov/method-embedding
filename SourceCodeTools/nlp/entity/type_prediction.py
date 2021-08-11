@@ -166,10 +166,14 @@ class ModelTrainer:
                 num_classes=train_batcher.num_classes(), seq_len=self.seq_len, **params
             )
 
+            def save_ckpt_fn():
+                checkpoint_path = os.path.join(trial_dir, "checkpoint")
+                model.save_weights(checkpoint_path)
+
             train_losses, train_f1, test_losses, test_f1 = self.train(
                 model=model, train_batches=train_batcher, test_batches=test_batcher,
                 epochs=self.epochs, learning_rate=lr, scorer=lambda pred, true: scorer(pred, true, train_batcher.tagmap),
-                learning_rate_decay=lr_decay, finetune=self.finetune
+                learning_rate_decay=lr_decay, finetune=self.finetune, save_ckpt_fn=save_ckpt_fn
             )
 
             checkpoint_path = os.path.join(trial_dir, "checkpoint")
