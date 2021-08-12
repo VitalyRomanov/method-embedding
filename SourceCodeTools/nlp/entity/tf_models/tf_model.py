@@ -284,7 +284,7 @@ def train(
     num_train_batches = len(train_batches)
     num_test_batches = len(test_batches)
 
-    best_f1 = 0.
+    best_loss = float("inf")
 
     try:
 
@@ -317,6 +317,11 @@ def train(
                     tf.summary.scalar("Recall/Train", r, step=e * num_train_batches + ind)
                     tf.summary.scalar("F1/Train", f1, step=e * num_train_batches + ind)
 
+                test_alosses = []
+                test_aps = []
+                test_ars = []
+                test_af1s = []
+
                 for ind, batch in enumerate(test_batches):
                     # token_ids, graph_ids, labels, class_weights, lengths = b
                     test_loss, test_p, test_r, test_f1 = test_step(
@@ -331,20 +336,24 @@ def train(
                     tf.summary.scalar("Precision/Test", test_p, step=e * num_test_batches + ind)
                     tf.summary.scalar("Recall/Test", test_r, step=e * num_test_batches + ind)
                     tf.summary.scalar("F1/Test", test_f1, step=e * num_test_batches + ind)
+                    test_alosses.append(test_loss)
+                    test_aps.append(test_p)
+                    test_ars.append(test_r)
+                    test_af1s.append(test_f1)
 
                 epoch_time = time() - start
 
-                print(f"Epoch: {e}, {epoch_time: .2f} s, Train Loss: {sum(losses) / len(losses): .4f}, Train P: {sum(ps) / len(ps): .4f}, Train R: {sum(rs) / len(rs): .4f}, Train F1: {sum(f1s) / len(f1s): .4f}, "
-                      f"Test loss: {test_loss: .4f}, Test P: {test_p: .4f}, Test R: {test_r: .4f}, Test F1: {test_f1: .4f}")
-
                 train_losses.append(float(sum(losses) / len(losses)))
                 train_f1s.append(float(sum(f1s) / len(f1s)))
-                test_losses.append(float(test_loss))
-                test_f1s.append(float(test_f1))
+                test_losses.append(float(sum(test_alosses) / len(test_alosses)))
+                test_f1s.append(float(sum(test_af1s) / len(test_af1s)))
 
-                if save_ckpt_fn is not None and float(test_f1) > best_f1:
+                print(f"Epoch: {e}, {epoch_time: .2f} s, Train Loss: {train_losses[-1]: .4f}, Train P: {sum(ps) / len(ps): .4f}, Train R: {sum(rs) / len(rs): .4f}, Train F1: {sum(f1s) / len(f1s): .4f}, "
+                      f"Test loss: {test_losses[-1]: .4f}, Test P: {sum(test_aps) / len(test_aps): .4f}, Test R: {sum(test_ars) / len(test_ars): .4f}, Test F1: {test_f1s[-1]: .4f}")
+
+                if save_ckpt_fn is not None and float(test_losses[-1]) < best_loss:
                     save_ckpt_fn()
-                    best_f1 = float(test_f1)
+                    best_loss = float(test_losses[-1])
 
                 lr.assign(lr * learning_rate_decay)
 
