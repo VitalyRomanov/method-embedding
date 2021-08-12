@@ -176,8 +176,8 @@ class ModelTrainer:
                 learning_rate_decay=lr_decay, finetune=self.finetune, save_ckpt_fn=save_ckpt_fn
             )
 
-            checkpoint_path = os.path.join(trial_dir, "checkpoint")
-            model.save_weights(checkpoint_path)
+            # checkpoint_path = os.path.join(trial_dir, "checkpoint")
+            # model.save_weights(checkpoint_path)
 
             metadata = {
                 "train_losses": train_losses,
