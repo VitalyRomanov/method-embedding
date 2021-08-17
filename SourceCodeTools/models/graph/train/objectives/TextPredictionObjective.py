@@ -168,7 +168,7 @@ class GraphTextGeneration(SubwordEmbedderObjective):
 
     def evaluate(self, data_split, neg_sampling_factor=1):
         loss, acc, bleu = self.evaluate_generation(data_split)
-        if data_split == "val":
+        if data_split == "test":
             self.check_early_stopping(acc)
         return loss, acc, bleu
 
