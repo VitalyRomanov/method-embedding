@@ -11,7 +11,7 @@ from SourceCodeTools.models.graph.ElementEmbedder import DocstringEmbedder, crea
     ElementEmbedderWithBpeSubwords
 from SourceCodeTools.models.graph.train.objectives import SubwordEmbedderObjective
 from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective, _compute_accuracy
-from SourceCodeTools.models.nlp.Decoder import LSTMDecoder, Decoder
+from SourceCodeTools.models.nlp.TorchDecoder import LSTMDecoder, Decoder
 from SourceCodeTools.models.nlp.Vocabulary import Vocabulary
 from SourceCodeTools.nlp.embed.bpe import load_bpe_model
 import numpy as np
