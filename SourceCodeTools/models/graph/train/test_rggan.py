@@ -6,6 +6,8 @@ from datetime import datetime
 from os import mkdir
 from os.path import isdir, join
 from typing import Tuple
+
+import dgl
 import pandas as pd
 
 from dgl.data import WN18Dataset, FB15kDataset, FB15k237Dataset, AIFBDataset, MUTAGDataset, BGSDataset, AMDataset
@@ -15,6 +17,7 @@ from sklearn.model_selection import ParameterGrid
 from SourceCodeTools.code.data.sourcetrail.Dataset import SourceGraphDataset
 from SourceCodeTools.models.graph import RGGAN
 from SourceCodeTools.models.graph.NodeEmbedder import NodeIdEmbedder
+from SourceCodeTools.models.graph.train.objectives import GraphLinkObjective
 from SourceCodeTools.models.graph.train.sampling_multitask2 import SamplingMultitaskTrainer
 from SourceCodeTools.models.graph.train.utils import get_name, get_model_base
 from SourceCodeTools.models.training_options import add_gnn_train_args, verify_arguments
@@ -36,7 +39,6 @@ rggan_params = list(
         [ParameterGrid(p) for p in rggan_grids]
     )
 )
-
 
 
 class TestNodeClfGraph(SourceGraphDataset):
@@ -210,76 +212,156 @@ class TestNodeClfGraph(SourceGraphDataset):
 
 
 class TestLinkPredGraph(TestNodeClfGraph):
+    def __init__(
+            self, data_loader, label_from=None, use_node_types=True,
+            use_edge_types=True, filter=None, self_loops=False,
+            train_frac=0.6, random_seed=None, tokenizer_path=None, min_count_for_objectives=1,
+            no_global_edges=False, remove_reverse=False, package_names=None
+    ):
+        self.random_seed = random_seed
+        self.nodes_have_types = use_node_types
+        self.edges_have_types = use_edge_types
+        self.labels_from = label_from
+        # self.data_path = data_path
+        self.tokenizer_path = tokenizer_path
+        self.min_count_for_objectives = min_count_for_objectives
+        self.no_global_edges = no_global_edges
+        self.remove_reverse = remove_reverse
+
+        dataset = data_loader()
+
+        self.nodes, self.edges, self.typed_id_map = self.create_nodes_edges_df(dataset)
+
+        # index is later used for sampling and is assumed to be unique
+        assert len(self.nodes) == len(self.nodes.index.unique())
+        assert len(self.edges) == len(self.edges.index.unique())
+
+        if self_loops:
+            self.nodes, self.edges = SourceGraphDataset.assess_need_for_self_loops(self.nodes, self.edges)
+            self.nodes, self.val_edges = SourceGraphDataset.assess_need_for_self_loops(self.nodes, self.val_edges)
+            self.nodes, self.test_edges = SourceGraphDataset.assess_need_for_self_loops(self.nodes, self.test_edges)
+
+        if filter is not None:
+            for e_type in filter.split(","):
+                logging.info(f"Filtering edge type {e_type}")
+                self.edges = self.edges.query(f"type != '{e_type}'")
+                self.val_edges = self.val_edges.query(f"type != '{e_type}'")
+                self.test_edges = self.test_edges.query(f"type != '{e_type}'")
+
+        if use_node_types is False and use_edge_types is False:
+            new_nodes, new_edges = self.create_nodetype_edges()
+            self.nodes = self.nodes.append(new_nodes, ignore_index=True)
+            self.edges = self.edges.append(new_edges, ignore_index=True)
+
+        self.nodes['type_backup'] = self.nodes['type']
+        if not self.nodes_have_types:
+            self.nodes['type'] = "node_"
+            self.nodes = self.nodes.astype({'type': 'category'})
+
+        self.add_embeddable_flag()
+
+        # need to do this to avoid issues insode dgl library
+        self.edges['type'] = self.edges['type'].apply(lambda x: f"{x}_")
+        self.edges['type_backup'] = self.edges['type']
+        if not self.edges_have_types:
+            self.edges['type'] = "edge_"
+            self.edges = self.edges.astype({'type': 'category'})
+
+        # compact labels
+        # self.nodes['label'] = self.nodes[label_from]
+        # self.nodes = self.nodes.astype({'label': 'category'})
+        # self.label_map = compact_property(self.nodes['label'])
+        # assert any(pandas.isna(self.nodes['label'])) is False
+
+        logging.info(f"Unique nodes: {len(self.nodes)}, node types: {len(self.nodes['type'].unique())}")
+        logging.info(f"Unique edges: {len(self.edges)}, edge types: {len(self.edges['type'].unique())}")
+
+        # self.nodes, self.label_map = self.add_compact_labels()
+        self.add_typed_ids()
+
+        # self.add_splits(train_frac=train_frac, package_names=package_names)
+
+        # self.mark_leaf_nodes()
+
+        self.create_hetero_graph()
+
+        self.update_global_id()
+
+        self.nodes.sort_values('global_graph_id', inplace=True)
+
+        # self.splits = SourceGraphDataset.get_global_graph_id_splits(self.nodes)
+
     def create_nodes_edges_df(self, dataset):
         graph = dataset[0]
         nodes_df = None
 
         node_id_map = {}
         typed_id_map = {}
+        typed_id = []
 
-        for ntype in graph.ntypes:
-            typed_id = graph.nodes(ntype=ntype).tolist()
-            type = [ntype] * len(typed_id)
-            name = list(map(lambda x: ntype + f"_{x}", typed_id))
-            id_ = graph.nodes[ntype].data["_ID"].tolist()
-            node_dict = {"id": id_, "type": type, "name": name, "typed_id": typed_id}
+        id_ = graph.nodes().tolist()
+        type = graph.ndata["ntype"].tolist()
+        src, dst = graph.edges()
+        src = src.tolist()
+        dst = dst.tolist()
+        edge_type = graph.edata["etype"].tolist()
+        train_mask = graph.edata["train_mask"].tolist()
+        val_mask = graph.edata["val_mask"].tolist()
+        test_mask = graph.edata["test_mask"].tolist()
+        # node2train_mask = dict(zip(src, train_mask))
+        # node2val_mask = dict(zip(src, val_mask))
+        # node2test_mask = dict(zip(src, test_mask))
 
-            node_id_map[ntype] = dict(zip(typed_id, id_))
-            typed_id_map[ntype] = dict(zip(id_, typed_id))
+        for nid_, ntype_ in zip(id_, type):
+            if ntype_ not in node_id_map:
+                node_id_map[ntype_] = dict()
+                typed_id_map[ntype_] = dict()
 
-            if "labels" in graph.nodes[ntype].data:
-                node_dict["labels"] = graph.nodes[ntype].data["labels"].tolist()
-            else:
-                node_dict["labels"] = [-1] * len(typed_id)
+            node_id_map[ntype_][len(node_id_map[ntype_])] = nid_
+            typed_id_map[ntype_][nid_] = len(typed_id_map[ntype_])
+            typed_id.append(typed_id_map[ntype_][nid_])
 
-            if "train_mask" in graph.nodes[ntype].data:
-                node_dict["train_mask"] = graph.nodes[ntype].data["train_mask"].bool().tolist()
-            else:
-                node_dict["train_mask"] = [False] * len(typed_id)
+        name = list(map(lambda x: f"{x[0]}_{x[1]}", zip(type, typed_id)))
 
-            if "test_mask" in graph.nodes[ntype].data:
-                node_dict["test_mask"] = graph.nodes[ntype].data["test_mask"].bool().tolist()
-            else:
-                node_dict["test_mask"] = [False] * len(typed_id)
+        node_dict = {
+            "id": id_, "type": type, "name": name, "typed_id": typed_id,
+            # "train_mask": list(map(lambda x: node2train_mask[x], id_)),
+            # "val_mask": list(map(lambda x: node2val_mask[x], id_)),
+            # "test_mask": list(map(lambda x: node2test_mask[x], id_))
+        }
 
-            if "val_mask" in graph.nodes[ntype].data:
-                node_dict["val_mask"] = graph.nodes[ntype].data["val_mask"].bool().tolist()
-            else:
-                node_dict["val_mask"] = [False] * len(typed_id)
-
-            if nodes_df is None:
-                nodes_df = pd.DataFrame.from_dict(node_dict)
-            else:
-                nodes_df = nodes_df.append(pd.DataFrame.from_dict(node_dict))
+        nodes_df = pd.DataFrame.from_dict(node_dict)
 
         assert len(nodes_df["id"]) == len(nodes_df["id"].unique())
 
         nodes_df = nodes_df.reset_index(drop=True)
         # contiguous_node_index = dict(zip(nodes_df["index"], nodes_df.index))
 
-        edges_df = None
-        for srctype, etype, dsttype in graph.canonical_etypes:
-            src, dst = graph.edges(etype=(srctype, etype, dsttype))
-            src = list(map(lambda x: node_id_map[srctype][x], src.tolist()))
-            dst = list(map(lambda x: node_id_map[dsttype][x], dst.tolist()))
+        assert len(node_id_map) == 1
 
+        edges_df = []
+        for e_ind, (src, etype, dst) in enumerate(zip(src, edge_type, dst)):
             edge_data = {
-                "id": graph.edata["_ID"][(srctype, etype, dsttype)].tolist(),
-                "type": [etype] * len(src),
+                "id": e_ind,
+                "type": etype,
                 "src": src,
-                "dst": dst
+                "dst": dst,
+                "train_mask": train_mask[e_ind],
+                "val_mask": val_mask[e_ind],
+                "test_mask": test_mask[e_ind]
             }
+            edges_df.append(edge_data)
 
-            if edges_df is None:
-                edges_df = pd.DataFrame.from_dict(edge_data)
-            else:
-                edges_df = edges_df.append(pd.DataFrame.from_dict(edge_data))
+        edges_df = pd.DataFrame(edges_df)
 
         assert len(edges_df["id"]) == len(edges_df["id"].unique())
 
         edges_df = edges_df.reset_index(drop=True)
+        self.train_edges = edges_df.query("train_mask == True")
+        self.val_edges = edges_df.query("train_mask == True or val_mask == True")
+        self.test_edges = edges_df
 
-        return nodes_df, edges_df, typed_id_map
+        return nodes_df, self.train_edges, typed_id_map
 
 
 class TestTrainer(SamplingMultitaskTrainer):
@@ -405,7 +487,7 @@ def link_pred(args):
         mkdir(args.model_output_dir)
     args.save_checkpoints = False
 
-    data_loaders = [WN18Dataset, FB15kDataset, FB15k237Dataset]
+    data_loaders = [FB15kDataset, FB15k237Dataset]
 
     for dl in data_loaders:
         print(dl.__name__)
