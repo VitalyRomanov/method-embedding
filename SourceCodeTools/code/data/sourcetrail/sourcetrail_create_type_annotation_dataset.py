@@ -83,17 +83,31 @@ def correct_entities(entities, removed_offsets):
     for offset_len, offset in zip(offset_lens, offsets_sorted):
         new_entities = []
         for entity in for_correction:
-            if offset[0] <= entity[0] and offset[1] <= entity[0]:
+            if offset[0] <= entity[0] and offset[1] <= entity[0]:  # removed span is to the left of the entitity
                 if len(entity) == 2:
                     new_entities.append((entity[0] - offset_len, entity[1] - offset_len))
                 elif len(entity) == 3:
                     new_entities.append((entity[0] - offset_len, entity[1] - offset_len, entity[2]))
                 else:
                     raise Exception("Invalid entity size")
-            elif offset[0] >= entity[1] and offset[1] >= entity[1]:
+            elif offset[0] >= entity[1] and offset[1] >= entity[1]:  # removed span is to the right of the entitity
                 new_entities.append(entity)
-            elif offset[0] <= entity[1] <= offset[1] or offset[0] <= entity[0] <= offset[1]:
-                pass  # likely to be a type annotation being removed
+            elif offset[0] <= entity[0] <= offset[1] and offset[0] <= entity[1] <= offset[1]:  # removed span covers the entity
+                pass
+            elif offset[0] <= entity[0] <= offset[1] and entity[0] <= offset[1] <= entity[1]:  # removed span overlaps on the left
+                if len(entity) == 3:
+                    new_entities.append((entity[0] - offset_len + offset[1] - entity[1], entity[1] - offset_len, entity[2]))
+                elif len(entity) == 2:
+                    new_entities.append((entity[0] - offset_len + offset[1] - entity[1], entity[1] - offset_len))
+                else:
+                    raise Exception("Invalid entity size")
+            elif entity[0] <= offset[0] <= entity[1] and entity[0] <= entity[1] <= offset[1]:  # removed span overlaps on the right
+                if len(entity) == 3:
+                    new_entities.append((entity[0], entity[1] - offset_len + offset[1] - entity[1], entity[2]))
+                elif len(entity) == 2:
+                    new_entities.append((entity[0], entity[1] - offset_len + offset[1] - entity[1]))
+                else:
+                    raise Exception("Invalid entity size")
             else:
                 logging.warning(f"Encountered invalid offset: {entity}")
                 # raise Exception("Invalid data?")
