@@ -8,7 +8,7 @@ import random as rnd
 
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
 from SourceCodeTools.models.graph.train.Scorer import Scorer
-from SourceCodeTools.models.nlp.Encoder import LSTMEncoder, Encoder
+from SourceCodeTools.models.nlp.TorchEncoder import LSTMEncoder, Encoder
 
 
 class GraphLinkSampler(ElementEmbedderBase, Scorer):
