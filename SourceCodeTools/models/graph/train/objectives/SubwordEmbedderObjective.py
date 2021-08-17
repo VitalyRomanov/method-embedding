@@ -52,7 +52,7 @@ class SubwordEmbedderObjective(AbstractObjective):
             self.target_embedder, self.link_predictor, data_split=data_split,
             neg_sampling_factor=neg_sampling_factor
         )
-        if data_split == "val":
+        if data_split == "test":
             self.check_early_stopping(acc)
         return loss, acc, ndcg
 
