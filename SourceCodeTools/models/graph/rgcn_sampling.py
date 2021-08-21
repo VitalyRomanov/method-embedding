@@ -38,9 +38,9 @@ class CkptGATConv(dglnn.GATConv):
 
     def forward(self, graph, feat):
         if self.use_checkpoint:
-            return checkpoint.checkpoint(self.custom(graph), feat[0], feat[1], self.dummy_tensor)
+            return checkpoint.checkpoint(self.custom(graph), feat[0], feat[1], self.dummy_tensor) #.squeeze(1)
         else:
-            return super(CkptGATConv, self).forward(graph, feat)
+            return super(CkptGATConv, self).forward(graph, feat) #.squeeze(1)
 
 
 class RelGraphConvLayer(nn.Module):
@@ -88,12 +88,6 @@ class RelGraphConvLayer(nn.Module):
         self.self_loop = self_loop
         self.use_gcn_checkpoint = use_gcn_checkpoint
 
-        # TODO
-        # think of possibility switching to GAT
-        # rel : dglnn.GATConv(in_feat, out_feat, num_heads=4)
-        # rel : dglnn.GraphConv(in_feat, out_feat, norm='right', weight=False, bias=False, allow_zero_in_degree=True)
-        self.create_conv(in_feat, out_feat, rel_names)
-
         self.use_weight = weight
         self.use_basis = num_bases < len(self.rel_names) and weight
         if self.use_weight:
@@ -104,17 +98,23 @@ class RelGraphConvLayer(nn.Module):
                 # nn.init.xavier_uniform_(self.weight, gain=nn.init.calculate_gain('relu'))
                 nn.init.xavier_normal_(self.weight)
 
+        # TODO
+        # think of possibility switching to GAT
+        # rel : dglnn.GATConv(in_feat, out_feat, num_heads=4)
+        # rel : dglnn.GraphConv(in_feat, out_feat, norm='right', weight=False, bias=False, allow_zero_in_degree=True)
+        self.create_conv(in_feat, out_feat, rel_names)
+
         # bias
         if bias:
-            self.h_bias = nn.Parameter(th.Tensor(out_feat))
-            nn.init.zeros_(self.h_bias)
+            self.h_bias = nn.Parameter(th.Tensor(1, out_feat))
+            nn.init.normal_(self.h_bias)
 
         # weight for self loop
         if self.self_loop:
             self.loop_weight = nn.Parameter(th.Tensor(in_feat, out_feat))
-            # nn.init.xavier_uniform_(self.loop_weight,
-            #                         gain=nn.init.calculate_gain('relu'))
-            nn.init.xavier_normal_(self.loop_weight)
+            nn.init.xavier_uniform_(self.loop_weight,
+                                    gain=nn.init.calculate_gain('tanh'))
+            # nn.init.xavier_normal_(self.loop_weight)
 
         self.dropout = nn.Dropout(dropout)
 
@@ -171,47 +171,47 @@ class RelGraphConvLayer(nn.Module):
         # return {ntype: _apply(ntype, h) for ntype, h in hs.items()}
         return {ntype : _apply(ntype, h).mean(1) for ntype, h in hs.items()}
 
-class RelGraphEmbed(nn.Module):
-    r"""Embedding layer for featureless heterograph."""
-    def __init__(self,
-                 g,
-                 embed_size,
-                 embed_name='embed',
-                 activation=None,
-                 dropout=0.0):
-        super(RelGraphEmbed, self).__init__()
-        self.g = g
-        self.embed_size = embed_size
-        self.embed_name = embed_name
-        # self.activation = activation
-        # self.dropout = nn.Dropout(dropout)
-
-        # create weight embeddings for each node for each relation
-        self.embeds = nn.ParameterDict()
-        for ntype in g.ntypes:
-            embed = nn.Parameter(th.Tensor(g.number_of_nodes(ntype), self.embed_size))
-            # TODO
-            # watch for activation in init
-            # nn.init.xavier_uniform_(embed, gain=nn.init.calculate_gain('relu'))
-            nn.init.xavier_normal_(embed)
-            self.embeds[ntype] = embed
-
-    def forward(self, block=None):
-        """Forward computation
-
-        Parameters
-        ----------
-        block : DGLHeteroGraph, optional
-            If not specified, directly return the full graph with embeddings stored in
-            :attr:`embed_name`. Otherwise, extract and store the embeddings to the block
-            graph and return.
-
-        Returns
-        -------
-        DGLHeteroGraph
-            The block graph fed with embeddings.
-        """
-        return self.embeds
+# class RelGraphEmbed(nn.Module):
+#     r"""Embedding layer for featureless heterograph."""
+#     def __init__(self,
+#                  g,
+#                  embed_size,
+#                  embed_name='embed',
+#                  activation=None,
+#                  dropout=0.0):
+#         super(RelGraphEmbed, self).__init__()
+#         self.g = g
+#         self.embed_size = embed_size
+#         self.embed_name = embed_name
+#         # self.activation = activation
+#         # self.dropout = nn.Dropout(dropout)
+#
+#         # create weight embeddings for each node for each relation
+#         self.embeds = nn.ParameterDict()
+#         for ntype in g.ntypes:
+#             embed = nn.Parameter(th.Tensor(g.number_of_nodes(ntype), self.embed_size))
+#             # TODO
+#             # watch for activation in init
+#             # nn.init.xavier_uniform_(embed, gain=nn.init.calculate_gain('relu'))
+#             nn.init.xavier_normal_(embed)
+#             self.embeds[ntype] = embed
+#
+#     def forward(self, block=None):
+#         """Forward computation
+#
+#         Parameters
+#         ----------
+#         block : DGLHeteroGraph, optional
+#             If not specified, directly return the full graph with embeddings stored in
+#             :attr:`embed_name`. Otherwise, extract and store the embeddings to the block
+#             graph and return.
+#
+#         Returns
+#         -------
+#         DGLHeteroGraph
+#             The block graph fed with embeddings.
+#         """
+#         return self.embeds
 
 class RGCNSampling(nn.Module):
     def __init__(self,

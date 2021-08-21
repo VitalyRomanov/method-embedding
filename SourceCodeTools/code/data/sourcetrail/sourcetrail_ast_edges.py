@@ -423,6 +423,7 @@ def make_reverse_edge(edge):
     rev_edge['type'] = edge['type'] + "_rev"
     rev_edge['src'] = edge['dst']
     rev_edge['dst'] = edge['src']
+    rev_edge['offsets'] = None
     return rev_edge
 
 
