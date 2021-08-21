@@ -1,5 +1,7 @@
+import torch
 from torch.utils import checkpoint
 
+from SourceCodeTools.models.graph.basis_gatconv import BasisGATConv
 from SourceCodeTools.models.graph.rgcn_sampling import RGCNSampling, RelGraphConvLayer, CkptGATConv
 
 import torch as th
@@ -37,7 +39,7 @@ class AttentiveAggregator(nn.Module):
     def forward(self, list_inputs, dsttype):  # pylint: disable=unused-argument
         if len(list_inputs) == 1:
             return list_inputs[0]
-        key = value = th.stack(list_inputs).squeeze(dim=1)
+        key = value = th.stack(list_inputs)#.squeeze(dim=1)
         query = self.query_emb(th.LongTensor([token_hasher(dsttype, self.num_query_buckets)]).to(self.att.in_proj_bias.device)).unsqueeze(0).repeat(1, key.shape[1], 1)
         # query = self.query_emb[token_hasher(dsttype, self.num_query_buckets)].unsqueeze(0).repeat(1, key.shape[1], 1)
         if self.use_checkpoint:
@@ -45,6 +47,7 @@ class AttentiveAggregator(nn.Module):
         else:
             att_out, att_w = self.do_stuff(query, key, value)
         # att_out, att_w = self.att(query, key, value)
+        # return att_out.mean(0)#.unsqueeze(1)
         return att_out.mean(0).unsqueeze(1)
 
 
@@ -68,11 +71,34 @@ class RGANLayer(RelGraphConvLayer):
         )
 
     def create_conv(self, in_feat, out_feat, rel_names):
-        self.attentive_aggregator = AttentiveAggregator(out_feat, use_checkpoint=self.use_att_checkpoint)
+        # self.attentive_aggregator = AttentiveAggregator(out_feat, use_checkpoint=self.use_att_checkpoint)
+        #
+        # num_heads = 1
+        # basis_size = 10
+        # basis = torch.nn.Parameter(torch.Tensor(2, basis_size, in_feat, out_feat * num_heads))
+        # attn_basis = torch.nn.Parameter(torch.Tensor(2, basis_size, num_heads, out_feat))
+        # basis_coef = nn.ParameterDict({rel: torch.nn.Parameter(torch.rand(basis_size,)) for rel in rel_names})
+        #
+        # torch.nn.init.xavier_normal_(basis, gain=1.)
+        # torch.nn.init.xavier_normal_(attn_basis, gain=1.)
+
         self.conv = dglnn.HeteroGraphConv({
-            rel: CkptGATConv((in_feat, in_feat), out_feat, num_heads=1, use_checkpoint=self.use_gcn_checkpoint)
+            rel: dglnn.GraphConv(
+                in_feat, out_feat, norm='right', weight=False, bias=True, allow_zero_in_degree=True
+            )
+            # rel: BasisGATConv(
+            #     (in_feat, in_feat), out_feat, num_heads=num_heads,
+            #     basis=basis,
+            #     attn_basis=attn_basis,
+            #     basis_coef=basis_coef[rel],
+            #     use_checkpoint=self.use_gcn_checkpoint
+            # )
             for rel in rel_names
-        }, aggregate=self.attentive_aggregator)
+        }, aggregate="mean") #self.attentive_aggregator)
+        # self.conv = dglnn.HeteroGraphConv({
+        #     rel: CkptGATConv((in_feat, in_feat), out_feat, num_heads=num_heads, use_checkpoint=self.use_gcn_checkpoint)
+        #     for rel in rel_names
+        # }, aggregate="mean") #self.attentive_aggregator)
 
 
 class RGAN(RGCNSampling):
@@ -147,6 +173,7 @@ class OneStepGRU(nn.Module):
         self.dummy_tensor = th.ones(1, dtype=th.float32, requires_grad=True)
 
     def do_stuff(self, x, h, dummy_tensor=None):
+        # x = x.unsqueeze(1)
         r = self.act_r(self.gru_rx(x) + self.gru_rh(h))
         z = self.act_z(self.gru_zx(x) + self.gru_zh(h))
         n = self.act_n(self.gru_nx(x) + self.gru_nh(r * h))
@@ -178,7 +205,7 @@ class RGGANLayer(RGANLayer):
             use_att_checkpoint=use_att_checkpoint
         )
 
-        self.gru = OneStepGRU(out_feat, use_checkpoint=use_gru_checkpoint)
+        # self.gru = OneStepGRU(out_feat, use_checkpoint=use_gru_checkpoint)
 
     def forward(self, g, inputs):
         """Forward computation
@@ -215,7 +242,7 @@ class RGGANLayer(RGANLayer):
 
         def _apply(ntype, h):
             if self.self_loop:
-                h = h + th.matmul(inputs_dst[ntype], self.loop_weight)
+                h = h + th.matmul(inputs_dst[ntype], self.loop_weight).unsqueeze(1)
             if self.bias:
                 h = h + self.h_bias
             if self.activation:
@@ -226,10 +253,10 @@ class RGGANLayer(RGANLayer):
 
         # TODO
         # think of possibility switching to GAT
-        # return {ntype: _apply(ntype, h) for ntype, h in hs.items()}
-        h_gru_input = {ntype : _apply(ntype, h) for ntype, h in hs.items()}
-
-        return {dsttype: self.gru(h_dst, inputs_dst[dsttype].unsqueeze(1)).squeeze(dim=1) for dsttype, h_dst in h_gru_input.items()}
+        return {ntype: _apply(ntype, h) for ntype, h in hs.items()}
+        # h_gru_input = {ntype : _apply(ntype, h) for ntype, h in hs.items()}
+        #
+        # return {dsttype: self.gru(h_dst, inputs_dst[dsttype].unsqueeze(1)).squeeze(dim=1) for dsttype, h_dst in h_gru_input.items()}
 
 class RGGAN(RGAN):
     """A gated recurrent unit (GRU) cell
@@ -275,7 +302,7 @@ class RGGAN(RGAN):
         self.layer = RGGANLayer(
             self.h_dim, self.h_dim, self.rel_names,
             self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
-            dropout=self.dropout, weight=False, use_gcn_checkpoint=use_gcn_checkpoint,
+            dropout=self.dropout, weight=True, use_gcn_checkpoint=use_gcn_checkpoint, # : )
             use_att_checkpoint=use_att_checkpoint, use_gru_checkpoint=use_gru_checkpoint
         )
         # TODO
