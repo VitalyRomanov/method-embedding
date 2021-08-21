@@ -708,6 +708,22 @@ class SourceGraphDataset:
 
         return edges[["src", "dst"]]
 
+    def load_edge_prediction(self):
+
+        nodes_path = join(self.data_path, "nodes.bz2")
+        edges_path = join(self.data_path, "edges.bz2")
+
+        _, edges = load_data(nodes_path, edges_path)
+
+        edges.rename(
+            {
+                "source_node_id": "src",
+                "target_node_id": "dst"
+            }, inplace=True, axis=1
+        )
+
+        return edges[["src", "dst", "type"]]
+
     def load_docstring(self):
 
         docstrings_path = os.path.join(self.data_path, "common_source_graph_bodies.bz2")

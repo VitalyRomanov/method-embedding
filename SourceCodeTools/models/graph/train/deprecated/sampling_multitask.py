@@ -11,6 +11,7 @@ from time import time
 from os.path import join
 import logging
 
+from SourceCodeTools.mltools.torch import _compute_accuracy
 from SourceCodeTools.models.Embedder import Embedder
 from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedderWithBpeSubwords
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
@@ -19,8 +20,8 @@ from SourceCodeTools.models.graph.LinkPredictor import LinkPredictor
 from SourceCodeTools.models.graph.NodeEmbedder import NodeEmbedder
 
 
-def _compute_accuracy(pred_, true_):
-    return torch.sum(pred_ == true_).item() / len(true_)
+# def _compute_accuracy(pred_, true_):
+#     return torch.sum(pred_ == true_).item() / len(true_)
 
 
 class SamplingMultitaskTrainer:

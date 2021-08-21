@@ -13,12 +13,8 @@ import logging
 from SourceCodeTools.models.Embedder import Embedder
 from SourceCodeTools.models.graph.train.objectives import VariableNameUsePrediction, TokenNamePrediction, \
     NextCallPrediction, NodeNamePrediction, GlobalLinkPrediction, GraphTextPrediction, GraphTextGeneration, \
-    NodeNameClassifier
+    NodeNameClassifier, EdgePrediction
 from SourceCodeTools.models.graph.NodeEmbedder import NodeEmbedder
-
-
-def _compute_accuracy(pred_, true_):
-    return torch.sum(pred_ == true_).item() / len(true_)
 
 
 class EarlyStopping(Exception):
@@ -71,6 +67,8 @@ class SamplingMultitaskTrainer:
             self.create_api_call_objective(dataset, tokenizer_path)
         if "global_link_pred" in self.trainer_params["objectives"]:
             self.create_global_link_objective(dataset, tokenizer_path)
+        if "edge_pred" in self.trainer_params["objectives"]:
+            self.create_edge_objective(dataset, tokenizer_path)
         if "doc_pred" in self.trainer_params["objectives"]:
             self.create_text_prediction_objective(dataset, tokenizer_path)
         if "doc_gen" in self.trainer_params["objectives"]:
@@ -154,6 +152,18 @@ class SamplingMultitaskTrainer:
             GlobalLinkPrediction(
                 self.graph_model, self.node_embedder, dataset.nodes,
                 dataset.load_global_edges_prediction, self.device,
+                self.sampling_neighbourhood_size, self.batch_size,
+                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="nn",
+                measure_ndcg=self.trainer_params["measure_ndcg"],
+                dilate_ndcg=self.trainer_params["dilate_ndcg"]
+            )
+        )
+
+    def create_edge_objective(self, dataset, tokenizer_path):
+        self.objectives.append(
+            EdgePrediction(
+                self.graph_model, self.node_embedder, dataset.nodes,
+                dataset.load_edge_prediction, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="nn",
                 measure_ndcg=self.trainer_params["measure_ndcg"],
