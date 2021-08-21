@@ -5,11 +5,13 @@ import torch
 from torch.nn import CrossEntropyLoss
 
 from SourceCodeTools.code.data.sourcetrail.SubwordMasker import SubwordMasker
+from SourceCodeTools.mltools.torch import _compute_accuracy
+from SourceCodeTools.models.graph.ElementEmbedder import GraphLinkSampler
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
 from SourceCodeTools.models.graph.LinkPredictor import LinkClassifier, BilinearLinkPedictor
 from SourceCodeTools.models.graph.train.Scorer import Scorer
-from SourceCodeTools.models.graph.train.objectives import GraphLinkObjective
-from SourceCodeTools.models.graph.train.sampling_multitask2 import _compute_accuracy
+from SourceCodeTools.models.graph.train.objectives.GraphLinkObjective import GraphLinkObjective
+# from SourceCodeTools.models.graph.train.sampling_multitask2 import _compute_accuracy
 from SourceCodeTools.tabular.common import compact_property
 
 
@@ -27,6 +29,11 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
             masker=masker, measure_ndcg=measure_ndcg, dilate_ndcg=dilate_ndcg
         )
         self.measure_ndcg = False
+
+    def create_graph_link_sampler(self, data_loading_func, nodes):
+        self.target_embedder = TargetLinkMapper(
+            elements=data_loading_func(), nodes=nodes
+        )
 
     def create_link_predictor(self):
         self.link_predictor = BilinearLinkPedictor(self.target_emb_size, self.graph_model.emb_size, self.target_embedder.num_classes).to(self.device)
@@ -56,7 +63,7 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
         unique_dst_embeddings = self._logits_batch(input_nodes, blocks, train_embeddings)  # use_types, ntypes)
         dst_embeddings = unique_dst_embeddings[slice_map.to(self.device)]
 
-        self.target_embedder.set_embed(unique_dst.detach().cpu().numpy(), unique_dst_embeddings.detach().cpu().numpy())
+        # self.target_embedder.set_embed(unique_dst.detach().cpu().numpy(), unique_dst_embeddings.detach().cpu().numpy())
 
         node_embeddings_neg_batch = node_embeddings_batch.repeat(k, 1)
         # negative_indices = torch.tensor(elem_embedder.sample_negative(
@@ -75,7 +82,7 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
         negative_random = unique_negative_random[slice_map.to(self.device)]
         labels_neg = torch.full((batch_size * k,), self.negative_label, dtype=self.label_dtype)
 
-        self.target_embedder.set_embed(unique_negative.detach().cpu().numpy(), unique_negative_random.detach().cpu().numpy())
+        # self.target_embedder.set_embed(unique_negative.detach().cpu().numpy(), unique_negative_random.detach().cpu().numpy())
 
         nodes = torch.cat([node_embeddings_batch, node_embeddings_neg_batch], dim=0)
         embs = torch.cat([dst_embeddings, negative_random], dim=0)
@@ -94,9 +101,9 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
         return acc, loss
 
 
-class TargetLinkMapper(ElementEmbedderBase, Scorer):
+class TargetLinkMapper(GraphLinkSampler):
     def __init__(self, elements, nodes):
-        ElementEmbedderBase.__init__(self, elements=elements, nodes=nodes, )
+        super(TargetLinkMapper, self).__init__(elements, nodes, compact_dst=False, dst_to_global=True, emb_size=1)
 
     def init(self, compact_dst):
         if compact_dst:
@@ -106,7 +113,7 @@ class TargetLinkMapper(ElementEmbedderBase, Scorer):
             self.elements['emb_id'] = self.elements['dst']
 
         self.link_type2id, self.inverse_link_type_map = compact_property(self.elements['type'], return_order=True, index_from_one=True)
-        self.elements["link_type"] = self.elements["type"].apply(lambda x: self.link_type2id[x])
+        self.elements["link_type"] = list(map(lambda x: self.link_type2id[x], self.elements["type"].tolist()))
 
         self.element_lookup = {}
         for id_, emb_id, link_type in self.elements[["id", "emb_id", "link_type"]].values:
@@ -120,9 +127,9 @@ class TargetLinkMapper(ElementEmbedderBase, Scorer):
 
     def __getitem__(self, ids):
         node_ids, labels = zip(*(rnd.choice(self.element_lookup[id]) for id in ids))
-        return np.array(node_ids, dtype=np.int32), np.array(labels, dtype=np.int32)
+        return np.array(node_ids, dtype=np.int32), torch.LongTensor(np.array(labels, dtype=np.int32))
 
-    def sample_negative(self, size, ids=None, strategy="closest"):  # TODO switch to w2v?
+    def sample_negative(self, size, ids=None, strategy="w2v"):  # TODO switch to w2v?
         if strategy == "w2v":
             negative = ElementEmbedderBase.sample_negative(self, size)
         else:

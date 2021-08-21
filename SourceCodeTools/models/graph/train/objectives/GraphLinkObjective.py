@@ -121,36 +121,36 @@ class GraphLinkObjective(AbstractObjective):
         return nodes, embs, labels
 
 
-class GraphLinkTypeObjective(GraphLinkObjective):
-    def __init__(
-            self, name, graph_model, node_embedder, nodes, data_loading_func, device,
-            sampling_neighbourhood_size, batch_size,
-            tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
-            measure_ndcg=False, dilate_ndcg=1
-    ):
-        self.set_num_classes(data_loading_func)
-
-        super(GraphLinkObjective, self).__init__(
-            name, graph_model, node_embedder, nodes, data_loading_func, device,
-            sampling_neighbourhood_size, batch_size,
-            tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
-            masker=masker, measure_ndcg=measure_ndcg, dilate_ndcg=dilate_ndcg
-        )
-
-    def set_num_classes(self, data_loading_func):
-        pass
-
-    def create_nn_link_type_predictor(self):
-        self.link_predictor = LinkClassifier(2 * self.graph_model.emb_size, self.num_classes).to(self.device)
-        self.positive_label = 1
-        self.negative_label = 0
-        self.label_dtype = torch.long
-
-    def create_link_predictor(self):
-        if self.link_predictor_type == "nn":
-            self.create_nn_link_predictor()
-        elif self.link_predictor_type == "inner_prod":
-            self.create_inner_prod_link_predictor()
-        else:
-            raise NotImplementedError()
+# class GraphLinkTypeObjective(GraphLinkObjective):
+#     def __init__(
+#             self, name, graph_model, node_embedder, nodes, data_loading_func, device,
+#             sampling_neighbourhood_size, batch_size,
+#             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
+#             measure_ndcg=False, dilate_ndcg=1
+#     ):
+#         self.set_num_classes(data_loading_func)
+#
+#         super(GraphLinkObjective, self).__init__(
+#             name, graph_model, node_embedder, nodes, data_loading_func, device,
+#             sampling_neighbourhood_size, batch_size,
+#             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
+#             masker=masker, measure_ndcg=measure_ndcg, dilate_ndcg=dilate_ndcg
+#         )
+#
+#     def set_num_classes(self, data_loading_func):
+#         pass
+#
+#     def create_nn_link_type_predictor(self):
+#         self.link_predictor = LinkClassifier(2 * self.graph_model.emb_size, self.num_classes).to(self.device)
+#         self.positive_label = 1
+#         self.negative_label = 0
+#         self.label_dtype = torch.long
+#
+#     def create_link_predictor(self):
+#         if self.link_predictor_type == "nn":
+#             self.create_nn_link_predictor()
+#         elif self.link_predictor_type == "inner_prod":
+#             self.create_inner_prod_link_predictor()
+#         else:
+#             raise NotImplementedError()
 

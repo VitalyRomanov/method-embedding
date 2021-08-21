@@ -8,16 +8,13 @@ import torch
 from torch.nn import CosineEmbeddingLoss
 
 from SourceCodeTools.code.data.sourcetrail.SubwordMasker import SubwordMasker
+from SourceCodeTools.mltools.torch import _compute_accuracy
 from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedderWithBpeSubwords, NameEmbedderWithGroups, \
     GraphLinkSampler
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
 from SourceCodeTools.models.graph.LinkPredictor import LinkPredictor, CosineLinkPredictor, BilinearLinkPedictor
 
 import torch.nn as nn
-
-
-def _compute_accuracy(pred_: torch.Tensor, true_: torch.Tensor):
-    return torch.sum(pred_ == true_).item() / len(true_)
 
 
 class EarlyStoppingTracker:
