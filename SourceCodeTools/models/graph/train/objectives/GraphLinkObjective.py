@@ -53,7 +53,7 @@ class GraphLinkObjective(AbstractObjective):
             neg_sampling_factor=neg_sampling_factor
         )
         # ndcg = None
-        if data_split == "test":
+        if data_split == "val":
             self.check_early_stopping(acc)
         return loss, acc, ndcg
 
