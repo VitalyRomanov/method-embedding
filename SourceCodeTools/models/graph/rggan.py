@@ -1,7 +1,7 @@
 import torch
 from torch.utils import checkpoint
 
-from SourceCodeTools.models.graph.basis_gatconv import BasisGATConv
+# from SourceCodeTools.models.graph.basis_gatconv import BasisGATConv
 from SourceCodeTools.models.graph.rgcn_sampling import RGCNSampling, RelGraphConvLayer, CkptGATConv
 
 import torch as th
@@ -51,11 +51,24 @@ class AttentiveAggregator(nn.Module):
         return att_out.mean(0).unsqueeze(1)
 
 
+from torch.nn import init
+class NZBiasGraphConv(dglnn.GraphConv):
+    def __init__(self, *args, **kwargs):
+        super(NZBiasGraphConv, self).__init__(*args, **kwargs)
+
+    def reset_parameters(self):
+        if self.weight is not None:
+            init.xavier_uniform_(self.weight)
+        if self.bias is not None:
+            init.normal_(self.bias)
+
+
 class RGANLayer(RelGraphConvLayer):
     def __init__(self,
                  in_feat,
                  out_feat,
                  rel_names,
+                 ntype_names,
                  num_bases,
                  *,
                  weight=True,
@@ -65,7 +78,7 @@ class RGANLayer(RelGraphConvLayer):
                  dropout=0.0, use_gcn_checkpoint=False, use_att_checkpoint=False):
         self.use_att_checkpoint = use_att_checkpoint
         super(RGANLayer, self).__init__(
-            in_feat, out_feat, rel_names, num_bases,
+            in_feat, out_feat, rel_names, ntype_names, num_bases,
             weight=weight, bias=bias, activation=activation, self_loop=self_loop, dropout=dropout,
             use_gcn_checkpoint=use_gcn_checkpoint
         )
@@ -83,8 +96,8 @@ class RGANLayer(RelGraphConvLayer):
         # torch.nn.init.xavier_normal_(attn_basis, gain=1.)
 
         self.conv = dglnn.HeteroGraphConv({
-            rel: dglnn.GraphConv(
-                in_feat, out_feat, norm='right', weight=False, bias=True, allow_zero_in_degree=True
+            rel: NZBiasGraphConv(
+                in_feat, out_feat, norm='right', weight=False, bias=True, allow_zero_in_degree=True, activation=self.activation
             )
             # rel: BasisGATConv(
             #     (in_feat, in_feat), out_feat, num_heads=num_heads,
@@ -118,6 +131,8 @@ class RGAN(RGCNSampling):
 
         self.rel_names = list(set(g.etypes))
         self.rel_names.sort()
+        self.ntype_names = list(set(g.ntypes))
+        self.ntype_names.sort()
         if num_bases < 0 or num_bases > len(self.rel_names):
             self.num_bases = len(self.rel_names)
         else:
@@ -129,14 +144,14 @@ class RGAN(RGCNSampling):
         self.layers = nn.ModuleList()
         # i2h
         self.layers.append(RGANLayer(
-            self.h_dim, self.h_dim, self.rel_names,
+            self.h_dim, self.h_dim, self.rel_names, self.ntype_names,
             self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
             dropout=self.dropout, weight=False, use_gcn_checkpoint=use_gcn_checkpoint,
             use_att_checkpoint=use_att_checkpoint))
         # h2h
         for i in range(self.num_hidden_layers):
             self.layers.append(RGANLayer(
-                self.h_dim, self.h_dim, self.rel_names,
+                self.h_dim, self.h_dim, self.rel_names, self.ntype_names,
                 self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
                 dropout=self.dropout, weight=False, use_gcn_checkpoint=use_gcn_checkpoint,
             use_att_checkpoint=use_att_checkpoint))  # changed weight for GATConv
@@ -145,7 +160,7 @@ class RGAN(RGCNSampling):
             # weight=False
         # h2o
         self.layers.append(RGANLayer(
-            self.h_dim, self.out_dim, self.rel_names,
+            self.h_dim, self.out_dim, self.rel_names, self.ntype_names,
             self.num_bases, activation=None,
             self_loop=self.use_self_loop, weight=False, use_gcn_checkpoint=use_gcn_checkpoint,
             use_att_checkpoint=use_att_checkpoint))  # changed weight for GATConv
@@ -192,6 +207,7 @@ class RGGANLayer(RGANLayer):
                  in_feat,
                  out_feat,
                  rel_names,
+                 ntype_names,
                  num_bases,
                  *,
                  weight=True,
@@ -200,7 +216,7 @@ class RGGANLayer(RGANLayer):
                  self_loop=False,
                  dropout=0.0, use_gcn_checkpoint=False, use_att_checkpoint=False, use_gru_checkpoint=False):
         super(RGGANLayer, self).__init__(
-            in_feat, out_feat, rel_names, num_bases, weight=weight, bias=bias, activation=activation,
+            in_feat, out_feat, rel_names, ntype_names, num_bases, weight=weight, bias=bias, activation=activation,
             self_loop=self_loop, dropout=dropout, use_gcn_checkpoint=use_gcn_checkpoint,
             use_att_checkpoint=use_att_checkpoint
         )
@@ -227,6 +243,10 @@ class RGGANLayer(RGANLayer):
             weight = self.basis() if self.use_basis else self.weight
             wdict = {self.rel_names[i] : {'weight' : w.squeeze(0)}
                      for i, w in enumerate(th.split(weight, 1, dim=0))}
+            if self.self_loop:
+                self_loop_weight = self.loop_weight_basis() if self.use_basis else self.loop_weight
+                self_loop_wdict = {self.ntype_names[i]: w.squeeze(0)
+                         for i, w in enumerate(th.split(self_loop_weight, 1, dim=0))}
         else:
             wdict = {}
 
@@ -242,9 +262,11 @@ class RGGANLayer(RGANLayer):
 
         def _apply(ntype, h):
             if self.self_loop:
-                h = h + th.matmul(inputs_dst[ntype], self.loop_weight).unsqueeze(1)
+                h = h + th.matmul(inputs_dst[ntype], self_loop_wdict[ntype])
+                # h = h + th.matmul(inputs_dst[ntype], self.loop_weight)
             if self.bias:
-                h = h + self.h_bias
+                h = h + self.bias_dict[ntype]
+                # h = h + self.h_bias
             if self.activation:
                 h = self.activation(h)
             return self.dropout(h)
@@ -289,7 +311,9 @@ class RGGAN(RGAN):
         assert h_dim == num_classes, f"Parameter h_dim and num_classes should be equal in {self.__class__.__name__}"
 
         self.rel_names = list(set(g.etypes))
+        self.ntype_names = list(set(g.ntypes))
         self.rel_names.sort()
+        self.ntype_names.sort()
         if num_bases < 0 or num_bases > len(self.rel_names):
             self.num_bases = len(self.rel_names)
         else:
@@ -300,7 +324,7 @@ class RGGAN(RGAN):
 
         # i2h
         self.layer = RGGANLayer(
-            self.h_dim, self.h_dim, self.rel_names,
+            self.h_dim, self.h_dim, self.rel_names, self.ntype_names,
             self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
             dropout=self.dropout, weight=True, use_gcn_checkpoint=use_gcn_checkpoint, # : )
             use_att_checkpoint=use_att_checkpoint, use_gru_checkpoint=use_gru_checkpoint
