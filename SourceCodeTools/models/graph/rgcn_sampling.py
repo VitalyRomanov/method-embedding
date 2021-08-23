@@ -71,6 +71,7 @@ class RelGraphConvLayer(nn.Module):
                  in_feat,
                  out_feat,
                  rel_names,
+                 ntype_names,
                  num_bases,
                  *,
                  weight=True,
@@ -82,6 +83,7 @@ class RelGraphConvLayer(nn.Module):
         self.in_feat = in_feat
         self.out_feat = out_feat
         self.rel_names = rel_names
+        self.ntype_names = ntype_names
         self.num_bases = num_bases
         self.bias = bias
         self.activation = activation
@@ -106,15 +108,25 @@ class RelGraphConvLayer(nn.Module):
 
         # bias
         if bias:
-            self.h_bias = nn.Parameter(th.Tensor(1, out_feat))
-            nn.init.normal_(self.h_bias)
+            self.bias_dict = nn.ParameterDict()
+            for ntype_name in self.ntype_names:
+                self.bias_dict[ntype_name] = nn.Parameter(torch.Tensor(1, out_feat))
+                nn.init.normal_(self.bias_dict[ntype_name])
+            # self.h_bias = nn.Parameter(th.Tensor(1, out_feat))
+            # nn.init.normal_(self.h_bias)
 
         # weight for self loop
         if self.self_loop:
-            self.loop_weight = nn.Parameter(th.Tensor(in_feat, out_feat))
-            nn.init.xavier_uniform_(self.loop_weight,
-                                    gain=nn.init.calculate_gain('tanh'))
-            # nn.init.xavier_normal_(self.loop_weight)
+            if self.use_basis:
+                self.loop_weight_basis = dglnn.WeightBasis((in_feat, out_feat), num_bases, len(self.ntype_names))
+            else:
+                self.loop_weight = nn.Parameter(th.Tensor(len(self.ntype_names), in_feat, out_feat))
+                # nn.init.xavier_uniform_(self.weight, gain=nn.init.calculate_gain('relu'))
+                nn.init.xavier_normal_(self.loop_weight)
+            # self.loop_weight = nn.Parameter(th.Tensor(in_feat, out_feat))
+            # nn.init.xavier_uniform_(self.loop_weight,
+            #                         gain=nn.init.calculate_gain('tanh'))
+            # # nn.init.xavier_normal_(self.loop_weight)
 
         self.dropout = nn.Dropout(dropout)
 
@@ -145,6 +157,10 @@ class RelGraphConvLayer(nn.Module):
             weight = self.basis() if self.use_basis else self.weight
             wdict = {self.rel_names[i] : {'weight' : w.squeeze(0)}
                      for i, w in enumerate(th.split(weight, 1, dim=0))}
+            if self.self_loop:
+                self_loop_weight = self.loop_weight_basis() if self.use_basis else self.loop_weight
+                self_loop_wdict = {self.ntype_names[i]: w.squeeze(0)
+                         for i, w in enumerate(th.split(self_loop_weight, 1, dim=0))}
         else:
             wdict = {}
 
@@ -160,9 +176,11 @@ class RelGraphConvLayer(nn.Module):
 
         def _apply(ntype, h):
             if self.self_loop:
-                h = h + th.matmul(inputs_dst[ntype], self.loop_weight)
+                h = h + th.matmul(inputs_dst[ntype], self_loop_wdict[ntype])
+                # h = h + th.matmul(inputs_dst[ntype], self.loop_weight)
             if self.bias:
-                h = h + self.h_bias
+                h = h + self.bias_dict[ntype]
+                # h = h + self.h_bias
             if self.activation:
                 h = self.activation(h)
             return self.dropout(h)
@@ -231,6 +249,8 @@ class RGCNSampling(nn.Module):
 
         self.rel_names = list(set(g.etypes))
         self.rel_names.sort()
+        self.ntype_names = list(set(g.etypes))
+        self.ntype_names.sort()
         if num_bases < 0 or num_bases > len(self.rel_names):
             self.num_bases = len(self.rel_names)
         else:
@@ -244,14 +264,14 @@ class RGCNSampling(nn.Module):
         self.layer_norm = nn.ModuleList()
         # i2h
         self.layers.append(RelGraphConvLayer(
-            self.h_dim, self.h_dim, self.rel_names,
+            self.h_dim, self.h_dim, self.rel_names, self.ntype_names,
             self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
             dropout=self.dropout, weight=False, use_gcn_checkpoint=use_gcn_checkpoint))
         self.layer_norm.append(nn.LayerNorm([self.h_dim]))
         # h2h
         for i in range(self.num_hidden_layers):
             self.layers.append(RelGraphConvLayer(
-                self.h_dim, self.h_dim, self.rel_names,
+                self.h_dim, self.h_dim, self.rel_names, self.ntype_names,
                 self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
                 dropout=self.dropout, weight=False, use_gcn_checkpoint=use_gcn_checkpoint)) # changed weight for GATConv
             self.layer_norm.append(nn.LayerNorm([self.h_dim]))
@@ -260,7 +280,7 @@ class RGCNSampling(nn.Module):
             # weight=False
         # h2o
         self.layers.append(RelGraphConvLayer(
-            self.h_dim, self.out_dim, self.rel_names,
+            self.h_dim, self.out_dim, self.rel_names, self.ntype_names,
             self.num_bases, activation=None,
             self_loop=self.use_self_loop, weight=False, use_gcn_checkpoint=use_gcn_checkpoint)) # changed weight for GATConv
         self.layer_norm.append(nn.LayerNorm([self.out_dim]))
