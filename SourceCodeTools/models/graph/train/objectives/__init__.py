@@ -97,7 +97,7 @@ class GlobalLinkPrediction(GraphLinkObjective):
 #         )
 
 
-class EdgePrediction(GraphLinkClassificationObjective):
+class EdgePrediction(GraphLinkObjective):
     def __init__(
             self, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
