@@ -105,8 +105,14 @@ class EdgePrediction(GraphLinkClassificationObjective):
             measure_ndcg=False, dilate_ndcg=1
     ):
         super(EdgePrediction, self).__init__(
-            "LinkTypePrediction", graph_model, node_embedder, nodes, data_loading_func, device,
+            "EdgePrediction", graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
             masker=masker, measure_ndcg=measure_ndcg, dilate_ndcg=dilate_ndcg
         )
+        # super(EdgePrediction, self).__init__(
+        #     "LinkTypePrediction", graph_model, node_embedder, nodes, data_loading_func, device,
+        #     sampling_neighbourhood_size, batch_size,
+        #     tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
+        #     masker=masker, measure_ndcg=measure_ndcg, dilate_ndcg=dilate_ndcg
+        # )
