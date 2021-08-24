@@ -117,15 +117,15 @@ class RelGraphConvLayer(nn.Module):
 
         # weight for self loop
         if self.self_loop:
-            if self.use_basis:
-                self.loop_weight_basis = dglnn.WeightBasis((in_feat, out_feat), num_bases, len(self.ntype_names))
-            else:
-                self.loop_weight = nn.Parameter(th.Tensor(len(self.ntype_names), in_feat, out_feat))
-                # nn.init.xavier_uniform_(self.weight, gain=nn.init.calculate_gain('relu'))
-                nn.init.xavier_normal_(self.loop_weight)
-            # self.loop_weight = nn.Parameter(th.Tensor(in_feat, out_feat))
-            # nn.init.xavier_uniform_(self.loop_weight,
-            #                         gain=nn.init.calculate_gain('tanh'))
+            # if self.use_basis:
+            #     self.loop_weight_basis = dglnn.WeightBasis((in_feat, out_feat), num_bases, len(self.ntype_names))
+            # else:
+            #     self.loop_weight = nn.Parameter(th.Tensor(len(self.ntype_names), in_feat, out_feat))
+            #     # nn.init.xavier_uniform_(self.weight, gain=nn.init.calculate_gain('relu'))
+            #     nn.init.xavier_normal_(self.loop_weight)
+            self.loop_weight = nn.Parameter(th.Tensor(in_feat, out_feat))
+            nn.init.xavier_uniform_(self.loop_weight,
+                                    gain=nn.init.calculate_gain('tanh'))
             # # nn.init.xavier_normal_(self.loop_weight)
 
         self.dropout = nn.Dropout(dropout)
@@ -157,10 +157,10 @@ class RelGraphConvLayer(nn.Module):
             weight = self.basis() if self.use_basis else self.weight
             wdict = {self.rel_names[i] : {'weight' : w.squeeze(0)}
                      for i, w in enumerate(th.split(weight, 1, dim=0))}
-            if self.self_loop:
-                self_loop_weight = self.loop_weight_basis() if self.use_basis else self.loop_weight
-                self_loop_wdict = {self.ntype_names[i]: w.squeeze(0)
-                         for i, w in enumerate(th.split(self_loop_weight, 1, dim=0))}
+            # if self.self_loop:
+            #     self_loop_weight = self.loop_weight_basis() if self.use_basis else self.loop_weight
+            #     self_loop_wdict = {self.ntype_names[i]: w.squeeze(0)
+            #              for i, w in enumerate(th.split(self_loop_weight, 1, dim=0))}
         else:
             wdict = {}
 
@@ -176,8 +176,8 @@ class RelGraphConvLayer(nn.Module):
 
         def _apply(ntype, h):
             if self.self_loop:
-                h = h + th.matmul(inputs_dst[ntype], self_loop_wdict[ntype])
-                # h = h + th.matmul(inputs_dst[ntype], self.loop_weight)
+                # h = h + th.matmul(inputs_dst[ntype], self_loop_wdict[ntype])
+                h = h + th.matmul(inputs_dst[ntype], self.loop_weight)
             if self.bias:
                 h = h + self.bias_dict[ntype]
                 # h = h + self.h_bias

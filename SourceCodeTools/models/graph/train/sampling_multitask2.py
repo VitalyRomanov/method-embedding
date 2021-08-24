@@ -393,6 +393,8 @@ class SamplingMultitaskTrainer:
                     test_loss, test_acc, test_ndcg = objective.evaluate("test")
 
                 summary = {
+                        f"Loss/test/{objective.name}_vs_batch": test_loss,
+                        f"Loss/val/{objective.name}_vs_batch": val_loss,
                         f"Accuracy/test/{objective.name}_vs_batch": test_acc,
                         f"Accuracy/val/{objective.name}_vs_batch": val_acc,
                     }

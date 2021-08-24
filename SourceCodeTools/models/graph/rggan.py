@@ -55,12 +55,25 @@ from torch.nn import init
 class NZBiasGraphConv(dglnn.GraphConv):
     def __init__(self, *args, **kwargs):
         super(NZBiasGraphConv, self).__init__(*args, **kwargs)
+        self.use_checkpoint = True
 
     def reset_parameters(self):
         if self.weight is not None:
             init.xavier_uniform_(self.weight)
         if self.bias is not None:
             init.normal_(self.bias)
+
+    def custom(self, graph):
+        def custom_forward(*inputs):
+            feat0, feat1, weight = inputs
+            return super(NZBiasGraphConv, self).forward(graph, (feat0, feat1), weight=weight)
+        return custom_forward
+
+    def forward(self, graph, feat, weight=None):
+        if self.use_checkpoint:
+            return checkpoint.checkpoint(self.custom(graph), feat[0], feat[1], weight) #.squeeze(1)
+        else:
+            return super(NZBiasGraphConv, self).forward(graph, feat, weight=weight) #.squeeze(1)
 
 
 class RGANLayer(RelGraphConvLayer):
@@ -97,7 +110,7 @@ class RGANLayer(RelGraphConvLayer):
 
         self.conv = dglnn.HeteroGraphConv({
             rel: NZBiasGraphConv(
-                in_feat, out_feat, norm='right', weight=False, bias=True, allow_zero_in_degree=True, activation=self.activation
+                in_feat, out_feat, norm='right', weight=False, bias=True, allow_zero_in_degree=True,# activation=self.activation
             )
             # rel: BasisGATConv(
             #     (in_feat, in_feat), out_feat, num_heads=num_heads,
@@ -243,10 +256,10 @@ class RGGANLayer(RGANLayer):
             weight = self.basis() if self.use_basis else self.weight
             wdict = {self.rel_names[i] : {'weight' : w.squeeze(0)}
                      for i, w in enumerate(th.split(weight, 1, dim=0))}
-            if self.self_loop:
-                self_loop_weight = self.loop_weight_basis() if self.use_basis else self.loop_weight
-                self_loop_wdict = {self.ntype_names[i]: w.squeeze(0)
-                         for i, w in enumerate(th.split(self_loop_weight, 1, dim=0))}
+            # if self.self_loop:
+            #     self_loop_weight = self.loop_weight_basis() if self.use_basis else self.loop_weight
+            #     self_loop_wdict = {self.ntype_names[i]: w.squeeze(0)
+            #              for i, w in enumerate(th.split(self_loop_weight, 1, dim=0))}
         else:
             wdict = {}
 
@@ -262,8 +275,8 @@ class RGGANLayer(RGANLayer):
 
         def _apply(ntype, h):
             if self.self_loop:
-                h = h + th.matmul(inputs_dst[ntype], self_loop_wdict[ntype])
-                # h = h + th.matmul(inputs_dst[ntype], self.loop_weight)
+                # h = h + th.matmul(inputs_dst[ntype], self_loop_wdict[ntype])
+                h = h + th.matmul(inputs_dst[ntype], self.loop_weight)
             if self.bias:
                 h = h + self.bias_dict[ntype]
                 # h = h + self.h_bias

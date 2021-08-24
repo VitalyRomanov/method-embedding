@@ -722,7 +722,7 @@ class SourceGraphDataset:
             }, inplace=True, axis=1
         )
 
-        return edges[["src", "dst", "type"]]
+        return edges[["src", "dst"]]#, "type"]]
 
     def load_docstring(self):
 
