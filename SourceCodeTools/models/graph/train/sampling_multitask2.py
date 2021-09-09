@@ -10,11 +10,14 @@ from time import time
 from os.path import join
 import logging
 
+from tqdm import tqdm
+
 from SourceCodeTools.models.Embedder import Embedder
 from SourceCodeTools.models.graph.train.objectives import VariableNameUsePrediction, TokenNamePrediction, \
     NextCallPrediction, NodeNamePrediction, GlobalLinkPrediction, GraphTextPrediction, GraphTextGeneration, \
     NodeNameClassifier, EdgePrediction
 from SourceCodeTools.models.graph.NodeEmbedder import NodeEmbedder
+from SourceCodeTools.models.graph.train.objectives.AbstractObjective import ZeroEdges
 
 
 class EarlyStopping(Exception):
@@ -165,7 +168,7 @@ class SamplingMultitaskTrainer:
                 self.graph_model, self.node_embedder, dataset.nodes,
                 dataset.load_edge_prediction, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
-                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="nn",
+                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
                 measure_ndcg=self.trainer_params["measure_ndcg"],
                 dilate_ndcg=self.trainer_params["dilate_ndcg"]
             )
@@ -333,10 +336,14 @@ class SamplingMultitaskTrainer:
 
             start = time()
 
-            keep_training = True
+            # keep_training = True
 
             summary_dict = {}
-            while keep_training:
+            # step = 0
+            num_batches = min([objective.num_train_batches for objective in self.objectives])
+
+            for step in tqdm(range(num_batches), total=num_batches):
+            # while keep_training:
 
                 loss_accum = 0
 
@@ -351,7 +358,16 @@ class SamplingMultitaskTrainer:
                 for objective, (input_nodes, seeds, blocks) in zip(self.objectives, loaders):
                     blocks = [blk.to(self.device) for blk in blocks]
 
-                    loss, acc = objective(input_nodes, seeds, blocks, train_embeddings=self.finetune)
+                    # do_break = False
+                    # for block in blocks:
+                    #     if block.num_edges() == 0:
+                    #         do_break = True
+                    # if do_break:
+                    #     break
+
+                    # try:
+                    loss, acc = objective(input_nodes, seeds, blocks, train_embeddings=self.finetune,
+                                          neg_sampling_strategy="w2v" if epoch == 0 else None)
 
                     loss = loss / len(self.objectives)  # assumes the same batch size for all objectives
                     loss_accum += loss.item()
@@ -364,8 +380,13 @@ class SamplingMultitaskTrainer:
                         f"Loss/train/{objective.name}_vs_batch": loss.item(),
                         f"Accuracy/train/{objective.name}_vs_batch": acc,
                     })
+                    # except ZeroEdges as e:
+                    #     logging.warning(f"Zero edges in loader in step {step}")
+                    # except Exception as e:
+                    #     raise e
 
                 self.optimizer.step()
+                step += 1
 
                 self.write_summary(summary, self.batch)
                 summary_dict.update(summary)
@@ -393,11 +414,11 @@ class SamplingMultitaskTrainer:
                     test_loss, test_acc, test_ndcg = objective.evaluate("test")
 
                 summary = {
-                        f"Loss/test/{objective.name}_vs_batch": test_loss,
-                        f"Loss/val/{objective.name}_vs_batch": val_loss,
-                        f"Accuracy/test/{objective.name}_vs_batch": test_acc,
-                        f"Accuracy/val/{objective.name}_vs_batch": val_acc,
-                    }
+                    f"Loss/test/{objective.name}_vs_batch": test_loss,
+                    f"Loss/val/{objective.name}_vs_batch": val_loss,
+                    f"Accuracy/test/{objective.name}_vs_batch": test_acc,
+                    f"Accuracy/val/{objective.name}_vs_batch": val_acc,
+                }
                 if test_ndcg is not None:
                     summary.update({f"{key}/test/{objective.name}_vs_batch": val for key, val in test_ndcg.items()})
                 if val_ndcg is not None:

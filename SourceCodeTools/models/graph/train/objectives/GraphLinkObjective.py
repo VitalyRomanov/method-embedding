@@ -4,7 +4,7 @@ import torch
 
 from SourceCodeTools.code.data.sourcetrail.SubwordMasker import SubwordMasker
 from SourceCodeTools.models.graph.LinkPredictor import LinkClassifier
-from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective
+from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective, ZeroEdges
 
 
 class GraphLinkObjective(AbstractObjective):
@@ -35,12 +35,12 @@ class GraphLinkObjective(AbstractObjective):
         else:
             raise NotImplementedError()
 
-    def forward(self, input_nodes, seeds, blocks, train_embeddings=True):
+    def forward(self, input_nodes, seeds, blocks, train_embeddings=True, neg_sampling_strategy=None):
         masked = None
         graph_emb = self._logits_batch(input_nodes, blocks, train_embeddings, masked=masked)
         node_embs_, element_embs_, labels = self._logits_nodes(
             graph_emb, self.target_embedder, self.link_predictor,
-            self._create_loader, seeds, train_embeddings=train_embeddings
+            self._create_loader, seeds, train_embeddings=train_embeddings, neg_sampling_strategy=neg_sampling_strategy
         )
 
         acc, loss = self.compute_acc_loss(node_embs_, element_embs_, labels)
@@ -73,7 +73,7 @@ class GraphLinkObjective(AbstractObjective):
 
     def _logits_nodes(self, node_embeddings,
                       elem_embedder, link_predictor, create_dataloader,
-                      src_seeds, negative_factor=1, train_embeddings=True):
+                      src_seeds, negative_factor=1, train_embeddings=True, neg_sampling_strategy=None):
         k = negative_factor
         indices = self.seeds_to_global(src_seeds).tolist()
         batch_size = len(indices)
@@ -97,8 +97,12 @@ class GraphLinkObjective(AbstractObjective):
         node_embeddings_neg_batch = node_embeddings_batch.repeat(k, 1)
         # negative_indices = torch.tensor(elem_embedder.sample_negative(
         #     batch_size * k), dtype=torch.long)  # embeddings are sampled from 3/4 unigram distribution
-        negative_indices = torch.tensor(elem_embedder.sample_negative(
-            batch_size * k, ids=indices), dtype=torch.long)  # closest negative
+        if neg_sampling_strategy is not None:
+            negative_indices = torch.tensor(elem_embedder.sample_negative(
+                batch_size * k, ids=indices, strategy=neg_sampling_strategy), dtype=torch.long)  # closest negative
+        else:
+            negative_indices = torch.tensor(elem_embedder.sample_negative(
+                batch_size * k, ids=indices), dtype=torch.long)  # closest negative
         unique_negative, slice_map = self._handle_non_unique(negative_indices)
         assert unique_negative[slice_map].tolist() == negative_indices.tolist()
 
