@@ -36,7 +36,8 @@ class Scorer:
         self.scorer_index = None
         self.neighbours_to_sample = min(neighbours_to_sample, self.scorer_num_emb)
 
-    def prepare_index(self):
+    def prepare_index(self, override_strategy=None):
+        self.override_strategy=override_strategy
         if self.scorer_index_backend == "sklearn":
             self.scorer_index = BallTree(self.scorer_all_emb, leaf_size=1)
             # self.scorer_index = BallTree(normalize(self.scorer_all_emb, axis=1), leaf_size=1)
