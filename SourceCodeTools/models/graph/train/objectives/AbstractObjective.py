@@ -17,6 +17,11 @@ from SourceCodeTools.models.graph.LinkPredictor import LinkPredictor, CosineLink
 import torch.nn as nn
 
 
+class ZeroEdges(Exception):
+    def __init__(self, *args):
+        super(ZeroEdges, self).__init__(*args)
+
+
 class EarlyStoppingTracker:
     def __init__(self, early_stopping_tolerance):
         self.early_stopping_tolerance = early_stopping_tolerance
@@ -168,6 +173,13 @@ class AbstractObjective(nn.Module):
             train_idx=train_idx, val_idx=val_idx, test_idx=test_idx,
             batch_size=self.batch_size  # batch_size_node_name
         )
+
+        def get_num_nodes(ids):
+            return sum(len(ids[key_]) for key_ in ids) // self.batch_size
+
+        self.num_train_batches = get_num_nodes(train_idx)
+        self.num_test_batches = get_num_nodes(test_idx)
+        self.num_val_batches = get_num_nodes(val_idx)
 
     def _idx_len(self, idx):
         if isinstance(idx, dict):
