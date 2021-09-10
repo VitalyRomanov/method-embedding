@@ -15,7 +15,8 @@ edge_types = {
     2: "uses_type",     # from user to type
     16: "inheritance",
     4: "uses",          # from user to item
-    512: "imports"      # from module to imported object
+    512: "imports",      # from module to imported object
+    32: "non-idexed-package"
 }
 
 
