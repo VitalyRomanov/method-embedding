@@ -1,4 +1,6 @@
 import shelve
+import shutil
+import tempfile
 from os.path import join
 from tqdm import tqdm
 
@@ -41,14 +43,27 @@ class DatasetCreator:
         paths = (os.path.join(path, dir) for dir in os.listdir(path))
         self.environments = sorted(list(filter(lambda path: os.path.isdir(path), paths)), key=lambda x: x.lower())
 
-        self.local2global_cache_filename = "local2global_cache.db"
-        self.local2global_cache = shelve.open(self.local2global_cache_filename)
+        self.init_cache()
 
         from SourceCodeTools.code.data.sourcetrail.common import UNRESOLVED_SYMBOL
         self.unsolved_symbol = UNRESOLVED_SYMBOL
 
+    def init_cache(self):
+        char_ranges = [chr(i) for i in range(ord("a"), ord("a")+26)] + [chr(i) for i in range(ord("A"), ord("A")+26)] + [chr(i) for i in range(ord("0"), ord("0")+10)]
+        from random import sample
+        rnd_name = "".join(sample(char_ranges, k=10))
+
+        self.tmp_dir = os.path.join(tempfile.gettempdir(), rnd_name)
+        if os.path.isdir(self.tmp_dir):
+            shutil.rmtree(self.tmp_dir)
+        os.mkdir(self.tmp_dir)
+
+        self.local2global_cache_filename = os.path.join(self.tmp_dir,"local2global_cache.db")
+        self.local2global_cache = shelve.open(self.local2global_cache_filename)
+
     def __del__(self):
         self.local2global_cache.close()
+        shutil.rmtree(self.tmp_dir)
         # os.remove(self.local2global_cache_filename) # TODO nofile on linux, need to check
 
     def merge(self, output_directory):
