@@ -128,9 +128,9 @@ class ElementEmbedderBase:
         # return {ntype: set(self.elements.query(f"src_type == '{ntype}'")['src_typed_id'].tolist()) for ntype in ntypes}
 
     def _create_pools(self, train_idx, val_idx, test_idx, pool) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        train_idx = np.fromiter(pool.intersection(train_idx.tolist()), dtype=np.int64)
-        val_idx = np.fromiter(pool.intersection(val_idx.tolist()), dtype=np.int64)
-        test_idx = np.fromiter(pool.intersection(test_idx.tolist()), dtype=np.int64)
+        train_idx = np.fromiter(pool.intersection(train_idx.reshape((-1,)).tolist()), dtype=np.int64)
+        val_idx = np.fromiter(pool.intersection(val_idx.reshape((-1,)).tolist()), dtype=np.int64)
+        test_idx = np.fromiter(pool.intersection(test_idx.reshape((-1,)).tolist()), dtype=np.int64)
         return train_idx, val_idx, test_idx
 
     def create_idx_pools(self, train_idx, val_idx, test_idx):
