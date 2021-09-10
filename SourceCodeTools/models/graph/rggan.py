@@ -56,6 +56,7 @@ class NZBiasGraphConv(dglnn.GraphConv):
     def __init__(self, *args, **kwargs):
         super(NZBiasGraphConv, self).__init__(*args, **kwargs)
         self.use_checkpoint = True
+        self.dummy_tensor = th.ones(1, dtype=th.float32, requires_grad=True)
 
     def reset_parameters(self):
         if self.weight is not None:
@@ -65,13 +66,13 @@ class NZBiasGraphConv(dglnn.GraphConv):
 
     def custom(self, graph):
         def custom_forward(*inputs):
-            feat0, feat1, weight = inputs
+            feat0, feat1, weight, _ = inputs
             return super(NZBiasGraphConv, self).forward(graph, (feat0, feat1), weight=weight)
         return custom_forward
 
     def forward(self, graph, feat, weight=None):
         if self.use_checkpoint:
-            return checkpoint.checkpoint(self.custom(graph), feat[0], feat[1], weight) #.squeeze(1)
+            return checkpoint.checkpoint(self.custom(graph), feat[0], feat[1], weight, self.dummy_tensor) #.squeeze(1)
         else:
             return super(NZBiasGraphConv, self).forward(graph, feat, weight=weight) #.squeeze(1)
 
