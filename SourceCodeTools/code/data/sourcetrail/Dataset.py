@@ -744,6 +744,35 @@ class SourceGraphDataset:
 
         return edges[["src", "dst"]]#, "type"]]
 
+    def load_type_prediction(self):
+
+        type_ann = unpersist(join(self.data_path, "type_annotations.bz2"))
+
+        filter_rule = lambda name: "0x" not in name
+
+        type_ann = type_ann[
+            type_ann["dst"].apply(filter_rule)
+        ]
+
+        node2id = dict(zip(self.nodes["id"], self.nodes["type_backup"]))
+        type_ann = type_ann[
+            type_ann["src"].apply(lambda id_: id_ in node2id)
+        ]
+
+        type_ann["src_type"] = type_ann["src"].apply(lambda x: node2id[x])
+
+        type_ann = type_ann[
+            type_ann["src_type"].apply(lambda type_: type_ in {"arg", "AnnAssign"})
+        ]
+
+        norm = lambda x: x.strip("\"").strip("'").split("[")[0].split(".")[-1]
+
+        type_ann["dst"] = type_ann["dst"].apply(norm)
+        type_ann = filter_dst_by_freq(type_ann, self.min_count_for_objectives)
+        type_ann = type_ann[["src", "dst"]]
+
+        return type_ann
+
     def load_docstring(self):
 
         docstrings_path = os.path.join(self.data_path, "common_source_graph_bodies.bz2")

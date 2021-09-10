@@ -15,7 +15,7 @@ from tqdm import tqdm
 from SourceCodeTools.models.Embedder import Embedder
 from SourceCodeTools.models.graph.train.objectives import VariableNameUsePrediction, TokenNamePrediction, \
     NextCallPrediction, NodeNamePrediction, GlobalLinkPrediction, GraphTextPrediction, GraphTextGeneration, \
-    NodeNameClassifier, EdgePrediction
+    NodeNameClassifier, EdgePrediction, TypeAnnPrediction
 from SourceCodeTools.models.graph.NodeEmbedder import NodeEmbedder
 from SourceCodeTools.models.graph.train.objectives.AbstractObjective import ZeroEdges
 
@@ -78,6 +78,8 @@ class SamplingMultitaskTrainer:
             self.create_text_generation_objective(dataset, tokenizer_path)
         if "node_clf" in self.trainer_params["objectives"]:
             self.create_node_classifier_objective(dataset, tokenizer_path)
+        if "type_ann_pred" in self.trainer_params["objectives"]:
+            self.create_type_ann_objective(dataset, tokenizer_path)
 
     def create_token_pred_objective(self, dataset, tokenizer_path):
         self.objectives.append(
@@ -105,6 +107,19 @@ class SamplingMultitaskTrainer:
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
                 masker=dataset.create_node_name_masker(tokenizer_path),
+                measure_ndcg=self.trainer_params["measure_ndcg"],
+                dilate_ndcg=self.trainer_params["dilate_ndcg"]
+            )
+        )
+
+    def create_type_ann_objective(self, dataset, tokenizer_path):
+        self.objectives.append(
+            TypeAnnPrediction(
+                self.graph_model, self.node_embedder, dataset.nodes,
+                dataset.load_type_prediction, self.device,
+                self.sampling_neighbourhood_size, self.batch_size,
+                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
+                masker=None,
                 measure_ndcg=self.trainer_params["measure_ndcg"],
                 dilate_ndcg=self.trainer_params["dilate_ndcg"]
             )
@@ -358,16 +373,16 @@ class SamplingMultitaskTrainer:
                 for objective, (input_nodes, seeds, blocks) in zip(self.objectives, loaders):
                     blocks = [blk.to(self.device) for blk in blocks]
 
-                    # do_break = False
-                    # for block in blocks:
-                    #     if block.num_edges() == 0:
-                    #         do_break = True
-                    # if do_break:
-                    #     break
+                    do_break = False
+                    for block in blocks:
+                        if block.num_edges() == 0:
+                            do_break = True
+                    if do_break:
+                        break
 
                     # try:
-                    loss, acc = objective(input_nodes, seeds, blocks, train_embeddings=self.finetune,
-                                          neg_sampling_strategy="w2v" if epoch == 0 else None)
+                    loss, acc = objective(input_nodes, seeds, blocks, train_embeddings=self.finetune,)
+                                          # neg_sampling_strategy="w2v" if epoch == 0 else None)
 
                     loss = loss / len(self.objectives)  # assumes the same batch size for all objectives
                     loss_accum += loss.item()
