@@ -882,7 +882,10 @@ def process_code(source_file_content, offsets, node_resolver, mention_tokenizer,
     replacer.perform_replacements(source_file_content, offsets)
 
     # compute ast edges
-    ast_processor = AstProcessor(replacer.source_with_replacements)
+    try:
+        ast_processor = AstProcessor(replacer.source_with_replacements)
+    except:
+        return None, None, None
     try: # TODO recursion error does not appear consistently. The issue is probably with library versions...
         edges = ast_processor.get_edges(as_dataframe=False)
     except RecursionError:
@@ -1045,7 +1048,7 @@ def get_ast_from_modules(
             if "scope" in edge:
                 edge["scope"] = mapping.get(edge["scope"], edge["scope"])
 
-    replace_ast_node_to_global(all_ast_edges, all_global_references)
+    # replace_ast_node_to_global(all_ast_edges, all_global_references)  # disabled to keep global nodes separate
 
     def create_subwords_for_global_nodes():
         all_ast_edges.extend(
@@ -1053,7 +1056,7 @@ def get_ast_from_modules(
                                   node_resolver, mention_tokenizer))
         node_resolver.stash_new_nodes()
 
-    create_subwords_for_global_nodes()
+    # create_subwords_for_global_nodes()  # disabled to keep global nodes separate
 
     def prepare_new_nodes(node_resolver):
 
@@ -1075,7 +1078,7 @@ def get_ast_from_modules(
             offset["mentioned_in"] = [(e[0], e[1], all_global_references.get(e[2], e[2])) for e in offset["mentioned_in"]]
 
 
-    prepare_new_nodes(node_resolver)
+    # prepare_new_nodes(node_resolver)  # disabled to keep global nodes separate
 
     all_ast_nodes = node_resolver.new_nodes_for_write(from_stashed=True)
 
