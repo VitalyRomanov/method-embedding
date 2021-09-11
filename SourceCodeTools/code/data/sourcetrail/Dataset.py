@@ -468,8 +468,8 @@ class SourceGraphDataset:
 
     def remove_global_edges(self):
         global_edges = get_global_edges()
-        global_edges.add("global_mention")
-        global_edges |= set(edge + "_rev" for edge in global_edges)
+        # global_edges.add("global_mention")
+        # global_edges |= set(edge + "_rev" for edge in global_edges)
         is_ast = lambda type: type not in global_edges
         edges = self.edges.query("type.map(@is_ast)", local_dict={"is_ast": is_ast})
         self.edges = edges
@@ -490,9 +490,9 @@ class SourceGraphDataset:
         ]
 
         to_reverse["type"] = to_reverse["type"].apply(lambda type_: type_ + "_rev")
-        to_reverse["tmp"] = to_reverse["src"]
+        tmp = to_reverse["src"]
         to_reverse["src"] = to_reverse["dst"]
-        to_reverse["dst"] = to_reverse["tmp"]
+        to_reverse["dst"] = tmp
 
         self.edges = self.edges.append(to_reverse[["src", "dst", "type"]])
 
