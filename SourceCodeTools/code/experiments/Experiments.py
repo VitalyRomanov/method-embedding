@@ -619,7 +619,7 @@ class Experiment2(Experiment):
         target['orig_dst'] = target['dst']
         target['dst'] = target['dst'].apply(lambda name: self.name_map[name])
 
-        print(f"Doing experiment with {len(self.name_map)} distinct target targets")
+        print(f"Doing experiment with {len(self.name_map)} distinct targets")
 
         self.unique_src = self.target['src'].unique()
         self.unique_dst = self.target['dst'].unique()
