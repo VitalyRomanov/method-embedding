@@ -96,6 +96,8 @@ class DatasetCreator:
             if node_names is not None:
                 persist(node_names, join(no_ast_path, "node_names.bz2"))
 
+            self.handle_parallel_edges(join(no_ast_path, "common_edges.bz2"))
+
             if self.visualize:
                 self.visualize_func(
                     unpersist(join(no_ast_path, "common_nodes.bz2")),
@@ -138,6 +140,7 @@ class DatasetCreator:
             if annotations is not None:
                 persist(annotations, join(with_ast_path, "type_annotations.bz2"))
 
+        self.handle_parallel_edges(join(with_ast_path, "common_edges.bz2"))
 
         if self.visualize:
             self.visualize_func(
@@ -145,6 +148,48 @@ class DatasetCreator:
                 unpersist(join(with_ast_path, "common_edges.bz2")),
                 join(with_ast_path, "visualization.pdf")
             )
+
+    def handle_parallel_edges(self, path):
+        edges = unpersist(path)
+        edges["id"] = list(range(len(edges)))
+
+        edge_priority = {
+            "next": -1, "prev": -1, "global_mention": -1, "global_mention_rev": -1,
+            "calls": 0,
+            "called_by": 0,
+            "defines": 1,
+            "defined_in": 1,
+            "inheritance": 1,
+            "inherited_by": 1,
+            "imports": 1,
+            "imported_by": 1,
+            "uses": 2,
+            "used_by": 2,
+            "uses_type": 2,
+            "type_used_by": 2, "mention_scope": 10, "mention_scope_rev": 10, "defined_in_function": 4, "defined_in_function_rev": 4, "defined_in_class": 5, "defined_in_class_rev": 5, "defined_in_module": 6, "defined_in_module_rev": 6
+        }
+
+        edge_bank = {}
+        for id, type, src, dst in edges[["id", "type", "source_node_id", "target_node_id"]].values:
+            key = (src, dst)
+            if key in edge_bank:
+                edge_bank[key].append((id, type))
+            else:
+                edge_bank[key] = [(id, type)]
+
+        ids_to_remove = set()
+        for key, parallel_edges in edge_bank.items():
+            if len(parallel_edges) > 1:
+                parallel_edges = sorted(parallel_edges, key=lambda x: edge_priority.get(x[1],3))
+                ids_to_remove.update(pe[0] for pe in parallel_edges[1:])
+
+        edges = edges[
+            edges["id"].apply(lambda id_: id_ not in ids_to_remove)
+        ]
+
+        edges["id"] = range(len(edges))
+
+        persist(edges, path)
 
 
     def do_extraction(self):
