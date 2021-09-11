@@ -182,7 +182,7 @@ class SourceGraphDataset:
                  label_from, use_node_types=False,
                  use_edge_types=False, filter=None, self_loops=False,
                  train_frac=0.6, random_seed=None, tokenizer_path=None, min_count_for_objectives=1,
-                 no_global_edges=False, remove_reverse=False, package_names=None):
+                 no_global_edges=False, remove_reverse=False, custom_reverse=None, package_names=None):
         """
         Prepares the data for training GNN model. The graph is prepared in the following way:
             1. Edges are split into the train set and holdout set. Holdout set is used in the future experiments.
@@ -216,6 +216,7 @@ class SourceGraphDataset:
         self.min_count_for_objectives = min_count_for_objectives
         self.no_global_edges = no_global_edges
         self.remove_reverse = remove_reverse
+        self.custom_reverse = None if custom_reverse is None else custom_reverse.split(",")
 
         nodes_path = join(data_path, "nodes.bz2")
         edges_path = join(data_path, "edges.bz2")
@@ -239,6 +240,9 @@ class SourceGraphDataset:
 
         if self.no_global_edges:
             self.remove_global_edges()
+
+        if self.custom_reverse is not None:
+            self.add_custom_reverse()
 
         if use_node_types is False and use_edge_types is False:
             new_nodes, new_edges = self.create_nodetype_edges()
@@ -465,6 +469,7 @@ class SourceGraphDataset:
     def remove_global_edges(self):
         global_edges = get_global_edges()
         global_edges.add("global_mention")
+        global_edges |= set(edge + "_rev" for edge in global_edges)
         is_ast = lambda type: type not in global_edges
         edges = self.edges.query("type.map(@is_ast)", local_dict={"is_ast": is_ast})
         self.edges = edges
@@ -478,6 +483,18 @@ class SourceGraphDataset:
         not_reverse = lambda type: not (type.endswith("_rev") or type in global_reverse)
         edges = self.edges.query("type.map(@not_reverse)", local_dict={"not_reverse": not_reverse})
         self.edges = edges
+
+    def add_custom_reverse(self):
+        to_reverse = self.edges[
+            self.edges["type"].apply(lambda type_: type_ in self.custom_reverse)
+        ]
+
+        to_reverse["type"] = to_reverse["type"].apply(lambda type_: type_ + "_rev")
+        to_reverse["tmp"] = to_reverse["src"]
+        to_reverse["src"] = to_reverse["dst"]
+        to_reverse["dst"] = to_reverse["tmp"]
+
+        self.edges = self.edges.append(to_reverse[["src", "dst", "type"]])
 
     def update_global_id(self):
         orig_id = []
@@ -927,6 +944,7 @@ def read_or_create_dataset(args, model_base, labels_from="type"):
             min_count_for_objectives=args.min_count_for_objectives,
             no_global_edges=args.no_global_edges,
             remove_reverse=args.remove_reverse,
+            custom_reverse=args.custom_reverse,
             package_names=open(args.packages_file).readlines() if args.packages_file is not None else None
         )
 
