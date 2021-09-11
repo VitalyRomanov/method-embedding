@@ -2,7 +2,7 @@ from SourceCodeTools.code.data.sourcetrail.SubwordMasker import SubwordMasker
 from SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObjective import \
     GraphLinkClassificationObjective
 from SourceCodeTools.models.graph.train.objectives.GraphLinkObjective import GraphLinkObjective
-from SourceCodeTools.models.graph.train.objectives.NodeClassificationObjective import NodeNameClassifier
+from SourceCodeTools.models.graph.train.objectives.NodeClassificationObjective import NodeNameClassifier, NodeClassifierObjective
 from SourceCodeTools.models.graph.train.objectives.SubwordEmbedderObjective import SubwordEmbedderObjective
 from SourceCodeTools.models.graph.train.objectives.TextPredictionObjective import GraphTextPrediction, GraphTextGeneration
 
@@ -37,18 +37,19 @@ class NodeNamePrediction(SubwordEmbedderObjective):
         )
 
 
-class TypeAnnPrediction(SubwordEmbedderObjective):
+class TypeAnnPrediction(NodeClassifierObjective):
     def __init__(
             self, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
-            tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
+            tokenizer_path=None, target_emb_size=None, link_predictor_type=None, masker: SubwordMasker = None,
             measure_ndcg=False, dilate_ndcg=1
     ):
         super(TypeAnnPrediction, self).__init__(
             "TypeAnnPrediction", graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
-            tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
-            masker=masker, measure_ndcg=measure_ndcg, dilate_ndcg=dilate_ndcg
+            # tokenizer_path=tokenizer_path,
+            target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
+            masker=masker, dilate_ndcg=dilate_ndcg
         )
 
 
