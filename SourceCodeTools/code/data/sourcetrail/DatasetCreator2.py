@@ -198,7 +198,11 @@ class DatasetCreator:
         edges = unpersist(epath)
 
         restricted_edges = {"global_mention_rev"}
-        restricted_in_types = {"Op", "Constant", "#attr#", "#keyword#"}
+        restricted_in_types = {
+            "Op", "Constant", "#attr#", "#keyword#",
+            'CtlFlow', 'JoinedStr', 'Name', 'ast_Literal',
+            'subword', 'type_annotation'
+        }
 
         restricted_nodes = set(nodes[
             nodes["type"].apply(lambda type_: type_ in restricted_in_types)
