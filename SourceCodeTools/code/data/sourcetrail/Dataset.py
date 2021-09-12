@@ -315,7 +315,7 @@ class SourceGraphDataset:
         self.edges['type'] = self.edges['type'].apply(lambda x: edge_type_map[x])
 
     def add_embeddable_flag(self):
-        embeddable_types = PythonSharedNodes.shared_node_types
+        embeddable_types = PythonSharedNodes.shared_node_types | set(list(node_types.values()))
 
         if len(self.nodes.query("type_backup == 'subword'")) > 0:
             # some of the types should not be embedded if subwords were generated
@@ -779,7 +779,7 @@ class SourceGraphDataset:
         type_ann["src_type"] = type_ann["src"].apply(lambda x: node2id[x])
 
         type_ann = type_ann[
-            type_ann["src_type"].apply(lambda type_: type_ in {"arg", "AnnAssign"})
+            type_ann["src_type"].apply(lambda type_: type_ in {"mention"})  # FunctionDef {"arg", "AnnAssign"})
         ]
 
         norm = lambda x: x.strip("\"").strip("'").split("[")[0].split(".")[-1]
