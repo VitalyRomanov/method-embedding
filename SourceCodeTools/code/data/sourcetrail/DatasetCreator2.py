@@ -142,6 +142,8 @@ class DatasetCreator:
 
         self.handle_parallel_edges(join(with_ast_path, "common_edges.bz2"))
 
+        self.post_pruning(join(with_ast_path, "common_edges.bz2"), join(with_ast_path, "common_edges.bz2"))
+
         if self.visualize:
             self.visualize_func(
                 unpersist(join(with_ast_path, "common_nodes.bz2")),
@@ -191,6 +193,26 @@ class DatasetCreator:
 
         persist(edges, path)
 
+    def post_pruning(self, npath, epath):
+        nodes = unpersist(npath)
+        edges = unpersist(epath)
+
+        restricted_edges = {"global_mention_rev"}
+        restricted_in_types = {"Op", "Constant", "#attr#", "#keyword#"}
+
+        restricted_nodes = set(nodes[
+            nodes["type"].apply(lambda type_: type_ in restricted_in_types)
+        ]["id"].tolist())
+
+        edges = edges[
+            edges["type"].apply(lambda type_: type_ not in restricted_edges)
+        ]
+
+        edges = edges[
+            edges["target_node_id"].apply(lambda type_: type_ not in restricted_nodes)
+        ]
+
+        persist(edges, epath)
 
     def do_extraction(self):
         global_nodes = None
