@@ -142,7 +142,7 @@ class DatasetCreator:
 
         self.handle_parallel_edges(join(with_ast_path, "common_edges.bz2"))
 
-        self.post_pruning(join(with_ast_path, "common_edges.bz2"), join(with_ast_path, "common_edges.bz2"))
+        self.post_pruning(join(with_ast_path, "common_nodes.bz2"), join(with_ast_path, "common_edges.bz2"))
 
         if self.visualize:
             self.visualize_func(
