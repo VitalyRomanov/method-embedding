@@ -182,7 +182,8 @@ class SourceGraphDataset:
                  label_from, use_node_types=False,
                  use_edge_types=False, filter=None, self_loops=False,
                  train_frac=0.6, random_seed=None, tokenizer_path=None, min_count_for_objectives=1,
-                 no_global_edges=False, remove_reverse=False, custom_reverse=None, package_names=None):
+                 no_global_edges=False, remove_reverse=False, custom_reverse=None, package_names=None,
+                 restricted_id_pool=None):
         """
         Prepares the data for training GNN model. The graph is prepared in the following way:
             1. Edges are split into the train set and holdout set. Holdout set is used in the future experiments.
@@ -275,7 +276,7 @@ class SourceGraphDataset:
         # self.nodes, self.label_map = self.add_compact_labels()
         self.add_typed_ids()
 
-        self.add_splits(train_frac=train_frac, package_names=package_names)
+        self.add_splits(train_frac=train_frac, package_names=package_names, restricted_id_pool=restricted_id_pool)
 
         # self.mark_leaf_nodes()
 
@@ -355,7 +356,7 @@ class SourceGraphDataset:
         # self.nodes.eval("name_alter_tokens = name.map(@op_tokenize)",
         #                 local_dict={"op_tokenize": op_tokenize}, inplace=True)
 
-    def add_splits(self, train_frac, package_names=None):
+    def add_splits(self, train_frac, package_names=None, restricted_id_pool=None):
         """
         Generates train, validation, and test masks
         Store the masks is pandas table for nodes
@@ -379,6 +380,13 @@ class SourceGraphDataset:
             )
 
         create_train_val_test_masks(self.nodes, *splits)
+
+        if restricted_id_pool is not None:
+            node_ids = set(pd.read_csv(restricted_id_pool)["node_id"].tolist())
+            to_keep = self.nodes["id"].apply(lambda id_: id_ in node_ids)
+            self.nodes["train_mask"] = self.nodes["train_mask"] & to_keep
+            self.nodes["test_mask"] = self.nodes["test_mask"] & to_keep
+            self.nodes["val_mask"] = self.nodes["val_mask"] & to_keep
 
     def add_typed_ids(self):
         nodes = self.nodes.copy()
@@ -945,7 +953,8 @@ def read_or_create_dataset(args, model_base, labels_from="type"):
             no_global_edges=args.no_global_edges,
             remove_reverse=args.remove_reverse,
             custom_reverse=args.custom_reverse,
-            package_names=open(args.packages_file).readlines() if args.packages_file is not None else None
+            package_names=open(args.packages_file).readlines() if args.packages_file is not None else None,
+            restricted_id_pool=args.restricted_id_pool
         )
 
         # save dataset state for recovery

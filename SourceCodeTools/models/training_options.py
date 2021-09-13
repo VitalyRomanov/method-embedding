@@ -11,6 +11,7 @@ def add_data_arguments(parser):
     parser.add_argument('--no_global_edges', action='store_true')
     parser.add_argument('--remove_reverse', action='store_true')
     parser.add_argument('--custom_reverse', dest='custom_reverse', default=None, help='')
+    parser.add_argument('--restricted_id_pool', dest='restricted_id_pool', default=None, help='')
 
 
 def add_pretraining_arguments(parser):
