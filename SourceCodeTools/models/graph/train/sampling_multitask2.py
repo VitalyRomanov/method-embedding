@@ -381,8 +381,8 @@ class SamplingMultitaskTrainer:
                         break
 
                     # try:
-                    loss, acc = objective(input_nodes, seeds, blocks, train_embeddings=self.finetune,)
-                                          # neg_sampling_strategy="w2v" if epoch == 0 else None)
+                    loss, acc = objective(input_nodes, seeds, blocks, train_embeddings=self.finetune,
+                                          neg_sampling_strategy="w2v" if epoch == 0 else None)
 
                     loss = loss / len(self.objectives)  # assumes the same batch size for all objectives
                     loss_accum += loss.item()
