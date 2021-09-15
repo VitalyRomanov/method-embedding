@@ -382,7 +382,8 @@ class SourceGraphDataset:
         create_train_val_test_masks(self.nodes, *splits)
 
         if restricted_id_pool is not None:
-            node_ids = set(pd.read_csv(restricted_id_pool)["node_id"].tolist())
+            node_ids = set(pd.read_csv(restricted_id_pool)["node_id"].tolist()) | \
+                       set(self.nodes.query("type_backup == 'FunctionDef' or type_backup == 'mention'")["id"].tolist())
             to_keep = self.nodes["id"].apply(lambda id_: id_ in node_ids)
             self.nodes["train_mask"] = self.nodes["train_mask"] & to_keep
             self.nodes["test_mask"] = self.nodes["test_mask"] & to_keep
@@ -766,6 +767,7 @@ class SourceGraphDataset:
         global_edges = global_edges | set(edge + "_rev" for edge in global_edges)
         is_ast = lambda type: type not in global_edges
         edges = edges.query("type.map(@is_ast)", local_dict={"is_ast": is_ast})
+        edges = edges[edges["type"].apply(lambda type_: not type_.endswith("_rev"))]
 
         return edges[["src", "dst"]]#, "type"]]
 
