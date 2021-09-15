@@ -235,6 +235,14 @@ class Experiments:
 
             type_ann["dst"] = type_ann["dst"].apply(norm)
             type_ann = filter_dst_by_freq(type_ann, min_entity_count)
+
+            allowed = {'str', 'bool', 'Optional', 'None', 'int', 'Any', 'Union', 'List', 'Dict', 'Callable', 'ndarray',
+                       'FrameOrSeries', 'bytes', 'DataFrame', 'Matcher', 'float', 'Tuple', 'bool_t', 'Description',
+                       'Type'}
+            type_ann = type_ann[
+                type_ann["type"].apply(lambda type_: type_ in allowed)
+            ]
+
             type_ann = type_ann[["src", "dst"]]
 
             # splits = get_train_val_test_indices(nodes.index)
