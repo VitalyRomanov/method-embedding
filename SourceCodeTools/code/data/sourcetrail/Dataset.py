@@ -767,6 +767,7 @@ class SourceGraphDataset:
         global_edges = global_edges | set(edge + "_rev" for edge in global_edges)
         is_ast = lambda type: type not in global_edges
         edges = edges.query("type.map(@is_ast)", local_dict={"is_ast": is_ast})
+        edges = edges[edges["type"].apply(lambda type_: not type_.endswith("_rev"))]
 
         return edges[["src", "dst"]]#, "type"]]
 
