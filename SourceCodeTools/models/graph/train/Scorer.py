@@ -24,7 +24,7 @@ class Scorer:
     similarity. It becomes less useful when the decision is made by neural network because it does not need to mode
     points to learn how to make correct decisions.
     """
-    def __init__(self, num_embs, emb_size, src2dst, neighbours_to_sample=5, index_backend="sklearn"):
+    def __init__(self, num_embs, emb_size, src2dst, neighbours_to_sample=5, index_backend="faiss"):
         self.scorer_num_emb = num_embs
         self.scorer_emb_size = emb_size
         self.scorer_src2dst = src2dst
