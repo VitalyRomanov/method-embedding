@@ -7,6 +7,7 @@ import dgl
 import dgl.nn as dglnn
 # import tqdm
 from torch.utils import checkpoint
+from tqdm import tqdm
 
 from SourceCodeTools.models.Embedder import Embedder
 
@@ -375,7 +376,7 @@ class RGCNSampling(nn.Module):
                     drop_last=False,
                     num_workers=num_workers)
 
-                for input_nodes, output_nodes, blocks in dataloader:#tqdm.tqdm(dataloader):
+                for input_nodes, output_nodes, blocks in tqdm(dataloader, desc=f"Layer {l}"):
                     block = blocks[0].to(device)
 
                     if not isinstance(input_nodes, dict):
