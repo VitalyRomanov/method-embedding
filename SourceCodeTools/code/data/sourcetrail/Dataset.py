@@ -748,16 +748,6 @@ class SourceGraphDataset:
             }, inplace=True, axis=1
         )
 
-        valid_nodes = set(edges["src"].tolist())
-        valid_nodes = valid_nodes.intersection(set(edges["dst"].tolist()))
-
-        edges = edges[
-            edges["src"].apply(lambda id_: id_ in valid_nodes)
-        ]
-        edges = edges[
-            edges["dst"].apply(lambda id_: id_ in valid_nodes)
-        ]
-
         global_edges = {"global_mention", "subword", "next", "prev"}
         global_edges = global_edges | {"mention_scope", "defined_in_module", "defined_in_class", "defined_in_function"}
 
@@ -768,6 +758,16 @@ class SourceGraphDataset:
         is_ast = lambda type: type not in global_edges
         edges = edges.query("type.map(@is_ast)", local_dict={"is_ast": is_ast})
         edges = edges[edges["type"].apply(lambda type_: not type_.endswith("_rev"))]
+
+        valid_nodes = set(edges["src"].tolist())
+        valid_nodes = valid_nodes.intersection(set(edges["dst"].tolist()))
+
+        edges = edges[
+            edges["src"].apply(lambda id_: id_ in valid_nodes)
+        ]
+        edges = edges[
+            edges["dst"].apply(lambda id_: id_ in valid_nodes)
+        ]
 
         return edges[["src", "dst"]]#, "type"]]
 
