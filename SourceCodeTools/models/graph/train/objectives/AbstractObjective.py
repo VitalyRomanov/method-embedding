@@ -6,6 +6,7 @@ from itertools import chain
 import dgl
 import torch
 from torch.nn import CosineEmbeddingLoss
+from tqdm import tqdm
 
 from SourceCodeTools.code.data.sourcetrail.SubwordMasker import SubwordMasker
 from SourceCodeTools.mltools.torch import _compute_accuracy
@@ -318,6 +319,8 @@ class AbstractObjective(nn.Module):
                 # emb = self.graph_model.node_embed()[input_nodes]
 
         logits = self.graph_model(emb, blocks)
+        # if len(logits) == 0:
+        #     logits = input_nodes
 
         if self.use_types:
             for ntype in self.graph_model.g.ntypes:
@@ -481,7 +484,9 @@ class AbstractObjective(nn.Module):
         #     if self.link_predictor == "inner_prod":
         #         self.target_embedder.prepare_index()
 
-        for input_nodes, seeds, blocks in getattr(self, f"{data_split}_loader"):
+        for input_nodes, seeds, blocks in tqdm(
+                getattr(self, f"{data_split}_loader"), total=getattr(self, f"num_{data_split}_batches")
+        ):
             blocks = [blk.to(self.device) for blk in blocks]
 
             if self.masker is None:
@@ -522,7 +527,9 @@ class AbstractObjective(nn.Module):
         ndcg_count = 0
         count = 0
 
-        for input_nodes, seeds, blocks in getattr(self, f"{data_split}_loader"):
+        for input_nodes, seeds, blocks in tqdm(
+                getattr(self, f"{data_split}_loader"), total=getattr(self, f"num_{data_split}_batches")
+        ):
             blocks = [blk.to(self.device) for blk in blocks]
 
             if self.masker is None:
