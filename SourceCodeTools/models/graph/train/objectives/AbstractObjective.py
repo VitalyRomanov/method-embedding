@@ -176,7 +176,7 @@ class AbstractObjective(nn.Module):
         )
 
         def get_num_nodes(ids):
-            return sum(len(ids[key_]) for key_ in ids) // self.batch_size
+            return sum(len(ids[key_]) for key_ in ids) // self.batch_size + 1
 
         self.num_train_batches = get_num_nodes(train_idx)
         self.num_test_batches = get_num_nodes(test_idx)
