@@ -351,14 +351,10 @@ class SamplingMultitaskTrainer:
 
             start = time()
 
-            # keep_training = True
-
             summary_dict = {}
-            # step = 0
             num_batches = min([objective.num_train_batches for objective in self.objectives])
 
-            for step in tqdm(range(num_batches), total=num_batches):
-            # while keep_training:
+            for step in tqdm(range(num_batches), total=num_batches, desc=f"Epoch {self.epoch}"):
 
                 loss_accum = 0
 
@@ -373,12 +369,12 @@ class SamplingMultitaskTrainer:
                 for objective, (input_nodes, seeds, blocks) in zip(self.objectives, loaders):
                     blocks = [blk.to(self.device) for blk in blocks]
 
-                    do_break = False
-                    for block in blocks:
-                        if block.num_edges() == 0:
-                            do_break = True
-                    if do_break:
-                        break
+                    # do_break = False
+                    # for block in blocks:
+                    #     if block.num_edges() == 0:
+                    #         do_break = True
+                    # if do_break:
+                    #     break
 
                     # try:
                     loss, acc = objective(input_nodes, seeds, blocks, train_embeddings=self.finetune,
