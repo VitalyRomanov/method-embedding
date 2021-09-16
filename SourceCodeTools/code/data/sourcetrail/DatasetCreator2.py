@@ -255,8 +255,9 @@ class DatasetCreator:
             if offsets is not None:
                 offsets["package"] = os.path.basename(env_path)
 
-            nodes_with_ast = nodes.append(ast_nodes)
-            edges_with_ast = edges.append(ast_edges)
+            # need this check in situations when module has a single file and this file cannot be parsed
+            nodes_with_ast = nodes.append(ast_nodes) if ast_nodes is not None else nodes
+            edges_with_ast = edges.append(ast_edges) if ast_edges is not None else edges
 
             if bodies is not None:
                 vars = extract_var_names(nodes, bodies, self.lang)
