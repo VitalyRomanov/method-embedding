@@ -29,7 +29,7 @@ rggan_grids = [
         'num_steps': [5],
         'dropout': [0.0],
         'use_self_loop': [False],
-        'activation': [torch.nn.functional.hardtanh], # torch.nn.functional.hardswish], #[torch.nn.functional.hardtanh], #torch.nn.functional.leaky_relu
+        'activation': [torch.tanh], # torch.nn.functional.hardswish], #[torch.nn.functional.hardtanh], #torch.nn.functional.leaky_relu
         'lr': [1e-3], # 1e-4]
     }
 ]
@@ -463,8 +463,8 @@ def node_clf(args):
         mkdir(args.model_output_dir)
     args.save_checkpoints = False
 
-    data_loaders = [AIFBDataset, MUTAGDataset, BGSDataset, AMDataset]
-    # data_loaders = [AMDataset]
+    # data_loaders = [AIFBDataset, MUTAGDataset, BGSDataset, AMDataset]
+    data_loaders = [AMDataset]
 
     for dl in data_loaders:
         print(dl.__name__)
