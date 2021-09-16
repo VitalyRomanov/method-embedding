@@ -454,7 +454,7 @@ class SamplingMultitaskTrainer:
 
     def save_checkpoint(self, checkpoint_path=None, checkpoint_name=None, **kwargs):
 
-        checkpoint_path = join(checkpoint_path, "saved_state.pt")
+        checkpoint_path = join(checkpoint_path, f"saved_state_{self.epoch}.pt")
 
         param_dict = {
             'graph_model': self.graph_model.state_dict(),
@@ -548,7 +548,8 @@ class SamplingMultitaskTrainer:
             for ntype in self.graph_model.g.ntypes
         }
 
-        h = self.graph_model.inference(batch_size=256, device='cpu', num_workers=0, x=node_embs)
+        logging.info("Computing all embeddings")
+        h = self.graph_model.inference(batch_size=2048, device='cpu', num_workers=0, x=node_embs)
 
         original_id = []
         global_id = []
