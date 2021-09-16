@@ -319,8 +319,6 @@ class AbstractObjective(nn.Module):
                 # emb = self.graph_model.node_embed()[input_nodes]
 
         logits = self.graph_model(emb, blocks)
-        # if len(logits) == 0:
-        #     logits = input_nodes
 
         if self.use_types:
             for ntype in self.graph_model.g.ntypes:

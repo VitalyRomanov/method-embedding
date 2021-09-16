@@ -255,7 +255,8 @@ class SourceGraphDataset:
             self.nodes['type'] = "node_"
             self.nodes = self.nodes.astype({'type': 'category'})
 
-        self.add_embeddable_flag()
+        self.add_embedding_names()
+        # self.add_embeddable_flag()
 
         # need to do this to avoid issues insode dgl library
         self.edges['type'] = self.edges['type'].apply(lambda x: f"{x}_")
@@ -314,6 +315,19 @@ class SourceGraphDataset:
         )
 
         self.edges['type'] = self.edges['type'].apply(lambda x: edge_type_map[x])
+
+    def add_embedding_names(self):
+        self.nodes["embeddable"] = True
+
+        def get_embeddable_name(name):
+            if "@" in name:
+                return name.split("@")[0]
+            elif "_0x" in name:
+                return name.split("_0x")[0]
+            else:
+                return name
+
+        self.nodes["embeddable_name"] = self.nodes["name"].apply(get_embeddable_name)
 
     def add_embeddable_flag(self):
         embeddable_types = PythonSharedNodes.shared_node_types | set(list(node_types.values()))

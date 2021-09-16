@@ -18,11 +18,13 @@ class NodeEmbedder(nn.Module):
 
         self.buckets = None
 
+        embedding_field = "embeddable_name"
+
         nodes_with_embeddings = nodes.query("embeddable == True")[
-            ['global_graph_id', 'typed_id', 'type', 'type_backup', 'name']
+            ['global_graph_id', 'typed_id', 'type', 'type_backup', embedding_field]
         ]
 
-        type_name = list(zip(nodes_with_embeddings['type_backup'], nodes_with_embeddings['name']))
+        type_name = list(zip(nodes_with_embeddings['type_backup'], nodes_with_embeddings[embedding_field]))
 
         self.node_info = dict(zip(
             list(zip(nodes_with_embeddings['type'], nodes_with_embeddings['typed_id'])),
@@ -109,8 +111,10 @@ class NodeIdEmbedder(NodeEmbedder):
 
         self.buckets = None
 
+        embedding_field = "embeddable_name"
+
         nodes_with_embeddings = nodes.query("embeddable == True")[
-            ['global_graph_id', 'typed_id', 'type', 'type_backup', 'name']
+            ['global_graph_id', 'typed_id', 'type', 'type_backup', embedding_field]
         ]
 
         self.to_global_map = {}
