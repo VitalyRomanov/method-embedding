@@ -501,7 +501,11 @@ class ReplacementNodeResolver(NodeResolver):
 
     def new_nodes_for_write(self, from_stashed=False):
 
-        new_nodes = pd.DataFrame(self.new_nodes if not from_stashed else self.stashed_nodes)[
+        new_nodes = pd.DataFrame(self.new_nodes if not from_stashed else self.stashed_nodes)
+        if len(new_nodes) == 0:
+            return None
+
+        new_nodes = new_nodes[
             ['id', 'type', 'serialized_name', 'mentioned_in']
         ].astype({"mentioned_in": "Int32"})
 
@@ -1081,6 +1085,8 @@ def get_ast_from_modules(
     # prepare_new_nodes(node_resolver)  # disabled to keep global nodes separate
 
     all_ast_nodes = node_resolver.new_nodes_for_write(from_stashed=True)
+    if all_ast_nodes is None:
+        return None, None, None
 
     def prepare_edges(all_ast_edges):
         all_ast_edges = pd.DataFrame(all_ast_edges)
