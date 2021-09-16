@@ -341,6 +341,8 @@ class SamplingMultitaskTrainer:
         """
 
         summary_dict = {}
+        best_val_loss = float("inf")
+        write_best_model = False
 
         for objective in self.objectives:
             with torch.set_grad_enabled(False):
@@ -425,9 +427,6 @@ class SamplingMultitaskTrainer:
             for objective in self.objectives:
                 objective.reset_iterator("train")
 
-            if self.do_save:
-                self.save_checkpoint(self.model_base_path)
-
             for objective in self.objectives:
                 objective.eval()
 
@@ -451,6 +450,16 @@ class SamplingMultitaskTrainer:
                 self.write_summary(summary, self.batch)
                 summary_dict.update(summary)
 
+                val_losses = [item for key, item in summary_dict.items() if key.startswith("Loss/val")]
+                avg_val_loss = sum(val_losses) / len(val_losses)
+                if avg_val_loss < best_val_loss:
+                    best_val_loss = avg_val_loss
+                    write_best_model = True
+
+                if self.do_save:
+                    self.save_checkpoint(self.model_base_path, write_best_model=write_best_model)
+                write_best_model = False
+
                 if objective.early_stopping_trigger is True:
                     raise EarlyStopping()
 
@@ -465,9 +474,9 @@ class SamplingMultitaskTrainer:
 
             self.lr_scheduler.step()
 
-    def save_checkpoint(self, checkpoint_path=None, checkpoint_name=None, **kwargs):
+    def save_checkpoint(self, checkpoint_path=None, checkpoint_name=None, write_best_model=False, **kwargs):
 
-        checkpoint_path = join(checkpoint_path, f"saved_state_{self.epoch}.pt")
+        model_path = join(checkpoint_path, f"saved_state.pt")
 
         param_dict = {
             'graph_model': self.graph_model.state_dict(),
@@ -482,7 +491,9 @@ class SamplingMultitaskTrainer:
         if len(kwargs) > 0:
             param_dict.update(kwargs)
 
-        torch.save(param_dict, checkpoint_path)
+        torch.save(param_dict, model_path)
+        if write_best_model:
+            torch.save(param_dict,  join(checkpoint_path, f"best_model.pt"))
 
     def restore_from_checkpoint(self, checkpoint_path):
         checkpoint = torch.load(join(checkpoint_path, "saved_state.pt"))
