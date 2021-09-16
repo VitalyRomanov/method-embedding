@@ -354,6 +354,14 @@ class SamplingMultitaskTrainer:
             summary_dict = {}
             num_batches = min([objective.num_train_batches for objective in self.objectives])
 
+            train_losses = {}
+            train_accs = {}
+
+            def append_metric(destination, name, metric):
+                if name not in destination:
+                    destination[name] = []
+                destination[name].append(metric)
+
             for step in tqdm(range(num_batches), total=num_batches, desc=f"Epoch {self.epoch}"):
 
                 loss_accum = 0
@@ -391,6 +399,9 @@ class SamplingMultitaskTrainer:
                         f"Loss/train/{objective.name}_vs_batch": loss.item(),
                         f"Accuracy/train/{objective.name}_vs_batch": acc,
                     })
+
+                    append_metric(train_losses, f"Loss/train_avg/{objective.name}_vs_batch", loss.item())
+                    append_metric(train_accs, f"Accuracy/train_avg/{objective.name}_vs_batch", acc)
                     # except ZeroEdges as e:
                     #     logging.warning(f"Zero edges in loader in step {step}")
                     # except Exception as e:
@@ -406,6 +417,8 @@ class SamplingMultitaskTrainer:
                 summary = {
                     f"Loss/train": loss_accum,
                 }
+                summary = {key: sum(val) / len(val) for key, val in train_losses.items()}
+                summary.update({key: sum(val) / len(val) for key, val in train_accs.items()})
                 self.write_summary(summary, self.batch)
                 summary_dict.update(summary)
 
