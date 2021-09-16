@@ -228,7 +228,7 @@ class Experiments:
             type_ann["src_type"] = type_ann["src"].apply(lambda x: node2id[x])
 
             type_ann = type_ann[
-                type_ann["src_type"].apply(lambda type_: type_ in {"arg", "AnnAssign"})
+                type_ann["src_type"].apply(lambda type_: type_ in {"mention"})
             ]
 
             norm = lambda x: x.strip("\"").strip("'").split("[")[0].split(".")[-1]
@@ -240,7 +240,7 @@ class Experiments:
                        'FrameOrSeries', 'bytes', 'DataFrame', 'Matcher', 'float', 'Tuple', 'bool_t', 'Description',
                        'Type'}
             type_ann = type_ann[
-                type_ann["type"].apply(lambda type_: type_ in allowed)
+                type_ann["dst"].apply(lambda type_: type_ in allowed)
             ]
 
             type_ann = type_ann[["src", "dst"]]
