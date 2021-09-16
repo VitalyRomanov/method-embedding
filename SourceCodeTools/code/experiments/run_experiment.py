@@ -95,6 +95,7 @@ def run_experiment(e, experiment_name, args):
 
     args.epochs = 500
 
+    trains = []
     tests = []
 
     for epoch in range(args.epochs):
@@ -113,6 +114,7 @@ def run_experiment(e, experiment_name, args):
 
             ma_train = train_accuracy.result() * 100 * ma_alpha + ma_train * (1 - ma_alpha)
             ma_test = test_accuracy.result() * 100 * ma_alpha + ma_test * (1 - ma_alpha)
+            trains.append(ma_train)
             tests.append(ma_test)
 
             # template = 'Epoch {}, Loss: {:.4f}, Accuracy: {:.4f}, Test Loss: {:.4f}, Test Accuracy: {:.4f}, Average Test {:.4f}'
@@ -125,6 +127,13 @@ def run_experiment(e, experiment_name, args):
 
     # ma_train = train_accuracy.result() * 100 * ma_alpha + ma_train * (1 - ma_alpha)
     # ma_test = test_accuracy.result() * 100 * ma_alpha + ma_test * (1 - ma_alpha)
+
+    import matplotlib.pyplot as plt
+    plt.plot(trains)
+    plt.plot(tests)
+    plt.legend(["Train", "Test"])
+    # plt.savefig(os.path.join(args.base_path, f"{args.experiment}.png"))
+    plt.show()
 
     return ma_train, max(tests)
 
