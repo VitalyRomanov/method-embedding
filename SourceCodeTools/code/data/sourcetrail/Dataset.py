@@ -163,6 +163,15 @@ def get_global_edges():
     return types
 
 
+def get_embeddable_name(name):
+    if "@" in name:
+        return name.split("@")[0]
+    elif "_0x" in name:
+        return name.split("_0x")[0]
+    else:
+        return name
+
+
 class SourceGraphDataset:
     g = None
     nodes = None
@@ -196,10 +205,6 @@ class SourceGraphDataset:
                 node_types flag to True.
             4. Graphs require contiguous indexing of nodes. For this reason additional mapping is created that tracks
                 the relationship between the new graph id and the original node id from the training data.
-        :param nodes_path: path to csv or compressed csv for nodes witch columns
-                "id", "type", {"name", "serialized_name"}, {any column with labels}
-        :param edges_path: path to csv or compressed csv for edges with columns
-                "id", "type", {"source_node_id", "src"}, {"target_node_id", "dst"}
         :param label_from: the column where the labels are taken from
         :param use_node_types: boolean value, whether to use node types or not
                 (node-heterogeneous graph}
@@ -318,15 +323,6 @@ class SourceGraphDataset:
 
     def add_embedding_names(self):
         self.nodes["embeddable"] = True
-
-        def get_embeddable_name(name):
-            if "@" in name:
-                return name.split("@")[0]
-            elif "_0x" in name:
-                return name.split("_0x")[0]
-            else:
-                return name
-
         self.nodes["embeddable_name"] = self.nodes["name"].apply(get_embeddable_name)
 
     def add_embeddable_flag(self):
@@ -344,6 +340,8 @@ class SourceGraphDataset:
             local_dict={"embeddable_types": embeddable_types},
             inplace=True
         )
+
+        self.nodes["embeddable_name"] = self.nodes["name"].apply(get_embeddable_name)
 
     def op_tokens(self):
         if self.tokenizer_path is None:
