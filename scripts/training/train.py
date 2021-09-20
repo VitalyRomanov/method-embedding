@@ -58,7 +58,7 @@ def main(models, args):
             else:
                 raise ValueError("Unknown training mode:", args.training_mode)
 
-            print("Saving...", end="")
+            print("Saving...")
 
             params['activation'] = params['activation'].__name__
 
@@ -82,7 +82,7 @@ def main(models, args):
             with open(join(model_base, "metadata.json"), "w") as mdata:
                 mdata.write(json.dumps(metadata, indent=4))
 
-            print("done")
+            print("Done saving")
 
 
 
