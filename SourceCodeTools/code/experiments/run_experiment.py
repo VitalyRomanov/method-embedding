@@ -1,5 +1,7 @@
 import os
 
+from sklearn import metrics
+
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
@@ -20,6 +22,121 @@ name_prediction_experiments = ['varuse', 'fname']
 name_subword_predictor = ['typeann_name']
 node_classification_experiments = ['nodetype', "typeann"]
 all_experiments = link_prediction_experiments + name_prediction_experiments + node_classification_experiments + name_subword_predictor
+
+
+class Tracker:
+    def __init__(self, inverted_index=None):
+        self.all_true = []
+        self.all_estimated = []
+        self.all_emb = []
+        self.inv_index = inverted_index
+
+    def add(self, embs, pred, true):
+        self.all_true.append(true)
+        self.all_estimated.append(pred)
+        self.all_emb.append(embs)
+
+    def decode_label_names(self, ids):
+        assert self.inv_index is not None, "Need inverted index"
+        return list(map(lambda x: self.inv_index[x], ids))
+
+    @property
+    def true_labels(self):
+        return np.concatenate(self.all_true, axis=0).reshape(-1,).tolist()
+
+    @property
+    def true_label_names(self):
+        return self.decode_label_names(self.true_labels)
+
+    @property
+    def pred_labels(self):
+        return np.argmax(np.concatenate(self.all_estimated, axis=0), axis=-1).reshape(-1, ).tolist()
+
+    @property
+    def pred_label_names(self):
+        return self.decode_label_names(self.pred_labels)
+
+    @property
+    def pred_scores(self):
+        return np.concatenate(self.all_estimated, axis=0)
+
+    @property
+    def embeddings(self):
+        return np.concatenate(self.all_emb, axis=0)
+
+    def clear(self):
+        self.all_true.clear()
+        self.all_estimated.clear()
+        self.all_emb.clear()
+
+    def save_embs_for_tb(self, save_name):
+        assert self.inv_index is not None, "Cannot export for tensorboard without metadata"
+        np.savetxt(f"{save_name}_embeddings.tsv", self.embeddings, delimiter="\t")
+        with open(f"{save_name}_meta.tsv", "w") as meta_sink:
+            for label in list(map(lambda x: self.inv_index[x], self.pred_labels)):
+                meta_sink.write(f"{label}\n")
+
+    def get_metrics(self):
+        all_true = self.true_labels
+        all_scores = self.pred_scores
+
+        metric_dict = {}
+
+        for k in [1,3,5]:
+            metric_dict[f"Acc@{k}"] = metrics.top_k_accuracy_score(y_true=all_true, y_score=all_scores, k=k, labels=list(range(all_scores.shape[1])))
+
+        return metric_dict
+
+    def save_confusion_matrix(self, save_path):
+        estimate_confusion(
+            self.pred_label_names,
+            self.true_label_names,
+            save_path=save_path
+        )
+
+
+def estimate_confusion(pred, true, save_path):
+    pred_filtered = pred
+    true_filtered = true
+
+    labels = sorted(list(set(true_filtered + pred_filtered)))
+    label2ind = dict(zip(labels, range(len(labels))))
+
+    confusion = np.zeros((len(labels), len(labels)))
+
+    for pred, true in zip(pred_filtered, true_filtered):
+        confusion[label2ind[true], label2ind[pred]] += 1
+
+    norm = np.array([x if x != 0 else 1. for x in np.sum(confusion, axis=1)]).reshape(-1,1)
+    confusion /= norm
+
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(45,45))
+    im = ax.imshow(confusion)
+
+    # We want to show all ticks...
+    ax.set_xticks(np.arange(len(labels)))
+    ax.set_yticks(np.arange(len(labels)))
+    # ... and label them with the respective list entries
+    ax.set_xticklabels(labels)
+    ax.set_yticklabels(labels)
+
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+             rotation_mode="anchor")
+
+    # Loop over data dimensions and create text annotations.
+    for i in range(len(labels)):
+        for j in range(len(labels)):
+            text = ax.text(j, i, f"{confusion[i, j]: .2f}",
+                           ha="center", va="center", color="w")
+
+    ax.set_title("Confusion matrix for Python type prediction")
+    fig.tight_layout()
+    # plt.show()
+    plt.savefig(save_path)
+    plt.close()
 
 
 def run_experiment(e, experiment_name, args):
@@ -71,7 +188,7 @@ def run_experiment(e, experiment_name, args):
     test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='test_accuracy')
 
     # @tf.function
-    def train_step(batch):
+    def train_step(batch, tracker=None):
         with tf.GradientTape() as tape:
             # training=True is only needed if there are layers with different
             # behavior during training versus inference (e.g. Dropout).
@@ -80,23 +197,30 @@ def run_experiment(e, experiment_name, args):
             gradients = tape.gradient(loss, clf.trainable_variables)
             optimizer.apply_gradients(zip(gradients, clf.trainable_variables))
 
+        if tracker is not None:
+            tracker.add(batch["x"], predictions.numpy(), batch["y"])
+
         train_loss(loss)
         train_accuracy(batch["y"], predictions)
 
     # @tf.function
-    def test_step(batch):
+    def test_step(batch, tracker=None):
         # training=False is only needed if there are layers with different
         # behavior during training versus inference (e.g. Dropout).
         predictions = clf(**batch, training=False)
         t_loss = loss_object(batch["y"], predictions)
 
+        if tracker is not None:
+            tracker.add(batch["x"], predictions.numpy(), batch["y"])
+
         test_loss(t_loss)
         test_accuracy(batch["y"], predictions)
 
-    args.epochs = 500
-
     trains = []
     tests = []
+    metrics = []
+
+    test_tracker = Tracker(inverted_index=experiment.inv_index if hasattr(experiment, "inv_index") else None)
 
     for epoch in range(args.epochs):
         # Reset the metrics at the start of the next epoch
@@ -109,13 +233,17 @@ def run_experiment(e, experiment_name, args):
             train_step(batch)
 
         if epoch % 1 == 0:
+
+            test_tracker.clear()
+
             for batch in experiment.test_batches():
-                test_step(batch)
+                test_step(batch, tracker=test_tracker)
 
             ma_train = train_accuracy.result() * 100 * ma_alpha + ma_train * (1 - ma_alpha)
             ma_test = test_accuracy.result() * 100 * ma_alpha + ma_test * (1 - ma_alpha)
             trains.append(ma_train)
             tests.append(ma_test)
+            metrics.append(test_tracker.get_metrics())
 
             # template = 'Epoch {}, Loss: {:.4f}, Accuracy: {:.4f}, Test Loss: {:.4f}, Test Accuracy: {:.4f}, Average Test {:.4f}'
             # print(template.format(epoch+1,
@@ -124,6 +252,15 @@ def run_experiment(e, experiment_name, args):
             #                       test_loss.result(),
             #                       test_accuracy.result()*100,
             #                       ma_test))
+
+    # plot confusion matrix
+    if hasattr(experiment, "inv_index") and args.confusion_out_path is not None:
+        test_tracker.save_confusion_matrix(save_path=args.confusion_out_path)
+
+    if hasattr(experiment, "inv_index") and args.emb_out is not None:
+        test_tracker.save_embs_for_tb(save_name=args.emb_out)
+
+    print(metrics[tests.index(max(tests))])
 
     # ma_train = train_accuracy.result() * 100 * ma_alpha + ma_train * (1 - ma_alpha)
     # ma_test = test_accuracy.result() * 100 * ma_alpha + ma_test * (1 - ma_alpha)
@@ -160,6 +297,9 @@ if __name__ == "__main__":
     parser.add_argument("--element_predictor_h_size", default=50, type=int, help="")
     parser.add_argument("--link_predictor_h_size", default="[20]", type=str, help="")
     parser.add_argument("--node_classifier_h_size", default="[30,15]", type=str, help="")
+    parser.add_argument("--confusion_out_path", default=None, type=str, help="")
+    parser.add_argument("--trials", default=1, type=int, help="")
+    parser.add_argument("--emb_out", default=None, type=str, help="")
     parser.add_argument("--embeddings", default=None)
     parser.add_argument('--random', action='store_true')
     parser.add_argument('--test_embedder', action='store_true')
@@ -182,10 +322,11 @@ if __name__ == "__main__":
     experiments = args.experiment.split(",")
 
     for experiment_name in experiments:
-        print(f"\n{experiment_name}:")
-        try:
-            train_acc, test_acc = run_experiment(e, experiment_name, args)
-            print(f"Train Accuracy: {train_acc:.4f}, Test Accuracy: {test_acc:.4f}")
-        except ValueError as err:
-            print(err)
-        print("\n")
+        for trial in range(args.trials):
+            print(f"\n{experiment_name}, trial {trial}:")
+            try:
+                train_acc, test_acc = run_experiment(e, experiment_name, args)
+                print(f"Train Accuracy: {train_acc:.4f}, Test Accuracy: {test_acc:.4f}")
+            except ValueError as err:
+                print(err)
+            print("\n")

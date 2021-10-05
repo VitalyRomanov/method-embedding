@@ -108,8 +108,8 @@ class GraphTextGeneration(SubwordEmbedderObjective):
         return acc, loss
 
 
-    def forward(self, input_nodes, seeds, blocks, train_embeddings=True):
-        graph_emb = self._logits_batch(input_nodes, blocks, train_embeddings)
+    def forward(self, input_nodes, seeds, blocks, train_embeddings=True, neg_sampling_strategy=None):
+        graph_emb = self._graph_embeddings(input_nodes, blocks, train_embeddings)
         indices = self.seeds_to_global(seeds).tolist()
         labels, lengths = self.target_embedder[indices]
         labels = labels.to(self.device)
@@ -142,7 +142,7 @@ class GraphTextGeneration(SubwordEmbedderObjective):
         for input_nodes, seeds, blocks in getattr(self, f"{data_split}_loader"):
             blocks = [blk.to(self.device) for blk in blocks]
 
-            src_embs = self._logits_batch(input_nodes, blocks)
+            src_embs = self._graph_embeddings(input_nodes, blocks)
             indices = self.seeds_to_global(seeds).tolist()
             labels, lengths = self.target_embedder[indices]
             labels = labels.to(self.device)

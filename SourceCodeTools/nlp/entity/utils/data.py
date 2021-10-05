@@ -55,7 +55,7 @@ def read_data(
         logging.info("Splitting dataset randomly")
     else:
         random.seed(random_seed)
-        logging.warning(f"Using ransom seed {random_seed} for dataset split")
+        logging.warning(f"Using random seed {random_seed} for dataset split")
 
     filter_infrequent(
         train_data, entities_in_dataset=Counter(entities_in_dataset),

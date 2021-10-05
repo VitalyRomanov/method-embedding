@@ -34,12 +34,17 @@ class SubwordEmbedderObjective(AbstractObjective):
         else:
             raise NotImplementedError()
 
-    def forward(self, input_nodes, seeds, blocks, train_embeddings=True):
+    def forward(self, input_nodes, seeds, blocks, train_embeddings=True, neg_sampling_strategy=None):
         masked = self.masker.get_mask(self.seeds_to_python(seeds)) if self.masker is not None else None
-        graph_emb = self._logits_batch(input_nodes, blocks, train_embeddings, masked=masked)
-        node_embs_, element_embs_, labels = self._logits_embedder(
-            graph_emb, self.target_embedder, self.link_predictor, seeds
+        graph_emb = self._graph_embeddings(input_nodes, blocks, train_embeddings, masked=masked)
+        node_embs_, element_embs_, labels = self.prepare_for_prediction(
+            graph_emb, seeds, self.get_targets_from_embedder, negative_factor=1,
+            neg_sampling_strategy=None, train_embeddings=train_embeddings,
+            update_embeddings_for_queries=False
         )
+        # node_embs_, element_embs_, labels = self._logits_embedder(
+        #     graph_emb, self.target_embedder, self.link_predictor, seeds, neg_sampling_strategy=neg_sampling_strategy
+        # )
         acc, loss = self.compute_acc_loss(node_embs_, element_embs_, labels)
 
         return loss, acc
