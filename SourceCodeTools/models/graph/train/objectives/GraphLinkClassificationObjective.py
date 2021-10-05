@@ -41,53 +41,56 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
         self.negative_label = 0
         self.label_dtype = torch.long
 
-    def _logits_nodes(self, node_embeddings,
-                      elem_embedder, link_predictor, create_dataloader,
-                      src_seeds, negative_factor=1, train_embeddings=True):
-        k = negative_factor
-        indices = self.seeds_to_global(src_seeds).tolist()
-        batch_size = len(indices)
+    def create_positive_labels(self, ids):
+        return self.target_embedder.get_labels(ids)
 
-        node_embeddings_batch = node_embeddings
-        dst_indices, labels_pos = elem_embedder[indices]  # this assumes indices is torch tensor
-
-        # dst targets are not unique
-        unique_dst, slice_map = self._handle_non_unique(dst_indices)
-        assert unique_dst[slice_map].tolist() == dst_indices.tolist()
-
-        dataloader = create_dataloader(unique_dst)
-        input_nodes, dst_seeds, blocks = next(iter(dataloader))
-        blocks = [blk.to(self.device) for blk in blocks]
-        assert dst_seeds.shape == unique_dst.shape
-        assert dst_seeds.tolist() == unique_dst.tolist()
-        unique_dst_embeddings = self._logits_batch(input_nodes, blocks, train_embeddings)  # use_types, ntypes)
-        dst_embeddings = unique_dst_embeddings[slice_map.to(self.device)]
-
-        # self.target_embedder.set_embed(unique_dst.detach().cpu().numpy(), unique_dst_embeddings.detach().cpu().numpy())
-
-        node_embeddings_neg_batch = node_embeddings_batch.repeat(k, 1)
-        # negative_indices = torch.tensor(elem_embedder.sample_negative(
-        #     batch_size * k), dtype=torch.long)  # embeddings are sampled from 3/4 unigram distribution
-        negative_indices = torch.tensor(elem_embedder.sample_negative(
-            batch_size * k, ids=indices), dtype=torch.long)  # closest negative
-        unique_negative, slice_map = self._handle_non_unique(negative_indices)
-        assert unique_negative[slice_map].tolist() == negative_indices.tolist()
-
-        dataloader = create_dataloader(unique_negative)
-        input_nodes, dst_seeds, blocks = next(iter(dataloader))
-        blocks = [blk.to(self.device) for blk in blocks]
-        assert dst_seeds.shape == unique_negative.shape
-        assert dst_seeds.tolist() == unique_negative.tolist()
-        unique_negative_random = self._logits_batch(input_nodes, blocks, train_embeddings)  # use_types, ntypes)
-        negative_random = unique_negative_random[slice_map.to(self.device)]
-        labels_neg = torch.full((batch_size * k,), self.negative_label, dtype=self.label_dtype)
-
-        # self.target_embedder.set_embed(unique_negative.detach().cpu().numpy(), unique_negative_random.detach().cpu().numpy())
-
-        nodes = torch.cat([node_embeddings_batch, node_embeddings_neg_batch], dim=0)
-        embs = torch.cat([dst_embeddings, negative_random], dim=0)
-        labels = torch.cat([labels_pos, labels_neg], 0).to(self.device)
-        return nodes, embs, labels
+    # def _logits_nodes(self, node_embeddings,
+    #                   elem_embedder, link_predictor, create_dataloader,
+    #                   src_seeds, negative_factor=1, train_embeddings=True):
+    #     k = negative_factor
+    #     indices = self.seeds_to_global(src_seeds).tolist()
+    #     batch_size = len(indices)
+    #
+    #     node_embeddings_batch = node_embeddings
+    #     dst_indices, labels_pos = elem_embedder[indices]  # this assumes indices is torch tensor
+    #
+    #     # dst targets are not unique
+    #     unique_dst, slice_map = self._handle_non_unique(dst_indices)
+    #     assert unique_dst[slice_map].tolist() == dst_indices.tolist()
+    #
+    #     dataloader = create_dataloader(unique_dst)
+    #     input_nodes, dst_seeds, blocks = next(iter(dataloader))
+    #     blocks = [blk.to(self.device) for blk in blocks]
+    #     assert dst_seeds.shape == unique_dst.shape
+    #     assert dst_seeds.tolist() == unique_dst.tolist()
+    #     unique_dst_embeddings = self._logits_batch(input_nodes, blocks, train_embeddings)  # use_types, ntypes)
+    #     dst_embeddings = unique_dst_embeddings[slice_map.to(self.device)]
+    #
+    #     # self.target_embedder.set_embed(unique_dst.detach().cpu().numpy(), unique_dst_embeddings.detach().cpu().numpy())
+    #
+    #     node_embeddings_neg_batch = node_embeddings_batch.repeat(k, 1)
+    #     # negative_indices = torch.tensor(elem_embedder.sample_negative(
+    #     #     batch_size * k), dtype=torch.long)  # embeddings are sampled from 3/4 unigram distribution
+    #     negative_indices = torch.tensor(elem_embedder.sample_negative(
+    #         batch_size * k, ids=indices), dtype=torch.long)  # closest negative
+    #     unique_negative, slice_map = self._handle_non_unique(negative_indices)
+    #     assert unique_negative[slice_map].tolist() == negative_indices.tolist()
+    #
+    #     dataloader = create_dataloader(unique_negative)
+    #     input_nodes, dst_seeds, blocks = next(iter(dataloader))
+    #     blocks = [blk.to(self.device) for blk in blocks]
+    #     assert dst_seeds.shape == unique_negative.shape
+    #     assert dst_seeds.tolist() == unique_negative.tolist()
+    #     unique_negative_random = self._logits_batch(input_nodes, blocks, train_embeddings)  # use_types, ntypes)
+    #     negative_random = unique_negative_random[slice_map.to(self.device)]
+    #     labels_neg = torch.full((batch_size * k,), self.negative_label, dtype=self.label_dtype)
+    #
+    #     # self.target_embedder.set_embed(unique_negative.detach().cpu().numpy(), unique_negative_random.detach().cpu().numpy())
+    #
+    #     nodes = torch.cat([node_embeddings_batch, node_embeddings_neg_batch], dim=0)
+    #     embs = torch.cat([dst_embeddings, negative_random], dim=0)
+    #     labels = torch.cat([labels_pos, labels_neg], 0).to(self.device)
+    #     return nodes, embs, labels
 
     def compute_acc_loss(self, node_embs_, element_embs_, labels):
         logits = self.link_predictor(node_embs_, element_embs_)
@@ -126,8 +129,16 @@ class TargetLinkMapper(GraphLinkSampler):
         self.num_classes = len(self.inverse_link_type_map)
 
     def __getitem__(self, ids):
-        node_ids, labels = zip(*(rnd.choice(self.element_lookup[id]) for id in ids))
-        return np.array(node_ids, dtype=np.int32), torch.LongTensor(np.array(labels, dtype=np.int32))
+        self.cached_ids = ids
+        node_ids, self.cached_labels = zip(*(rnd.choice(self.element_lookup[id]) for id in ids))
+        return np.array(node_ids, dtype=np.int32)#, torch.LongTensor(np.array(labels, dtype=np.int32))
+
+    def get_labels(self, ids):
+        if self.cached_ids == ids:
+            return self.cached_labels
+        else:
+            node_ids, labels = zip(*(rnd.choice(self.element_lookup[id]) for id in ids))
+            return labels
 
     def sample_negative(self, size, ids=None, strategy="w2v"):  # TODO switch to w2v?
         if strategy == "w2v":

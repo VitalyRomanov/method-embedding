@@ -49,9 +49,9 @@ class NodeClassifierObjective(AbstractObjective):
             return acc, loss, logits
         return acc, loss
 
-    def forward(self, input_nodes, seeds, blocks, train_embeddings=True):
+    def forward(self, input_nodes, seeds, blocks, train_embeddings=True, neg_sampling_strategy=None):
         masked = self.masker.get_mask(self.seeds_to_python(seeds)) if self.masker is not None else None
-        graph_emb = self._logits_batch(input_nodes, blocks, train_embeddings, masked=masked)
+        graph_emb = self._graph_embeddings(input_nodes, blocks, train_embeddings, masked=masked)
         indices = self.seeds_to_global(seeds).tolist()
         labels = torch.LongTensor(self.target_embedder[indices]).to(self.device)
         acc, loss = self.compute_acc_loss(graph_emb, labels)
@@ -69,7 +69,7 @@ class NodeClassifierObjective(AbstractObjective):
         for input_nodes, seeds, blocks in getattr(self, f"{data_split}_loader"):
             blocks = [blk.to(self.device) for blk in blocks]
 
-            src_embs = self._logits_batch(input_nodes, blocks)
+            src_embs = self._graph_embeddings(input_nodes, blocks)
             indices = self.seeds_to_global(seeds).tolist()
             labels = self.target_embedder[indices]
             labels = torch.LongTensor(labels).to(self.device)
@@ -94,10 +94,10 @@ class NodeClassifierObjective(AbstractObjective):
         return total_loss / count, total_acc / count, {key: val / ndcg_count for key, val in total_ndcg.items()} if self.measure_ndcg else None
 
     def evaluate(self, data_split, neg_sampling_factor=1):
-        loss, acc, bleu = self.evaluate_generation(data_split)
+        loss, acc, ndcg = self.evaluate_generation(data_split)
         if data_split == "val":
             self.check_early_stopping(acc)
-        return loss, acc, bleu
+        return loss, acc, ndcg
 
     def parameters(self, recurse: bool = True):
         return chain(self.classifier.parameters())
