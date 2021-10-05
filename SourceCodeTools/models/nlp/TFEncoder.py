@@ -23,10 +23,10 @@ class DefaultEmbedding(Layer):
             # the default value is no longer constant. need to replace this with a standard embedder
             self.embs = tf.Variable(tf.random.uniform(shape=(shape[0], shape[1]), dtype=tf.float32),
                                name="default_embedder_pad")
-        # self.pad = tf.zeros(shape=(1, init_vectors.shape[1]), name="default_embedder_pad")
+        self.pad = tf.zeros(shape=(1, shape[1]), name="default_embedder_pad")
         # self.pad = tf.random.uniform(shape=(1, init_vectors.shape[1]), name="default_embedder_pad")
-        self.pad = tf.Variable(tf.random.uniform(shape=(1, shape[1]), dtype=tf.float32),
-                               name="default_embedder_pad")
+        # self.pad = tf.Variable(tf.random.uniform(shape=(1, shape[1]), dtype=tf.float32),
+        #                        name="default_embedder_pad")
 
     # def compute_mask(self, inputs, mask=None):
     #     ids, lengths = inputs
