@@ -75,6 +75,20 @@ def create_tokenizer(type, bpe_path=None, regex=None):
         from SourceCodeTools.nlp.embed.bpe import load_bpe_model, make_tokenizer
 
         return make_tokenizer(load_bpe_model(bpe_path))
+    elif type == "codebert":
+        from transformers import RobertaTokenizer
+        import spacy
+        from spacy.tokens import Doc
+
+        tokenizer = RobertaTokenizer.from_pretrained("microsoft/codebert-base")
+        nlp = spacy.blank("en")
+
+        def tokenize(text):
+            tokens = tokenizer.tokenize(text)
+            doc = Doc(nlp.vocab, tokens, spaces=[False] * len(tokens))
+            return doc
+
+        return tokenize
     else:
         raise Exception("Supported tokenizer types: spacy, regex, bpe")
 

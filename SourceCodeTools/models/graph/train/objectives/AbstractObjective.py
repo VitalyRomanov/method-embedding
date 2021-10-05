@@ -1,7 +1,5 @@
 import logging
 from abc import abstractmethod
-from collections import OrderedDict
-from itertools import chain
 
 import dgl
 import torch
@@ -68,11 +66,7 @@ class AbstractObjective(nn.Module):
         """
         super(AbstractObjective, self).__init__()
 
-        # if objective_type not in {"graph_link_prediction", "graph_link_classification", "subword_ranker", "classification"}:
-        #     raise NotImplementedError()
-
         self.name = name
-        # self.type = objective_type
         self.graph_model = graph_model
         self.sampling_neighbourhood_size = sampling_neighbourhood_size
         self.batch_size = batch_size
@@ -94,8 +88,6 @@ class AbstractObjective(nn.Module):
 
     @abstractmethod
     def verify_parameters(self):
-        # if self.link_predictor_type == "inner_prod":  # TODO incorrect
-        #     assert self.target_emb_size == self.graph_model.emb_size, "Graph embedding and target embedder dimensionality should match for `inner_prod` type of link predictor."
         pass
 
     def create_base_element_sampler(self, data_loading_func, nodes):
@@ -117,17 +109,9 @@ class AbstractObjective(nn.Module):
 
     @abstractmethod
     def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
-        # # create target embedder
-        # if self.type == "graph_link_prediction" or self.type == "graph_link_classification":
-        #     self.create_base_element_sampler(data_loading_func, nodes)
-        # elif self.type == "subword_ranker":
-        #     self.create_subword_embedder(data_loading_func, nodes, tokenizer_path)
-        # elif self.type == "node_classification":
-        #     self.target_embedder = None
         raise NotImplementedError()
 
     def create_nn_link_predictor(self):
-        # self.link_predictor = LinkPredictor(self.target_emb_size + self.graph_model.emb_size).to(self.device)
         self.link_predictor = BilinearLinkPedictor(self.target_emb_size, self.graph_model.emb_size, 2).to(self.device)
         self.positive_label = 1
         self.negative_label = 0
@@ -142,29 +126,14 @@ class AbstractObjective(nn.Module):
 
     @abstractmethod
     def create_link_predictor(self):
-        # # create link predictors
-        # if self.type in {"graph_link_prediction", "graph_link_classification", "subword_ranker"}:
-        #     if self.link_predictor_type == "nn":
-        #         self.create_nn_link_predictor()
-        #     elif self.link_predictor_type == "inner_prod":
-        #         self.create_inner_prod_link_predictor()
-        #     else:
-        #         raise NotImplementedError()
-        # else:
-        #     # for node classifier
-        #     self.link_predictor = LinkPredictor(self.graph_model.emb_size).to(self.device)
         raise NotImplementedError()
 
     # @abstractmethod
     def create_loaders(self):
-        # create loaders
-        # if self.type in {"graph_link_prediction", "graph_link_classification", "subword_ranker"}:
         train_idx, val_idx, test_idx = self._get_training_targets()
         train_idx, val_idx, test_idx = self.target_embedder.create_idx_pools(
             train_idx=train_idx, val_idx=val_idx, test_idx=test_idx
         )
-        # else:
-        #     raise NotImplementedError()
         logging.info(
             f"Pool sizes for {self.name}: train {self._idx_len(train_idx)}, "
             f"val {self._idx_len(val_idx)}, "
@@ -229,34 +198,24 @@ class AbstractObjective(nn.Module):
         else:
             # not sure when this is called
             raise NotImplementedError()
-            # self.ntypes = None
-            # # labels = g.ndata['labels']
-            # train_idx = self.graph_model.g.ndata['train_mask']
-            # val_idx = self.graph_model.g.ndata['val_mask']
-            # test_idx = self.graph_model.g.ndata['test_mask']
-            # self.use_types = False
 
         return train_idx, val_idx, test_idx
 
     def _get_loaders(self, train_idx, val_idx, test_idx, batch_size):
-        # train sampler
+
         layers = self.graph_model.num_layers
-        sampler = dgl.dataloading.MultiLayerNeighborSampler([self.sampling_neighbourhood_size] * layers)
-        loader = dgl.dataloading.NodeDataLoader(
-            self.graph_model.g, train_idx, sampler, batch_size=batch_size, shuffle=False, num_workers=0)
 
-        # validation sampler
-        # we do not use full neighbor to save computation resources
-        val_sampler = dgl.dataloading.MultiLayerNeighborSampler([self.sampling_neighbourhood_size] * layers)
-        val_loader = dgl.dataloading.NodeDataLoader(
-            self.graph_model.g, val_idx, val_sampler, batch_size=batch_size, shuffle=False, num_workers=0)
+        def create_loader(ids):
+            sampler = dgl.dataloading.MultiLayerFullNeighborSampler(layers)
+            loader = dgl.dataloading.NodeDataLoader(
+                self.graph_model.g, ids, sampler, batch_size=batch_size, shuffle=False, num_workers=0)
+            return loader
 
-        # we do not use full neighbor to save computation resources
-        test_sampler = dgl.dataloading.MultiLayerNeighborSampler([self.sampling_neighbourhood_size] * layers)
-        test_loader = dgl.dataloading.NodeDataLoader(
-            self.graph_model.g, test_idx, test_sampler, batch_size=batch_size, shuffle=False, num_workers=0)
+        train_loader = create_loader(train_idx)
+        val_loader = create_loader(val_idx)
+        test_loader = create_loader(test_idx)
 
-        return loader, val_loader, test_loader
+        return train_loader, val_loader, test_loader
 
     def reset_iterator(self, data_split):
         iter_name = f"{data_split}_loader_iter"
@@ -299,8 +258,7 @@ class AbstractObjective(nn.Module):
 
         return acc, loss
 
-
-    def _logits_batch(self, input_nodes, blocks, train_embeddings=True, masked=None):
+    def _graph_embeddings(self, input_nodes, blocks, train_embeddings=True, masked=None):
 
         cumm_logits = []
 
@@ -347,91 +305,155 @@ class AbstractObjective(nn.Module):
         else:
             return seeds
 
-    def _logits_embedder(self, node_embeddings, elem_embedder, link_predictor, seeds, negative_factor=1):
+    def sample_negative(self, ids, k, neg_sampling_strategy):
+        if neg_sampling_strategy is not None:
+            negative = self.target_embedder.sample_negative(
+                k, ids=ids, strategy=neg_sampling_strategy
+            )
+        else:
+            negative = self.target_embedder.sample_negative(
+                k, ids=ids,
+            )
+        return negative
+
+    def get_targets_from_nodes(
+            self, positive_indices, negative_indices, train_embeddings, update_embeddings_for_queries
+    ):
+        negative_indices = torch.tensor(negative_indices, dtype=torch.long)
+
+        def get_embeddings_for_targets(dst, update_embeddings_for_queries):
+            unique_dst, slice_map = self._handle_non_unique(dst)
+            assert unique_dst[slice_map].tolist() == dst.tolist()
+
+            dataloader = self._create_loader(unique_dst)
+            input_nodes, dst_seeds, blocks = next(iter(dataloader))
+            blocks = [blk.to(self.device) for blk in blocks]
+            assert dst_seeds.shape == unique_dst.shape
+            assert dst_seeds.tolist() == unique_dst.tolist()
+            unique_dst_embeddings = self._graph_embeddings(input_nodes, blocks, train_embeddings)  # use_types, ntypes)
+            dst_embeddings = unique_dst_embeddings[slice_map.to(self.device)]
+
+            if update_embeddings_for_queries:
+                self.target_embedder.set_embed(unique_dst.detach().cpu().numpy(),
+                                               unique_dst_embeddings.detach().cpu().numpy())
+
+            return dst_embeddings
+
+        positive_dst = get_embeddings_for_targets(positive_indices, update_embeddings_for_queries)
+        negative_dst = get_embeddings_for_targets(negative_indices, update_embeddings_for_queries)
+        return positive_dst, negative_dst
+
+    def get_targets_from_embedder(
+            self, positive_indices, negative_indices, train_embeddings, update_embeddings_for_queries
+    ):
+        positive_dst = self.target_embedder(positive_indices.to(self.device))
+        negative_dst = self.target_embedder(negative_indices.to(self.device))
+        return positive_dst, negative_dst
+
+    def create_positive_labels(self, ids):
+        return torch.full((len(ids),), self.positive_label, dtype=self.label_dtype)
+
+    def create_negative_labels(self, ids, k):
+        return torch.full((len(ids) * k,), self.negative_label, dtype=self.label_dtype)
+
+    def prepare_for_prediction(
+            self, node_embeddings, seeds, target_embedding_fn, negative_factor=1,
+            neg_sampling_strategy=None, train_embeddings=True,
+            update_embeddings_for_queries=False
+    ):
         k = negative_factor
         indices = self.seeds_to_global(seeds).tolist()
         batch_size = len(indices)
 
         node_embeddings_batch = node_embeddings
-        element_embeddings = elem_embedder(elem_embedder[indices].to(self.device))
-
-        # labels_pos = torch.ones(batch_size, dtype=torch.long)
-        labels_pos = torch.full((batch_size,), self.positive_label, dtype=self.label_dtype)
-
         node_embeddings_neg_batch = node_embeddings_batch.repeat(k, 1)
-        # negative_random = elem_embedder(elem_embedder.sample_negative(batch_size * k).to(self.device))
-        negative_random = elem_embedder(elem_embedder.sample_negative(batch_size * k, ids=indices).to(self.device))  # closest negative
 
-        # labels_neg = torch.zeros(batch_size * k, dtype=torch.long)
+        positive_indices = self.target_embedder[indices]
+        negative_indices = self.sample_negative(
+            k=batch_size * k, ids=indices, neg_sampling_strategy=neg_sampling_strategy
+        )
+
+        positive_dst, negative_dst = target_embedding_fn(
+            positive_indices, negative_indices, train_embeddings, update_embeddings_for_queries
+        )
+
+        labels_pos = self.create_positive_labels(positive_indices)
+        labels_neg = self.create_negative_labels(negative_indices, k)
+
+        src_embs = torch.cat([node_embeddings_batch, node_embeddings_neg_batch], dim=0)
+        dst_embs = torch.cat([positive_dst, negative_dst], dim=0)
+        labels = torch.cat([labels_pos, labels_neg], 0).to(self.device)
+        return src_embs, dst_embs, labels
+
+    def _logits_embedder(
+            self, node_embeddings, elem_embedder, link_predictor, seeds, negative_factor=1, neg_sampling_strategy=None
+    ):
+        k = negative_factor
+        indices = self.seeds_to_global(seeds).tolist()
+        batch_size = len(indices)
+
+        node_embeddings_batch = node_embeddings
+        node_embeddings_neg_batch = node_embeddings_batch.repeat(k, 1)
+
+        element_embeddings = elem_embedder(elem_embedder[indices].to(self.device))
+        negative_random = elem_embedder(self.sample_negative(
+            k=batch_size * k, ids=indices, neg_sampling_strategy=neg_sampling_strategy
+        ).to(self.device))
+
+        labels_pos = torch.full((batch_size,), self.positive_label, dtype=self.label_dtype)
         labels_neg = torch.full((batch_size * k,), self.negative_label, dtype=self.label_dtype)
 
-        # positive_batch = torch.cat([node_embeddings_batch, element_embeddings], 1)
-        # negative_batch = torch.cat([node_embeddings_neg_batch, negative_random], 1)
-        # batch = torch.cat([positive_batch, negative_batch], 0)
-        # labels = torch.cat([labels_pos, labels_neg], 0).to(self.device)
-        #
-        # logits = link_predictor(batch)
-        #
-        # return logits, labels
-        nodes = torch.cat([node_embeddings_batch, node_embeddings_neg_batch], dim=0)
-        embs = torch.cat([element_embeddings, negative_random], dim=0)
+        src_embs = torch.cat([node_embeddings_batch, node_embeddings_neg_batch], dim=0)
+        dst_embs = torch.cat([element_embeddings, negative_random], dim=0)
         labels = torch.cat([labels_pos, labels_neg], 0).to(self.device)
-        return nodes, embs, labels
+        return src_embs, dst_embs, labels
 
-    def _logits_nodes(self, node_embeddings,
-                      elem_embedder, link_predictor, create_dataloader,
-                      src_seeds, negative_factor=1, train_embeddings=True):
+    def _logits_nodes(
+            self, node_embeddings, elem_embedder, link_predictor, create_dataloader,
+            src_seeds, negative_factor=1, train_embeddings=True, neg_sampling_strategy=None,
+            update_embeddings_for_queries=False
+    ):
         k = negative_factor
         indices = self.seeds_to_global(src_seeds).tolist()
         batch_size = len(indices)
 
         node_embeddings_batch = node_embeddings
+        node_embeddings_neg_batch = node_embeddings_batch.repeat(k, 1)
+
         next_call_indices = elem_embedder[indices]  # this assumes indices is torch tensor
+        negative_indices = torch.tensor(self.sample_negative(
+            k=batch_size * k, ids=indices, neg_sampling_strategy=neg_sampling_strategy
+        ), dtype=torch.long)
 
         # dst targets are not unique
-        unique_dst, slice_map = self._handle_non_unique(next_call_indices)
-        assert unique_dst[slice_map].tolist() == next_call_indices.tolist()
+        def get_embeddings_for_targets(dst, update_embeddings_for_queries):
+            unique_dst, slice_map = self._handle_non_unique(dst)
+            assert unique_dst[slice_map].tolist() == dst.tolist()
 
-        dataloader = create_dataloader(unique_dst)
-        input_nodes, dst_seeds, blocks = next(iter(dataloader))
-        blocks = [blk.to(self.device) for blk in blocks]
-        assert dst_seeds.shape == unique_dst.shape
-        assert dst_seeds.tolist() == unique_dst.tolist()
-        unique_dst_embeddings = self._logits_batch(input_nodes, blocks, train_embeddings)  # use_types, ntypes)
-        next_call_embeddings = unique_dst_embeddings[slice_map.to(self.device)]
-        # labels_pos = torch.ones(batch_size, dtype=torch.long)
+            dataloader = create_dataloader(unique_dst)
+            input_nodes, dst_seeds, blocks = next(iter(dataloader))
+            blocks = [blk.to(self.device) for blk in blocks]
+            assert dst_seeds.shape == unique_dst.shape
+            assert dst_seeds.tolist() == unique_dst.tolist()
+            unique_dst_embeddings = self._graph_embeddings(input_nodes, blocks, train_embeddings)  # use_types, ntypes)
+            dst_embeddings = unique_dst_embeddings[slice_map.to(self.device)]
+
+            if update_embeddings_for_queries:
+                self.target_embedder.set_embed(unique_dst.detach().cpu().numpy(),
+                                               unique_dst_embeddings.detach().cpu().numpy())
+
+            return dst_embeddings
+
+        next_call_embeddings = get_embeddings_for_targets(next_call_indices, update_embeddings_for_queries)
+        negative_random = get_embeddings_for_targets(negative_indices, update_embeddings_for_queries)
+
         labels_pos = torch.full((batch_size,), self.positive_label, dtype=self.label_dtype)
-
-        node_embeddings_neg_batch = node_embeddings_batch.repeat(k, 1)
-        # negative_indices = torch.tensor(elem_embedder.sample_negative(
-        #     batch_size * k), dtype=torch.long)  # embeddings are sampled from 3/4 unigram distribution
-        negative_indices = torch.tensor(elem_embedder.sample_negative(
-            batch_size * k, ids=indices), dtype=torch.long)  # closest negative
-        unique_negative, slice_map = self._handle_non_unique(negative_indices)
-        assert unique_negative[slice_map].tolist() == negative_indices.tolist()
-
-        dataloader = create_dataloader(unique_negative)
-        input_nodes, dst_seeds, blocks = next(iter(dataloader))
-        blocks = [blk.to(self.device) for blk in blocks]
-        assert dst_seeds.shape == unique_negative.shape
-        assert dst_seeds.tolist() == unique_negative.tolist()
-        unique_negative_random = self._logits_batch(input_nodes, blocks, train_embeddings)  # use_types, ntypes)
-        negative_random = unique_negative_random[slice_map.to(self.device)]
-        # labels_neg = torch.zeros(batch_size * k, dtype=torch.long)
         labels_neg = torch.full((batch_size * k,), self.negative_label, dtype=self.label_dtype)
 
-        # positive_batch = torch.cat([node_embeddings_batch, next_call_embeddings], 1)
-        # negative_batch = torch.cat([node_embeddings_neg_batch, negative_random], 1)
-        # batch = torch.cat([positive_batch, negative_batch], 0)
-        # labels = torch.cat([labels_pos, labels_neg], 0).to(self.device)
-        #
-        # logits = link_predictor(batch)
-        #
-        # return logits, labels
-        nodes = torch.cat([node_embeddings_batch, node_embeddings_neg_batch], dim=0)
-        embs = torch.cat([next_call_embeddings, negative_random], dim=0)
+        src_embs = torch.cat([node_embeddings_batch, node_embeddings_neg_batch], dim=0)
+        dst_embs = torch.cat([next_call_embeddings, negative_random], dim=0)
         labels = torch.cat([labels_pos, labels_neg], 0).to(self.device)
-        return nodes, embs, labels
+        return src_embs, dst_embs, labels
 
     def seeds_to_python(self, seeds):
         if isinstance(seeds, dict):
@@ -443,30 +465,7 @@ class AbstractObjective(nn.Module):
         return python_seeds
 
     @abstractmethod
-    def forward(self, input_nodes, seeds, blocks, train_embeddings=True):
-        # masked = None
-        # if self.type in {"subword_ranker"}:
-        #     masked = self.masker.get_mask(self.seeds_to_python(seeds))
-        # graph_emb = self._logits_batch(input_nodes, blocks, train_embeddings, masked=masked)
-        # if self.type in {"subword_ranker"}:
-        #     # logits, labels = self._logits_embedder(graph_emb, self.target_embedder, self.link_predictor, seeds)
-        #     node_embs_, element_embs_, labels = self._logits_embedder(graph_emb, self.target_embedder, self.link_predictor, seeds)
-        # elif self.type in {"graph_link_prediction", "graph_link_classification"}:
-        #     # logits, labels = self._logits_nodes(graph_emb, self.target_embedder, self.link_predictor,
-        #     #                                     self._create_loader, seeds, train_embeddings=train_embeddings)
-        #     node_embs_, element_embs_, labels = self._logits_nodes(graph_emb, self.target_embedder, self.link_predictor,
-        #                                         self._create_loader, seeds, train_embeddings=train_embeddings)
-        # else:
-        #     raise NotImplementedError()
-        #
-        # # logits = self.link_predictor(node_embs_, element_embs_)
-        # #
-        # # acc = _compute_accuracy(logits.argmax(dim=1), labels)
-        # # logp = nn.functional.log_softmax(logits, 1)
-        # # loss = nn.functional.nll_loss(logp, labels)
-        # acc, loss = self.compute_acc_loss(node_embs_, element_embs_, labels)
-        #
-        # return loss, acc
+    def forward(self, input_nodes, seeds, blocks, train_embeddings=True, neg_sampling_strategy=None):
         raise NotImplementedError()
 
     def _evaluate_embedder(self, ee, lp, data_split, neg_sampling_factor=1):
@@ -478,10 +477,6 @@ class AbstractObjective(nn.Module):
         ndcg_count = 0
         count = 0
 
-        # if self.measure_ndcg:
-        #     if self.link_predictor == "inner_prod":
-        #         self.target_embedder.prepare_index()
-
         for input_nodes, seeds, blocks in tqdm(
                 getattr(self, f"{data_split}_loader"), total=getattr(self, f"num_{data_split}_batches")
         ):
@@ -492,7 +487,7 @@ class AbstractObjective(nn.Module):
             else:
                 masked = self.masker.get_mask(self.seeds_to_python(seeds))
 
-            src_embs = self._logits_batch(input_nodes, blocks, masked=masked)
+            src_embs = self._graph_embeddings(input_nodes, blocks, masked=masked)
             # logits, labels = self._logits_embedder(src_embs, ee, lp, seeds, neg_sampling_factor)
             node_embs_, element_embs_, labels = self._logits_embedder(src_embs, ee, lp, seeds, neg_sampling_factor)
 
@@ -535,7 +530,7 @@ class AbstractObjective(nn.Module):
             else:
                 masked = self.masker.get_mask(self.seeds_to_python(seeds))
 
-            src_embs = self._logits_batch(input_nodes, blocks, masked=masked)
+            src_embs = self._graph_embeddings(input_nodes, blocks, masked=masked)
             # logits, labels = self._logits_nodes(src_embs, ee, lp, create_api_call_loader, seeds, neg_sampling_factor)
             node_embs_, element_embs_, labels = self._logits_nodes(src_embs, ee, lp, create_api_call_loader, seeds, neg_sampling_factor)
 
@@ -572,67 +567,18 @@ class AbstractObjective(nn.Module):
 
     @abstractmethod
     def evaluate(self, data_split, neg_sampling_factor=1, early_stopping=False, early_stopping_tolerance=20):
-        # if self.type in {"subword_ranker"}:
-        #     loss, acc, ndcg = self._evaluate_embedder(
-        #         self.target_embedder, self.link_predictor, data_split=data_split, neg_sampling_factor=neg_sampling_factor
-        #     )
-        # elif self.type in {"graph_link_prediction", "graph_link_classification"}:
-        #     loss, acc = self._evaluate_nodes(
-        #         self.target_embedder, self.link_predictor, self._create_loader, data_split=data_split,
-        #         neg_sampling_factor=neg_sampling_factor
-        #     )
-        #     ndcg = None
-        # else:
-        #     raise NotImplementedError()
-        #
-        # return loss, acc, ndcg
         raise NotImplementedError()
 
     @abstractmethod
     def parameters(self, recurse: bool = True):
-        # if self.type in {"subword_ranker"}:
-        #     return chain(self.target_embedder.parameters(), self.link_predictor.parameters())
-        # elif self.type in {"graph_link_prediction", "graph_link_classification"}:
-        #     return self.link_predictor.parameters()
-        # else:
-        #     raise NotImplementedError()
         raise NotImplementedError()
 
     @abstractmethod
     def custom_state_dict(self):
-        # state_dict = OrderedDict()
-        # if self.type in {"subword_ranker"}:
-        #     for k, v in self.target_embedder.state_dict().items():
-        #         state_dict[f"target_embedder.{k}"] = v
-        #     for k, v in self.link_predictor.state_dict().items():
-        #         state_dict[f"link_predictor.{k}"] = v
-        #     # state_dict["target_embedder"] = self.target_embedder.state_dict()
-        #     # state_dict["link_predictor"] = self.link_predictor.state_dict()
-        # elif self.type in {"graph_link_prediction", "graph_link_classification"}:
-        #     for k, v in self.link_predictor.state_dict().items():
-        #         state_dict[f"link_predictor.{k}"] = v
-        #     # state_dict["link_predictor"] = self.link_predictor.state_dict()
-        # else:
-        #     raise NotImplementedError()
-        #
-        # return state_dict
         raise NotImplementedError()
 
     @abstractmethod
     def custom_load_state_dict(self, state_dicts):
-        # if self.type in {"subword_ranker"}:
-        #     self.target_embedder.load_state_dict(
-        #         self.get_prefix("target_embedder", state_dicts)
-        #     )
-        #     self.link_predictor.load_state_dict(
-        #         self.get_prefix("link_predictor", state_dicts)
-        #     )
-        # elif self.type in {"graph_link_prediction", "graph_link_classification"}:
-        #     self.link_predictor.load_state_dict(
-        #         self.get_prefix("link_predictor", state_dicts)
-        #     )
-        # else:
-        #     raise NotImplementedError()
         raise NotImplementedError()
 
     def get_prefix(self, prefix, state_dict):

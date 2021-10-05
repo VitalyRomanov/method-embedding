@@ -41,6 +41,7 @@ def add_training_arguments(parser):
 
     parser.add_argument("--early_stopping", action="store_true")
     parser.add_argument("--early_stopping_tolerance", default=20, type=int)
+    parser.add_argument("--force_w2v_ns", action="store_true")
 
 
 def add_scoring_arguments(parser):

@@ -1,5 +1,6 @@
 import random
 from collections import Iterable
+from typing import Dict, List
 
 import torch
 import numpy as np
@@ -24,10 +25,12 @@ class Scorer:
     similarity. It becomes less useful when the decision is made by neural network because it does not need to mode
     points to learn how to make correct decisions.
     """
-    def __init__(self, num_embs, emb_size, src2dst, neighbours_to_sample=5, index_backend="faiss"):
+    def __init__(
+            self, num_embs, emb_size, src2dst: Dict[int, List[int]], neighbours_to_sample=5, index_backend="faiss"
+    ):
         self.scorer_num_emb = num_embs
         self.scorer_emb_size = emb_size
-        self.scorer_src2dst = src2dst
+        self.scorer_src2dst = src2dst # mapping from src to all possible dsts
         self.scorer_index_backend = index_backend
 
         self.scorer_all_emb = np.ones((num_embs, emb_size))
@@ -69,6 +72,7 @@ class Scorer:
                     self.scorer_all_emb[self.scorer_key_order[key]].reshape(1, -1), k=k
                 )
                 closest_keys.extend(self.scorer_all_keys[c] for c in closest.ravel())
+            # ensure that negative samples do not come from positive edges
             closest_keys_ = list(set(closest_keys) - set(key_group))
             if len(closest_keys_) == 0:
                 # backup strategy
