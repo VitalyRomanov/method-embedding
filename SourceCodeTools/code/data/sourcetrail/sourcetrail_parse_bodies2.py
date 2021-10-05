@@ -60,7 +60,10 @@ def get_function_body(file_content, file_id, start, end, s_col, e_col) -> str:
 
     source_lines = file_content[file_id].split("\n")
 
-    body_lines = source_lines[start: end]
+    if start == end: # handle situations when the entire function takes only one line
+        body_lines = source_lines[start]
+    else:
+        body_lines = source_lines[start: end]
 
     initial_strip = body_lines[0][0:len(body_lines[0]) - len(body_lines[0].lstrip())]
     body = initial_strip + file_content[file_id][offsets[0][0]: offsets[0][1]]

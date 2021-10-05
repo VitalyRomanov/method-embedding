@@ -352,15 +352,17 @@ class ReplacementNodeResolver(NodeResolver):
     def resolve_substrings(self, node, replacement2srctrl):
 
         decorated = "@" in node.name
-        assert not decorated
 
         name_ = copy(node.name)
+        if decorated:
+            name_, decorator = name_.split("@")
+        # assert not decorated
 
         replacements = dict()
         global_node_id = []
         global_name = []
         global_type = []
-        for name in re.finditer("srctrlrpl_[0-9]+", name_):
+        for name in re.finditer("srctrlrpl_[0-9]{19}", name_):
             if isinstance(name, re.Match):
                 name = name.group()
             elif isinstance(name, str):
@@ -385,6 +387,9 @@ class ReplacementNodeResolver(NodeResolver):
         real_name = name_
         for r, v in replacements.items():
             real_name = real_name.replace(r, v["name"])
+
+        if decorated:
+            real_name = real_name + "@" + decorator
 
         return GNode(
             name=real_name, type=node.type, global_name=global_name, global_id=global_node_id, global_type=global_type
@@ -449,12 +454,16 @@ class ReplacementNodeResolver(NodeResolver):
 
         if node.type == "type_annotation":
             new_node = self.resolve_substrings(node, replacement2srctrl)
+            if "srctrlrpl_" in new_node.name:
+                new_node.name = "Any"
         else:
             new_node = self.resolve_regular_replacement(node, replacement2srctrl)
             if "srctrlrpl_" in new_node.name:  # hack to process imports TODO maybe need to use while to resolve everything?
                 new_node = self.resolve_substrings(node, replacement2srctrl)
+            if "srctrlrpl_" in new_node.name: # if still failed to resolve
+                new_node.name = "unresolved_name"
 
-        assert "srctrlrpl_" not in new_node.name
+        # assert "srctrlrpl_" not in new_node.name
 
         return new_node
 
@@ -475,7 +484,7 @@ class ReplacementNodeResolver(NodeResolver):
                 new_id = self.get_new_node_id()
                 self.node_ids[node_repr] = new_id
 
-                if not PythonSharedNodes.is_shared(node):
+                if not PythonSharedNodes.is_shared(node) and not node.name == "unresolved_name":
                     assert "0x" in node.name
 
                 self.new_nodes.append(
