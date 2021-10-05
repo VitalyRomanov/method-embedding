@@ -18,21 +18,21 @@ for dir in "$ENVS_DIR"/*; do
 
     echo "Found package $package_name"
 
-    if [ -f "$dir/source_graph_bodies.csv" ]; then
-      rm "$dir/source_graph_bodies.csv"
-    fi
-    if [ -f "$dir/nodes_with_ast.csv" ]; then
-      rm "$dir/nodes_with_ast.csv"
-    fi
-    if [ -f "$dir/edges_with_ast.csv" ]; then
-      rm "$dir/edges_with_ast.csv"
-    fi
-    if [ -f "$dir/call_seq.csv" ]; then
-      rm "$dir/call_seq.csv"
-    fi
-    if [ -f "$dir/source_graph_function_variable_pairs.csv" ]; then
-      rm "$dir/source_graph_function_variable_pairs.csv"
-    fi
+#    if [ -f "$dir/source_graph_bodies.csv" ]; then
+#      rm "$dir/source_graph_bodies.csv"
+#    fi
+#    if [ -f "$dir/nodes_with_ast.csv" ]; then
+#      rm "$dir/nodes_with_ast.csv"
+#    fi
+#    if [ -f "$dir/edges_with_ast.csv" ]; then
+#      rm "$dir/edges_with_ast.csv"
+#    fi
+#    if [ -f "$dir/call_seq.csv" ]; then
+#      rm "$dir/call_seq.csv"
+#    fi
+#    if [ -f "$dir/source_graph_function_variable_pairs.csv" ]; then
+#      rm "$dir/source_graph_function_variable_pairs.csv"
+#    fi
 
 
     if [ -f "$dir/$package_name.srctrldb" ]; then
@@ -40,25 +40,25 @@ for dir in "$ENVS_DIR"/*; do
       sqlite3 "$dir/$package_name.srctrldb" < "$SQL_Q"
       cd "$RUN_DIR"
       sourcetrail_verify_files.py "$dir"
-      sourcetrail_node_name_merge.py "$dir/nodes.csv"
-      sourcetrail_decode_edge_types.py "$dir/edges.csv"
-      sourcetrail_filter_ambiguous_edges.py $dir
-      sourcetrail_parse_bodies.py "$dir"
-      sourcetrail_call_seq_extractor.py "$dir"
+#      sourcetrail_node_name_merge.py "$dir/nodes.csv"
+#      sourcetrail_decode_edge_types.py "$dir/edges.csv"
+#      sourcetrail_filter_ambiguous_edges.py $dir
+#      sourcetrail_parse_bodies.py "$dir"
+#      sourcetrail_call_seq_extractor.py "$dir"
 
 
-      sourcetrail_add_reverse_edges.py "$dir/edges.bz2"
-      if [ -n "$BPE_PATH" ]; then
-        BPE_PATH=$(realpath "$BPE_PATH")
-        sourcetrail_ast_edges.py "$dir" -bpe $BPE_PATH --create_subword_instances
-      else
-        sourcetrail_ast_edges.py "$dir"
-      fi
-      sourcetrail_extract_variable_names.py python "$dir"
+#      sourcetrail_add_reverse_edges.py "$dir/edges.bz2"
+#      if [ -n "$BPE_PATH" ]; then
+#        BPE_PATH=$(realpath "$BPE_PATH")
+#        sourcetrail_ast_edges.py "$dir" -bpe $BPE_PATH --create_subword_instances
+#      else
+#        sourcetrail_ast_edges.py "$dir"
+#      fi
+#      sourcetrail_extract_variable_names.py python "$dir"
 
-      if [ -f "$dir"/edges_with_ast_temp.csv ]; then
-        rm "$dir"/edges_with_ast_temp.csv
-      fi
+#      if [ -f "$dir"/edges_with_ast_temp.csv ]; then
+#        rm "$dir"/edges_with_ast_temp.csv
+#      fi
 
     else
       echo "Package not indexed"
