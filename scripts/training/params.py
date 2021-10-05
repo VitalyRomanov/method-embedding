@@ -68,11 +68,11 @@ rgcnsampling_grids = [
 
 rggan_grids = [
     {
-        'h_dim': [100],
+        'h_dim': [100], # set from cli
         'num_bases': [10],
-        'num_steps': [9],
+        'num_steps': [9], # set from cli
         'dropout': [0.2],
-        'use_self_loop': [False],
+        'use_self_loop': [True],
         'activation': [torch.tanh], # torch.nn.functional.hardswish], #[torch.nn.functional.hardtanh], #torch.nn.functional.leaky_relu
         'lr': [1e-3], # 1e-4]
     }
