@@ -107,8 +107,8 @@ class ModelTrainer:
         from SourceCodeTools.nlp.entity.tf_models.tf_model import TypePredictor
         self.model = TypePredictor
 
-    def get_batcher(self, *args, **kwards):
-        return self.batcher(*args, **kwards)
+    def get_batcher(self, *args, **kwargs):
+        return self.batcher(*args, **kwargs)
 
     def get_model(self, *args, **kwargs):
         return self.model(*args, **kwargs)
@@ -212,6 +212,8 @@ def get_type_prediction_arguments():
                         help='Path to the file with graph embeddings')
     parser.add_argument('--word_emb_path', dest='word_emb_path', default=None,
                         help='Path to the file with token embeddings')
+    parser.add_argument('--type_ann_edges', dest='type_ann_edges', default=None,
+                        help='Path to type annotation edges')
     parser.add_argument('--learning_rate', dest='learning_rate', default=0.01, type=float,
                         help='')
     parser.add_argument('--learning_rate_decay', dest='learning_rate_decay', default=1.0, type=float,
