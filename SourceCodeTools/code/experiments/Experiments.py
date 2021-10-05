@@ -29,6 +29,13 @@ def get_nodes_with_split_ids(embedder, split_ids):
     # ]['id'].to_numpy()
 
 
+def shuffle(X, y):
+    np.random.seed(42)
+    ind_shuffle = np.arange(0, X.shape[0])
+    np.random.shuffle(ind_shuffle)
+    return X[ind_shuffle], y[ind_shuffle]
+
+
 class Experiments:
     """
     Provides convenient interface for creating experiments.
@@ -236,12 +243,19 @@ class Experiments:
             type_ann["dst"] = type_ann["dst"].apply(norm)
             type_ann = filter_dst_by_freq(type_ann, min_entity_count)
 
-            allowed = {'str', 'bool', 'Optional', 'None', 'int', 'Any', 'Union', 'List', 'Dict', 'Callable', 'ndarray',
-                       'FrameOrSeries', 'bytes', 'DataFrame', 'Matcher', 'float', 'Tuple', 'bool_t', 'Description',
-                       'Type'}
+            # this is used for codebert embeddings
+            filter_rule = lambda id_: id_ in self.embed.ind
+
             type_ann = type_ann[
-                type_ann["dst"].apply(lambda type_: type_ in allowed)
+                type_ann["src"].apply(filter_rule)
             ]
+
+            # allowed = {'str', 'bool', 'Optional', 'None', 'int', 'Any', 'Union', 'List', 'Dict', 'Callable', 'ndarray',
+            #            'FrameOrSeries', 'bytes', 'DataFrame', 'Matcher', 'float', 'Tuple', 'bool_t', 'Description',
+            #            'Type'}
+            # type_ann = type_ann[
+            #     type_ann["dst"].apply(lambda type_: type_ in allowed)
+            # ]
 
             type_ann = type_ann[["src", "dst"]]
 
@@ -449,11 +463,6 @@ class Experiment:
         assert X_train.shape[0] == y_train.shape[0]
         assert X_test.shape[0] == y_test.shape[0]
 
-        def shuffle(X, y):
-            ind_shuffle = np.arange(0, X.shape[0])
-            np.random.shuffle(ind_shuffle)
-            return X[ind_shuffle], y[ind_shuffle]
-
         self.X_train, self.y_train = shuffle(X_train, y_train)
         self.X_test, self.y_test = shuffle(X_test, y_test)
 
@@ -622,7 +631,7 @@ class Experiment2(Experiment):
 
         # TODO
         # make sure that compact_property work always identically between runs
-        self.name_map = compact_property(target['dst'])
+        self.name_map, self.inv_index = compact_property(target['dst'], return_order=True)
         self.dst_orig = target['dst']
         target['orig_dst'] = target['dst']
         target['dst'] = target['dst'].apply(lambda name: self.name_map[name])
@@ -765,10 +774,7 @@ class Experiment3(Experiment2):
         X_train, y_train = train_positive[:, 0].reshape(-1, 1).astype(np.int32), train_positive[:, 1].reshape(-1, 1).astype(np.int32)
         X_test, y_test = test_positive[:, 0].reshape(-1, 1).astype(np.int32), test_positive[:, 1].reshape(-1, 1).astype(np.int32)
 
-        def shuffle(X, y):
-            ind_shuffle = np.arange(0, X.shape[0])
-            np.random.shuffle(ind_shuffle)
-            return X[ind_shuffle], y[ind_shuffle]
+
 
         self.X_train, self.y_train = shuffle(X_train, y_train)
         self.X_test, self.y_test = shuffle(X_test, y_test)
