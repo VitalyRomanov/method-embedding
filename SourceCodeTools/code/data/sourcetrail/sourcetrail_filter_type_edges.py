@@ -26,7 +26,7 @@ def filter_type_edges(nodes, edges, keep_proportion=0.0):
     if annotations is not None:
         annotations = annotations_removed
         node2name = dict(zip(nodes["id"], nodes["serialized_name"]))
-        get_name = lambda id_: node2name[id_]
+        get_name = lambda id_: node2name.get(id_, f"{id_}")
         annotations["source_node_id"] = annotations["source_node_id"].apply(get_name)
         # rename columns to use as a dataset
         annotations.rename({"source_node_id": "dst", "target_node_id": "src"}, axis=1, inplace=True)
