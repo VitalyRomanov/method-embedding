@@ -7,7 +7,7 @@ import numpy as np
 # from collections import Counter
 from scipy.linalg import toeplitz
 # from gensim.models import KeyedVectors
-from copy import copy
+from copy import copy, deepcopy
 
 import tensorflow as tf
 import tensorflow_addons as tfa
@@ -25,9 +25,43 @@ from tensorflow.keras.layers import Layer
 # https://arxiv.org/pdf/1903.07785v1.pdf
 # https://github.com/tensorflow/models/tree/master/research/cvt_text/model
 from tensorflow_addons.layers import MultiHeadAttention
+from tqdm import tqdm
 
 from SourceCodeTools.models.nlp.TFDecoder import ConditionalAttentionDecoder, FlatDecoder
 from SourceCodeTools.models.nlp.TFEncoder import DefaultEmbedding, TextCnnEncoder, GRUEncoder
+
+
+class T5Encoder(Model):
+    def __init__(self):
+        from transformers.models.t5.modeling_tf_t5 import T5Config, TFT5MainLayer
+        self.adapter = Dense(40, activation=tf.nn.relu)
+        self.t5_config = T5Config(d_model=40, d_ff=40, num_layers=1, num_decoder_layers=1, num_heads=1, is_encoder_decoder=False,d_kv=40)
+        self.encoder = TFT5MainLayer(self.t5_config,)
+
+    def call(self, embs, training=True, mask=None):
+        from transformers.modeling_tf_utils import input_processing
+        inputs = input_processing(
+            func=self.call,
+            config=self.t5_config,
+            input_ids=None,
+            attention_mask=None,
+            decoder_input_ids=None,
+            decoder_attention_mask=None,
+            head_mask=None,
+            decoder_head_mask=None,
+            encoder_outputs=None,
+            past_key_values=None,
+            inputs_embeds=self.adapter(embs),
+            decoder_inputs_embeds=None,
+            use_cache=False,
+            output_attentions=None,
+            output_hidden_states=None,
+            return_dict=None,
+            training=training,
+            kwargs_call={},
+        )
+        encoded = self.encoder(inputs["inputs"], inputs_embeds=inputs["inputs_embeds"], training=training)
+        return encoded["last_hidden_state"]
 
 
 class TypePredictor(Model):
@@ -74,20 +108,8 @@ class TypePredictor(Model):
         self.prefix_emb = DefaultEmbedding(shape=(suffix_prefix_buckets, suffix_prefix_dims))
         self.suffix_emb = DefaultEmbedding(shape=(suffix_prefix_buckets, suffix_prefix_dims))
 
-        # self.concat = EmbeddingConcatenator()
-
-        # self.tok_emb = Embedding(input_dim=tok_embedder.e.shape[0],
-        #                          output_dim=tok_embedder.e.shape[1],
-        #                          weights=tok_embedder.e, trainable=train_embeddings,
-        #                          mask_zero=True)
-        #
-        # self.graph_emb = Embedding(input_dim=graph_embedder.e.shape[0],
-        #                          output_dim=graph_embedder.e.shape[1],
-        #                          weights=graph_embedder.e, trainable=train_embeddings,
-        #                          mask_zero=True)
-
         # compute final embedding size after concatenation
-        input_dim = tok_embedder.e.shape[1] + suffix_prefix_dims * 2# + graph_embedder.e.shape[1]
+        input_dim = tok_embedder.e.shape[1] + suffix_prefix_dims * 2 + graph_embedder.e.shape[1]
 
         self.encoder = TextCnnEncoder(input_size=input_dim, h_sizes=h_sizes,
                                 seq_len=seq_len, pos_emb_size=pos_emb_size,
@@ -95,6 +117,7 @@ class TypePredictor(Model):
                                 out_dim=input_dim, activation=tf.nn.relu,
                                 dense_activation=tf.nn.tanh)
         # self.encoder = GRUEncoder(input_dim=input_dim, out_dim=input_dim, num_layers=1, dropout=0.1)
+        # self.encoder = T5Encoder()
 
         # self.decoder = ConditionalAttentionDecoder(
         #     input_dim, out_dim=num_classes, num_layers=1, num_heads=1,
@@ -120,12 +143,12 @@ class TypePredictor(Model):
         assert mask is not None, "Mask is required"
 
         tok_emb = self.tok_emb(token_ids)
-        # graph_emb = self.graph_emb(graph_ids)
+        graph_emb = self.graph_emb(graph_ids)
         prefix_emb = self.prefix_emb(prefix_ids)
         suffix_emb = self.suffix_emb(suffix_ids)
 
         embs = tf.concat([tok_emb,
-                          # graph_emb,
+                          graph_emb,
                           prefix_emb,
                           suffix_emb], axis=-1)
 
@@ -284,7 +307,7 @@ def train(
     num_train_batches = len(train_batches)
     num_test_batches = len(test_batches)
 
-    best_loss = float("inf")
+    best_f1 = 0.
 
     try:
 
@@ -298,7 +321,7 @@ def train(
 
                 start = time()
 
-                for ind, batch in enumerate(train_batches):
+                for ind, batch in enumerate(tqdm(train_batches)):
                     # token_ids, graph_ids, labels, class_weights, lengths = b
                     loss, p, r, f1 = train_step_finetune(
                         model=model, optimizer=optimizer, token_ids=batch['tok_ids'],
@@ -351,9 +374,9 @@ def train(
                 print(f"Epoch: {e}, {epoch_time: .2f} s, Train Loss: {train_losses[-1]: .4f}, Train P: {sum(ps) / len(ps): .4f}, Train R: {sum(rs) / len(rs): .4f}, Train F1: {sum(f1s) / len(f1s): .4f}, "
                       f"Test loss: {test_losses[-1]: .4f}, Test P: {sum(test_aps) / len(test_aps): .4f}, Test R: {sum(test_ars) / len(test_ars): .4f}, Test F1: {test_f1s[-1]: .4f}")
 
-                if save_ckpt_fn is not None and float(test_losses[-1]) < best_loss:
+                if save_ckpt_fn is not None and float(test_f1s[-1]) > best_f1:
                     save_ckpt_fn()
-                    best_loss = float(test_losses[-1])
+                    best_f1 = float(test_f1s[-1])
 
                 lr.assign(lr * learning_rate_decay)
 

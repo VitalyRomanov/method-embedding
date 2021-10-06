@@ -192,6 +192,8 @@ class ModelTrainer:
                 "batch_size": self.batch_size
             }
 
+            print("Maximum f1:", max(test_f1))
+
             # write_config(trial_dir, params, extra_params={"suffix_prefix_buckets": suffix_prefix_buckets, "seq_len": seq_len})
 
             metadata.update(params)
@@ -261,11 +263,11 @@ if __name__ == "__main__":
     if not os.path.isdir(output_dir):
         os.mkdir(output_dir)
 
-    # allowed = {'str', 'bool', 'Optional', 'None', 'int', 'Any', 'Union', 'List', 'Dict', 'Callable', 'ndarray',
-    #            'FrameOrSeries', 'bytes', 'DataFrame', 'Matcher', 'float', 'Tuple', 'bool_t', 'Description', 'Type'}
+    allowed = {'str', 'bool', 'Optional', 'None', 'int', 'Any', 'Union', 'List', 'Dict', 'Callable', 'ndarray',
+               'FrameOrSeries', 'bytes', 'DataFrame', 'Matcher', 'float', 'Tuple', 'bool_t', 'Description', 'Type'}
 
     train_data, test_data = read_data(
-        open(args.data_path, "r").readlines(), normalize=True, allowed=None, include_replacements=True, include_only="entities",
+        open(args.data_path, "r").readlines(), normalize=True, allowed=allowed, include_replacements=True, include_only="entities",
         min_entity_count=args.min_entity_count, random_seed=args.random_seed
     )
 
