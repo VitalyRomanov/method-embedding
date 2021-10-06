@@ -229,40 +229,46 @@ class DatasetCreator:
                 logging.info("Package not indexed")
                 continue
 
-            nodes, edges, source_location, occurrence, filecontent, element_component = \
-                self.read_sourcetrail_files(env_path)
-
-            if nodes is None:
-                logging.info("Index is empty")
-                continue
-
-            edges = filter_ambiguous_edges(edges, element_component)
-
-            nodes, edges = self.filter_unsolved_symbols(nodes, edges)
-
-            bodies = process_bodies(nodes, edges, source_location, occurrence, filecontent, self.lang)
-            call_seq = extract_call_seq(nodes, edges, source_location, occurrence)
-
-            edges = add_reverse_edges(edges)
-
+            # nodes, edges, source_location, occurrence, filecontent, element_component = \
+            #     self.read_sourcetrail_files(env_path)
+            #
+            # if nodes is None:
+            #     logging.info("Index is empty")
+            #     continue
+            #
+            # edges = filter_ambiguous_edges(edges, element_component)
+            #
+            # nodes, edges = self.filter_unsolved_symbols(nodes, edges)
+            #
+            # bodies = process_bodies(nodes, edges, source_location, occurrence, filecontent, self.lang)
+            # call_seq = extract_call_seq(nodes, edges, source_location, occurrence)
+            #
+            # edges = add_reverse_edges(edges)
+            #
+            # # if bodies is not None:
+            # ast_nodes, ast_edges, offsets = get_ast_from_modules(
+            #     nodes, edges, source_location, occurrence, filecontent,
+            #     self.bpe_tokenizer, self.create_subword_instances, self.connect_subwords, self.lang,
+            #     track_offsets=self.track_offsets
+            # )
+            #
+            # if offsets is not None:
+            #     offsets["package"] = os.path.basename(env_path)
+            #
+            # # need this check in situations when module has a single file and this file cannot be parsed
+            # nodes_with_ast = nodes.append(ast_nodes) if ast_nodes is not None else nodes
+            # edges_with_ast = edges.append(ast_edges) if ast_edges is not None else edges
+            #
             # if bodies is not None:
-            ast_nodes, ast_edges, offsets = get_ast_from_modules(
-                nodes, edges, source_location, occurrence, filecontent,
-                self.bpe_tokenizer, self.create_subword_instances, self.connect_subwords, self.lang,
-                track_offsets=self.track_offsets
-            )
+            #     vars = extract_var_names(nodes, bodies, self.lang)
+            # else:
+            #     vars = None
 
-            if offsets is not None:
-                offsets["package"] = os.path.basename(env_path)
+            nodes = unpersist_if_present(join(env_path, "nodes.bz2"))
+            nodes_with_ast = unpersist_if_present(join(env_path, "nodes_with_ast.bz2"))
 
-            # need this check in situations when module has a single file and this file cannot be parsed
-            nodes_with_ast = nodes.append(ast_nodes) if ast_nodes is not None else nodes
-            edges_with_ast = edges.append(ast_edges) if ast_edges is not None else edges
-
-            if bodies is not None:
-                vars = extract_var_names(nodes, bodies, self.lang)
-            else:
-                vars = None
+            if nodes is None or nodes_with_ast is None:
+                continue
 
             global_nodes = self.merge_with_global(global_nodes, nodes)
             global_nodes_with_ast = self.merge_with_global(global_nodes_with_ast, nodes_with_ast)
@@ -274,8 +280,8 @@ class DatasetCreator:
                 global_nodes=global_nodes_with_ast, local_nodes=nodes_with_ast
             )
 
-            self.write_local(env_path, nodes, edges, bodies, call_seq, vars,
-                             nodes_with_ast, edges_with_ast, offsets,
+            self.write_local(env_path, nodes, None, None, None, vars,
+                             nodes_with_ast, None, None,
                              local2global, local2global_with_ast)
 
     def get_local2global(self, path):
@@ -341,28 +347,28 @@ class DatasetCreator:
     def write_local(self, dir, nodes, edges, bodies, call_seq, vars,
                     nodes_with_ast, edges_with_ast, offsets,
                     local2global, local2global_with_ast):
-        write_nodes(nodes, dir)
-        write_edges(edges, dir)
-        if bodies is not None:
-            write_processed_bodies(bodies, dir)
-        if call_seq is not None:
-            persist(call_seq, join(dir, filenames['call_seq']))
-        if vars is not None:
-            persist(vars, join(dir, filenames['function_variable_pairs']))
-        persist(nodes_with_ast, join(dir, "nodes_with_ast.bz2"))
-        persist(edges_with_ast, join(dir, "edges_with_ast.bz2"))
-        if offsets is not None:
-            persist(offsets, join(dir, "offsets.bz2"))
-        if len(edges_with_ast.query("type == 'annotation_for' or type == 'returned_by'")) > 0:
-            with open(join(dir, "has_annotations"), "w") as has_annotations:
-                pass
+        # write_nodes(nodes, dir)
+        # write_edges(edges, dir)
+        # if bodies is not None:
+        #     write_processed_bodies(bodies, dir)
+        # if call_seq is not None:
+        #     persist(call_seq, join(dir, filenames['call_seq']))
+        # if vars is not None:
+        #     persist(vars, join(dir, filenames['function_variable_pairs']))
+        # persist(nodes_with_ast, join(dir, "nodes_with_ast.bz2"))
+        # persist(edges_with_ast, join(dir, "edges_with_ast.bz2"))
+        # if offsets is not None:
+        #     persist(offsets, join(dir, "offsets.bz2"))
+        # if len(edges_with_ast.query("type == 'annotation_for' or type == 'returned_by'")) > 0:
+        #     with open(join(dir, "has_annotations"), "w") as has_annotations:
+        #         pass
         persist(local2global, join(dir, "local2global.bz2"))
         persist(local2global_with_ast, join(dir, "local2global_with_ast.bz2"))
 
-        # add package name to filecontent
-        filecontent = read_filecontent(dir)
-        filecontent["package"] = os.path.basename(dir)
-        persist(filecontent, join(dir, "filecontent_with_package.bz2"))
+        # # add package name to filecontent
+        # filecontent = read_filecontent(dir)
+        # filecontent["package"] = os.path.basename(dir)
+        # persist(filecontent, join(dir, "filecontent_with_package.bz2"))
 
     def get_global_node_info(self, global_nodes):
         """
