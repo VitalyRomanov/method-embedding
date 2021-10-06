@@ -677,6 +677,11 @@ class SourceGraphDataset:
         ][['id', 'type_backup', 'name']]\
             .rename({"name": "serialized_name", "type_backup": "type"}, axis=1)
 
+        global_node_types = set(node_types.values())
+        for_training = for_training[
+            for_training["type"].apply(lambda x: x not in global_node_types)
+        ]
+
         node_names = extract_node_names(for_training, 2)
         node_names = filter_dst_by_freq(node_names, freq=self.min_count_for_objectives)
 
