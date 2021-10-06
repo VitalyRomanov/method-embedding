@@ -121,16 +121,6 @@ class DatasetCreator:
         self.create_global_file("filecontent_with_package.bz2", "local2global_with_ast.bz2", [],
                                 join(with_ast_path, "common_filecontent.bz2"), "Merging filecontents")
 
-        global_nodes = self.filter_orphaned_nodes(
-            unpersist(join(with_ast_path, "common_nodes.bz2")), with_ast_path
-        )
-        persist(global_nodes, join(with_ast_path, "common_nodes.bz2"))
-        node_names = extract_node_names(
-            global_nodes, min_count=2
-        )
-        if node_names is not None:
-            persist(node_names, join(with_ast_path, "node_names.bz2"))
-
         if self.remove_type_annotations:
             no_annotations, annotations = filter_type_edges(
                 unpersist(join(with_ast_path, "common_nodes.bz2")),
@@ -143,6 +133,16 @@ class DatasetCreator:
         self.handle_parallel_edges(join(with_ast_path, "common_edges.bz2"))
 
         self.post_pruning(join(with_ast_path, "common_nodes.bz2"), join(with_ast_path, "common_edges.bz2"))
+
+        global_nodes = self.filter_orphaned_nodes(
+            unpersist(join(with_ast_path, "common_nodes.bz2")), with_ast_path
+        )
+        persist(global_nodes, join(with_ast_path, "common_nodes.bz2"))
+        node_names = extract_node_names(
+            global_nodes, min_count=2
+        )
+        if node_names is not None:
+            persist(node_names, join(with_ast_path, "node_names.bz2"))
 
         if self.visualize:
             self.visualize_func(
