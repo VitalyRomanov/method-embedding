@@ -17,7 +17,7 @@ from SourceCodeTools.models.graph.train.objectives import VariableNameUsePredict
     NextCallPrediction, NodeNamePrediction, GlobalLinkPrediction, GraphTextPrediction, GraphTextGeneration, \
     NodeNameClassifier, EdgePrediction, TypeAnnPrediction
 from SourceCodeTools.models.graph.NodeEmbedder import NodeEmbedder
-from SourceCodeTools.models.graph.train.objectives.AbstractObjective import ZeroEdges
+from SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObjective import TransRObjective
 
 
 class EarlyStopping(Exception):
@@ -72,6 +72,8 @@ class SamplingMultitaskTrainer:
             self.create_global_link_objective(dataset, tokenizer_path)
         if "edge_pred" in self.trainer_params["objectives"]:
             self.create_edge_objective(dataset, tokenizer_path)
+        if "transr" in self.trainer_params["objectives"]:
+            self.create_transr_objective(dataset, tokenizer_path)
         if "doc_pred" in self.trainer_params["objectives"]:
             self.create_text_prediction_objective(dataset, tokenizer_path)
         if "doc_gen" in self.trainer_params["objectives"]:
@@ -180,6 +182,18 @@ class SamplingMultitaskTrainer:
     def create_edge_objective(self, dataset, tokenizer_path):
         self.objectives.append(
             EdgePrediction(
+                self.graph_model, self.node_embedder, dataset.nodes,
+                dataset.load_edge_prediction, self.device,
+                self.sampling_neighbourhood_size, self.batch_size,
+                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
+                measure_ndcg=self.trainer_params["measure_ndcg"],
+                dilate_ndcg=self.trainer_params["dilate_ndcg"]
+            )
+        )
+
+    def create_transr_objective(self, dataset, tokenizer_path):
+        self.objectives.append(
+            TransRObjective(
                 self.graph_model, self.node_embedder, dataset.nodes,
                 dataset.load_edge_prediction, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,

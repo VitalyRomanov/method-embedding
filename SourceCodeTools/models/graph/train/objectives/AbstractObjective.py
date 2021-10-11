@@ -377,8 +377,8 @@ class AbstractObjective(nn.Module):
             positive_indices, negative_indices, train_embeddings, update_embeddings_for_queries
         )
 
-        labels_pos = self.create_positive_labels(positive_indices)
-        labels_neg = self.create_negative_labels(negative_indices, k)
+        labels_pos = self.create_positive_labels(indices) # TODO breaks cache in SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObjective.TargetLinkMapper.get_labels
+        labels_neg = self.create_negative_labels(indices, k)
 
         src_embs = torch.cat([node_embeddings_batch, node_embeddings_neg_batch], dim=0)
         dst_embs = torch.cat([positive_dst, negative_dst], dim=0)
@@ -464,9 +464,18 @@ class AbstractObjective(nn.Module):
             python_seeds = seeds.tolist()
         return python_seeds
 
-    @abstractmethod
     def forward(self, input_nodes, seeds, blocks, train_embeddings=True, neg_sampling_strategy=None):
-        raise NotImplementedError()
+        masked = None
+        graph_emb = self._graph_embeddings(input_nodes, blocks, train_embeddings, masked=masked)
+        node_embs_, element_embs_, labels = self.prepare_for_prediction(
+            graph_emb, seeds, self.target_embedding_fn, negative_factor=self.negative_factor,
+            neg_sampling_strategy=neg_sampling_strategy,
+            train_embeddings=train_embeddings, update_embeddings_for_queries=self.update_embeddings_for_queries
+        )
+
+        acc, loss = self.compute_acc_loss(node_embs_, element_embs_, labels)
+
+        return loss, acc
 
     def _evaluate_embedder(self, ee, lp, data_split, neg_sampling_factor=1):
 
@@ -532,7 +541,13 @@ class AbstractObjective(nn.Module):
 
             src_embs = self._graph_embeddings(input_nodes, blocks, masked=masked)
             # logits, labels = self._logits_nodes(src_embs, ee, lp, create_api_call_loader, seeds, neg_sampling_factor)
-            node_embs_, element_embs_, labels = self._logits_nodes(src_embs, ee, lp, create_api_call_loader, seeds, neg_sampling_factor)
+            # node_embs_, element_embs_, labels = self._logits_nodes(src_embs, ee, lp, create_api_call_loader, seeds, neg_sampling_factor)
+
+            node_embs_, element_embs_, labels = self.prepare_for_prediction(
+                    src_embs, seeds, self.target_embedding_fn, negative_factor=1,
+                    neg_sampling_strategy=None, train_embeddings=True,
+                    update_embeddings_for_queries=False
+            )
 
             if self.measure_ndcg:
                 if count % self.dilate_ndcg == 0:
