@@ -786,7 +786,7 @@ class SourceGraphDataset:
             edges["dst"].apply(lambda id_: id_ in valid_nodes)
         ]
 
-        return edges[["src", "dst"]]#, "type"]]
+        return edges[["src", "dst", "type"]]
 
     def load_type_prediction(self):
 

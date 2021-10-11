@@ -17,6 +17,9 @@ class GraphLinkObjective(AbstractObjective):
             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
             masker=masker, measure_ndcg=measure_ndcg, dilate_ndcg=dilate_ndcg
         )
+        self.target_embedding_fn = self.get_targets_from_nodes
+        self.negative_factor = 1
+        self.update_embeddings_for_queries = True
 
     def verify_parameters(self):
         pass
@@ -31,24 +34,6 @@ class GraphLinkObjective(AbstractObjective):
             self.create_inner_prod_link_predictor()
         else:
             raise NotImplementedError()
-
-    def forward(self, input_nodes, seeds, blocks, train_embeddings=True, neg_sampling_strategy=None):
-        masked = None
-        graph_emb = self._graph_embeddings(input_nodes, blocks, train_embeddings, masked=masked)
-        node_embs_, element_embs_, labels = self.prepare_for_prediction(
-            graph_emb, seeds, self.get_targets_from_nodes, negative_factor=1,
-            neg_sampling_strategy=neg_sampling_strategy,
-            train_embeddings=train_embeddings, update_embeddings_for_queries=True
-        )
-        # node_embs_, element_embs_, labels = self._logits_nodes(
-        #     graph_emb, self.target_embedder, self.link_predictor,
-        #     self._create_loader, seeds, train_embeddings=train_embeddings, neg_sampling_strategy=neg_sampling_strategy,
-        #     update_embeddings_for_queries=True
-        # )
-
-        acc, loss = self.compute_acc_loss(node_embs_, element_embs_, labels)
-
-        return loss, acc
 
     def evaluate(self, data_split, neg_sampling_factor=1):
         loss, acc, ndcg = self._evaluate_nodes(
