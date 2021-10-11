@@ -60,6 +60,9 @@ class BilinearLinkPedictor(nn.Module):
 
 class CosineLinkPredictor(nn.Module):
     def __init__(self):
+        """
+        Dummy link predictor, using to keep API the same
+        """
         super(CosineLinkPredictor, self).__init__()
 
         self.cos = nn.CosineSimilarity()
@@ -68,5 +71,34 @@ class CosineLinkPredictor(nn.Module):
     def forward(self, x1, x2):
         if self.max_margin.device != x1.device:
             self.max_margin = self.max_margin.to(x1.device)
+        # this will not train
         logit = (self.cos(x1, x2) > self.max_margin).float().unsqueeze(1)
         return torch.cat([1 - logit, logit], dim=1)
+
+
+class TransRLinkPredictor(nn.Module):
+    def __init__(self, input_dim, rel_dim, num_relations, margin=0.3):
+        super(TransRLinkPredictor, self).__init__()
+        self.rel_dim = rel_dim
+        self.input_dim = input_dim
+        self.margin = margin
+
+        self.rel_emb = nn.Embedding(num_embeddings=num_relations, embedding_dim=rel_dim)
+        self.proj_matr = nn.Embedding(num_embeddings=num_relations, embedding_dim=input_dim * rel_dim)
+        self.triplet_loss = nn.TripletMarginLoss(margin=margin)
+
+    def forward(self, a, p, n, labels):
+        weights = self.proj_matr(labels).reshape((-1, self.rel_dim, self.input_dim))
+        rels = self.rel_emb(labels)
+        m_a = (weights * a.unsqueeze(1)).sum(-1)
+        m_p = (weights * p.unsqueeze(1)).sum(-1)
+        m_n = (weights * n.unsqueeze(1)).sum(-1)
+
+        transl = m_a + rels
+
+        sim = torch.norm(torch.cat([transl - m_p, transl - m_n]))
+
+        return self.triplet_loss(transl, m_p, m_n), sim < self.margin
+
+
+
