@@ -41,7 +41,8 @@ def main(models, args):
                 with open(join(model_base, "params.json"), "w") as mdata:
                     mdata.write(json.dumps(args, indent=4))
 
-            write_params(args, params)
+            if not args.restore_state:
+                write_params(args, params)
 
             if args.training_mode == "multitask":
 

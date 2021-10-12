@@ -893,6 +893,14 @@ class SourceGraphDataset:
         """
         return NodeNameMasker(self.nodes, self.edges, self.load_node_names(), tokenizer_path)
 
+    @classmethod
+    def load(cls, path, args):
+        dataset = pickle.load(open(path, "rb"))
+        dataset.data_path = args.data_path
+        if dataset.tokenizer_path is not None:
+            dataset.tokenizer_path = args.tokenizer
+        return dataset
+
 
 def ensure_connectedness(nodes: pandas.DataFrame, edges: pandas.DataFrame):
     """
@@ -955,7 +963,7 @@ def ensure_valid_edges(nodes, edges, ignore_src=False):
 def read_or_create_dataset(args, model_base, labels_from="type"):
     if args.restore_state:
         # i'm not happy with this behaviour that differs based on the flag status
-        dataset = pickle.load(open(join(model_base, "dataset.pkl"), "rb"))
+        dataset = SourceGraphDataset.load(join(model_base, "dataset.pkl"), args)
     else:
         dataset = SourceGraphDataset(
             # args.node_path, args.edge_path,
