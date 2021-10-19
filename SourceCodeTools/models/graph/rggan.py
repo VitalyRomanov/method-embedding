@@ -234,10 +234,11 @@ class RGGANLayer(RGANLayer):
             self_loop=self_loop, dropout=dropout, use_gcn_checkpoint=use_gcn_checkpoint,
             use_att_checkpoint=use_att_checkpoint
         )
+        # self.mix_weights = nn.Parameter(torch.randn(3).reshape((3,1,1)))
 
         # self.gru = OneStepGRU(out_feat, use_checkpoint=use_gru_checkpoint)
 
-    def forward(self, g, inputs):
+    def forward(self, g, inputs, h0):
         """Forward computation
 
         Parameters
@@ -277,7 +278,10 @@ class RGGANLayer(RGANLayer):
         def _apply(ntype, h):
             if self.self_loop:
                 # h = h + th.matmul(inputs_dst[ntype], self_loop_wdict[ntype])
-                h = h + th.matmul(inputs_dst[ntype], self.loop_weight)
+                # h = h + th.matmul(inputs_dst[ntype], self.loop_weight)
+                # mix = nn.functional.softmax(self.mix_weights, dim=0)
+                h = h + th.matmul(inputs_dst[ntype], self.loop_weight) + h0[ntype][:h.size(0), :]
+                # h = (torch.stack([h, th.matmul(inputs_dst[ntype], self.loop_weight), h0[ntype][:h.size(0), :]], dim=0) * mix).sum(0)
             if self.bias:
                 h = h + self.bias_dict[ntype]
                 # h = h + self.h_bias
