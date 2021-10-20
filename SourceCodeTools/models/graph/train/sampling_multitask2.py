@@ -188,7 +188,7 @@ class SamplingMultitaskTrainer:
 
     def create_edge_objective(self, dataset, tokenizer_path):
         self.objectives.append(
-            EdgePrediction2(
+            EdgePrediction(
                 self.graph_model, self.node_embedder, dataset.nodes,
                 dataset.load_edge_prediction, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
