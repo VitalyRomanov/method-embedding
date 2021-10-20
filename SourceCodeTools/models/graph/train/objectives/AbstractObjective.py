@@ -1,5 +1,6 @@
 import logging
 from abc import abstractmethod
+from collections import defaultdict
 
 import dgl
 import torch
@@ -7,11 +8,10 @@ from torch.nn import CosineEmbeddingLoss
 from tqdm import tqdm
 
 from SourceCodeTools.code.data.sourcetrail.SubwordMasker import SubwordMasker
-from SourceCodeTools.mltools.torch import _compute_accuracy
-from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedderWithBpeSubwords, NameEmbedderWithGroups, \
-    GraphLinkSampler
+from SourceCodeTools.mltools.torch import compute_accuracy
+from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedderWithBpeSubwords, GraphLinkSampler
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
-from SourceCodeTools.models.graph.LinkPredictor import LinkPredictor, CosineLinkPredictor, BilinearLinkPedictor
+from SourceCodeTools.models.graph.LinkPredictor import CosineLinkPredictor, BilinearLinkPedictor
 
 import torch.nn as nn
 
@@ -43,27 +43,51 @@ class EarlyStoppingTracker:
         self.early_stopping_value = 0.
 
 
+def sum_scores(s):
+    n = len(s)
+    if n == 0:
+        n += 1
+    return sum(s) / n
+
 
 class AbstractObjective(nn.Module):
+    # # set in the init
+    # name = None
+    # graph_model = None
+    # sampling_neighbourhood_size = None
+    # batch_size = None
+    # target_emb_size = None
+    # node_embedder = None
+    # device = None
+    # masker = None
+    # link_predictor_type = None
+    # measure_scores = None
+    # dilate_scores = None
+    # early_stopping_tracker = None
+    # early_stopping_trigger = None
+    #
+    # # set elsewhere
+    # target_embedder = None
+    # link_predictor = None
+    # positive_label = None
+    # negative_label = None
+    # label_dtype = None
+    #
+    # train_loader = None
+    # test_loader = None
+    # val_loader = None
+    # num_train_batches = None
+    # num_test_batches = None
+    # num_val_batches = None
+    #
+    # ntypes = None
+
     def __init__(
-            # self, name, objective_type, graph_model, node_embedder, nodes, data_loading_func, device,
             self, name, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
-            tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker=None,
-            measure_ndcg=False, dilate_ndcg=1, early_stopping=False, early_stopping_tolerance=20
+            tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
+            measure_scores=False, dilate_scores=1, early_stopping=False, early_stopping_tolerance=20
     ):
-        """
-        :param name: name for reference
-        :param objective_type: one of: graph_link_prediction|graph_link_classification|subword_ranker|node_classification
-        :param graph_model:
-        :param nodes:
-        :param data_loading_func:
-        :param device:
-        :param sampling_neighbourhood_size:
-        :param tokenizer_path:
-        :param target_emb_size:
-        :param link_predictor_type:
-        """
         super(AbstractObjective, self).__init__()
 
         self.name = name
@@ -75,8 +99,8 @@ class AbstractObjective(nn.Module):
         self.device = device
         self.masker = masker
         self.link_predictor_type = link_predictor_type
-        self.measure_ndcg = measure_ndcg
-        self.dilate_ndcg = dilate_ndcg
+        self.measure_scores = measure_scores
+        self.dilate_scores = dilate_scores
         self.early_stopping_tracker = EarlyStoppingTracker(early_stopping_tolerance) if early_stopping else None
         self.early_stopping_trigger = False
 
@@ -85,6 +109,10 @@ class AbstractObjective(nn.Module):
         self.create_target_embedder(data_loading_func, nodes, tokenizer_path)
         self.create_link_predictor()
         self.create_loaders()
+
+        self.target_embedding_fn = self.get_targets_from_embedder
+        self.negative_factor = 1
+        self.update_embeddings_for_queries = True
 
     @abstractmethod
     def verify_parameters(self):
@@ -109,6 +137,9 @@ class AbstractObjective(nn.Module):
 
     @abstractmethod
     def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
+        # self.create_base_element_sampler(data_loading_func, nodes)
+        # self.create_graph_link_sampler(data_loading_func, nodes)
+        # self.create_subword_embedder(data_loading_func, nodes, tokenizer_path)
         raise NotImplementedError()
 
     def create_nn_link_predictor(self):
@@ -124,11 +155,14 @@ class AbstractObjective(nn.Module):
         self.negative_label = -1.
         self.label_dtype = torch.float32
 
-    @abstractmethod
     def create_link_predictor(self):
-        raise NotImplementedError()
+        if self.link_predictor_type == "nn":
+            self.create_nn_link_predictor()
+        elif self.link_predictor_type == "inner_prod":
+            self.create_inner_prod_link_predictor()
+        else:
+            raise NotImplementedError()
 
-    # @abstractmethod
     def create_loaders(self):
         train_idx, val_idx, test_idx = self._get_training_targets()
         train_idx, val_idx, test_idx = self.target_embedder.create_idx_pools(
@@ -183,18 +217,28 @@ class AbstractObjective(nn.Module):
                 # labels = labels[key]
                 self.use_types = False
 
-            train_idx = {
-                ntype: torch.nonzero(self.graph_model.g.nodes[ntype].data['train_mask'], as_tuple=False).squeeze()
-                for ntype in self.ntypes
-            }
-            val_idx = {
-                ntype: torch.nonzero(self.graph_model.g.nodes[ntype].data['val_mask'], as_tuple=False).squeeze()
-                for ntype in self.ntypes
-            }
-            test_idx = {
-                ntype: torch.nonzero(self.graph_model.g.nodes[ntype].data['test_mask'], as_tuple=False).squeeze()
-                for ntype in self.ntypes
-            }
+            def get_targets(data_label):
+                return {
+                    ntype: torch.nonzero(self.graph_model.g.nodes[ntype].data[data_label], as_tuple=False).squeeze()
+                    for ntype in self.ntypes
+                }
+
+            train_idx = get_targets("train_mask")
+            val_idx = get_targets("val_mask")
+            test_idx = get_targets("test_mask")
+
+            # train_idx = {
+            #     ntype: torch.nonzero(self.graph_model.g.nodes[ntype].data['train_mask'], as_tuple=False).squeeze()
+            #     for ntype in self.ntypes
+            # }
+            # val_idx = {
+            #     ntype: torch.nonzero(self.graph_model.g.nodes[ntype].data['val_mask'], as_tuple=False).squeeze()
+            #     for ntype in self.ntypes
+            # }
+            # test_idx = {
+            #     ntype: torch.nonzero(self.graph_model.g.nodes[ntype].data['test_mask'], as_tuple=False).squeeze()
+            #     for ntype in self.ntypes
+            # }
         else:
             # not sure when this is called
             raise NotImplementedError()
@@ -254,7 +298,7 @@ class AbstractObjective(nn.Module):
         else:
             raise NotImplementedError()
 
-        acc = _compute_accuracy(logits.argmax(dim=1), labels)
+        acc = compute_accuracy(logits.argmax(dim=1), labels)
 
         return acc, loss
 
@@ -317,11 +361,11 @@ class AbstractObjective(nn.Module):
         return negative
 
     def get_targets_from_nodes(
-            self, positive_indices, negative_indices, train_embeddings, update_embeddings_for_queries
+            self, positive_indices, negative_indices, train_embeddings
     ):
         negative_indices = torch.tensor(negative_indices, dtype=torch.long)
 
-        def get_embeddings_for_targets(dst, update_embeddings_for_queries):
+        def get_embeddings_for_targets(dst):
             unique_dst, slice_map = self._handle_non_unique(dst)
             assert unique_dst[slice_map].tolist() == dst.tolist()
 
@@ -333,18 +377,18 @@ class AbstractObjective(nn.Module):
             unique_dst_embeddings = self._graph_embeddings(input_nodes, blocks, train_embeddings)  # use_types, ntypes)
             dst_embeddings = unique_dst_embeddings[slice_map.to(self.device)]
 
-            if update_embeddings_for_queries:
+            if self.update_embeddings_for_queries:
                 self.target_embedder.set_embed(unique_dst.detach().cpu().numpy(),
                                                unique_dst_embeddings.detach().cpu().numpy())
 
             return dst_embeddings
 
-        positive_dst = get_embeddings_for_targets(positive_indices, update_embeddings_for_queries)
-        negative_dst = get_embeddings_for_targets(negative_indices, update_embeddings_for_queries)
+        positive_dst = get_embeddings_for_targets(positive_indices)
+        negative_dst = get_embeddings_for_targets(negative_indices)
         return positive_dst, negative_dst
 
     def get_targets_from_embedder(
-            self, positive_indices, negative_indices, train_embeddings, update_embeddings_for_queries
+            self, positive_indices, negative_indices, train_embeddings
     ):
         positive_dst = self.target_embedder(positive_indices.to(self.device))
         negative_dst = self.target_embedder(negative_indices.to(self.device))
@@ -359,7 +403,6 @@ class AbstractObjective(nn.Module):
     def prepare_for_prediction(
             self, node_embeddings, seeds, target_embedding_fn, negative_factor=1,
             neg_sampling_strategy=None, train_embeddings=True,
-            update_embeddings_for_queries=False
     ):
         k = negative_factor
         indices = self.seeds_to_global(seeds).tolist()
@@ -374,10 +417,12 @@ class AbstractObjective(nn.Module):
         )
 
         positive_dst, negative_dst = target_embedding_fn(
-            positive_indices, negative_indices, train_embeddings, update_embeddings_for_queries
+            positive_indices, negative_indices, train_embeddings
         )
 
-        labels_pos = self.create_positive_labels(indices) # TODO breaks cache in SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObjective.TargetLinkMapper.get_labels
+        # TODO breaks cache in
+        #  SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObjective.TargetLinkMapper.get_labels
+        labels_pos = self.create_positive_labels(indices)
         labels_neg = self.create_negative_labels(indices, k)
 
         src_embs = torch.cat([node_embeddings_batch, node_embeddings_neg_batch], dim=0)
@@ -385,75 +430,75 @@ class AbstractObjective(nn.Module):
         labels = torch.cat([labels_pos, labels_neg], 0).to(self.device)
         return src_embs, dst_embs, labels
 
-    def _logits_embedder(
-            self, node_embeddings, elem_embedder, link_predictor, seeds, negative_factor=1, neg_sampling_strategy=None
-    ):
-        k = negative_factor
-        indices = self.seeds_to_global(seeds).tolist()
-        batch_size = len(indices)
-
-        node_embeddings_batch = node_embeddings
-        node_embeddings_neg_batch = node_embeddings_batch.repeat(k, 1)
-
-        element_embeddings = elem_embedder(elem_embedder[indices].to(self.device))
-        negative_random = elem_embedder(self.sample_negative(
-            k=batch_size * k, ids=indices, neg_sampling_strategy=neg_sampling_strategy
-        ).to(self.device))
-
-        labels_pos = torch.full((batch_size,), self.positive_label, dtype=self.label_dtype)
-        labels_neg = torch.full((batch_size * k,), self.negative_label, dtype=self.label_dtype)
-
-        src_embs = torch.cat([node_embeddings_batch, node_embeddings_neg_batch], dim=0)
-        dst_embs = torch.cat([element_embeddings, negative_random], dim=0)
-        labels = torch.cat([labels_pos, labels_neg], 0).to(self.device)
-        return src_embs, dst_embs, labels
-
-    def _logits_nodes(
-            self, node_embeddings, elem_embedder, link_predictor, create_dataloader,
-            src_seeds, negative_factor=1, train_embeddings=True, neg_sampling_strategy=None,
-            update_embeddings_for_queries=False
-    ):
-        k = negative_factor
-        indices = self.seeds_to_global(src_seeds).tolist()
-        batch_size = len(indices)
-
-        node_embeddings_batch = node_embeddings
-        node_embeddings_neg_batch = node_embeddings_batch.repeat(k, 1)
-
-        next_call_indices = elem_embedder[indices]  # this assumes indices is torch tensor
-        negative_indices = torch.tensor(self.sample_negative(
-            k=batch_size * k, ids=indices, neg_sampling_strategy=neg_sampling_strategy
-        ), dtype=torch.long)
-
-        # dst targets are not unique
-        def get_embeddings_for_targets(dst, update_embeddings_for_queries):
-            unique_dst, slice_map = self._handle_non_unique(dst)
-            assert unique_dst[slice_map].tolist() == dst.tolist()
-
-            dataloader = create_dataloader(unique_dst)
-            input_nodes, dst_seeds, blocks = next(iter(dataloader))
-            blocks = [blk.to(self.device) for blk in blocks]
-            assert dst_seeds.shape == unique_dst.shape
-            assert dst_seeds.tolist() == unique_dst.tolist()
-            unique_dst_embeddings = self._graph_embeddings(input_nodes, blocks, train_embeddings)  # use_types, ntypes)
-            dst_embeddings = unique_dst_embeddings[slice_map.to(self.device)]
-
-            if update_embeddings_for_queries:
-                self.target_embedder.set_embed(unique_dst.detach().cpu().numpy(),
-                                               unique_dst_embeddings.detach().cpu().numpy())
-
-            return dst_embeddings
-
-        next_call_embeddings = get_embeddings_for_targets(next_call_indices, update_embeddings_for_queries)
-        negative_random = get_embeddings_for_targets(negative_indices, update_embeddings_for_queries)
-
-        labels_pos = torch.full((batch_size,), self.positive_label, dtype=self.label_dtype)
-        labels_neg = torch.full((batch_size * k,), self.negative_label, dtype=self.label_dtype)
-
-        src_embs = torch.cat([node_embeddings_batch, node_embeddings_neg_batch], dim=0)
-        dst_embs = torch.cat([next_call_embeddings, negative_random], dim=0)
-        labels = torch.cat([labels_pos, labels_neg], 0).to(self.device)
-        return src_embs, dst_embs, labels
+    # def _logits_embedder(
+    #         self, node_embeddings, elem_embedder, link_predictor, seeds, negative_factor=1, neg_sampling_strategy=None
+    # ):
+    #     k = negative_factor
+    #     indices = self.seeds_to_global(seeds).tolist()
+    #     batch_size = len(indices)
+    #
+    #     node_embeddings_batch = node_embeddings
+    #     node_embeddings_neg_batch = node_embeddings_batch.repeat(k, 1)
+    #
+    #     element_embeddings = elem_embedder(elem_embedder[indices].to(self.device))
+    #     negative_random = elem_embedder(self.sample_negative(
+    #         k=batch_size * k, ids=indices, neg_sampling_strategy=neg_sampling_strategy
+    #     ).to(self.device))
+    #
+    #     labels_pos = torch.full((batch_size,), self.positive_label, dtype=self.label_dtype)
+    #     labels_neg = torch.full((batch_size * k,), self.negative_label, dtype=self.label_dtype)
+    #
+    #     src_embs = torch.cat([node_embeddings_batch, node_embeddings_neg_batch], dim=0)
+    #     dst_embs = torch.cat([element_embeddings, negative_random], dim=0)
+    #     labels = torch.cat([labels_pos, labels_neg], 0).to(self.device)
+    #     return src_embs, dst_embs, labels
+    #
+    # def _logits_nodes(
+    #         self, node_embeddings, elem_embedder, link_predictor, create_dataloader,
+    #         src_seeds, negative_factor=1, train_embeddings=True, neg_sampling_strategy=None,
+    #         update_embeddings_for_queries=False
+    # ):
+    #     k = negative_factor
+    #     indices = self.seeds_to_global(src_seeds).tolist()
+    #     batch_size = len(indices)
+    #
+    #     node_embeddings_batch = node_embeddings
+    #     node_embeddings_neg_batch = node_embeddings_batch.repeat(k, 1)
+    #
+    #     next_call_indices = elem_embedder[indices]  # this assumes indices is torch tensor
+    #     negative_indices = torch.tensor(self.sample_negative(
+    #         k=batch_size * k, ids=indices, neg_sampling_strategy=neg_sampling_strategy
+    #     ), dtype=torch.long)
+    #
+    #     # dst targets are not unique
+    #     def get_embeddings_for_targets(dst, update_embeddings_for_queries):
+    #         unique_dst, slice_map = self._handle_non_unique(dst)
+    #         assert unique_dst[slice_map].tolist() == dst.tolist()
+    #
+    #         dataloader = create_dataloader(unique_dst)
+    #         input_nodes, dst_seeds, blocks = next(iter(dataloader))
+    #         blocks = [blk.to(self.device) for blk in blocks]
+    #         assert dst_seeds.shape == unique_dst.shape
+    #         assert dst_seeds.tolist() == unique_dst.tolist()
+    #         unique_dst_embeddings = self._graph_embeddings(input_nodes, blocks, train_embeddings)  # use_types, ntypes)
+    #         dst_embeddings = unique_dst_embeddings[slice_map.to(self.device)]
+    #
+    #         if update_embeddings_for_queries:
+    #             self.target_embedder.set_embed(unique_dst.detach().cpu().numpy(),
+    #                                            unique_dst_embeddings.detach().cpu().numpy())
+    #
+    #         return dst_embeddings
+    #
+    #     next_call_embeddings = get_embeddings_for_targets(next_call_indices, update_embeddings_for_queries)
+    #     negative_random = get_embeddings_for_targets(negative_indices, update_embeddings_for_queries)
+    #
+    #     labels_pos = torch.full((batch_size,), self.positive_label, dtype=self.label_dtype)
+    #     labels_neg = torch.full((batch_size * k,), self.negative_label, dtype=self.label_dtype)
+    #
+    #     src_embs = torch.cat([node_embeddings_batch, node_embeddings_neg_batch], dim=0)
+    #     dst_embs = torch.cat([next_call_embeddings, negative_random], dim=0)
+    #     labels = torch.cat([labels_pos, labels_neg], 0).to(self.device)
+    #     return src_embs, dst_embs, labels
 
     def seeds_to_python(self, seeds):
         if isinstance(seeds, dict):
@@ -470,21 +515,22 @@ class AbstractObjective(nn.Module):
         node_embs_, element_embs_, labels = self.prepare_for_prediction(
             graph_emb, seeds, self.target_embedding_fn, negative_factor=self.negative_factor,
             neg_sampling_strategy=neg_sampling_strategy,
-            train_embeddings=train_embeddings, update_embeddings_for_queries=self.update_embeddings_for_queries
+            train_embeddings=train_embeddings
         )
 
         acc, loss = self.compute_acc_loss(node_embs_, element_embs_, labels)
 
         return loss, acc
 
-    def _evaluate_embedder(self, ee, lp, data_split, neg_sampling_factor=1):
-
-        total_loss = 0
-        total_acc = 0
-        ndcg_at = [1, 3, 5, 10]
-        total_ndcg = {f"ndcg@{k}": 0. for k in ndcg_at}
-        ndcg_count = 0
+    def evaluate_objective(self, data_split, neg_sampling_strategy=None, negative_factor=1):
+        # total_loss = 0
+        # total_acc = 0
+        at = [1, 3, 5, 10]
+        # total_ndcg = {f"ndcg@{k}": 0. for k in ndcg_at}
+        # ndcg_count = 0
         count = 0
+
+        scores = defaultdict(list)
 
         for input_nodes, seeds, blocks in tqdm(
                 getattr(self, f"{data_split}_loader"), total=getattr(self, f"num_{data_split}_batches")
@@ -497,77 +543,122 @@ class AbstractObjective(nn.Module):
                 masked = self.masker.get_mask(self.seeds_to_python(seeds))
 
             src_embs = self._graph_embeddings(input_nodes, blocks, masked=masked)
-            # logits, labels = self._logits_embedder(src_embs, ee, lp, seeds, neg_sampling_factor)
-            node_embs_, element_embs_, labels = self._logits_embedder(src_embs, ee, lp, seeds, neg_sampling_factor)
-
-            if self.measure_ndcg:
-                if count % self.dilate_ndcg == 0:
-                    ndcg = self.target_embedder.score_candidates(self.seeds_to_global(seeds), src_embs, self.link_predictor, at=ndcg_at, type=self.link_predictor_type, device=self.device)
-                    for key, val in ndcg.items():
-                        total_ndcg[key] = total_ndcg[key] + val
-                    ndcg_count += 1
-
-            # logits = self.link_predictor(node_embs_, element_embs_)
-            #
-            # logp = nn.functional.log_softmax(logits, 1)
-            # loss = nn.functional.cross_entropy(logp, labels)
-            # acc = _compute_accuracy(logp.argmax(dim=1), labels)
-
-            acc, loss = self.compute_acc_loss(node_embs_, element_embs_, labels)
-
-            total_loss += loss.item()
-            total_acc += acc
-            count += 1
-        return total_loss / count, total_acc / count, {key: val / ndcg_count for key, val in total_ndcg.items()} if self.measure_ndcg else None
-
-    def _evaluate_nodes(self, ee, lp, create_api_call_loader, data_split, neg_sampling_factor=1):
-
-        total_loss = 0
-        total_acc = 0
-        ndcg_at = [1, 3, 5, 10]
-        total_ndcg = {f"ndcg@{k}": 0. for k in ndcg_at}
-        ndcg_count = 0
-        count = 0
-
-        for input_nodes, seeds, blocks in tqdm(
-                getattr(self, f"{data_split}_loader"), total=getattr(self, f"num_{data_split}_batches")
-        ):
-            blocks = [blk.to(self.device) for blk in blocks]
-
-            if self.masker is None:
-                masked = None
-            else:
-                masked = self.masker.get_mask(self.seeds_to_python(seeds))
-
-            src_embs = self._graph_embeddings(input_nodes, blocks, masked=masked)
-            # logits, labels = self._logits_nodes(src_embs, ee, lp, create_api_call_loader, seeds, neg_sampling_factor)
-            # node_embs_, element_embs_, labels = self._logits_nodes(src_embs, ee, lp, create_api_call_loader, seeds, neg_sampling_factor)
-
             node_embs_, element_embs_, labels = self.prepare_for_prediction(
-                    src_embs, seeds, self.target_embedding_fn, negative_factor=1,
-                    neg_sampling_strategy=None, train_embeddings=True,
-                    update_embeddings_for_queries=False
+                src_embs, seeds, self.target_embedding_fn, negative_factor=negative_factor,
+                neg_sampling_strategy=neg_sampling_strategy,
+                train_embeddings=False
             )
 
-            if self.measure_ndcg:
-                if count % self.dilate_ndcg == 0:
-                    ndcg = self.target_embedder.score_candidates(self.seeds_to_global(seeds), src_embs, self.link_predictor, at=ndcg_at, type=self.link_predictor_type, device=self.device)
-                    for key, val in ndcg.items():
-                        total_ndcg[key] = total_ndcg[key] + val
-                    ndcg_count += 1
-
-            # logits = self.link_predictor(node_embs_, element_embs_)
-            #
-            # logp = nn.functional.log_softmax(logits, 1)
-            # loss = nn.functional.cross_entropy(logp, labels)
-            # acc = _compute_accuracy(logp.argmax(dim=1), labels)
+            if self.measure_scores:
+                if count % self.dilate_scores == 0:
+                    scores_ = self.target_embedder.score_candidates(self.seeds_to_global(seeds), src_embs,
+                                                                 self.link_predictor, at=at,
+                                                                 type=self.link_predictor_type, device=self.device)
+                    for key, val in scores_.items():
+                        scores[key].append(val)
 
             acc, loss = self.compute_acc_loss(node_embs_, element_embs_, labels)
 
-            total_loss += loss.item()
-            total_acc += acc
+            scores["Loss"].append(loss.item())
+            scores["Accuracy"].append(acc)
             count += 1
-        return total_loss / count, total_acc / count, {key: val / ndcg_count for key, val in total_ndcg.items()} if self.measure_ndcg else None
+
+        scores = {key: sum_scores(val) for key, val in scores.items()}
+        return scores
+        # return total_loss / count, total_acc / count, {key: val / ndcg_count for key, val in
+        #                                                total_ndcg.items()} if self.measure_scores else None
+
+    # def _evaluate_embedder(self, ee, lp, data_split, neg_sampling_factor=1):
+    #
+    #     total_loss = 0
+    #     total_acc = 0
+    #     ndcg_at = [1, 3, 5, 10]
+    #     total_ndcg = {f"ndcg@{k}": 0. for k in ndcg_at}
+    #     ndcg_count = 0
+    #     count = 0
+    #
+    #     for input_nodes, seeds, blocks in tqdm(
+    #             getattr(self, f"{data_split}_loader"), total=getattr(self, f"num_{data_split}_batches")
+    #     ):
+    #         blocks = [blk.to(self.device) for blk in blocks]
+    #
+    #         if self.masker is None:
+    #             masked = None
+    #         else:
+    #             masked = self.masker.get_mask(self.seeds_to_python(seeds))
+    #
+    #         src_embs = self._graph_embeddings(input_nodes, blocks, masked=masked)
+    #         # logits, labels = self._logits_embedder(src_embs, ee, lp, seeds, neg_sampling_factor)
+    #         node_embs_, element_embs_, labels = self._logits_embedder(src_embs, ee, lp, seeds, neg_sampling_factor)
+    #
+    #         if self.measure_scores:
+    #             if count % self.dilate_scores == 0:
+    #                 ndcg = self.target_embedder.score_candidates(self.seeds_to_global(seeds), src_embs, self.link_predictor, at=ndcg_at, type=self.link_predictor_type, device=self.device)
+    #                 for key, val in ndcg.items():
+    #                     total_ndcg[key] = total_ndcg[key] + val
+    #                 ndcg_count += 1
+    #
+    #         # logits = self.link_predictor(node_embs_, element_embs_)
+    #         #
+    #         # logp = nn.functional.log_softmax(logits, 1)
+    #         # loss = nn.functional.cross_entropy(logp, labels)
+    #         # acc = _compute_accuracy(logp.argmax(dim=1), labels)
+    #
+    #         acc, loss = self.compute_acc_loss(node_embs_, element_embs_, labels)
+    #
+    #         total_loss += loss.item()
+    #         total_acc += acc
+    #         count += 1
+    #     return total_loss / count, total_acc / count, {key: val / ndcg_count for key, val in total_ndcg.items()} if self.measure_scores else None
+    #
+    # def _evaluate_nodes(self, ee, lp, create_api_call_loader, data_split, neg_sampling_factor=1):
+    #
+    #     total_loss = 0
+    #     total_acc = 0
+    #     ndcg_at = [1, 3, 5, 10]
+    #     total_ndcg = {f"ndcg@{k}": 0. for k in ndcg_at}
+    #     ndcg_count = 0
+    #     count = 0
+    #
+    #     for input_nodes, seeds, blocks in tqdm(
+    #             getattr(self, f"{data_split}_loader"), total=getattr(self, f"num_{data_split}_batches")
+    #     ):
+    #         blocks = [blk.to(self.device) for blk in blocks]
+    #
+    #         if self.masker is None:
+    #             masked = None
+    #         else:
+    #             masked = self.masker.get_mask(self.seeds_to_python(seeds))
+    #
+    #         src_embs = self._graph_embeddings(input_nodes, blocks, masked=masked)
+    #         # logits, labels = self._logits_nodes(src_embs, ee, lp, create_api_call_loader, seeds, neg_sampling_factor)
+    #         # node_embs_, element_embs_, labels = self._logits_nodes(src_embs, ee, lp, create_api_call_loader, seeds, neg_sampling_factor)
+    #
+    #         node_embs_, element_embs_, labels = self.prepare_for_prediction(
+    #                 src_embs, seeds, self.target_embedding_fn, negative_factor=1,
+    #                 neg_sampling_strategy=None, train_embeddings=True,
+    #                 update_embeddings_for_queries=False
+    #         )
+    #
+    #         if self.measure_scores:
+    #             if count % self.dilate_scores == 0:
+    #                 ndcg = self.target_embedder.score_candidates(self.seeds_to_global(seeds), src_embs, self.link_predictor, at=ndcg_at, type=self.link_predictor_type, device=self.device)
+    #                 for key, val in ndcg.items():
+    #                     total_ndcg[key] = total_ndcg[key] + val
+    #                 ndcg_count += 1
+    #
+    #         # logits = self.link_predictor(node_embs_, element_embs_)
+    #         #
+    #         # logp = nn.functional.log_softmax(logits, 1)
+    #         # loss = nn.functional.cross_entropy(logp, labels)
+    #         # acc = _compute_accuracy(logp.argmax(dim=1), labels)
+    #
+    #         acc, loss = self.compute_acc_loss(node_embs_, element_embs_, labels)
+    #
+    #         total_loss += loss.item()
+    #         total_acc += acc
+    #         count += 1
+    #     return total_loss / count, total_acc / count, {key: val / ndcg_count for key, val in total_ndcg.items()} if self.measure_scores else None
 
     def check_early_stopping(self, metric):
         """
@@ -579,10 +670,12 @@ class AbstractObjective(nn.Module):
         if self.early_stopping_tracker is not None:
             self.early_stopping_trigger = self.early_stopping_tracker.should_stop(metric)
 
-
-    @abstractmethod
-    def evaluate(self, data_split, neg_sampling_factor=1, early_stopping=False, early_stopping_tolerance=20):
-        raise NotImplementedError()
+    def evaluate(self, data_split, *, neg_sampling_strategy=None, early_stopping=False, early_stopping_tolerance=20):
+        # negative factor is 1 for evaluation
+        scores = self.evaluate_objective(data_split, neg_sampling_strategy=None, negative_factor=1)
+        if data_split == "val":
+            self.check_early_stopping(scores["Accuracy"])
+        return scores
 
     @abstractmethod
     def parameters(self, recurse: bool = True):

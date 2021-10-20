@@ -1,16 +1,16 @@
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from itertools import chain
 
 import datasets
 import torch
-from torch import nn
-from torch.nn import CrossEntropyLoss, NLLLoss
+from torch.nn import CrossEntropyLoss
 
 from SourceCodeTools.code.data.sourcetrail import SubwordMasker
 from SourceCodeTools.models.graph.ElementEmbedder import DocstringEmbedder, create_fixed_length, \
     ElementEmbedderWithBpeSubwords
 from SourceCodeTools.models.graph.train.objectives import SubwordEmbedderObjective
-from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective, _compute_accuracy
+from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective, compute_accuracy, \
+    sum_scores
 from SourceCodeTools.models.nlp.TorchDecoder import LSTMDecoder, Decoder
 from SourceCodeTools.models.nlp.Vocabulary import Vocabulary
 from SourceCodeTools.nlp.embed.bpe import load_bpe_model
@@ -22,13 +22,13 @@ class GraphTextPrediction(SubwordEmbedderObjective):
             self, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
-            measure_ndcg=False, dilate_ndcg=1
+            measure_scores=False, dilate_scores=1
     ):
         super().__init__(
             "GraphTextPrediction", graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
-            masker=masker, measure_ndcg=measure_ndcg, dilate_ndcg=dilate_ndcg
+            masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores
         )
 
     def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
@@ -43,14 +43,14 @@ class GraphTextGeneration(SubwordEmbedderObjective):
             self, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
-            measure_ndcg=False, dilate_ndcg=1, max_len=20
+            measure_scores=False, dilate_scores=1, max_len=20
     ):
         self.max_len = max_len + 2  # add pad and eos
         super().__init__(
             "GraphTextGeneration", graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
-            masker=masker, measure_ndcg=measure_ndcg, dilate_ndcg=dilate_ndcg
+            masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores
         )
 
     def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
@@ -99,14 +99,13 @@ class GraphTextGeneration(SubwordEmbedderObjective):
             mask = mask.reshape(-1,)
             pred = pred.reshape(-1,)[mask]
             true = true.reshape(-1,)[mask]
-            return _compute_accuracy(pred, true)
+            return compute_accuracy(pred, true)
 
         acc = masked_accuracy(logits.argmax(dim=2), labels, length_mask)
 
         if return_logits:
             return acc, loss, logits
         return acc, loss
-
 
     def forward(self, input_nodes, seeds, blocks, train_embeddings=True, neg_sampling_strategy=None):
         graph_emb = self._graph_embeddings(input_nodes, blocks, train_embeddings)
@@ -133,10 +132,7 @@ class GraphTextGeneration(SubwordEmbedderObjective):
         return sents
 
     def evaluate_generation(self, data_split):
-        total_loss = 0
-        total_acc = 0
-        total_bleu = {f"bleu": 0.}
-        bleu_count = 0
+        scores = defaultdict(list)
         count = 0
 
         for input_nodes, seeds, blocks in getattr(self, f"{data_split}_loader"):
@@ -158,15 +154,16 @@ class GraphTextGeneration(SubwordEmbedderObjective):
             # bleu = sacrebleu.corpus_bleu(pred, true)
 
             bleu = self.bleu_metric.compute(predictions=pred, references=[[t] for t in true])
-            bleu_count += 1
-            total_bleu["bleu"] += bleu['score']
+            scores["bleu"].append(bleu['score'])
 
-            total_loss += loss.item()
-            total_acc += acc
+            scores["Loss"].append(loss.item())
+            scores["Accuracy"].append(acc)
             count += 1
-        return total_loss / count, total_acc / count, {"bleu": total_bleu["bleu"] / bleu_count}
 
-    def evaluate(self, data_split, neg_sampling_factor=1):
+        scores = {key: sum_scores(val) for key, val in scores.items()}
+        return scores
+
+    def evaluate(self, data_split, *, neg_sampling_strategy=None, early_stopping=False, early_stopping_tolerance=20):
         loss, acc, bleu = self.evaluate_generation(data_split)
         if data_split == "val":
             self.check_early_stopping(acc)

@@ -45,8 +45,8 @@ def add_training_arguments(parser):
 
 
 def add_scoring_arguments(parser):
-    parser.add_argument('--measure_ndcg', action='store_true')
-    parser.add_argument('--dilate_ndcg', dest='dilate_ndcg', default=200, type=int, help='')
+    parser.add_argument('--measure_scores', action='store_true')
+    parser.add_argument('--dilate_scores', dest='dilate_scores', default=200, type=int, help='')
 
 
 def add_performance_arguments(parser):

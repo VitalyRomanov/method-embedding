@@ -1,11 +1,10 @@
-from collections import OrderedDict
 import numpy as np
 import random as rnd
 import torch
 from torch.nn import CrossEntropyLoss
 
 from SourceCodeTools.code.data.sourcetrail.SubwordMasker import SubwordMasker
-from SourceCodeTools.mltools.torch import _compute_accuracy
+from SourceCodeTools.mltools.torch import compute_accuracy
 from SourceCodeTools.models.graph.ElementEmbedder import GraphLinkSampler
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
 from SourceCodeTools.models.graph.LinkPredictor import BilinearLinkPedictor, TransRLinkPredictor
@@ -19,15 +18,15 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
             self, name, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
-            measure_ndcg=False, dilate_ndcg=1
+            measure_scores=False, dilate_scores=1
     ):
         super().__init__(
             name, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
-            masker=masker, measure_ndcg=measure_ndcg, dilate_ndcg=dilate_ndcg
+            masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores
         )
-        self.measure_ndcg = False
+        self.measure_scores = False
         self.update_embeddings_for_queries = False
 
     def create_graph_link_sampler(self, data_loading_func, nodes):
@@ -36,9 +35,11 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
         )
 
     def create_link_predictor(self):
-        self.link_predictor = BilinearLinkPedictor(self.target_emb_size, self.graph_model.emb_size, self.target_embedder.num_classes).to(self.device)
+        self.link_predictor = BilinearLinkPedictor(
+            self.target_emb_size, self.graph_model.emb_size, self.target_embedder.num_classes
+        ).to(self.device)
         # self.positive_label = 1
-        self.negative_label = 0
+        self.negative_label = self.target_embedder.null_class
         self.label_dtype = torch.long
 
     def create_positive_labels(self, ids):
@@ -51,7 +52,7 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
         loss = loss_fct(logits.reshape(-1, logits.size(-1)),
                         labels.reshape(-1))
 
-        acc = _compute_accuracy(logits.argmax(dim=1), labels)
+        acc = compute_accuracy(logits.argmax(dim=1), labels)
 
         return acc, loss
 
@@ -61,13 +62,13 @@ class TransRObjective(GraphLinkClassificationObjective):
             self, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
-            measure_ndcg=False, dilate_ndcg=1
+            measure_scores=False, dilate_scores=1
     ):
         super().__init__(
             "TransR", graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
-            masker=masker, measure_ndcg=measure_ndcg, dilate_ndcg=dilate_ndcg
+            masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores
         )
 
     def create_link_predictor(self):
@@ -88,7 +89,7 @@ class TransRObjective(GraphLinkClassificationObjective):
         labels_ = labels[:num_examples]
 
         loss, sim = self.link_predictor(anchor, positive, negative, labels_)
-        acc = _compute_accuracy(sim, labels >= 0)
+        acc = compute_accuracy(sim, labels >= 0)
 
         return acc, loss
 
@@ -115,6 +116,7 @@ class TargetLinkMapper(GraphLinkSampler):
 
         self.init_neg_sample()
         self.num_classes = len(self.inverse_link_type_map)
+        self.null_class = 0
 
     def __getitem__(self, ids):
         self.cached_ids = ids
