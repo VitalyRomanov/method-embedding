@@ -335,9 +335,10 @@ class RGCNSampling(nn.Module):
         #         all_layers.append(h) # added this as an experimental feature for intermediate supervision
         # else:
         # minibatch training
+        h0 = h
         for layer, norm, block in zip(self.layers, self.layer_norm, blocks):
             # h = checkpoint.checkpoint(self.custom(layer), block, h)
-            h = layer(block, h)
+            h = layer(block, h, h0)
             h = self.normalize(h, norm)
             all_layers.append(h) # added this as an experimental feature for intermediate supervision
 
@@ -353,6 +354,7 @@ class RGCNSampling(nn.Module):
         For node classification, the model is trained to predict on only one node type's
         label.  Therefore, only that type's final representation is meaningful.
         """
+        h0 = x
 
         with th.set_grad_enabled(False):
 
@@ -384,8 +386,9 @@ class RGCNSampling(nn.Module):
                         input_nodes = {key: input_nodes}
                         output_nodes = {key: output_nodes}
 
+                    _h0 = {k: h0[k][input_nodes[k]].to(device) for k in input_nodes.keys()}
                     h = {k: x[k][input_nodes[k]].to(device) for k in input_nodes.keys()}
-                    h = layer(block, h)
+                    h = layer(block, h, _h0)
                     h = self.normalize(h, norm)
 
                     for k in h.keys():
