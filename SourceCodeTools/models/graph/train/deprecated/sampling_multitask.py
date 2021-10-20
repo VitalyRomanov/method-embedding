@@ -11,17 +11,13 @@ from time import time
 from os.path import join
 import logging
 
-from SourceCodeTools.mltools.torch import _compute_accuracy
+from SourceCodeTools.mltools.torch import compute_accuracy
 from SourceCodeTools.models.Embedder import Embedder
 from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedderWithBpeSubwords
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
 from SourceCodeTools.models.graph.train.utils import BestScoreTracker  # create_elem_embedder
 from SourceCodeTools.models.graph.LinkPredictor import LinkPredictor
 from SourceCodeTools.models.graph.NodeEmbedder import NodeEmbedder
-
-
-# def _compute_accuracy(pred_, true_):
-#     return torch.sum(pred_ == true_).item() / len(true_)
 
 
 class SamplingMultitaskTrainer:
@@ -383,7 +379,7 @@ class SamplingMultitaskTrainer:
 
             logp = nn.functional.log_softmax(logits, 1)
             loss = nn.functional.cross_entropy(logp, labels)
-            acc = _compute_accuracy(logp.argmax(dim=1), labels)
+            acc = compute_accuracy(logp.argmax(dim=1), labels)
 
             total_loss += loss.item()
             total_acc += acc
@@ -406,7 +402,7 @@ class SamplingMultitaskTrainer:
 
             logp = nn.functional.log_softmax(logits, 1)
             loss = nn.functional.cross_entropy(logp, labels)
-            acc = _compute_accuracy(logp.argmax(dim=1), labels)
+            acc = compute_accuracy(logp.argmax(dim=1), labels)
 
             total_loss += loss.item()
             total_acc += acc
@@ -561,9 +557,9 @@ class SamplingMultitaskTrainer:
                     input_nodes_api_call, seeds_api_call, blocks_api_call
                 )
 
-                train_acc_node_name = _compute_accuracy(logits_node_name.argmax(dim=1), labels_node_name)
-                train_acc_var_use = _compute_accuracy(logits_var_use.argmax(dim=1), labels_var_use)
-                train_acc_api_call = _compute_accuracy(logits_api_call.argmax(dim=1), labels_api_call)
+                train_acc_node_name = compute_accuracy(logits_node_name.argmax(dim=1), labels_node_name)
+                train_acc_var_use = compute_accuracy(logits_var_use.argmax(dim=1), labels_var_use)
+                train_acc_api_call = compute_accuracy(logits_api_call.argmax(dim=1), labels_api_call)
 
                 train_logits = torch.cat([logits_node_name, logits_var_use, logits_api_call], 0)
                 train_labels = torch.cat([labels_node_name, labels_var_use, labels_api_call], 0)

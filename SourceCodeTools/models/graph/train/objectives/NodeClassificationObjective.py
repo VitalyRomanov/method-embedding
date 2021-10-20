@@ -1,13 +1,14 @@
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from itertools import chain
 
 import torch
-from sklearn.metrics import ndcg_score
+from sklearn.metrics import ndcg_score, top_k_accuracy_score
 from torch import nn
 from torch.nn import CrossEntropyLoss
 
 from SourceCodeTools.code.data.sourcetrail import SubwordMasker
-from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective, _compute_accuracy
+from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective, compute_accuracy, \
+    sum_scores
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
 from SourceCodeTools.models.graph.train.Scorer import Scorer
 
@@ -19,13 +20,13 @@ class NodeClassifierObjective(AbstractObjective):
             self, name, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=None, target_emb_size=None, link_predictor_type=None, masker: SubwordMasker = None,
-            measure_ndcg=False, dilate_ndcg=1, early_stopping=False, early_stopping_tolerance=20
+            measure_scores=False, dilate_scores=1, early_stopping=False, early_stopping_tolerance=20
     ):
         super().__init__(
             name, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
-            masker=masker, measure_ndcg=measure_ndcg, dilate_ndcg=dilate_ndcg, early_stopping=early_stopping, early_stopping_tolerance=early_stopping_tolerance
+            masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores, early_stopping=early_stopping, early_stopping_tolerance=early_stopping_tolerance
         )
 
     def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
@@ -43,7 +44,7 @@ class NodeClassifierObjective(AbstractObjective):
         loss = loss_fct(logits.reshape(-1, logits.size(-1)),
                         labels.reshape(-1))
 
-        acc = _compute_accuracy(logits.argmax(dim=1), labels)
+        acc = compute_accuracy(logits.argmax(dim=1), labels)
 
         if return_logits:
             return acc, loss, logits
@@ -58,13 +59,10 @@ class NodeClassifierObjective(AbstractObjective):
 
         return loss, acc
 
-    def evaluate_generation(self, data_split):
-        total_loss = 0
-        total_acc = 0
-        ndcg_at = [1, 3, 5, 10]
-        total_ndcg = {f"ndcg@{k}": 0. for k in ndcg_at}
-        ndcg_count = 0
+    def evaluate_classification(self, data_split):
+        at = [1, 3, 5, 10]
         count = 0
+        scores = defaultdict(list)
 
         for input_nodes, seeds, blocks in getattr(self, f"{data_split}_loader"):
             blocks = [blk.to(self.device) for blk in blocks]
@@ -79,25 +77,32 @@ class NodeClassifierObjective(AbstractObjective):
             y_true = np.zeros(y_pred.shape)
             y_true[np.arange(0, y_true.shape[0]), labels.to("cpu").numpy()] = 1.
 
-            if self.measure_ndcg:
-                if count % self.dilate_ndcg == 0:
-                    for k in ndcg_at:
-                        total_ndcg[f"ndcg@{k}"] += ndcg_score(y_true, y_pred, k=k)
-                    ndcg_count += 1
+            if self.measure_scores:
+                if count % self.dilate_scores == 0:
+                    y_true_onehot = np.array(y_true)
+                    labels = list(range(y_true_onehot.shape[1]))
 
-            total_loss += loss.item()
-            total_acc += acc
+                    for k in at:
+                        scores[f"ndcg@{k}"].append(ndcg_score(y_true, y_pred, k=k))
+                        scores[f"acc@{k}"].append(
+                            {f"acc@{at}": top_k_accuracy_score(y_true_onehot.argmax(-1), y_pred, k=at, labels=labels)}
+                        )
+
+            scores["Loss"].append(loss.item())
+            scores["Accuracy"].append(acc)
             count += 1
 
         if count == 0:
             count += 1
-        return total_loss / count, total_acc / count, {key: val / ndcg_count for key, val in total_ndcg.items()} if self.measure_ndcg else None
 
-    def evaluate(self, data_split, neg_sampling_factor=1):
-        loss, acc, ndcg = self.evaluate_generation(data_split)
+        scores = {key: sum_scores(val) for key, val in scores.items()}
+        return scores
+
+    def evaluate(self, data_split, *, neg_sampling_strategy=None, early_stopping=False, early_stopping_tolerance=20):
+        scores = self.evaluate_classification(data_split)
         if data_split == "val":
-            self.check_early_stopping(acc)
-        return loss, acc, ndcg
+            self.check_early_stopping(scores["Accuracy"])
+        return scores
 
     def parameters(self, recurse: bool = True):
         return chain(self.classifier.parameters())
@@ -114,13 +119,13 @@ class NodeNameClassifier(NodeClassifierObjective):
             self, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=None, target_emb_size=None, link_predictor_type=None, masker: SubwordMasker = None,
-            measure_ndcg=False, dilate_ndcg=1, early_stopping=False, early_stopping_tolerance=20
+            measure_scores=False, dilate_scores=1, early_stopping=False, early_stopping_tolerance=20
     ):
         super().__init__(
             "NodeNameClassifier", graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
-            masker=masker, measure_ndcg=measure_ndcg, dilate_ndcg=dilate_ndcg, early_stopping=early_stopping, early_stopping_tolerance=early_stopping_tolerance
+            masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores, early_stopping=early_stopping, early_stopping_tolerance=early_stopping_tolerance
         )
 
 

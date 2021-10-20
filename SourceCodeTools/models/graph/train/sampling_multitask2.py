@@ -1,4 +1,5 @@
 import os
+from collections import defaultdict
 from copy import copy
 from typing import Tuple
 
@@ -23,6 +24,12 @@ from SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObject
 class EarlyStopping(Exception):
     def __init__(self, *args, **kwargs):
         super(EarlyStopping, self).__init__(*args, **kwargs)
+
+
+def add_to_summary(summary, partition, objective_name, scores, postfix):
+    summary.update({
+        f"{key}/{partition}/{objective_name}_{postfix}": val for key, val in scores.items()
+    })
 
 
 class SamplingMultitaskTrainer:
@@ -90,8 +97,8 @@ class SamplingMultitaskTrainer:
                 dataset.load_token_prediction, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
-                masker=dataset.create_subword_masker(), measure_ndcg=self.trainer_params["measure_ndcg"],
-                dilate_ndcg=self.trainer_params["dilate_ndcg"]
+                masker=dataset.create_subword_masker(), measure_scores=self.trainer_params["measure_scores"],
+                dilate_scores=self.trainer_params["dilate_scores"]
             )
         )
 
@@ -109,8 +116,8 @@ class SamplingMultitaskTrainer:
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
                 masker=dataset.create_node_name_masker(tokenizer_path),
-                measure_ndcg=self.trainer_params["measure_ndcg"],
-                dilate_ndcg=self.trainer_params["dilate_ndcg"]
+                measure_scores=self.trainer_params["measure_scores"],
+                dilate_scores=self.trainer_params["dilate_scores"]
             )
         )
 
@@ -122,8 +129,8 @@ class SamplingMultitaskTrainer:
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
                 masker=None,
-                measure_ndcg=self.trainer_params["measure_ndcg"],
-                dilate_ndcg=self.trainer_params["dilate_ndcg"]
+                measure_scores=self.trainer_params["measure_scores"],
+                dilate_scores=self.trainer_params["dilate_scores"]
             )
         )
 
@@ -135,8 +142,8 @@ class SamplingMultitaskTrainer:
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size,
                 masker=dataset.create_node_name_masker(tokenizer_path),
-                measure_ndcg=self.trainer_params["measure_ndcg"],
-                dilate_ndcg=self.trainer_params["dilate_ndcg"]
+                measure_scores=self.trainer_params["measure_scores"],
+                dilate_scores=self.trainer_params["dilate_scores"]
             )
         )
 
@@ -148,8 +155,8 @@ class SamplingMultitaskTrainer:
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
                 masker=dataset.create_variable_name_masker(tokenizer_path),
-                measure_ndcg=self.trainer_params["measure_ndcg"],
-                dilate_ndcg=self.trainer_params["dilate_ndcg"]
+                measure_scores=self.trainer_params["measure_scores"],
+                dilate_scores=self.trainer_params["dilate_scores"]
             )
         )
 
@@ -160,8 +167,8 @@ class SamplingMultitaskTrainer:
                 dataset.load_api_call, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
-                measure_ndcg=self.trainer_params["measure_ndcg"],
-                dilate_ndcg=self.trainer_params["dilate_ndcg"]
+                measure_scores=self.trainer_params["measure_scores"],
+                dilate_scores=self.trainer_params["dilate_scores"]
             )
         )
 
@@ -174,8 +181,8 @@ class SamplingMultitaskTrainer:
                 dataset.load_global_edges_prediction, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="nn",
-                measure_ndcg=self.trainer_params["measure_ndcg"],
-                dilate_ndcg=self.trainer_params["dilate_ndcg"]
+                measure_scores=self.trainer_params["measure_scores"],
+                dilate_scores=self.trainer_params["dilate_scores"]
             )
         )
 
@@ -186,8 +193,8 @@ class SamplingMultitaskTrainer:
                 dataset.load_edge_prediction, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
-                measure_ndcg=self.trainer_params["measure_ndcg"],
-                dilate_ndcg=self.trainer_params["dilate_ndcg"]
+                measure_scores=self.trainer_params["measure_scores"],
+                dilate_scores=self.trainer_params["dilate_scores"]
             )
         )
 
@@ -198,8 +205,8 @@ class SamplingMultitaskTrainer:
                 dataset.load_edge_prediction, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
-                measure_ndcg=self.trainer_params["measure_ndcg"],
-                dilate_ndcg=self.trainer_params["dilate_ndcg"]
+                measure_scores=self.trainer_params["measure_scores"],
+                dilate_scores=self.trainer_params["dilate_scores"]
             )
         )
 
@@ -210,8 +217,8 @@ class SamplingMultitaskTrainer:
                 dataset.load_docstring, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
-                measure_ndcg=self.trainer_params["measure_ndcg"],
-                dilate_ndcg=self.trainer_params["dilate_ndcg"]
+                measure_scores=self.trainer_params["measure_scores"],
+                dilate_scores=self.trainer_params["dilate_scores"]
             )
         )
 
@@ -233,8 +240,8 @@ class SamplingMultitaskTrainer:
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size,
                 masker=None,
-                measure_ndcg=self.trainer_params["measure_ndcg"],
-                dilate_ndcg=self.trainer_params["dilate_ndcg"],
+                measure_scores=self.trainer_params["measure_scores"],
+                dilate_scores=self.trainer_params["dilate_scores"],
                 early_stopping=self.trainer_params["early_stopping"],
                 early_stopping_tolerance=self.trainer_params["early_stopping_tolerance"]
             )
@@ -370,13 +377,13 @@ class SamplingMultitaskTrainer:
             summary_dict = {}
             num_batches = min([objective.num_train_batches for objective in self.objectives])
 
-            train_losses = {}
-            train_accs = {}
+            train_losses = defaultdict(list)
+            train_accs = defaultdict(list)
 
-            def append_metric(destination, name, metric):
-                if name not in destination:
-                    destination[name] = []
-                destination[name].append(metric)
+            # def append_metric(destination, name, metric):
+            #     if name not in destination:
+            #         destination[name] = []
+            #     destination[name].append(metric)
 
             for step in tqdm(range(num_batches), total=num_batches, desc=f"Epoch {self.epoch}"):
 
@@ -412,14 +419,16 @@ class SamplingMultitaskTrainer:
                     #     for param in groups["params"]:
                     #         torch.nn.utils.clip_grad_norm_(param, max_norm=1.)
                     loss.backward()  # create_graph = True
+                    
+                    summary = {}
+                    add_to_summary(
+                        summary=summary, partition="train", objective_name=objective.name,
+                        scores={"Loss": loss.item(), "Accuracy": acc}, postfix=""
+                    )
 
-                    summary.update({
-                        f"Loss/train/{objective.name}_vs_batch": loss.item(),
-                        f"Accuracy/train/{objective.name}_vs_batch": acc,
-                    })
+                    train_losses[f"Loss/train_avg/{objective.name}"].append(loss.item())
+                    train_accs[f"Accuracy/train_avg/{objective.name}"].append(acc)
 
-                    append_metric(train_losses, f"Loss/train_avg/{objective.name}_vs_batch", loss.item())
-                    append_metric(train_accs, f"Accuracy/train_avg/{objective.name}_vs_batch", acc)
                     # except ZeroEdges as e:
                     #     logging.warning(f"Zero edges in loader in step {step}")
                     # except Exception as e:
@@ -432,9 +441,9 @@ class SamplingMultitaskTrainer:
                 summary_dict.update(summary)
 
                 self.batch += 1
-                summary = {
-                    f"Loss/train": loss_accum,
-                }
+                # summary = {
+                #     f"Loss/train": loss_accum,
+                # }
                 summary = {key: sum(val) / len(val) for key, val in train_losses.items()}
                 summary.update({key: sum(val) / len(val) for key, val in train_accs.items()})
                 self.write_summary(summary, self.batch)
@@ -449,19 +458,12 @@ class SamplingMultitaskTrainer:
                 with torch.set_grad_enabled(False):
                     objective.target_embedder.prepare_index()  # need this to update sampler for the next epoch
 
-                    val_loss, val_acc, val_ndcg = objective.evaluate("val")
-                    test_loss, test_acc, test_ndcg = objective.evaluate("test")
-
-                summary = {
-                    f"Loss/test/{objective.name}_vs_batch": test_loss,
-                    f"Loss/val/{objective.name}_vs_batch": val_loss,
-                    f"Accuracy/test/{objective.name}_vs_batch": test_acc,
-                    f"Accuracy/val/{objective.name}_vs_batch": val_acc,
-                }
-                if test_ndcg is not None:
-                    summary.update({f"{key}/test/{objective.name}_vs_batch": val for key, val in test_ndcg.items()})
-                if val_ndcg is not None:
-                    summary.update({f"{key}/val/{objective.name}_vs_batch": val for key, val in val_ndcg.items()})
+                    val_scores = objective.evaluate("val")
+                    test_scores = objective.evaluate("test")
+                    
+                summary = {}
+                add_to_summary(summary, "val", objective.name, val_scores, postfix="")
+                add_to_summary(summary, "test", objective.name, test_scores, postfix="")
 
                 self.write_summary(summary, self.batch)
                 summary_dict.update(summary)
@@ -536,22 +538,15 @@ class SamplingMultitaskTrainer:
 
             for objective in self.objectives:
 
-                train_loss, train_acc, train_ndcg = objective.evaluate("train")
-                val_loss, val_acc, val_ndcg = objective.evaluate("val")
-                test_loss, test_acc, test_ndcg = objective.evaluate("test")
-
-                summary = {
-                    f"Accuracy/train/{objective.name}_final": train_acc,
-                    f"Accuracy/test/{objective.name}_final": test_acc,
-                    f"Accuracy/val/{objective.name}_final": val_acc,
-                }
-                if train_ndcg is not None:
-                    summary.update({f"{key}/train/{objective.name}_final": val for key, val in train_ndcg.items()})
-                if val_ndcg is not None:
-                    summary.update({f"{key}/val/{objective.name}_final": val for key, val in val_ndcg.items()})
-                if test_ndcg is not None:
-                    summary.update({f"{key}/test/{objective.name}_final": val for key, val in test_ndcg.items()})
-
+                train_scores = objective.evaluate("train")
+                val_scores = objective.evaluate("val")
+                test_scores = objective.evaluate("test")
+                
+                summary = {}
+                add_to_summary(summary, "train", objective.name, train_scores, postfix="final")
+                add_to_summary(summary, "val", objective.name, val_scores, postfix="final")
+                add_to_summary(summary, "test", objective.name, test_scores, postfix="final")
+                
                 summary_dict.update(summary)
 
         # self.write_hyperparams(summary_dict, self.epoch)
@@ -637,9 +632,6 @@ def training_procedure(
         'sampling_neighbourhood_size': args.num_per_neigh,
         'neg_sampling_factor': args.neg_sampling_factor,
         'epochs': args.epochs,
-        # 'node_name_file': args.fname_file,
-        # 'var_use_file': args.varuse_file,
-        # 'call_seq_file': args.call_seq_file,
         'elem_emb_size': args.elem_emb_size,
         'model_base_path': model_base_path,
         'pretraining_phase': args.pretraining_phase,
@@ -647,8 +639,8 @@ def training_procedure(
         'schedule_layers_every': args.schedule_layers_every,
         'embedding_table_size': args.embedding_table_size,
         'save_checkpoints': args.save_checkpoints,
-        'measure_ndcg': args.measure_ndcg,
-        'dilate_ndcg': args.dilate_ndcg,
+        'measure_scores': args.measure_scores,
+        'dilate_scores': args.dilate_scores,
         "objectives": args.objectives.split(","),
         "early_stopping": args.early_stopping,
         "early_stopping_tolerance": args.early_stopping_tolerance,
@@ -685,7 +677,7 @@ def training_procedure(
 
 def evaluation_procedure(
         dataset, model_name, model_params, args, model_base_path, trainer=None
-) -> Tuple[SamplingMultitaskTrainer, dict]:
+):
 
     if trainer is None:
         trainer = SamplingMultitaskTrainer
@@ -705,9 +697,6 @@ def evaluation_procedure(
         'sampling_neighbourhood_size': args.num_per_neigh,
         'neg_sampling_factor': args.neg_sampling_factor,
         'epochs': args.epochs,
-        # 'node_name_file': args.fname_file,
-        # 'var_use_file': args.varuse_file,
-        # 'call_seq_file': args.call_seq_file,
         'elem_emb_size': args.elem_emb_size,
         'model_base_path': model_base_path,
         'pretraining_phase': args.pretraining_phase,
@@ -715,8 +704,8 @@ def evaluation_procedure(
         'schedule_layers_every': args.schedule_layers_every,
         'embedding_table_size': args.embedding_table_size,
         'save_checkpoints': args.save_checkpoints,
-        'measure_ndcg': args.measure_ndcg,
-        'dilate_ndcg': args.dilate_ndcg
+        'measure_scores': args.measure_scores,
+        'dilate_scores': args.dilate_scores
     }
 
     trainer = trainer( #SamplingMultitaskTrainer(

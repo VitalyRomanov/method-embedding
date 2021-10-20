@@ -4,7 +4,8 @@ from typing import Dict, List
 
 import torch
 import numpy as np
-from sklearn.metrics import ndcg_score
+from sklearn.metrics import ndcg_score, top_k_accuracy_score
+from sklearn.neighbors import NearestNeighbors
 from sklearn.neighbors._ball_tree import BallTree
 from sklearn.preprocessing import normalize
 
@@ -28,21 +29,32 @@ class Scorer:
     def __init__(
             self, num_embs, emb_size, src2dst: Dict[int, List[int]], neighbours_to_sample=5, index_backend="faiss"
     ):
+        """
+        Creates an embedding table, the embeddings in this table are updated once during an epoch. Embeddings from this
+        table are used for nearest neighbour queries during negative sampling. We avoid keeping track of all possible
+        embeddings by knowing that only part of embeddings are eligible as DST.
+        :param num_embs: number of unique DST
+        :param emb_size: embedding dimensionality
+        :param src2dst: Mapping from SRC to all DST, need this to find the hardest negative example for all DST at once
+        :param neighbours_to_sample: default number of neighbours
+        :param index_backend: Choose between sklearn and faiss
+        """
         self.scorer_num_emb = num_embs
         self.scorer_emb_size = emb_size
-        self.scorer_src2dst = src2dst # mapping from src to all possible dsts
+        self.scorer_src2dst = src2dst  # mapping from src to all possible dst
         self.scorer_index_backend = index_backend
 
-        self.scorer_all_emb = np.ones((num_embs, emb_size))
+        self.scorer_all_emb = np.ones((num_embs, emb_size))  # unique dst embedding table
         self.scorer_all_keys = self.get_cand_to_score_against(None)
         self.scorer_key_order = dict(zip(self.scorer_all_keys, range(len(self.scorer_all_keys))))
         self.scorer_index = None
         self.neighbours_to_sample = min(neighbours_to_sample, self.scorer_num_emb)
 
     def prepare_index(self, override_strategy=None):
-        self.override_strategy=override_strategy
         if self.scorer_index_backend == "sklearn":
-            self.scorer_index = BallTree(self.scorer_all_emb, leaf_size=1)
+            self.scorer_index = NearestNeighbors()
+            self.scorer_index.fit(self.scorer_all_emb)
+            # self.scorer_index = BallTree(self.scorer_all_emb, leaf_size=1)
             # self.scorer_index = BallTree(normalize(self.scorer_all_emb, axis=1), leaf_size=1)
         elif self.scorer_index_backend == "faiss":
             self.scorer_index = FaissIndex(self.scorer_all_emb)
@@ -105,7 +117,9 @@ class Scorer:
         for i in range(len(to_score_ids)):
             input_embs = to_score_embs[i, :].repeat((embs_to_score_against.shape[0], 1))
             # predictor_input = torch.cat([input_embs, all_emb], dim=1)
-            y_pred.append(torch.nn.functional.softmax(link_predictor(input_embs, embs_to_score_against), dim=1)[:, 1].tolist())  # 0 - negative, 1 - positive
+            y_pred.append(
+                torch.nn.functional.softmax(link_predictor(input_embs, embs_to_score_against), dim=1)[:, 1].tolist()
+            )  # 0 - negative, 1 - positive
 
         return y_pred
 
@@ -114,12 +128,23 @@ class Scorer:
         return candidates
 
     def get_cand_to_score_against(self, ids):
+        """
+        Generate sorted list of all possible DST. These will be used as possible targets during NDCG calculation
+        :param ids:
+        :return:
+        """
         all_keys = set()
 
         [all_keys.update(self.scorer_src2dst[key]) for key in self.scorer_src2dst]
         return sorted(list(all_keys))  # list(self.elem2id[a] for a in all_keys)
 
     def get_embeddings_for_scoring(self, device, **kwargs):
+        """
+        Get all embeddings as a tensor
+        :param device:
+        :param kwargs:
+        :return:
+        """
         return torch.Tensor(self.scorer_all_emb).to(device)
 
     def get_keys_for_scoring(self):
@@ -132,7 +157,7 @@ class Scorer:
 
         to_score_ids = to_score_ids.tolist()
 
-        candidates = self.get_gt_candidates(to_score_ids)
+        candidates = self.get_gt_candidates(to_score_ids)  # positive candidates
         # keys_to_score_against = self.get_cand_to_score_against(to_score_ids)
         keys_to_score_against = self.get_keys_for_scoring()
 
@@ -152,8 +177,16 @@ class Scorer:
         else:
             raise ValueError(f"`type` can be either `nn` or `inner_prod` but `{type}` given")
 
+        scores = {}
+        y_true_onehot = np.array(y_true)
+        labels=list(range(y_true_onehot.shape[1]))
+
         if isinstance(at, Iterable):
-            scores = {f"ndcg@{k}": ndcg_score(y_true, y_pred, k=k) for k in at}
+            scores.update({f"acc@{k}": top_k_accuracy_score(y_true_onehot.argmax(-1), y_pred, k=k, labels=labels) for k in at})
+            scores.update({f"ndcg@{k}": ndcg_score(y_true, y_pred, k=k) for k in at})
+            # scores = {f"ndcg@{k}": ndcg_score(y_true, y_pred, k=k) for k in at}
         else:
-            scores = {f"ndcg@{at}": ndcg_score(y_true, y_pred, k=at)}
+            scores.update({f"acc@{at}": top_k_accuracy_score(y_true_onehot.argmax(-1), y_pred, k=at, labels=labels)})
+            scores.update({f"ndcg@{at}": ndcg_score(y_true, y_pred, k=at)})
+            # scores = {f"ndcg@{at}": ndcg_score(y_true, y_pred, k=at)}
         return scores
