@@ -26,10 +26,12 @@ class GraphLinkSampler(ElementEmbedderBase, Scorer):
         return negative
 
 
-class ElementEmbedder(ElementEmbedderBase, nn.Module):
+class ElementEmbedder(ElementEmbedderBase, nn.Module, Scorer):
     def __init__(self, elements, nodes, emb_size, compact_dst=True):
         ElementEmbedderBase.__init__(self, elements=elements, nodes=nodes, compact_dst=compact_dst)
         nn.Module.__init__(self)
+        Scorer.__init__(self, num_embs=len(self.elements["dst"].unique()), emb_size=emb_size,
+                        src2dst=self.element_lookup)
 
         self.emb_size = emb_size
         n_elems = self.elements['emb_id'].unique().size
@@ -39,8 +41,29 @@ class ElementEmbedder(ElementEmbedderBase, nn.Module):
     def __getitem__(self, ids):
         return torch.LongTensor(ElementEmbedderBase.__getitem__(self, ids=ids))
 
+    def sample_negative(self, size, ids=None, strategy="closest"):
+        # TODO
+        # Try other distributions
+        if strategy == "w2v":
+            negative = ElementEmbedderBase.sample_negative(self, size)
+        else:
+            ### negative = random.choices(Scorer.sample_closest_negative(self, ids), k=size)
+            negative = Scorer.sample_closest_negative(self, ids, k=size // len(ids))
+            assert len(negative) == size
+
+        return torch.LongTensor(negative)
+
     def forward(self, input, **kwargs):
         return self.norm(self.embed(input))
+
+    def set_embed(self):
+        all_keys = self.get_keys_for_scoring()
+        with torch.set_grad_enabled(False):
+            self.scorer_all_emb = self(torch.LongTensor(all_keys).to(self.embed.weight.device)).detach().cpu().numpy()
+
+    def prepare_index(self):
+        self.set_embed()
+        Scorer.prepare_index(self)
 
 
 # def hashstr(s, num_buckets):
