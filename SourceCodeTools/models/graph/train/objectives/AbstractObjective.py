@@ -293,17 +293,17 @@ class AbstractObjective(nn.Module):
             logp = nn.functional.log_softmax(logits, dim=1)
             loss = nn.functional.nll_loss(logp, labels)
         elif self.link_predictor_type == "inner_prod":
-            # num_examples = len(labels) // 2
-            # anchor = node_embs_[:num_examples, :]
-            # positive = element_embs_[:num_examples, :]
-            # negative = element_embs_[num_examples:, :]
-            # # pos_labels_ = labels[:num_examples]
-            # # neg_labels_ = labels[num_examples:]
-            # triplet = nn.TripletMarginLoss(margin=1.0)
-            # loss = triplet(anchor, positive, negative)
-            loss = self.cosine_loss(node_embs_, element_embs_, labels)
-            # logits = (torch.norm(node_embs_ - element_embs_, keepdim=True) < 1.).float()
-            # logits = torch.cat([1 - logits, logits], dim=1)
+            num_examples = len(labels) // 2
+            anchor = node_embs_[:num_examples, :]
+            positive = element_embs_[:num_examples, :]
+            negative = element_embs_[num_examples:, :]
+            # pos_labels_ = labels[:num_examples]
+            # neg_labels_ = labels[num_examples:]
+            triplet = nn.TripletMarginLoss(margin=1.0)
+            loss = triplet(anchor, positive, negative)
+            # loss = self.cosine_loss(node_embs_, element_embs_, labels)
+            logits = (torch.norm(node_embs_ - element_embs_, keepdim=True) < 1.).float()
+            logits = torch.cat([1 - logits, logits], dim=1)
             labels[labels < 0] = 0
         else:
             raise NotImplementedError()
