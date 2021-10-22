@@ -66,7 +66,7 @@ class CosineLinkPredictor(nn.Module):
         super(CosineLinkPredictor, self).__init__()
 
         self.cos = nn.CosineSimilarity()
-        self.max_margin = torch.Tensor([0.4])
+        self.max_margin = torch.Tensor([-0.2])
 
     def forward(self, x1, x2):
         if self.max_margin.device != x1.device:
