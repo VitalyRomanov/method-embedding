@@ -132,3 +132,23 @@ class EdgePrediction(GraphLinkObjective):
         #     tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
         #     masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores
         # )
+
+class EdgePrediction2(SubwordEmbedderObjective):
+    def __init__(
+            self, graph_model, node_embedder, nodes, data_loading_func, device,
+            sampling_neighbourhood_size, batch_size,
+            tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
+            measure_scores=False, dilate_scores=1
+    ):
+        super(EdgePrediction2, self).__init__(
+            "EdgePrediction2", graph_model, node_embedder, nodes, data_loading_func, device,
+            sampling_neighbourhood_size, batch_size,
+            tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
+            masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores
+        )
+
+    def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
+        from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedder
+        self.target_embedder = ElementEmbedder(
+            elements=data_loading_func(), nodes=nodes, emb_size=self.target_emb_size,
+        ).to(self.device)

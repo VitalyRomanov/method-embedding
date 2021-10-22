@@ -16,7 +16,7 @@ from tqdm import tqdm
 from SourceCodeTools.models.Embedder import Embedder
 from SourceCodeTools.models.graph.train.objectives import VariableNameUsePrediction, TokenNamePrediction, \
     NextCallPrediction, NodeNamePrediction, GlobalLinkPrediction, GraphTextPrediction, GraphTextGeneration, \
-    NodeNameClassifier, EdgePrediction, TypeAnnPrediction
+    NodeNameClassifier, EdgePrediction, TypeAnnPrediction, EdgePrediction2
 from SourceCodeTools.models.graph.NodeEmbedder import NodeEmbedder
 from SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObjective import TransRObjective
 
@@ -368,6 +368,7 @@ class SamplingMultitaskTrainer:
 
         for objective in self.objectives:
             with torch.set_grad_enabled(False):
+
                 objective.target_embedder.prepare_index()  # need this to update sampler for the next epoch
 
         for epoch in range(self.epoch, self.epochs):
