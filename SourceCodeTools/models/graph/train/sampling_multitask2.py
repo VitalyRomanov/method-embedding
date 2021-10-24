@@ -46,6 +46,7 @@ class SamplingMultitaskTrainer:
         self.trainer_params = trainer_params
         self.device = device
         self.epoch = 0
+        self.restore_epoch = 0
         self.batch = 0
         self.dtype = torch.float32
         self.create_node_embedder(
@@ -425,7 +426,7 @@ class SamplingMultitaskTrainer:
                     # try:
                     loss, acc = objective(
                         input_nodes, seeds, blocks, train_embeddings=self.finetune,
-                        neg_sampling_strategy="w2v" if epoch == 0 or self.trainer_params["force_w2v_ns"] else None
+                        neg_sampling_strategy="w2v" if epoch == 0 or epoch == self.restore_epoch or self.trainer_params["force_w2v_ns"] else None
                     )
 
                     loss = loss / len(self.objectives)  # assumes the same batch size for all objectives
@@ -535,6 +536,7 @@ class SamplingMultitaskTrainer:
         for objective in self.objectives:
             objective.custom_load_state_dict(checkpoint[objective.name])
         self.epoch = checkpoint['epoch']
+        self.restore_epoch = checkpoint['epoch']
         self.batch = checkpoint['batch']
         logging.info(f"Restored from epoch {checkpoint['epoch']}")
         # TODO needs test
