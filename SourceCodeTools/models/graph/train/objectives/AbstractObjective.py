@@ -272,8 +272,7 @@ class AbstractObjective(nn.Module):
         return next(getattr(self, iter_name))
 
     def _create_loader(self, indices):
-        sampler = dgl.dataloading.MultiLayerNeighborSampler(
-            [self.sampling_neighbourhood_size] * self.graph_model.num_layers)
+        sampler = dgl.dataloading.MultiLayerFullNeighborSampler(self.graph_model.num_layers)
         return dgl.dataloading.NodeDataLoader(
             self.graph_model.g, indices, sampler, batch_size=len(indices), num_workers=0)
 
@@ -293,6 +292,9 @@ class AbstractObjective(nn.Module):
             logp = nn.functional.log_softmax(logits, dim=1)
             loss = nn.functional.nll_loss(logp, labels)
         elif self.link_predictor_type == "inner_prod":
+            loss = self.cosine_loss(node_embs_, element_embs_, labels)
+            labels[labels < 0] = 0
+        elif self.link_predictor_type == "l2":
             num_examples = len(labels) // 2
             anchor = node_embs_[:num_examples, :]
             positive = element_embs_[:num_examples, :]
@@ -301,7 +303,6 @@ class AbstractObjective(nn.Module):
             # neg_labels_ = labels[num_examples:]
             triplet = nn.TripletMarginLoss(margin=1.0)
             loss = triplet(anchor, positive, negative)
-            # loss = self.cosine_loss(node_embs_, element_embs_, labels)
             logits = (torch.norm(node_embs_ - element_embs_, keepdim=True) < 1.).float()
             logits = torch.cat([1 - logits, logits], dim=1)
             labels[labels < 0] = 0
@@ -371,9 +372,9 @@ class AbstractObjective(nn.Module):
         return negative
 
     def get_targets_from_nodes(
-            self, positive_indices, negative_indices, train_embeddings
+            self, positive_indices, negative_indices=None, train_embeddings=True
     ):
-        negative_indices = torch.tensor(negative_indices, dtype=torch.long)
+        negative_indices = torch.tensor(negative_indices, dtype=torch.long) if negative_indices is not None else None
 
         def get_embeddings_for_targets(dst):
             unique_dst, slice_map = self._handle_non_unique(dst)
@@ -394,14 +395,31 @@ class AbstractObjective(nn.Module):
             return dst_embeddings
 
         positive_dst = get_embeddings_for_targets(positive_indices)
-        negative_dst = get_embeddings_for_targets(negative_indices)
+        negative_dst = get_embeddings_for_targets(negative_indices) if negative_indices is not None else None
         return positive_dst, negative_dst
 
     def get_targets_from_embedder(
-            self, positive_indices, negative_indices, train_embeddings
+            self, positive_indices, negative_indices=None, train_embeddings=True
     ):
-        positive_dst = self.target_embedder(positive_indices.to(self.device))
-        negative_dst = self.target_embedder(negative_indices.to(self.device))
+
+        def get_embeddings_for_targets(dst):
+            unique_dst, slice_map = self._handle_non_unique(dst)
+            assert unique_dst[slice_map].tolist() == dst.tolist()
+            unique_dst_embeddings = self.target_embedder(unique_dst.to(self.device))
+            dst_embeddings = unique_dst_embeddings[slice_map.to(self.device)]
+
+            if self.update_embeddings_for_queries:
+                self.target_embedder.set_embed(unique_dst.detach().cpu().numpy(),
+                                               unique_dst_embeddings.detach().cpu().numpy())
+
+            return dst_embeddings
+
+        # positive_dst = self.target_embedder(positive_indices.to(self.device))
+        # negative_dst = self.target_embedder(negative_indices.to(self.device))
+
+        positive_dst = get_embeddings_for_targets(positive_indices)
+        negative_dst = get_embeddings_for_targets(negative_indices) if negative_indices is not None else None
+
         return positive_dst, negative_dst
 
     def create_positive_labels(self, ids):
