@@ -355,6 +355,20 @@ class SamplingMultitaskTrainer:
         )
         return optimizer
 
+    def compute_embeddings_for_scorer(self, objective):
+        if hasattr(objective.target_embedder, "scorer_all_keys") and objective.update_embeddings_for_queries:
+            def chunks(lst, n):
+                for i in range(0, len(lst), n):
+                    yield torch.LongTensor(lst[i:i + n])
+
+            batches = chunks(objective.target_embedder.scorer_all_keys, self.trainer_params["batch_size"])
+            for batch in tqdm(
+                    batches,
+                    total=len(objective.target_embedder.scorer_all_keys) // self.trainer_params["batch_size"] + 1,
+                    desc="Precompute Target Embeddings", leave=False
+            ):
+                _ = objective.target_embedding_fn(batch)  # scorer embedding updated inside
+
     def train_all(self):
         """
         Training procedure for the model with node classifier
@@ -367,7 +381,7 @@ class SamplingMultitaskTrainer:
 
         for objective in self.objectives:
             with torch.set_grad_enabled(False):
-
+                self.compute_embeddings_for_scorer(objective)
                 objective.target_embedder.prepare_index()  # need this to update sampler for the next epoch
 
         for epoch in range(self.epoch, self.epochs):
