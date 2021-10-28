@@ -56,7 +56,7 @@ class Scorer:
     points to learn how to make correct decisions.
     """
     def __init__(
-            self, num_embs, emb_size, src2dst: Dict[int, List[int]], neighbours_to_sample=5, index_backend="faiss",
+            self, num_embs, emb_size, src2dst: Dict[int, List[int]], neighbours_to_sample=5, index_backend="brute",
             method = "inner_prod"
     ):
         """
