@@ -426,7 +426,7 @@ class SamplingMultitaskTrainer:
                     # try:
                     loss, acc = objective(
                         input_nodes, seeds, blocks, train_embeddings=self.finetune,
-                        neg_sampling_strategy="w2v" if epoch == 0 or epoch == self.restore_epoch or self.trainer_params["force_w2v_ns"] else None
+                        neg_sampling_strategy="w2v" if self.trainer_params["force_w2v_ns"] else None
                     )
 
                     loss = loss / len(self.objectives)  # assumes the same batch size for all objectives
@@ -530,7 +530,7 @@ class SamplingMultitaskTrainer:
             torch.save(param_dict,  join(checkpoint_path, f"best_model.pt"))
 
     def restore_from_checkpoint(self, checkpoint_path):
-        checkpoint = torch.load(join(checkpoint_path, "saved_state.pt"))
+        checkpoint = torch.load(join(checkpoint_path, "saved_state.pt"), map_location=torch.device('cpu'))
         self.graph_model.load_state_dict(checkpoint['graph_model'])
         self.node_embedder.load_state_dict(checkpoint['node_embedder'])
         for objective in self.objectives:
@@ -555,12 +555,12 @@ class SamplingMultitaskTrainer:
 
             for objective in self.objectives:
 
-                train_scores = objective.evaluate("train")
+                # train_scores = objective.evaluate("train")
                 val_scores = objective.evaluate("val")
                 test_scores = objective.evaluate("test")
                 
                 summary = {}
-                add_to_summary(summary, "train", objective.name, train_scores, postfix="final")
+                # add_to_summary(summary, "train", objective.name, train_scores, postfix="final")
                 add_to_summary(summary, "val", objective.name, val_scores, postfix="final")
                 add_to_summary(summary, "test", objective.name, test_scores, postfix="final")
                 
