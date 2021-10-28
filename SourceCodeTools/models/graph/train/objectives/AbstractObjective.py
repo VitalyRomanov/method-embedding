@@ -126,7 +126,7 @@ class AbstractObjective(nn.Module):
     def create_graph_link_sampler(self, data_loading_func, nodes):
         self.target_embedder = GraphLinkSampler(
             elements=data_loading_func(), nodes=nodes, compact_dst=False, dst_to_global=True,
-            emb_size=self.target_emb_size
+            emb_size=self.target_emb_size, device=self.device
         )
 
     def create_subword_embedder(self, data_loading_func, nodes, tokenizer_path):

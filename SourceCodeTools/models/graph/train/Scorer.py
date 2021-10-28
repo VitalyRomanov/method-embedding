@@ -22,13 +22,15 @@ class FaissIndex:
 
 
 class Brute:
-    def __init__(self, X, method="inner_prod", *args, **kwargs):
+    def __init__(self, X, method="inner_prod", device="cpu", *args, **kwargs):
         self.vectors = X
         self.method = method
+        self.device = device
 
     def query_inner_prod(self, X, k):
-        X = normalize(X, axis=1)
-        score = (self.vectors @ X.T).reshape(-1,)
+        X = torch.Tensor(normalize(X, axis=1)).to(self.device)
+        vectors = torch.Tensor(self.vectors).to(self.device)
+        score = (vectors @ X.T).reshape(-1,).to("cpu").numpy()
         ind = np.flip(np.argsort(score))[:k]
         return score[ind][:k], ind
 
@@ -57,7 +59,7 @@ class Scorer:
     """
     def __init__(
             self, num_embs, emb_size, src2dst: Dict[int, List[int]], neighbours_to_sample=5, index_backend="brute",
-            method = "inner_prod"
+            method = "inner_prod", device="cpu"
     ):
         """
         Creates an embedding table, the embeddings in this table are updated once during an epoch. Embeddings from this
@@ -74,6 +76,7 @@ class Scorer:
         self.scorer_src2dst = src2dst  # mapping from src to all possible dst
         self.scorer_index_backend = index_backend
         self.scorer_method = method
+        self.scorer_device = device
 
         self.scorer_all_emb = normalize(np.ones((num_embs, emb_size)), axis=1)  # unique dst embedding table
         self.scorer_all_keys = self.get_cand_to_score_against(None)
@@ -90,7 +93,7 @@ class Scorer:
         elif self.scorer_index_backend == "faiss":
             self.scorer_index = FaissIndex(self.scorer_all_emb)
         elif self.scorer_index_backend == "brute":
-            self.scorer_index = Brute(self.scorer_all_emb, method=self.scorer_method)
+            self.scorer_index = Brute(self.scorer_all_emb, method=self.scorer_method, device=self.scorer_device)
         else:
             raise ValueError(f"Unsupported backend: {self.scorer_index_backend}. Supported backends are: sklearn|faiss")
 
