@@ -12,10 +12,10 @@ from SourceCodeTools.models.nlp.TorchEncoder import LSTMEncoder, Encoder
 
 
 class GraphLinkSampler(ElementEmbedderBase, Scorer):
-    def __init__(self, elements, nodes, compact_dst=True, dst_to_global=True, emb_size=None):
+    def __init__(self, elements, nodes, compact_dst=True, dst_to_global=True, emb_size=None, device="cpu"):
         assert emb_size is not None
         ElementEmbedderBase.__init__(self, elements=elements, nodes=nodes, compact_dst=compact_dst, dst_to_global=dst_to_global)
-        Scorer.__init__(self, num_embs=len(self.elements["dst"].unique()), emb_size=emb_size, src2dst=self.element_lookup)
+        Scorer.__init__(self, num_embs=len(self.elements["dst"].unique()), emb_size=emb_size, src2dst=self.element_lookup, device=device)
 
     def sample_negative(self, size, ids=None, strategy="closest"):
         if strategy == "w2v":
