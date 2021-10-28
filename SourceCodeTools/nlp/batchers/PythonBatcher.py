@@ -36,6 +36,11 @@ def filter_unlabeled(entities, declarations):
     return for_mask
 
 
+def print_token_tag(doc, tags):
+    for t, tag in zip(doc, tags):
+        print(t, "\t", tag)
+
+
 class PythonBatcher:
     def __init__(
             self, data, batch_size: int, seq_len: int,
