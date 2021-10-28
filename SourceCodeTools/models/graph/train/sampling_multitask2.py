@@ -366,7 +366,7 @@ class SamplingMultitaskTrainer:
             for batch in tqdm(
                     batches,
                     total=len(objective.target_embedder.scorer_all_keys) // self.trainer_params["batch_size"] + 1,
-                    desc="Precompute Target Embeddings", leave=False
+                    desc="Precompute Target Embeddings", leave=True
             ):
                 _ = objective.target_embedding_fn(batch)  # scorer embedding updated inside
 
@@ -426,7 +426,7 @@ class SamplingMultitaskTrainer:
                     # try:
                     loss, acc = objective(
                         input_nodes, seeds, blocks, train_embeddings=self.finetune,
-                        neg_sampling_strategy="w2v" if epoch == 0 or epoch == self.restore_epoch or self.trainer_params["force_w2v_ns"] else None
+                        neg_sampling_strategy="w2v" if self.trainer_params["force_w2v_ns"] else None
                     )
 
                     loss = loss / len(self.objectives)  # assumes the same batch size for all objectives
@@ -472,6 +472,7 @@ class SamplingMultitaskTrainer:
                 objective.eval()
 
                 with torch.set_grad_enabled(False):
+                    self.compute_embeddings_for_scorer(objective)
                     objective.target_embedder.prepare_index()  # need this to update sampler for the next epoch
 
                     val_scores = objective.evaluate("val")
@@ -510,7 +511,7 @@ class SamplingMultitaskTrainer:
 
     def save_checkpoint(self, checkpoint_path=None, checkpoint_name=None, write_best_model=False, **kwargs):
 
-        model_path = join(checkpoint_path, f"saved_state.pt")
+        model_path = join(checkpoint_path, f"saved_state_{self.epoch}.pt")
 
         param_dict = {
             'graph_model': self.graph_model.state_dict(),
@@ -549,6 +550,8 @@ class SamplingMultitaskTrainer:
             objective.reset_iterator("train")
             objective.reset_iterator("val")
             objective.reset_iterator("test")
+            self.compute_embeddings_for_scorer(objective)
+            objective.target_embedder.prepare_index()
             # objective.early_stopping = False
 
         with torch.set_grad_enabled(False):
@@ -699,6 +702,8 @@ def evaluation_procedure(
     if trainer is None:
         trainer = SamplingMultitaskTrainer
 
+    model_params = copy(model_params)
+
     device = select_device(args)
 
     model_params['num_classes'] = args.node_emb_size
@@ -706,7 +711,16 @@ def evaluation_procedure(
     model_params['use_att_checkpoint'] = args.use_att_checkpoint
     model_params['use_gru_checkpoint'] = args.use_gru_checkpoint
 
-    model_params["activation"] = eval(f"nn.functional.{model_params['activation']}")
+    def resolve_activation(name):
+        if isinstance(name, str):
+            if name == "tanh":
+                return torch.tanh
+            else:
+                return eval(f"nn.functional.{name}")
+        else:
+            return name
+    # model_params["activation"] = eval(f"nn.functional.{model_params['activation']}")
+    model_params["activation"] = resolve_activation(model_params['activation'])
 
     trainer_params = {
         'lr': model_params.pop("lr"),
@@ -722,10 +736,14 @@ def evaluation_procedure(
         'embedding_table_size': args.embedding_table_size,
         'save_checkpoints': args.save_checkpoints,
         'measure_scores': args.measure_scores,
-        'dilate_scores': args.dilate_scores
+        'dilate_scores': args.dilate_scores,
+        "objectives": args.objectives.split(","),
+        "early_stopping": args.early_stopping,
+        "early_stopping_tolerance": args.early_stopping_tolerance,
+        "force_w2v_ns": args.force_w2v_ns
     }
 
-    trainer = trainer( #SamplingMultitaskTrainer(
+    trainer = trainer(
         dataset=dataset,
         model_name=model_name,
         model_params=model_params,
