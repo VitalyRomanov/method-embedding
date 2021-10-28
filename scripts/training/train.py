@@ -44,20 +44,12 @@ def main(models, args):
             if not args.restore_state:
                 write_params(args, params)
 
-            if args.training_mode == "multitask":
+            from SourceCodeTools.models.graph.train.sampling_multitask2 import training_procedure
 
-                # if args.intermediate_supervision:
-                #     # params['use_self_loop'] = True  # ????
-                #     from SourceCodeTools.models.graph.train.sampling_multitask_intermediate_supervision import training_procedure
-                # else:
-                from SourceCodeTools.models.graph.train.sampling_multitask2 import training_procedure
+            trainer, scores = \
+                training_procedure(dataset, model, copy(params), args, model_base)
 
-                trainer, scores = \
-                    training_procedure(dataset, model, copy(params), args, model_base)
-
-                trainer.save_checkpoint(model_base)
-            else:
-                raise ValueError("Unknown training mode:", args.training_mode)
+            trainer.save_checkpoint(model_base)
 
             print("Saving...")
 
@@ -93,7 +85,7 @@ if __name__ == "__main__":
 
     import argparse
 
-    parser = argparse.ArgumentParser(description='Process some integers.')
+    parser = argparse.ArgumentParser(description='')
     add_gnn_train_args(parser)
 
     args = parser.parse_args()
