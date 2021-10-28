@@ -27,6 +27,9 @@ class CodeBertModelTrainer(ModelTrainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+    def set_type_ann_edges(self, path):
+        self.type_ann_edges = path
+
     def get_batcher(self, *args, **kwargs):
         kwargs.update({"tokenizer": "codebert"})
         return self.batcher(*args, **kwargs)
@@ -34,7 +37,7 @@ class CodeBertModelTrainer(ModelTrainer):
     def train_model(self):
         # graph_emb = load_pkl_emb(self.graph_emb_path) if self.graph_emb_path is not None else None
 
-        typed_nodes = load_typed_nodes(self.args.type_ann_edges)
+        typed_nodes = load_typed_nodes(self.type_ann_edges)
 
         decoder_mapping = RobertaTokenizer.from_pretrained("microsoft/codebert-base").decoder
         tok_ids, words = zip(*decoder_mapping.items())
@@ -102,6 +105,7 @@ def main():
     )
 
     trainer = CodeBertModelTrainer(train_data, test_data, params={}, seq_len=512)
+    trainer.set_type_ann_edges(args.type_ann_edges)
     trainer.train_model()
 
 
