@@ -225,7 +225,7 @@ class RGGANLayer(RGANLayer):
                  num_bases,
                  *,
                  weight=True,
-                 bias=True,
+                 bias=False,
                  activation=None,
                  self_loop=False,
                  dropout=0.0, use_gcn_checkpoint=False, use_att_checkpoint=False, use_gru_checkpoint=False):
