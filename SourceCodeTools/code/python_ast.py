@@ -864,7 +864,7 @@ class AstGraphGenerator(object):
         #    arguments(args=[arg(arg='self', annotation=None), arg(arg='tqdm_cls', annotation=None), arg(arg='sleep_interval', annotation=None)], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[])
 
         # vararg constains type annotations
-        return self.generic_parse(node, ["args", "vararg"])
+        return self.generic_parse(node, ["args", "vararg"]) # kwarg, kwonlyargs, posonlyargs???
 
     def parse_comprehension(self, node):
         edges = []
