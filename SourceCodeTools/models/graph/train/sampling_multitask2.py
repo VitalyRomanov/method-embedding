@@ -366,7 +366,7 @@ class SamplingMultitaskTrainer:
             for batch in tqdm(
                     batches,
                     total=len(objective.target_embedder.scorer_all_keys) // self.trainer_params["batch_size"] + 1,
-                    desc="Precompute Target Embeddings", leave=False
+                    desc="Precompute Target Embeddings", leave=True
             ):
                 _ = objective.target_embedding_fn(batch)  # scorer embedding updated inside
 
@@ -530,7 +530,7 @@ class SamplingMultitaskTrainer:
             torch.save(param_dict,  join(checkpoint_path, f"best_model.pt"))
 
     def restore_from_checkpoint(self, checkpoint_path):
-        checkpoint = torch.load(join(checkpoint_path, "saved_state.pt"))  #, map_location=torch.device('cpu'))
+        checkpoint = torch.load(join(checkpoint_path, "saved_state.pt"))
         self.graph_model.load_state_dict(checkpoint['graph_model'])
         self.node_embedder.load_state_dict(checkpoint['node_embedder'])
         for objective in self.objectives:
@@ -549,8 +549,6 @@ class SamplingMultitaskTrainer:
             objective.reset_iterator("train")
             objective.reset_iterator("val")
             objective.reset_iterator("test")
-            # self.compute_embeddings_for_scorer(objective)
-            # objective.target_embedder.prepare_index()
             # objective.early_stopping = False
 
         with torch.set_grad_enabled(False):

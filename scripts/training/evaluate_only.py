@@ -78,9 +78,6 @@ def main(models, args):
             print("Done saving")
 
 
-
-
-
 if __name__ == "__main__":
 
     import argparse
