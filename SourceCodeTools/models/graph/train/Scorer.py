@@ -17,6 +17,7 @@ class FaissIndex:
         self.index.add(X.astype(np.float32))
 
     def query(self, X, k):
+        X = normalize(X, axis=1)
         return self.index.search(X.astype(np.float32), k=k)
 
 
@@ -55,7 +56,7 @@ class Scorer:
     points to learn how to make correct decisions.
     """
     def __init__(
-            self, num_embs, emb_size, src2dst: Dict[int, List[int]], neighbours_to_sample=5, index_backend="brute",
+            self, num_embs, emb_size, src2dst: Dict[int, List[int]], neighbours_to_sample=5, index_backend="faiss",
             method = "inner_prod"
     ):
         """
