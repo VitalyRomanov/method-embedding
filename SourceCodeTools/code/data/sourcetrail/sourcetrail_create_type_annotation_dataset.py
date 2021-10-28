@@ -212,6 +212,22 @@ def unpack_returns(body: str, labels: pd.DataFrame):
     return ret, cuts
 
 
+def get_defaults_spans(body):
+    root = ast.parse(body)
+    defaults_offsets = to_offsets(
+        body,
+        [(arg.lineno-1, arg.end_lineno-1, arg.col_offset, arg.end_col_offset, "default") for arg in root.body[0].args.defaults],
+        as_bytes=True
+    )
+
+    extended = []
+    for start, end, label in defaults_offsets:
+        while body[start] != "=":
+            start -= 1
+        extended.append((start, end))
+    return extended
+
+
 def unpack_annotations(body, labels):
     """
     Use information from ast package to strip type annotation from function body
@@ -221,6 +237,8 @@ def unpack_annotations(body, labels):
     """
     if labels is None:
         return [], []
+
+    global remove_default
 
     variables = []
     annotations = []
@@ -237,6 +255,7 @@ def unpack_annotations(body, labels):
     # but type annotations usually appear in the end of signature and in the beginnig of a line
     variables = to_offsets(body, variables, as_bytes=True)
     annotations = to_offsets(body, annotations, as_bytes=True)
+    defaults_spans = get_defaults_spans(body)
 
     cuts = []
     vars = []
@@ -258,7 +277,18 @@ def unpack_annotations(body, labels):
         assert offset_var[0] != len(head)
         vars.append((offset_var[0], beginning, preprocess(body[offset_ann[0]: offset_ann[1]])))
 
+    if remove_default:
+        cuts.extend(defaults_spans)
+
     return vars, cuts
+
+
+def body_valid(body):
+    try:
+        ast.parse(body)
+        return True
+    except:
+        return False
 
 
 def process_body(nlp, body: str, replacements=None):
@@ -289,6 +319,7 @@ def process_body(nlp, body: str, replacements=None):
     body_, replacements, docstrings = remove_offsets(body_, replacements, docsting_offsets)
     entry['docstrings'].extend(docstrings)
 
+    was_valid = body_valid(body_)
     initial_labels = get_initial_labels(body_)
 
     # if initial_labels is None:
@@ -299,6 +330,9 @@ def process_body(nlp, body: str, replacements=None):
 
     body_, replacements_annotations, _ = remove_offsets(body_, replacements + annotations,
                                                         return_cuts + annotation_cuts)
+    is_valid = body_valid(body_)
+    if was_valid != is_valid:
+        raise Exception()
 
     replacements_annotations = adjust_offsets2(replacements_annotations, len(initial_strip))
     body_ = initial_strip + body_
@@ -516,8 +550,12 @@ def create_from_dataset():
     parser.add_argument("dataset_path", type=str, help="")
     parser.add_argument("output_path", type=str, help="")
     parser.add_argument("--format", "-f", dest="format", default="jsonl", help="jsonl|csv")
+    parser.add_argument("--remove_default", action="store_true", default=False)
 
     args = parser.parse_args()
+
+    global remove_default
+    remove_default = args.remove_default
 
     node_maps = get_node_maps(unpersist(join(args.dataset_path, "common_nodes.bz2")))
     filecontent = get_filecontent_maps(unpersist(join(args.dataset_path, "common_filecontent.bz2")))
@@ -571,4 +609,5 @@ def store(data, args):
 
 if __name__ == "__main__":
     # create_from_environments()
+    remove_default = False
     create_from_dataset()
