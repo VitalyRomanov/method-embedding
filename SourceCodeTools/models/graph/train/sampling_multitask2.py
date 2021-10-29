@@ -413,8 +413,11 @@ class SamplingMultitaskTrainer:
                     break
 
                 self.optimizer.zero_grad()
-                for objective, (input_nodes, seeds, blocks) in zip(self.objectives, loaders):
+                for ind, (objective, (input_nodes, seeds, blocks)) in enumerate(zip(self.objectives, loaders)):
                     blocks = [blk.to(self.device) for blk in blocks]
+
+                    if ind % 5 == 0:
+                        objective.target_embedder.prepare_index()
 
                     # do_break = False
                     # for block in blocks:
