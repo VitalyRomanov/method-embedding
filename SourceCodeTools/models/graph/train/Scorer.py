@@ -106,7 +106,7 @@ class Scorer:
         for id in ids:
             seed_pool.append(self.scorer_src2dst[id])
             if id in self.scorer_key_order:
-                seed_pool[-1].append(id)
+                seed_pool[-1] = seed_pool[-1] + [id]  # make sure that original list is not changed
         # [seed_pool.append(self.scorer_src2dst[id]) for id in ids]
         nested_negative = self.get_closest_to_keys(seed_pool, k=k+1)
 
