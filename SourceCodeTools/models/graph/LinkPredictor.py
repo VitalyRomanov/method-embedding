@@ -59,20 +59,33 @@ class BilinearLinkPedictor(nn.Module):
 
 
 class CosineLinkPredictor(nn.Module):
-    def __init__(self):
+    def __init__(self, margin=0.):
         """
         Dummy link predictor, using to keep API the same
         """
         super(CosineLinkPredictor, self).__init__()
 
         self.cos = nn.CosineSimilarity()
-        self.max_margin = torch.Tensor([-0.2])
+        self.max_margin = torch.Tensor([margin])[0]
 
     def forward(self, x1, x2):
         if self.max_margin.device != x1.device:
             self.max_margin = self.max_margin.to(x1.device)
         # this will not train
         logit = (self.cos(x1, x2) > self.max_margin).float().unsqueeze(1)
+        return torch.cat([1 - logit, logit], dim=1)
+
+
+class L2LinkPredictor(nn.Module):
+    def __init__(self, margin=1.):
+        super(L2LinkPredictor, self).__init__()
+        self.margin = torch.Tensor([margin])[0]
+
+    def forward(self, x1, x2):
+        if self.margin.device != x1.device:
+            self.margin = self.margin.to(x1.device)
+        # this will not train
+        logit = (torch.norm(x1 - x2, dim=-1) < self.margin).float().unsqueeze(1)
         return torch.cat([1 - logit, logit], dim=1)
 
 
