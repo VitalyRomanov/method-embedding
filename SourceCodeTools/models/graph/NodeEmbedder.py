@@ -44,7 +44,7 @@ class NodeEmbedder(nn.Module):
             self._create_buckets_from_pretrained(pretrained)
 
     def _create_buckets(self):
-        self.buckets = nn.Embedding(self.n_buckets + 1, self.emb_size, padding_idx=self.n_buckets)
+        self.buckets = nn.Embedding(self.n_buckets + 1, self.emb_size, padding_idx=self.n_buckets, sparse=True)
 
     def _create_buckets_from_pretrained(self, pretrained):
 
@@ -54,7 +54,7 @@ class NodeEmbedder(nn.Module):
 
         weights_with_pad = torch.tensor(np.vstack([pretrained, np.zeros((1, self.emb_size), dtype=np.float32)]))
 
-        self.buckets = nn.Embedding.from_pretrained(weights_with_pad, freeze=False, padding_idx=self.n_buckets)
+        self.buckets = nn.Embedding.from_pretrained(weights_with_pad, freeze=False, padding_idx=self.n_buckets, sparse=True)
 
     def _get_embedding_from_node_info(self, keys, node_info, masked=None):
         idxs = []
