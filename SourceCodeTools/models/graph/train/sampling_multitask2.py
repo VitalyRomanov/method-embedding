@@ -61,7 +61,7 @@ class SamplingMultitaskTrainer:
         if restore:
             self.restore_from_checkpoint(self.model_base_path)
 
-        self.optimizer = self._create_optimizer()
+        self._create_optimizer()
 
         self.lr_scheduler = ExponentialLR(self.optimizer, gamma=1.0)
         # self.lr_scheduler = ReduceLROnPlateau(self.optimizer, patience=10, cooldown=20)
@@ -347,14 +347,17 @@ class SamplingMultitaskTrainer:
 
     def _create_optimizer(self):
         parameters = nn.ParameterList(self.graph_model.parameters())
-        parameters.extend(self.node_embedder.parameters())
+        nodeembedder_params = list(self.node_embedder.parameters())
+        # parameters.extend(self.node_embedder.parameters())
         [parameters.extend(objective.parameters()) for objective in self.objectives]
         # AdaHessian  TODO could not run
         # optimizer = Yogi(parameters, lr=self.lr)
-        optimizer = torch.optim.AdamW(
-            [{"params": parameters}], lr=self.lr
+        self.optimizer = torch.optim.AdamW(
+            [{"params": parameters}], lr=self.lr, weight_decay=0.5
         )
-        return optimizer
+        self.sparse_optimizer = torch.optim.SparseAdam(
+            [{"params": nodeembedder_params}], lr=self.lr
+        )
 
     def compute_embeddings_for_scorer(self, objective):
         if hasattr(objective.target_embedder, "scorer_all_keys") and objective.update_embeddings_for_queries:
@@ -413,6 +416,7 @@ class SamplingMultitaskTrainer:
                     break
 
                 self.optimizer.zero_grad()
+                self.sparse_optimizer.zero_grad()
                 for ind, (objective, (input_nodes, seeds, blocks)) in enumerate(zip(self.objectives, loaders)):
                     blocks = [blk.to(self.device) for blk in blocks]
 
@@ -453,6 +457,7 @@ class SamplingMultitaskTrainer:
                     #     raise e
 
                 self.optimizer.step()
+                self.sparse_optimizer.step()
                 step += 1
 
                 self.write_summary(summary, self.batch)
@@ -663,7 +668,8 @@ def training_procedure(
         "objectives": args.objectives.split(","),
         "early_stopping": args.early_stopping,
         "early_stopping_tolerance": args.early_stopping_tolerance,
-        "force_w2v_ns": args.force_w2v_ns
+        "force_w2v_ns": args.force_w2v_ns,
+        "metric": args.metric
     }
 
     trainer = trainer(
