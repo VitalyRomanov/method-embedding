@@ -11,7 +11,7 @@ from SourceCodeTools.code.data.sourcetrail.SubwordMasker import SubwordMasker
 from SourceCodeTools.mltools.torch import compute_accuracy
 from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedderWithBpeSubwords, GraphLinkSampler
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
-from SourceCodeTools.models.graph.LinkPredictor import CosineLinkPredictor, BilinearLinkPedictor
+from SourceCodeTools.models.graph.LinkPredictor import CosineLinkPredictor, BilinearLinkPedictor, L2LinkPredictor
 
 import torch.nn as nn
 
@@ -126,7 +126,7 @@ class AbstractObjective(nn.Module):
     def create_graph_link_sampler(self, data_loading_func, nodes):
         self.target_embedder = GraphLinkSampler(
             elements=data_loading_func(), nodes=nodes, compact_dst=False, dst_to_global=True,
-            emb_size=self.target_emb_size, device=self.device
+            emb_size=self.target_emb_size, device=self.device, method=self.link_predictor_type
         )
 
     def create_subword_embedder(self, data_loading_func, nodes, tokenizer_path):
@@ -149,8 +149,33 @@ class AbstractObjective(nn.Module):
         self.label_dtype = torch.long
 
     def create_inner_prod_link_predictor(self):
-        self.link_predictor = CosineLinkPredictor().to(self.device)
-        self.cosine_loss = CosineEmbeddingLoss(margin=-0.2)
+        self.margin = -0.2
+        self.target_embedder.set_margin(self.margin)
+        self.link_predictor = CosineLinkPredictor(margin=self.margin).to(self.device)
+        self.hinge_loss = nn.HingeEmbeddingLoss(margin=1. - self.margin)
+
+        def cosine_loss(x1, x2, label):
+            sim = nn.CosineSimilarity()
+            dist = 1. - sim(x1, x2)
+            return self.hinge_loss(dist, label)
+
+        # self.cosine_loss = CosineEmbeddingLoss(margin=self.margin)
+        self.cosine_loss = cosine_loss
+        self.positive_label = 1.
+        self.negative_label = -1.
+        self.label_dtype = torch.float32
+
+    def create_l2_link_predictor(self):
+        self.margin = 2.0
+        self.target_embedder.set_margin(self.margin)
+        self.link_predictor = L2LinkPredictor().to(self.device)
+        self.hinge_loss = nn.HingeEmbeddingLoss(margin=self.margin)
+
+        def l2_loss(x1, x2, label):
+            dist = torch.norm(x1 - x2, dim=-1)
+            return self.hinge_loss(dist, label)
+
+        self.l2_loss = l2_loss
         self.positive_label = 1.
         self.negative_label = -1.
         self.label_dtype = torch.float32
@@ -160,6 +185,8 @@ class AbstractObjective(nn.Module):
             self.create_nn_link_predictor()
         elif self.link_predictor_type == "inner_prod":
             self.create_inner_prod_link_predictor()
+        elif self.link_predictor_type == "l2":
+            self.create_l2_link_predictor()
         else:
             raise NotImplementedError()
 
@@ -295,17 +322,21 @@ class AbstractObjective(nn.Module):
             loss = self.cosine_loss(node_embs_, element_embs_, labels)
             labels[labels < 0] = 0
         elif self.link_predictor_type == "l2":
-            num_examples = len(labels) // 2
-            anchor = node_embs_[:num_examples, :]
-            positive = element_embs_[:num_examples, :]
-            negative = element_embs_[num_examples:, :]
-            # pos_labels_ = labels[:num_examples]
-            # neg_labels_ = labels[num_examples:]
-            triplet = nn.TripletMarginLoss(margin=1.0)
-            loss = triplet(anchor, positive, negative)
-            logits = (torch.norm(node_embs_ - element_embs_, keepdim=True) < 1.).float()
-            logits = torch.cat([1 - logits, logits], dim=1)
+            loss = self.l2_loss(node_embs_, element_embs_, labels)
             labels[labels < 0] = 0
+            # num_examples = len(labels) // 2
+            # anchor = node_embs_[:num_examples, :]
+            # positive = element_embs_[:num_examples, :]
+            # negative = element_embs_[num_examples:, :]
+            # # pos_labels_ = labels[:num_examples]
+            # # neg_labels_ = labels[num_examples:]
+            # margin = 1.
+            # triplet = nn.TripletMarginLoss(margin=margin)
+            # self.target_embedder.set_margin(margin)
+            # loss = triplet(anchor, positive, negative)
+            # logits = (torch.norm(node_embs_ - element_embs_, keepdim=True) < 1.).float()
+            # logits = torch.cat([1 - logits, logits], dim=1)
+            # labels[labels < 0] = 0
         else:
             raise NotImplementedError()
 

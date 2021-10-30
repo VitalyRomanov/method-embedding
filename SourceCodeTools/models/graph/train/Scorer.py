@@ -11,14 +11,31 @@ from sklearn.preprocessing import normalize
 
 
 class FaissIndex:
-    def __init__(self, X, *args, **kwargs):
+    def __init__(self, X, method="inner_prod", *args, **kwargs):
         import faiss
-        self.index = faiss.IndexFlatIP(X.shape[1])
+        self.method = method
+        if method == "inner_prod":
+            self.index = faiss.IndexFlatIP(X.shape[1])
+        elif method == "l2":
+            self.index = faiss.IndexFlatL2(X.shape[1])
+        else:
+            raise NotImplementedError()
         self.index.add(X.astype(np.float32))
 
-    def query(self, X, k):
+    def query_inner_prod(self, X, k):
         X = normalize(X, axis=1)
         return self.index.search(X.astype(np.float32), k=k)
+
+    def query_l2(self, X, k):
+        return self.index.search(X.astype(np.float32), k=k)
+
+    def query(self, X, k):
+        if self.method == "inner_prod":
+            return self.query_inner_prod(X, k)
+        elif self.method == "l2":
+            return self.query_l2(X, k)
+        else:
+            raise NotImplementedError()
 
 
 class Brute:
@@ -35,7 +52,10 @@ class Brute:
         return score[ind][:k], ind
 
     def query_l2(self, X, k):
-        score = np.linalg.norm(self.vectors - X).reshape(-1,)
+        vectors = torch.Tensor(self.vectors).to(self.device)
+        X = torch.Tensor(X).to(self.device)
+        score = torch.norm(vectors - X).reshape(-1,).numpy()
+        # score = np.linalg.norm(vectors - X).reshape(-1,)
         ind = np.argsort(score)[:k]
         return score[ind][:k], ind
 
@@ -58,7 +78,7 @@ class Scorer:
     points to learn how to make correct decisions.
     """
     def __init__(
-            self, num_embs, emb_size, src2dst: Dict[int, List[int]], neighbours_to_sample=5, index_backend="faiss",
+            self, num_embs, emb_size, src2dst: Dict[int, List[int]], neighbours_to_sample=5, index_backend="brute",
             method = "inner_prod", device="cpu"
     ):
         """
@@ -85,13 +105,16 @@ class Scorer:
         self.neighbours_to_sample = min(neighbours_to_sample, self.scorer_num_emb)
 
     def prepare_index(self, override_strategy=None):
+        if self.scorer_method == "nn":
+            self.scorer_index = None
+            return
         if self.scorer_index_backend == "sklearn":
             self.scorer_index = NearestNeighbors()
             self.scorer_index.fit(self.scorer_all_emb)
             # self.scorer_index = BallTree(self.scorer_all_emb, leaf_size=1)
             # self.scorer_index = BallTree(normalize(self.scorer_all_emb, axis=1), leaf_size=1)
         elif self.scorer_index_backend == "faiss":
-            self.scorer_index = FaissIndex(self.scorer_all_emb)
+            self.scorer_index = FaissIndex(self.scorer_all_emb, method=self.scorer_method)
         elif self.scorer_index_backend == "brute":
             self.scorer_index = Brute(self.scorer_all_emb, method=self.scorer_method, device=self.scorer_device)
         else:
@@ -121,7 +144,7 @@ class Scorer:
             closest_keys = []
             for key in key_group:
                 _, closest = self.scorer_index.query(
-                    normalize(self.scorer_all_emb[self.scorer_key_order[key]].reshape(1, -1), axis=1), k=k
+                    self.scorer_all_emb[self.scorer_key_order[key]].reshape(1, -1), k=k
                 )
                 closest_keys.extend(self.scorer_all_keys[c] for c in closest.ravel())
             # ensure that negative samples do not come from positive edges
@@ -137,7 +160,7 @@ class Scorer:
     def set_embed(self, ids, embs):
 
         ids = np.array(list(map(self.scorer_key_order.get, ids.tolist())))
-        self.scorer_all_emb[ids, :] = normalize(embs, axis=1)
+        self.scorer_all_emb[ids, :] = normalize(embs, axis=1) if self.scorer_method == "inner_prod" else embs
 
         # for ind, id in enumerate(ids):
         #     self.all_embs[self.key_order[id], :] = embs[ind, :]
@@ -148,7 +171,24 @@ class Scorer:
         embs_to_score_against = embs_to_score_against / embs_to_score_against.norm(p=2, dim=1, keepdim=True)
 
         score_matr = (to_score_embs @ embs_to_score_against.t())
-        y_pred = score_matr.tolist()
+        score_matr = score_matr - self.margin
+        score_matr[score_matr < 0.] = 0.
+        y_pred = score_matr.cpu().tolist()
+
+        return y_pred
+
+    def set_margin(self, margin):
+        self.margin = margin
+
+    def score_candidates_l2(self, to_score_ids, to_score_embs, keys_to_score_against, embs_to_score_against, at=None):
+
+        embs_to_score_against = embs_to_score_against.unsqueeze(0)
+        to_score_embs = to_score_embs.unsqueeze(1)
+
+        score_matr = -torch.norm(embs_to_score_against - to_score_embs, dim=-1)
+        score_matr = score_matr + self.margin
+        score_matr[score_matr < 0.] = 0
+        y_pred = score_matr.cpu().tolist()
 
         return y_pred
 
@@ -224,6 +264,10 @@ class Scorer:
             )
         elif type == "inner_prod":
             y_pred = self.score_candidates_cosine(
+                to_score_ids, to_score_embs, keys_to_score_against, embs_to_score_against, at=at
+            )
+        elif type == "l2":
+            y_pred = self.score_candidates_l2(
                 to_score_ids, to_score_embs, keys_to_score_against, embs_to_score_against, at=at
             )
         else:
