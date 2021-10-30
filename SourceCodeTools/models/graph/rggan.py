@@ -278,9 +278,9 @@ class RGGANLayer(RGANLayer):
         def _apply(ntype, h):
             if self.self_loop:
                 # h = h + th.matmul(inputs_dst[ntype], self_loop_wdict[ntype])
-                # h = h + th.matmul(inputs_dst[ntype], self.loop_weight)
+                h = h + th.matmul(inputs_dst[ntype], self.loop_weight)
                 # mix = nn.functional.softmax(self.mix_weights, dim=0)
-                h = h - inputs_dst[ntype]# + th.matmul(inputs_dst[ntype], self.loop_weight)  #+ h0[ntype][:h.size(0), :]
+                # h = h - inputs_dst[ntype] + th.matmul(inputs_dst[ntype], self.loop_weight)  #+ h0[ntype][:h.size(0), :]
                 # h = h + th.matmul(inputs_dst[ntype], self.loop_weight) + h0[ntype][:h.size(0), :]
                 # h = (torch.stack([h, th.matmul(inputs_dst[ntype], self.loop_weight), h0[ntype][:h.size(0), :]], dim=0) * mix).sum(0)
             if self.bias:
