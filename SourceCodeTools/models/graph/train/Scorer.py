@@ -54,7 +54,7 @@ class Brute:
     def query_l2(self, X, k):
         vectors = torch.Tensor(self.vectors).to(self.device)
         X = torch.Tensor(X).to(self.device)
-        score = torch.norm(vectors - X).reshape(-1,).to("cpu").numpy()
+        score = torch.norm(vectors - X, dim=-1).to("cpu").numpy()
         # score = np.linalg.norm(vectors - X).reshape(-1,)
         ind = np.argsort(score)[:k]
         return score[ind][:k], ind

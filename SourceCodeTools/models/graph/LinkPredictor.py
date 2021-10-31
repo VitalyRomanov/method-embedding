@@ -85,7 +85,7 @@ class L2LinkPredictor(nn.Module):
         if self.margin.device != x1.device:
             self.margin = self.margin.to(x1.device)
         # this will not train
-        logit = (torch.norm(x1 - x2, dim=-1) < self.margin).float().unsqueeze(1)
+        logit = (torch.norm(x1 - x2, dim=-1, keepdim=True) < self.margin).float()
         return torch.cat([1 - logit, logit], dim=1)
 
 
@@ -109,7 +109,7 @@ class TransRLinkPredictor(nn.Module):
 
         transl = m_a + rels
 
-        sim = torch.norm(torch.cat([transl - m_p, transl - m_n]))
+        sim = torch.norm(torch.cat([transl - m_p, transl - m_n], dim=0), dim=-1)
 
         return self.triplet_loss(transl, m_p, m_n), sim < self.margin
 
