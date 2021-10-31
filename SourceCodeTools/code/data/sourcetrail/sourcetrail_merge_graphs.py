@@ -43,7 +43,7 @@ def merge_global_with_local(existing_nodes, next_valid_id, local_nodes):
 
     assert len(new_nodes) == len(set(new_nodes['node_repr'].to_list()))
 
-    ids_start = next_valid_id
+    ids_start = int(next_valid_id)
     ids_end = ids_start + len(new_nodes)
 
     new_nodes['id'] = list(range(ids_start, ids_end))
