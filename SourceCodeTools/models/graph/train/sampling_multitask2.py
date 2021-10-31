@@ -118,7 +118,7 @@ class SamplingMultitaskTrainer:
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
                 masker=dataset.create_node_name_masker(tokenizer_path),
                 measure_scores=self.trainer_params["measure_scores"],
-                dilate_scores=self.trainer_params["dilate_scores"]
+                dilate_scores=self.trainer_params["dilate_scores"], nn_index=self.trainer_params["nn_index"]
             )
         )
 
@@ -195,7 +195,7 @@ class SamplingMultitaskTrainer:
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type=self.trainer_params["metric"],
                 measure_scores=self.trainer_params["measure_scores"],
-                dilate_scores=self.trainer_params["dilate_scores"]
+                dilate_scores=self.trainer_params["dilate_scores"], nn_index=self.trainer_params["nn_index"]
             )
         )
 
@@ -669,7 +669,8 @@ def training_procedure(
         "early_stopping": args.early_stopping,
         "early_stopping_tolerance": args.early_stopping_tolerance,
         "force_w2v_ns": args.force_w2v_ns,
-        "metric": args.metric
+        "metric": args.metric,
+        "nn_index": args.nn_index
     }
 
     trainer = trainer(
