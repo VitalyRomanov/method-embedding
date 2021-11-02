@@ -170,11 +170,17 @@ class AbstractObjective(nn.Module):
         self.margin = 2.0
         self.target_embedder.set_margin(self.margin)
         self.link_predictor = L2LinkPredictor().to(self.device)
-        self.hinge_loss = nn.HingeEmbeddingLoss(margin=self.margin)
+        # self.hinge_loss = nn.HingeEmbeddingLoss(margin=self.margin)
+        self.triplet_loss = nn.TripletMarginLoss(margin=self.margin)
 
         def l2_loss(x1, x2, label):
-            dist = torch.norm(x1 - x2, dim=-1)
-            return self.hinge_loss(dist, label)
+            half = x1.shape[0] // 2
+            pos = x2[:half, :]
+            neg = x2[half:, :]
+
+            return self.triplet_loss(x1[:half, :], pos, neg)
+            # dist = torch.norm(x1 - x2, dim=-1)
+            # return self.hinge_loss(dist, label)
 
         self.l2_loss = l2_loss
         self.positive_label = 1.
@@ -434,23 +440,23 @@ class AbstractObjective(nn.Module):
             self, positive_indices, negative_indices=None, train_embeddings=True
     ):
 
-        def get_embeddings_for_targets(dst):
-            unique_dst, slice_map = self._handle_non_unique(dst)
-            assert unique_dst[slice_map].tolist() == dst.tolist()
-            unique_dst_embeddings = self.target_embedder(unique_dst.to(self.device))
-            dst_embeddings = unique_dst_embeddings[slice_map.to(self.device)]
+        # def get_embeddings_for_targets(dst):
+        #     unique_dst, slice_map = self._handle_non_unique(dst)
+        #     assert unique_dst[slice_map].tolist() == dst.tolist()
+        #     unique_dst_embeddings = self.target_embedder(unique_dst.to(self.device))
+        #     dst_embeddings = unique_dst_embeddings[slice_map.to(self.device)]
+        #
+        #     if self.update_embeddings_for_queries:
+        #         self.target_embedder.set_embed(unique_dst.detach().cpu().numpy(),
+        #                                        unique_dst_embeddings.detach().cpu().numpy())
+        #
+        #     return dst_embeddings
 
-            if self.update_embeddings_for_queries:
-                self.target_embedder.set_embed(unique_dst.detach().cpu().numpy(),
-                                               unique_dst_embeddings.detach().cpu().numpy())
-
-            return dst_embeddings
-
-        # positive_dst = self.target_embedder(positive_indices.to(self.device))
-        # negative_dst = self.target_embedder(negative_indices.to(self.device))
-
-        positive_dst = get_embeddings_for_targets(positive_indices)
-        negative_dst = get_embeddings_for_targets(negative_indices) if negative_indices is not None else None
+        positive_dst = self.target_embedder(positive_indices.to(self.device))
+        negative_dst = self.target_embedder(negative_indices.to(self.device)) if negative_indices is not None else None
+        #
+        # positive_dst = get_embeddings_for_targets(positive_indices)
+        # negative_dst = get_embeddings_for_targets(negative_indices) if negative_indices is not None else None
 
         return positive_dst, negative_dst
 
@@ -570,7 +576,7 @@ class AbstractObjective(nn.Module):
         return python_seeds
 
     def forward(self, input_nodes, seeds, blocks, train_embeddings=True, neg_sampling_strategy=None):
-        masked = None
+        masked = self.masker.get_mask(self.seeds_to_python(seeds)) if self.masker is not None else None
         graph_emb = self._graph_embeddings(input_nodes, blocks, train_embeddings, masked=masked)
         node_embs_, element_embs_, labels = self.prepare_for_prediction(
             graph_emb, seeds, self.target_embedding_fn, negative_factor=self.negative_factor,
