@@ -111,6 +111,11 @@ class TransRLinkPredictor(nn.Module):
 
         sim = torch.norm(torch.cat([transl - m_p, transl - m_n], dim=0), dim=-1)
 
+        # pos_diff = torch.norm(transl - m_p, dim=-1)
+        # neg_diff = torch.norm(transl - m_n, dim=-1)
+
+        # loss = pos_diff + torch.maximum(torch.tensor([0.]).to(neg_diff.device), self.margin - neg_diff)
+        # return loss.mean(), sim
         return self.triplet_loss(transl, m_p, m_n), sim < self.margin
 
 
