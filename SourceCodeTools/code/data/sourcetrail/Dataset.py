@@ -8,7 +8,7 @@ import pickle
 
 from os.path import join
 
-from SourceCodeTools.code.data.sourcetrail.SubwordMasker import SubwordMasker, NodeNameMasker
+from SourceCodeTools.code.data.sourcetrail.SubwordMasker import SubwordMasker, NodeNameMasker, NodeClfMasker
 from SourceCodeTools.code.data.sourcetrail.file_utils import *
 from SourceCodeTools.code.python_ast import PythonSharedNodes
 from SourceCodeTools.nlp.embed.bpe import make_tokenizer, load_bpe_model
@@ -376,6 +376,7 @@ class SourceGraphDataset:
         :return:
         """
 
+        self.nodes.reset_index(drop=True, inplace=True)
         assert len(self.nodes.index) == self.nodes.index.max() + 1
         # generate splits for all nodes, additional filtering will be applied later
         # by an objective
@@ -840,6 +841,18 @@ class SourceGraphDataset:
 
         return dosctrings
 
+    def load_node_classes(self):
+        have_inbound = set(self.edges["dst"].tolist())
+        labels = self.nodes.query("train_mask == True or test_mask == True or val_mask == True")[["id", "type_backup"]].rename({
+            "id": "src",
+            "type_backup": "dst"
+        }, axis=1)
+
+        labels = labels[
+            labels["src"].apply(lambda id_: id_ in have_inbound)
+        ]
+        return labels
+
     def buckets_from_pretrained_embeddings(self, pretrained_path, n_buckets):
 
         from SourceCodeTools.nlp.embed.fasttext import load_w2v_map
@@ -892,6 +905,13 @@ class SourceGraphDataset:
         :return: SubwordMasker for function nodes. Suitable for node name use prediction objective
         """
         return NodeNameMasker(self.nodes, self.edges, self.load_node_names(), tokenizer_path)
+
+    def create_node_clf_masker(self):
+        """
+        :param tokenizer_path: path to bpe tokenizer
+        :return: SubwordMasker for function nodes. Suitable for node name use prediction objective
+        """
+        return NodeClfMasker(self.nodes, self.edges)
 
     @classmethod
     def load(cls, path, args):

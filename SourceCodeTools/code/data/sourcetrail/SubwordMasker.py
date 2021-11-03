@@ -103,4 +103,25 @@ class NodeNameMasker(SubwordMasker):
             self.lookup[key].extend([subword2key[sub] for sub in subwords if sub in subword2key])
 
 
+class NodeClfMasker(SubwordMasker):
+    """
+    Masker that tells which node ids are subwords for variables mentioned in a given function.
+    """
+    def __init__(self, nodes: pd.DataFrame, edges: pd.DataFrame, **kwargs):
+        super(NodeClfMasker, self).__init__(nodes, edges, **kwargs)
 
+    def instantiate(self, nodes, orig_edges, **kwargs):
+        pass
+
+    def get_mask(self, ids):
+        """
+        Accepts node ids that represent embeddable tokens as an input
+        :param ids:
+        :return:
+        """
+        if isinstance(ids, dict):
+            for_masking = ids
+        else:
+            for_masking = {"node_": ids}
+
+        return for_masking

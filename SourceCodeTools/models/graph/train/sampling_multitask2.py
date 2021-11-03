@@ -3,6 +3,7 @@ from collections import defaultdict
 from copy import copy
 from typing import Tuple
 
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
@@ -16,7 +17,7 @@ from tqdm import tqdm
 from SourceCodeTools.models.Embedder import Embedder
 from SourceCodeTools.models.graph.train.objectives import VariableNameUsePrediction, TokenNamePrediction, \
     NextCallPrediction, NodeNamePrediction, GlobalLinkPrediction, GraphTextPrediction, GraphTextGeneration, \
-    NodeNameClassifier, EdgePrediction, TypeAnnPrediction, EdgePrediction2
+    NodeNameClassifier, EdgePrediction, TypeAnnPrediction, EdgePrediction2, NodeClassifierObjective
 from SourceCodeTools.models.graph.NodeEmbedder import NodeEmbedder
 from SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObjective import TransRObjective
 
@@ -235,12 +236,13 @@ class SamplingMultitaskTrainer:
 
     def create_node_classifier_objective(self, dataset, tokenizer_path):
         self.objectives.append(
-            NodeNameClassifier(
+            NodeClassifierObjective(
+                "NodeTypeClassifier",
                 self.graph_model, self.node_embedder, dataset.nodes,
                 dataset.load_node_classes, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size,
-                masker=None,
+                masker=dataset.create_node_clf_masker(),
                 measure_scores=self.trainer_params["measure_scores"],
                 dilate_scores=self.trainer_params["dilate_scores"],
                 early_stopping=self.trainer_params["early_stopping"],
