@@ -16,7 +16,8 @@ class ElementEmbedderBase:
     def init(self, compact_dst):
         if compact_dst:
             elem2id, self.inverse_dst_map = compact_property(self.elements['dst'], return_order=True)
-            self.elements['emb_id'] = self.elements['dst'].apply(lambda x: elem2id[x])
+            self.elements['emb_id'] = self.elements['dst'].apply(lambda x: elem2id.get(x, -1))
+            assert -1 not in self.elements['emb_id'].tolist()
         else:
             self.elements['emb_id'] = self.elements['dst']
 
