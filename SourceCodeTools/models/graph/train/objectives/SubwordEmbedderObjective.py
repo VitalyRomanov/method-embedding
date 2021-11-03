@@ -20,7 +20,7 @@ class SubwordEmbedderObjective(AbstractObjective):
         )
         self.target_embedding_fn = self.get_targets_from_embedder
         self.negative_factor = 1
-        self.update_embeddings_for_queries = True
+        self.update_embeddings_for_queries = False
 
     def verify_parameters(self):
         if self.link_predictor_type == "inner_prod":
