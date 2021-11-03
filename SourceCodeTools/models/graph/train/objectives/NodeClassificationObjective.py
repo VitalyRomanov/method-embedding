@@ -37,7 +37,7 @@ class NodeClassifierObjective(AbstractObjective):
     def create_link_predictor(self):
         self.classifier = NodeClassifier(self.target_emb_size, self.target_embedder.num_classes).to(self.device)
 
-    def compute_acc_loss(self, graph_emb, labels, return_logits=False):
+    def compute_acc_loss(self, graph_emb, element_emb, labels, return_logits=False):
         logits = self.classifier(graph_emb)
 
         loss_fct = CrossEntropyLoss(ignore_index=-100)
@@ -50,16 +50,16 @@ class NodeClassifierObjective(AbstractObjective):
             return acc, loss, logits
         return acc, loss
 
-    def forward(self, input_nodes, seeds, blocks, train_embeddings=True, neg_sampling_strategy=None):
-        masked = self.masker.get_mask(self.seeds_to_python(seeds)) if self.masker is not None else None
-        graph_emb = self._graph_embeddings(input_nodes, blocks, train_embeddings, masked=masked)
+    def prepare_for_prediction(
+            self, node_embeddings, seeds, target_embedding_fn, negative_factor=1,
+            neg_sampling_strategy=None, train_embeddings=True,
+    ):
         indices = self.seeds_to_global(seeds).tolist()
         labels = torch.LongTensor(self.target_embedder[indices]).to(self.device)
-        acc, loss = self.compute_acc_loss(graph_emb, labels)
 
-        return loss, acc
+        return node_embeddings, None, labels
 
-    def evaluate_classification(self, data_split):
+    def evaluate_objective(self, data_split, neg_sampling_strategy=None, negative_factor=1):
         at = [1, 3, 5, 10]
         count = 0
         scores = defaultdict(list)
@@ -67,11 +67,21 @@ class NodeClassifierObjective(AbstractObjective):
         for input_nodes, seeds, blocks in getattr(self, f"{data_split}_loader"):
             blocks = [blk.to(self.device) for blk in blocks]
 
-            src_embs = self._graph_embeddings(input_nodes, blocks)
-            indices = self.seeds_to_global(seeds).tolist()
-            labels = self.target_embedder[indices]
-            labels = torch.LongTensor(labels).to(self.device)
-            acc, loss, logits = self.compute_acc_loss(src_embs, labels, return_logits=True)
+            if self.masker is None:
+                masked = None
+            else:
+                masked = self.masker.get_mask(self.seeds_to_python(seeds))
+
+            src_embs = self._graph_embeddings(input_nodes, blocks, masked=masked)
+            node_embs_, element_embs_, labels = self.prepare_for_prediction(
+                src_embs, seeds, self.target_embedding_fn, negative_factor=negative_factor,
+                neg_sampling_strategy=neg_sampling_strategy,
+                train_embeddings=False
+            )
+            # indices = self.seeds_to_global(seeds).tolist()
+            # labels = self.target_embedder[indices]
+            # labels = torch.LongTensor(labels).to(self.device)
+            acc, loss, logits = self.compute_acc_loss(node_embs_, element_embs_, labels, return_logits=True)
 
             y_pred = nn.functional.softmax(logits, dim=-1).to("cpu").numpy()
             y_true = np.zeros(y_pred.shape)
@@ -85,7 +95,7 @@ class NodeClassifierObjective(AbstractObjective):
                     for k in at:
                         scores[f"ndcg@{k}"].append(ndcg_score(y_true, y_pred, k=k))
                         scores[f"acc@{k}"].append(
-                            {f"acc@{at}": top_k_accuracy_score(y_true_onehot.argmax(-1), y_pred, k=at, labels=labels)}
+                            top_k_accuracy_score(y_true_onehot.argmax(-1), y_pred, k=k, labels=labels)
                         )
 
             scores["Loss"].append(loss.item())
@@ -98,19 +108,13 @@ class NodeClassifierObjective(AbstractObjective):
         scores = {key: sum_scores(val) for key, val in scores.items()}
         return scores
 
-    def evaluate(self, data_split, *, neg_sampling_strategy=None, early_stopping=False, early_stopping_tolerance=20):
-        scores = self.evaluate_classification(data_split)
-        if data_split == "val":
-            self.check_early_stopping(scores["Accuracy"])
-        return scores
-
     def parameters(self, recurse: bool = True):
         return chain(self.classifier.parameters())
 
     def custom_state_dict(self):
         state_dict = OrderedDict()
         for k, v in self.classifier.state_dict().items():
-            state_dict[f"target_embedder.{k}"] = v
+            state_dict[f"classifier.{k}"] = v
         return state_dict
 
 
