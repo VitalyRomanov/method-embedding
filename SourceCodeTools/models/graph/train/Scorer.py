@@ -1,4 +1,5 @@
 import random
+import time
 from collections import Iterable
 from typing import Dict, List
 
@@ -202,17 +203,43 @@ class Scorer:
 
         return y_pred
 
-    def score_candidates_lp(self, to_score_ids, to_score_embs, keys_to_score_against, embs_to_score_against, link_predictor, at=None):
+    def score_candidates_lp(
+            self, to_score_ids, to_score_embs, keys_to_score_against, embs_to_score_against, link_predictor, at=None,
+            with_types=None
+    ):
 
-        y_pred = []
-        for i in range(len(to_score_ids)):
-            input_embs = to_score_embs[i, :].repeat((embs_to_score_against.shape[0], 1))
-            # predictor_input = torch.cat([input_embs, all_emb], dim=1)
-            y_pred.append(
-                torch.nn.functional.softmax(link_predictor(input_embs, embs_to_score_against), dim=1)[:, 1].tolist()
-            )  # 0 - negative, 1 - positive
+        if with_types is None:
+            y_pred = []
+            for i in range(len(to_score_ids)):
+                input_embs = to_score_embs[i, :].repeat((embs_to_score_against.shape[0], 1))
+                # predictor_input = torch.cat([input_embs, all_emb], dim=1)
+                y_pred.append(
+                    torch.nn.functional.softmax(link_predictor(input_embs, embs_to_score_against), dim=1)[:, 1].tolist()
+                )  # 0 - negative, 1 - positive
 
-        return y_pred
+            return y_pred
+
+        else:
+            y_pred = []
+            for i in range(len(to_score_ids)):
+                y_pred.append(dict())
+                for type in with_types[i]:
+                    input_embs = to_score_embs[i, :].unsqueeze(0)
+                    # predictor_input = torch.cat([input_embs, all_emb], dim=1)
+
+                    labels = torch.LongTensor([type]).to(link_predictor.proj_matr.weight.device)
+                    weights = link_predictor.proj_matr(labels).reshape((-1, link_predictor.rel_dim, link_predictor.input_dim))
+                    rels = link_predictor.rel_emb(labels)
+                    m_a = (weights * input_embs.unsqueeze(1)).sum(-1)
+                    m_s = (weights * embs_to_score_against.unsqueeze(1)).sum(-1)
+
+                    transl = m_a + rels
+                    sim = torch.norm(transl - m_s, dim=-1)
+                    sim = 1./ (1. + sim)
+                    y_pred[-1][type] = sim.cpu().tolist()
+
+            return y_pred
+
 
     def get_gt_candidates(self, ids):
         candidates = [set(list(self.scorer_src2dst[id])) for id in ids]
@@ -226,7 +253,15 @@ class Scorer:
         """
         all_keys = set()
 
-        [all_keys.update(self.scorer_src2dst[key]) for key in self.scorer_src2dst]
+        for key in self.scorer_src2dst:
+            cand = self.scorer_src2dst[key]
+            for c in cand:
+                if isinstance(c, tuple):  # happens with graphlinkclassifier objectives
+                    all_keys.add(c[0])
+                else:
+                    all_keys.add(c)
+
+        # [all_keys.update(self.scorer_src2dst[key]) for key in self.scorer_src2dst]
         return sorted(list(all_keys))  # list(self.elem2id[a] for a in all_keys)
 
     def get_embeddings_for_scoring(self, device, **kwargs):
@@ -288,10 +323,49 @@ class Scorer:
 
         return map
 
+    def get_y_true_from_candidate_list(self, candidates, keys_to_score_against):
+        y_true = [[1. if key in cand else 0. for key in keys_to_score_against] for cand in candidates]
+        return y_true
+
+    def get_y_true_from_candidates(self, candidates, keys_to_score_against):
+
+        has_types = isinstance(list(candidates[0])[0], tuple)
+
+        if not has_types:
+            return self.get_y_true_from_candidate_list(candidates, keys_to_score_against)
+
+        candidate_dicts = []
+        for cand in candidates:
+            candidate_dicts.append(dict())
+            for ent, type in cand:
+                if type not in candidate_dicts[-1]:
+                    candidate_dicts[-1][type] = []
+                candidate_dicts[-1][type].append(ent)
+
+        y_true = []
+        for cand in candidate_dicts:
+            y_true.append(dict())
+            for type, ents in cand.items():
+                y_true[-1][type] = [1. if key in ents else 0. for key in keys_to_score_against]
+                assert sum(y_true[-1][type]) > 0.
+
+        return y_true
+
+    def flatten_pred(self, y):
+
+        flattened = []
+        for x in y:
+            for key, scores in x.items():
+                flattened.append(scores)
+
+        return flattened
+
     def score_candidates(self, to_score_ids, to_score_embs, link_predictor=None, at=None, type=None, device="cpu"):
 
         if at is None:
             at = [1, 3, 5, 10]
+
+        start = time.time()
 
         to_score_ids = to_score_ids.tolist()
 
@@ -299,14 +373,16 @@ class Scorer:
         # keys_to_score_against = self.get_cand_to_score_against(to_score_ids)
         keys_to_score_against = self.get_keys_for_scoring()
 
-        y_true = [[1. if key in cand else 0. for key in keys_to_score_against] for cand in candidates]
+        y_true = self.get_y_true_from_candidates(candidates, keys_to_score_against)
 
         embs_to_score_against = self.get_embeddings_for_scoring(device=to_score_embs.device)
 
         if type == "nn":
+            has_types = isinstance(y_true[0], dict)
+
             y_pred = self.score_candidates_lp(
                 to_score_ids, to_score_embs, keys_to_score_against, embs_to_score_against,
-                link_predictor, at=at
+                link_predictor, at=at, with_types=y_true if has_types else None
             )
         elif type == "inner_prod":
             y_pred = self.score_candidates_cosine(
@@ -319,9 +395,15 @@ class Scorer:
         else:
             raise ValueError(f"`type` can be either `nn` or `inner_prod` but `{type}` given")
 
+        has_types = isinstance(y_pred[0], dict)
+
+        if has_types:
+            y_true = self.flatten_pred(y_true)
+            y_pred = self.flatten_pred(y_pred)
+
         scores = {}
         y_true_onehot = np.array(y_true)
-        labels=list(range(y_true_onehot.shape[1]))
+        # labels=list(range(y_true_onehot.shape[1]))
 
         if isinstance(at, Iterable):
             scores.update({f"hits@{k}": self.hits_at_k(y_true, y_pred, k=k) for k in at})
@@ -337,4 +419,5 @@ class Scorer:
         scores["mr"] = mr
         scores["mrr"] = mrr
         scores["map"] = map
+        scores["scoring_time"] = time.time() - start
         return scores
