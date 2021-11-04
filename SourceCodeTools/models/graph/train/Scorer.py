@@ -79,7 +79,7 @@ class Scorer:
     """
     def __init__(
             self, num_embs, emb_size, src2dst: Dict[int, List[int]], neighbours_to_sample=5, index_backend="brute",
-            method = "inner_prod", device="cpu"
+            method = "inner_prod", device="cpu", ns_groups=None
     ):
         """
         Creates an embedding table, the embeddings in this table are updated once during an epoch. Embeddings from this
@@ -171,8 +171,9 @@ class Scorer:
         embs_to_score_against = embs_to_score_against / embs_to_score_against.norm(p=2, dim=1, keepdim=True)
 
         score_matr = (to_score_embs @ embs_to_score_against.t())
-        score_matr = score_matr - self.margin
-        score_matr[score_matr < 0.] = 0.
+        score_matr = (score_matr + 1.) / 2.
+        # score_matr = score_matr - self.margin
+        # score_matr[score_matr < 0.] = 0.
         y_pred = score_matr.cpu().tolist()
 
         return y_pred
@@ -182,13 +183,22 @@ class Scorer:
 
     def score_candidates_l2(self, to_score_ids, to_score_embs, keys_to_score_against, embs_to_score_against, at=None):
 
-        embs_to_score_against = embs_to_score_against.unsqueeze(0)
-        to_score_embs = to_score_embs.unsqueeze(1)
+        y_pred = []
+        for i in range(len(to_score_ids)):
+            input_embs = to_score_embs[i, :].reshape(1, -1)
+            score_matr = torch.norm(embs_to_score_against - input_embs, dim=-1)
+            score_matr = 1. / (1. + score_matr)
+            # score_matr = score_matr + self.margin
+            # score_matr[score_matr < 0.] = 0
+            y_pred.append(score_matr.cpu().tolist())
 
-        score_matr = -torch.norm(embs_to_score_against - to_score_embs, dim=-1)
-        score_matr = score_matr + self.margin
-        score_matr[score_matr < 0.] = 0
-        y_pred = score_matr.cpu().tolist()
+        # embs_to_score_against = embs_to_score_against.unsqueeze(0)
+        # to_score_embs = to_score_embs.unsqueeze(1)
+        #
+        # score_matr = -torch.norm(embs_to_score_against - to_score_embs, dim=-1)
+        # score_matr = score_matr + self.margin
+        # score_matr[score_matr < 0.] = 0
+        # y_pred = score_matr.cpu().tolist()
 
         return y_pred
 
@@ -242,6 +252,42 @@ class Scorer:
 
         return sum(result) / len(result)
 
+    def mean_rank(self, y_true, y_pred):
+        true_ranks = []
+        reciprocal_ranks = []
+
+        correct = y_true
+        predicted = y_pred
+        for y_true, y_pred in zip(correct, predicted):
+            ranks = sorted(zip(y_true, y_pred), key=lambda x: x[1], reverse=True)
+            for ind, (true, pred) in enumerate(ranks):
+                if true > 0.:
+                    true_ranks.append(ind + 1)
+                    reciprocal_ranks.append(1 / (ind + 1))
+                    break  # should consider only first result https://en.wikipedia.org/wiki/Mean_reciprocal_rank
+
+        return sum(true_ranks) / len(true_ranks), sum(reciprocal_ranks) / len(reciprocal_ranks)
+
+    def mean_average_precision(self, y_true, y_pred):
+        correct = y_true
+        predicted = y_pred
+        map = 0.
+        for y_true, y_pred in zip(correct, predicted):
+            ranks = sorted(zip(y_true, y_pred), key=lambda x: x[1], reverse=True)
+            found_relevant = 0
+            avep = 0.
+            for ind, (true, pred) in enumerate(ranks):
+                if true > 0.:
+                    found_relevant += 1
+                    avep += found_relevant / (ind + 1)  # precision@k
+            avep /= found_relevant
+
+            map += avep
+
+        map /= len(correct)
+
+        return map
+
     def score_candidates(self, to_score_ids, to_score_embs, link_predictor=None, at=None, type=None, device="cpu"):
 
         if at is None:
@@ -285,4 +331,10 @@ class Scorer:
             scores.update({f"hits@{at}": self.hits_at_k(y_true, y_pred, k=at)})
             scores.update({f"ndcg@{at}": ndcg_score(y_true, y_pred, k=at)})
             # scores = {f"ndcg@{at}": ndcg_score(y_true, y_pred, k=at)}
+
+        mr, mrr = self.mean_rank(y_true, y_pred)
+        map = self.mean_average_precision(y_true, y_pred)
+        scores["mr"] = mr
+        scores["mrr"] = mrr
+        scores["map"] = map
         return scores

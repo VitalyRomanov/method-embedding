@@ -86,7 +86,8 @@ class AbstractObjective(nn.Module):
             self, name, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
-            measure_scores=False, dilate_scores=1, early_stopping=False, early_stopping_tolerance=20, nn_index="brute"
+            measure_scores=False, dilate_scores=1, early_stopping=False, early_stopping_tolerance=20, nn_index="brute",
+            ns_groups=None
     ):
         super(AbstractObjective, self).__init__()
 
@@ -104,6 +105,7 @@ class AbstractObjective(nn.Module):
         self.nn_index = nn_index
         self.early_stopping_tracker = EarlyStoppingTracker(early_stopping_tolerance) if early_stopping else None
         self.early_stopping_trigger = False
+        self.ns_groups = ns_groups
 
         self.verify_parameters()
 
@@ -127,7 +129,8 @@ class AbstractObjective(nn.Module):
     def create_graph_link_sampler(self, data_loading_func, nodes):
         self.target_embedder = GraphLinkSampler(
             elements=data_loading_func(), nodes=nodes, compact_dst=False, dst_to_global=True,
-            emb_size=self.target_emb_size, device=self.device, method=self.link_predictor_type, nn_index=self.nn_index
+            emb_size=self.target_emb_size, device=self.device, method=self.link_predictor_type, nn_index=self.nn_index,
+            ns_groups=self.ns_groups
         )
 
     def create_subword_embedder(self, data_loading_func, nodes, tokenizer_path):
