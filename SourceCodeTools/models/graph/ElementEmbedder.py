@@ -14,7 +14,7 @@ from SourceCodeTools.models.nlp.TorchEncoder import LSTMEncoder, Encoder
 class GraphLinkSampler(ElementEmbedderBase, Scorer):
     def __init__(
             self, elements, nodes, compact_dst=True, dst_to_global=True, emb_size=None, device="cpu",
-            method="inner_prod", nn_index="brute"
+            method="inner_prod", nn_index="brute", ns_groups=None
     ):
         assert emb_size is not None
         ElementEmbedderBase.__init__(
@@ -22,7 +22,7 @@ class GraphLinkSampler(ElementEmbedderBase, Scorer):
         )
         Scorer.__init__(
             self, num_embs=len(self.elements["dst"].unique()), emb_size=emb_size, src2dst=self.element_lookup,
-            device=device, method=method, index_backend=nn_index
+            device=device, method=method, index_backend=nn_index, ns_groups=ns_groups
         )
 
     def sample_negative(self, size, ids=None, strategy="closest"):

@@ -913,6 +913,10 @@ class SourceGraphDataset:
         """
         return NodeClfMasker(self.nodes, self.edges)
 
+    def get_negative_sample_groups(self):
+        return self.nodes[["id", "mentioned_in"]].dropna(axis=0)
+
+
     @classmethod
     def load(cls, path, args):
         dataset = pickle.load(open(path, "rb"))

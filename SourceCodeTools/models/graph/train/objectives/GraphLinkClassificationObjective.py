@@ -18,15 +18,15 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
             self, name, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
-            measure_scores=False, dilate_scores=1
+            measure_scores=False, dilate_scores=1, ns_groups=None
     ):
         super().__init__(
             name, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
-            masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores
+            masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores, ns_groups=ns_groups
         )
-        self.measure_scores = False
+        self.measure_scores = True
         self.update_embeddings_for_queries = False
 
     def create_graph_link_sampler(self, data_loading_func, nodes):
@@ -62,13 +62,13 @@ class TransRObjective(GraphLinkClassificationObjective):
             self, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
-            measure_scores=False, dilate_scores=1
+            measure_scores=False, dilate_scores=1, ns_groups=None
     ):
         super().__init__(
             "TransR", graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
-            masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores
+            masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores, ns_groups=ns_groups
         )
 
     def create_link_predictor(self):

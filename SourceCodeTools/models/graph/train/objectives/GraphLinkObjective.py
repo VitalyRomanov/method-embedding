@@ -9,13 +9,14 @@ class GraphLinkObjective(AbstractObjective):
             self, name, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
-            measure_scores=False, dilate_scores=1, nn_index="brute"
+            measure_scores=False, dilate_scores=1, nn_index="brute", ns_groups=None
     ):
         super(GraphLinkObjective, self).__init__(
             name, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
-            masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores, nn_index=nn_index
+            masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores, nn_index=nn_index,
+            ns_groups=ns_groups
         )
         self.target_embedding_fn = self.get_targets_from_nodes
         self.negative_factor = 1
