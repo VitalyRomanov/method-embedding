@@ -208,7 +208,8 @@ class SamplingMultitaskTrainer:
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
                 measure_scores=self.trainer_params["measure_scores"],
-                dilate_scores=self.trainer_params["dilate_scores"]
+                dilate_scores=self.trainer_params["dilate_scores"],
+                ns_groups=dataset.get_negative_sample_groups()
             )
         )
 
@@ -564,12 +565,12 @@ class SamplingMultitaskTrainer:
 
             for objective in self.objectives:
 
-                # train_scores = objective.evaluate("train")
+                train_scores = objective.evaluate("train")
                 val_scores = objective.evaluate("val")
                 test_scores = objective.evaluate("test")
                 
                 summary = {}
-                # add_to_summary(summary, "train", objective.name, train_scores, postfix="final")
+                add_to_summary(summary, "train", objective.name, train_scores, postfix="final")
                 add_to_summary(summary, "val", objective.name, val_scores, postfix="final")
                 add_to_summary(summary, "test", objective.name, test_scores, postfix="final")
                 
