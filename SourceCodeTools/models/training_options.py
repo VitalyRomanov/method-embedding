@@ -39,6 +39,7 @@ def add_training_arguments(parser):
     parser.add_argument("--n_layers", dest="n_layers", default=5, type=int)
     parser.add_argument("--objectives", dest="objectives", default=None, type=str)
 
+    parser.add_argument("--save_each_epoch", action="store_true")
     parser.add_argument("--early_stopping", action="store_true")
     parser.add_argument("--early_stopping_tolerance", default=20, type=int)
     parser.add_argument("--force_w2v_ns", action="store_true")

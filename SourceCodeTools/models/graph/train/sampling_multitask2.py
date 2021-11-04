@@ -537,6 +537,9 @@ class SamplingMultitaskTrainer:
             param_dict.update(kwargs)
 
         torch.save(param_dict, model_path)
+        if self.trainer_params["save_each_epoch"]:
+            torch.save(param_dict, join(checkpoint_path, f"saved_state_{self.epoch}.pt"))
+
         if write_best_model:
             torch.save(param_dict,  join(checkpoint_path, f"best_model.pt"))
 
@@ -674,7 +677,8 @@ def training_procedure(
         "early_stopping_tolerance": args.early_stopping_tolerance,
         "force_w2v_ns": args.force_w2v_ns,
         "metric": args.metric,
-        "nn_index": args.nn_index
+        "nn_index": args.nn_index,
+        "save_each_epoch": args.save_each_epoch
     }
 
     trainer = trainer(
