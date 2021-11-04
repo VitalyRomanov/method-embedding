@@ -206,7 +206,8 @@ class SamplingMultitaskTrainer:
                 self.graph_model, self.node_embedder, dataset.nodes,
                 dataset.load_edge_prediction, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
-                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
+                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size,
+                link_predictor_type=self.trainer_params["metric"],
                 measure_scores=self.trainer_params["measure_scores"],
                 dilate_scores=self.trainer_params["dilate_scores"],
                 ns_groups=dataset.get_negative_sample_groups()
