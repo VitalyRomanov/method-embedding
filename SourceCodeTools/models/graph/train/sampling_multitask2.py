@@ -196,7 +196,8 @@ class SamplingMultitaskTrainer:
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type=self.trainer_params["metric"],
                 measure_scores=self.trainer_params["measure_scores"],
-                dilate_scores=self.trainer_params["dilate_scores"], nn_index=self.trainer_params["nn_index"]
+                dilate_scores=self.trainer_params["dilate_scores"], nn_index=self.trainer_params["nn_index"],
+                # ns_groups=dataset.get_negative_sample_groups()
             )
         )
 
@@ -210,7 +211,7 @@ class SamplingMultitaskTrainer:
                 link_predictor_type=self.trainer_params["metric"],
                 measure_scores=self.trainer_params["measure_scores"],
                 dilate_scores=self.trainer_params["dilate_scores"],
-                ns_groups=dataset.get_negative_sample_groups()
+                # ns_groups=dataset.get_negative_sample_groups()
             )
         )
 
@@ -564,17 +565,20 @@ class SamplingMultitaskTrainer:
             objective.reset_iterator("val")
             objective.reset_iterator("test")
             # objective.early_stopping = False
+            self.compute_embeddings_for_scorer(objective)
+            objective.target_embedder.prepare_index()
+            objective.update_embeddings_for_queries = False
 
         with torch.set_grad_enabled(False):
 
             for objective in self.objectives:
 
-                # train_scores = objective.evaluate("train")
+                train_scores = objective.evaluate("train")
                 val_scores = objective.evaluate("val")
                 test_scores = objective.evaluate("test")
                 
                 summary = {}
-                # add_to_summary(summary, "train", objective.name, train_scores, postfix="final")
+                add_to_summary(summary, "train", objective.name, train_scores, postfix="final")
                 add_to_summary(summary, "val", objective.name, val_scores, postfix="final")
                 add_to_summary(summary, "test", objective.name, test_scores, postfix="final")
                 

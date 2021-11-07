@@ -1,6 +1,6 @@
 import random
 import time
-from collections import Iterable
+from collections import Iterable, defaultdict
 from typing import Dict, List
 
 import torch
@@ -104,6 +104,44 @@ class Scorer:
         self.scorer_key_order = dict(zip(self.scorer_all_keys, range(len(self.scorer_all_keys))))
         self.scorer_index = None
         self.neighbours_to_sample = min(neighbours_to_sample, self.scorer_num_emb)
+        self.prepare_ns_groups(ns_groups)
+
+    def prepare_ns_groups(self, ns_groups):
+        if ns_groups is None:
+            return
+
+        self.scorer_node2ns_group = {}
+        self.scorer_ns_group2nodes = defaultdict(list)
+
+        unique_dst = set()
+        for dsts in self.scorer_src2dst.values():
+            for dst in dsts:
+                if isinstance(dst, tuple):
+                    unique_dst.add(dst[0])
+                else:
+                    unique_dst.add(dst)
+
+        for id, mentioned_in in ns_groups.values:
+            id_ = self.id2nodeid[id]
+            mentioned_in_ = self.id2nodeid[mentioned_in]
+            self.scorer_node2ns_group[id_] = mentioned_in_
+            if id_ in unique_dst:
+                self.scorer_ns_group2nodes[mentioned_in_].append(id_)
+
+    def sample_negative_from_groups(self, key_groups, k):
+        possible_targets = []
+        for key_group in key_groups:
+            any_key = key_group[0]
+            possible_negative = self.scorer_ns_group2nodes[self.scorer_node2ns_group[any_key]]
+            possible_negative_ = list(set(possible_negative) - set(key_group))
+            if len(possible_negative_) < k:
+                # backup strategy
+                possible_negative_.extend(
+                    random.choices(list(set(self.scorer_all_keys) - set(key_group)), k=k - len(possible_negative_))
+                )
+            possible_targets.append(possible_negative_)
+        return possible_targets
+
 
     def prepare_index(self, override_strategy=None):
         if self.scorer_method == "nn":
@@ -128,11 +166,17 @@ class Scorer:
         assert ids is not None
         seed_pool = []
         for id in ids:
-            seed_pool.append(self.scorer_src2dst[id])
+            pool = self.scorer_src2dst[id]
+            if len(pool) > 0 and isinstance(pool[0], tuple):
+                pool = [x[0] for x in pool]
+            seed_pool.append(pool)
             if id in self.scorer_key_order:
                 seed_pool[-1] = seed_pool[-1] + [id]  # make sure that original list is not changed
         # [seed_pool.append(self.scorer_src2dst[id]) for id in ids]
-        nested_negative = self.get_closest_to_keys(seed_pool, k=k+1)
+        if hasattr(self, "scorer_ns_group2nodes"):
+            nested_negative = self.sample_negative_from_groups(seed_pool, k=k+1)
+        else:
+            nested_negative = self.get_closest_to_keys(seed_pool, k=k+1)
 
         negative = []
         for neg in nested_negative:
@@ -281,7 +325,7 @@ class Scorer:
         predicted = y_pred
         result = []
         for y_true, y_pred in zip(correct, predicted):
-            ind_true = set([ind for ind, y_t in enumerate(y_true) if y_t == 1])
+            ind_true = set([ind for ind, y_t in enumerate(y_true) if y_t == 1.])
             ind_pred = set(list(np.flip(np.argsort(y_pred))[:k]))
             result.append(len(ind_pred.intersection(ind_true)) / min(len(ind_true), k))
 
@@ -398,6 +442,7 @@ class Scorer:
         has_types = isinstance(y_pred[0], dict)
 
         if has_types:
+            print()
             y_true = self.flatten_pred(y_true)
             y_pred = self.flatten_pred(y_pred)
 
