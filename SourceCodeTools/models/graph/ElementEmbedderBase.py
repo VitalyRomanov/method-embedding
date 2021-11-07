@@ -50,7 +50,11 @@ class ElementEmbedderBase:
         id2typedid = dict(zip(nodes['id'].tolist(), nodes['typed_id'].tolist()))
         id2type = dict(zip(nodes['id'].tolist(), nodes['type'].tolist()))
 
-        def get_node_pools(element_data):
+        self.id2nodeid = id2nodeid
+        self.id2typedid = id2typedid
+        self.id2type = id2type
+
+        def get_node_pools(element_data):  # create typed node list for possible use with dgl
             node_typed_pools = {}
             for orig_node_id in element_data['src']:
                 global_id = id2nodeid.get(orig_node_id, None)

@@ -31,7 +31,7 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
 
     def create_graph_link_sampler(self, data_loading_func, nodes):
         self.target_embedder = TargetLinkMapper(
-            elements=data_loading_func(), nodes=nodes, emb_size=self.target_emb_size
+            elements=data_loading_func(), nodes=nodes, emb_size=self.target_emb_size, ns_groups=self.ns_groups
         )
 
     def create_link_predictor(self):
@@ -94,8 +94,10 @@ class TransRObjective(GraphLinkClassificationObjective):
         return acc, loss
 
 class TargetLinkMapper(GraphLinkSampler):
-    def __init__(self, elements, nodes, emb_size=1):
-        super(TargetLinkMapper, self).__init__(elements, nodes, compact_dst=False, dst_to_global=True, emb_size=emb_size)
+    def __init__(self, elements, nodes, emb_size=1, ns_groups=None):
+        super(TargetLinkMapper, self).__init__(
+            elements, nodes, compact_dst=False, dst_to_global=True, emb_size=emb_size, ns_groups=ns_groups
+        )
 
     def init(self, compact_dst):
         if compact_dst:

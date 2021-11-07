@@ -192,7 +192,7 @@ class SourceGraphDataset:
                  use_edge_types=False, filter=None, self_loops=False,
                  train_frac=0.6, random_seed=None, tokenizer_path=None, min_count_for_objectives=1,
                  no_global_edges=False, remove_reverse=False, custom_reverse=None, package_names=None,
-                 restricted_id_pool=None):
+                 restricted_id_pool=None, use_ns_groups=False):
         """
         Prepares the data for training GNN model. The graph is prepared in the following way:
             1. Edges are split into the train set and holdout set. Holdout set is used in the future experiments.
@@ -223,6 +223,8 @@ class SourceGraphDataset:
         self.no_global_edges = no_global_edges
         self.remove_reverse = remove_reverse
         self.custom_reverse = None if custom_reverse is None else custom_reverse.split(",")
+
+        self.use_ns_groups = use_ns_groups
 
         nodes_path = join(data_path, "nodes.bz2")
         edges_path = join(data_path, "edges.bz2")
@@ -780,6 +782,10 @@ class SourceGraphDataset:
         valid_nodes = set(edges["src"].tolist())
         valid_nodes = valid_nodes.intersection(set(edges["dst"].tolist()))
 
+        if self.use_ns_groups:
+            groups = self.get_negative_sample_groups()
+            valid_nodes = valid_nodes.intersection(set(groups["id"].tolist()))
+
         edges = edges[
             edges["src"].apply(lambda id_: id_ in valid_nodes)
         ]
@@ -1005,7 +1011,8 @@ def read_or_create_dataset(args, model_base, labels_from="type"):
             remove_reverse=args.remove_reverse,
             custom_reverse=args.custom_reverse,
             package_names=open(args.packages_file).readlines() if args.packages_file is not None else None,
-            restricted_id_pool=args.restricted_id_pool
+            restricted_id_pool=args.restricted_id_pool,
+            use_ns_groups=args.use_ns_groups
         )
 
         # save dataset state for recovery
