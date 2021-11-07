@@ -573,12 +573,12 @@ class SamplingMultitaskTrainer:
 
             for objective in self.objectives:
 
-                train_scores = objective.evaluate("train")
+                # train_scores = objective.evaluate("train")
                 val_scores = objective.evaluate("val")
                 test_scores = objective.evaluate("test")
                 
                 summary = {}
-                add_to_summary(summary, "train", objective.name, train_scores, postfix="final")
+                # add_to_summary(summary, "train", objective.name, train_scores, postfix="final")
                 add_to_summary(summary, "val", objective.name, val_scores, postfix="final")
                 add_to_summary(summary, "test", objective.name, test_scores, postfix="final")
                 
