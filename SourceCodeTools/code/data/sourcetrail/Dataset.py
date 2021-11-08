@@ -231,6 +231,8 @@ class SourceGraphDataset:
 
         self.nodes, self.edges = load_data(nodes_path, edges_path)
 
+        # self.nodes, self.edges, self.holdout = self.holdout(self.nodes, self.edges)
+
         # index is later used for sampling and is assumed to be unique
         assert len(self.nodes) == len(self.nodes.index.unique())
         assert len(self.edges) == len(self.edges.index.unique())
@@ -641,24 +643,52 @@ class SourceGraphDataset:
 
         return nodes, edges
 
-    # @classmethod
-    # def holdout(cls, nodes, edges, holdout_frac, random_seed):
-    #     """
-    #     Create a set of holdout edges, ensure that there are no orphan nodes after these edges are removed.
-    #     :param nodes:
-    #     :param edges:
-    #     :param holdout_frac:
-    #     :param random_seed:
-    #     :return:
-    #     """
-    #
-    #     train, test = split(edges, holdout_frac, random_seed=random_seed)
-    #
-    #     nodes, train_edges = ensure_connectedness(nodes, train)
-    #
-    #     nodes, test_edges = ensure_valid_edges(nodes, test)
-    #
-    #     return nodes, train_edges, test_edges
+    @classmethod
+    def holdout(cls, nodes: pd.DataFrame, edges: pd.DataFrame, holdout_size=10000, random_seed=42):
+        """
+        Create a set of holdout edges, ensure that there are no orphan nodes after these edges are removed.
+        :param nodes:
+        :param edges:
+        :param holdout_frac:
+        :param random_seed:
+        :return:
+        """
+
+        from collections import Counter
+
+        degree_count = Counter(edges["src"].tolist()) | Counter(edges["dst"].tolist())
+
+        heldout = []
+
+        edges = edges.reset_index(drop=True)
+        index = edges.index.to_numpy()
+        numpy.random.seed(random_seed)
+        numpy.random.shuffle(index)
+
+        for i in index:
+            src_id = edges.loc[i].src
+            if degree_count[src_id] > 2:
+                heldout.append(edges.loc[i].id)
+                degree_count[src_id] -= 1
+                if len(heldout) >= holdout_size:
+                    break
+
+        heldout = set(heldout)
+
+        def is_held(id_):
+            return id_ in heldout
+
+        train_edges = edges[
+            edges["id"].apply(lambda id_: not is_held(id_))
+        ]
+
+        heldout_edges = edges[
+            edges["id"].apply(is_held)
+        ]
+
+        assert len(edges) == edges["id"].unique().size
+
+        return nodes, train_edges, heldout_edges
 
     # def mark_leaf_nodes(self):
     #     leaf_types = {'subword', "Op", "Constant", "Name"}  # the last is used in graphs without subwords
@@ -782,9 +812,9 @@ class SourceGraphDataset:
         valid_nodes = set(edges["src"].tolist())
         valid_nodes = valid_nodes.intersection(set(edges["dst"].tolist()))
 
-        if self.use_ns_groups:
-            groups = self.get_negative_sample_groups()
-            valid_nodes = valid_nodes.intersection(set(groups["id"].tolist()))
+        # if self.use_ns_groups:
+        #     groups = self.get_negative_sample_groups()
+        #     valid_nodes = valid_nodes.intersection(set(groups["id"].tolist()))
 
         edges = edges[
             edges["src"].apply(lambda id_: id_ in valid_nodes)
