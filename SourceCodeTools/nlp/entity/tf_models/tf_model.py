@@ -109,13 +109,15 @@ class TypePredictor(Model):
         self.suffix_emb = DefaultEmbedding(shape=(suffix_prefix_buckets, suffix_prefix_dims))
 
         # compute final embedding size after concatenation
-        input_dim = tok_embedder.e.shape[1] + suffix_prefix_dims * 2 + graph_embedder.e.shape[1]
+        input_dim = tok_embedder.e.shape[1] + suffix_prefix_dims * 2 #+ graph_embedder.e.shape[1]
 
-        self.encoder = TextCnnEncoder(input_size=input_dim, h_sizes=h_sizes,
-                                seq_len=seq_len, pos_emb_size=pos_emb_size,
-                                cnn_win_size=cnn_win_size, dense_size=dense_size,
-                                out_dim=input_dim, activation=tf.nn.relu,
-                                dense_activation=tf.nn.tanh)
+        self.encoder = TextCnnEncoder(
+            # input_size=input_dim,
+            h_sizes=h_sizes,
+            seq_len=seq_len, pos_emb_size=pos_emb_size,
+            cnn_win_size=cnn_win_size, dense_size=dense_size,
+            out_dim=input_dim, activation=tf.nn.relu,
+            dense_activation=tf.nn.tanh)
         # self.encoder = GRUEncoder(input_dim=input_dim, out_dim=input_dim, num_layers=1, dropout=0.1)
         # self.encoder = T5Encoder()
 
@@ -148,7 +150,7 @@ class TypePredictor(Model):
         suffix_emb = self.suffix_emb(suffix_ids)
 
         embs = tf.concat([tok_emb,
-                          graph_emb,
+                          # graph_emb,
                           prefix_emb,
                           suffix_emb], axis=-1)
 
@@ -156,6 +158,7 @@ class TypePredictor(Model):
         # if target is None:
         #     logits = self.decoder.seq_decode(encoded, training=training, mask=mask)
         # else:
+        encoded = tf.concat([encoded, graph_emb], axis=-1)
         logits, _ = self.decoder((encoded, target), training=training, mask=mask) # consider sending input instead of target
 
         return logits
@@ -288,6 +291,32 @@ def test_step(model, token_ids, prefix, suffix, graph_ids, labels, lengths, extr
 
     return loss, p, r, f1
 
+
+def test(model, test_batches, scorer=None):
+    test_alosses = []
+    test_aps = []
+    test_ars = []
+    test_af1s = []
+
+    for ind, batch in enumerate(test_batches):
+        # token_ids, graph_ids, labels, class_weights, lengths = b
+        test_loss, test_p, test_r, test_f1 = test_step(
+            model=model, token_ids=batch['tok_ids'],
+            prefix=batch['prefix'], suffix=batch['suffix'], graph_ids=batch['graph_ids'],
+            labels=batch['tags'], lengths=batch['lens'], extra_mask=batch['hide_mask'],
+            # class_weights=batch['class_weights'],
+            scorer=scorer
+        )
+
+        test_alosses.append(test_loss)
+        test_aps.append(test_p)
+        test_ars.append(test_r)
+        test_af1s.append(test_f1)
+
+    def avg(arr):
+        return sum(arr) / len(arr)
+
+    return avg(test_alosses), avg(test_aps), avg(test_ars), avg(test_af1s)
 
 def train(
         model, train_batches, test_batches, epochs, report_every=10, scorer=None, learning_rate=0.01,
