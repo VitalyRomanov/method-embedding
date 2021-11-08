@@ -2,7 +2,7 @@ import logging
 import os
 from os.path import isdir, join, isfile
 
-from SourceCodeTools.code.data.sourcetrail.Dataset import load_data, compact_property
+from SourceCodeTools.code.data.sourcetrail.Dataset import load_data, compact_property, SourceGraphDataset
 
 import argparse
 
@@ -48,7 +48,10 @@ def main():
     )
 
     nodes, edges = load_data(nodes_path, edges_path)
+    nodes, edges, holdout = SourceGraphDataset.holdout(nodes, edges)
     edges = edges.astype({"src": 'str', "dst": "str", "type": 'str'})[['src', 'dst', 'type']]
+    holdout = holdout.astype({"src": 'str', "dst": "str", "type": 'str'})[['src', 'dst', 'type']]
+
     node2graph_id = compact_property(nodes['id'])
     nodes['global_graph_id'] = nodes['id'].apply(lambda x: node2graph_id[x])
 
@@ -72,6 +75,8 @@ def main():
     persist(edges, join(args.output_path, "edges_train_node2vec.tsv"), header=False, sep=" ")
     persist(eval_sample, join(args.output_path, "edges_eval_dglke.tsv"), header=False, sep="\t")
     persist(eval_sample, join(args.output_path, "edges_eval_node2vec.tsv"), header=False, sep=" ")
+    persist(holdout, join(args.output_path, "edges_eval_dglke_10000.tsv"), header=False, sep="\t")
+    persist(holdout, join(args.output_path, "edges_eval_node2vec_10000.tsv"), header=False, sep=" ")
 
 
 

@@ -442,12 +442,11 @@ class Scorer:
         has_types = isinstance(y_pred[0], dict)
 
         if has_types:
-            print()
             y_true = self.flatten_pred(y_true)
             y_pred = self.flatten_pred(y_pred)
 
         scores = {}
-        y_true_onehot = np.array(y_true)
+        # y_true_onehot = np.array(y_true)
         # labels=list(range(y_true_onehot.shape[1]))
 
         if isinstance(at, Iterable):
