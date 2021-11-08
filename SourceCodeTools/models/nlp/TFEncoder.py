@@ -98,7 +98,9 @@ class TextCnnEncoder(Model):
     pass representation for all tokens through a dense network ->
     classify each token
     """
-    def __init__(self, input_size, h_sizes, seq_len,
+    def __init__(self,
+                 # input_size,
+                 h_sizes, seq_len,
                  pos_emb_size, cnn_win_size, dense_size, out_dim,
                  activation=None, dense_activation=None, drop_rate=0.2):
         """
@@ -120,6 +122,18 @@ class TextCnnEncoder(Model):
         self.h_sizes = h_sizes
         self.dense_size = dense_size
         self.out_dim = out_dim
+        self.pos_emb_size = pos_emb_size
+        self.cnn_win_size = cnn_win_size
+        self.activation = activation
+        self.dense_activation = dense_activation
+        self.drop_rate = drop_rate
+
+        self.supports_masking = True
+
+    def build(self, input_shape):
+        assert len(input_shape) == 3
+
+        input_size = input_shape[2]
 
         def infer_kernel_sizes(h_sizes):
             """
@@ -130,30 +144,28 @@ class TextCnnEncoder(Model):
             kernel_sizes = copy(h_sizes)
             kernel_sizes.pop(-1) # pop last because it is the output of the last CNN layer
             kernel_sizes.insert(0, input_size) # the first kernel size should be (cnn_win_size, input_size)
-            kernel_sizes = [(cnn_win_size, ks) for ks in kernel_sizes]
+            kernel_sizes = [(self.cnn_win_size, ks) for ks in kernel_sizes]
             return kernel_sizes
 
-        kernel_sizes = infer_kernel_sizes(h_sizes)
+        kernel_sizes = infer_kernel_sizes(self.h_sizes)
 
-        self.layers_tok = [TextCnnLayer(out_dim=h_size, kernel_shape=kernel_size, activation=activation)
-            for h_size, kernel_size in zip(h_sizes, kernel_sizes)]
+        self.layers_tok = [TextCnnLayer(out_dim=h_size, kernel_shape=kernel_size, activation=self.activation)
+            for h_size, kernel_size in zip(self.h_sizes, kernel_sizes)]
 
         # self.layers_pos = [TextCnnLayer(out_dim=h_size, kernel_shape=(cnn_win_size, pos_emb_size), activation=activation)
         #                for h_size, _ in zip(h_sizes, kernel_sizes)]
 
         # self.positional = PositionalEncoding(seq_len=seq_len, pos_emb_size=pos_emb_size)
 
-        if dense_activation is None:
-            dense_activation = activation
+        if self.dense_activation is None:
+            dense_activation = self.activation
 
         # self.attention = tfa.layers.MultiHeadAttention(head_size=200, num_heads=1)
 
-        self.dense_1 = Dense(dense_size, activation=dense_activation)
-        self.dropout_1 = tf.keras.layers.Dropout(rate=drop_rate)
-        self.dense_2 = Dense(out_dim, activation=None) # logits
-        self.dropout_2 = tf.keras.layers.Dropout(rate=drop_rate)
-
-        self.supports_masking = True
+        self.dense_1 = Dense(self.dense_size, activation=self.dense_activation)
+        self.dropout_1 = tf.keras.layers.Dropout(rate=self.drop_rate)
+        self.dense_2 = Dense(self.out_dim, activation=None) # logits
+        self.dropout_2 = tf.keras.layers.Dropout(rate=self.drop_rate)
 
     def compute_mask(self, inputs, mask=None):
         return mask

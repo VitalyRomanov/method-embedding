@@ -15,7 +15,7 @@ import tensorflow
 from SourceCodeTools.nlp.batchers import PythonBatcher
 from SourceCodeTools.nlp.entity import parse_biluo
 from SourceCodeTools.nlp.entity.tf_models.params import cnn_params
-from SourceCodeTools.nlp.entity.utils import get_unique_entities
+from SourceCodeTools.nlp.entity.utils import get_unique_entities, overlap
 from SourceCodeTools.nlp.entity.utils.data import read_data
 
 
@@ -32,18 +32,46 @@ def load_pkl_emb(path):
     return embedder
 
 
-def span_f1(pred_spans, true_spans, eps=1e-8):
-    tp = len(pred_spans.intersection(true_spans))
-    fp = len(pred_spans - true_spans)
-    fn = len(true_spans - pred_spans)
-
+def compute_precision_recall_f1(tp, fp, fn, eps=1e-8):
     precision = tp / (tp + fp + eps)
     recall = tp / (tp + fn + eps)
     f1 = 2 * precision * recall / (precision + recall + eps)
     return precision, recall, f1
 
 
-def scorer(pred, labels, tagmap, eps=1e-8):
+def localized_f1(pred_spans, true_spans, eps=1e-8):
+
+    def span_inside(predicted, correct):
+        return predicted[0] <= correct[0] and correct[1] <= predicted[1]
+
+    tp = 0.
+    fp = 0.
+    fn = 0.
+
+    was_hit = [0.] * len(true_spans)
+
+    for p_span in pred_spans:
+        for ind, t_span in enumerate(true_spans):
+            if span_inside(p_span, t_span):
+                tp += 1
+                was_hit[ind] = 1.
+        else:
+            fp += 1
+
+    fn = len(true_spans) - sum(was_hit)
+
+    return compute_precision_recall_f1(tp, fp, fn)
+
+
+def span_f1(pred_spans, true_spans, eps=1e-8):
+    tp = len(pred_spans.intersection(true_spans))
+    fp = len(pred_spans - true_spans)
+    fn = len(true_spans - pred_spans)
+
+    return compute_precision_recall_f1(tp, fp, fn)
+
+
+def scorer(pred, labels, tagmap, localize=True, eps=1e-8):
     """
     Compute f1 score, precision, and recall from BILUO labels
     :param pred: predicted BILUO labels
@@ -61,7 +89,10 @@ def scorer(pred, labels, tagmap, eps=1e-8):
     pred_spans = set(parse_biluo(pred_biluo))
     true_spans = set(parse_biluo(labels_biluo))
 
-    precision, recall, f1 = span_f1(pred_spans, true_spans, eps=eps)
+    if localize:
+        precision, recall, f1 = span_f1(pred_spans, true_spans, eps=eps)
+    else:
+        precision, recall, f1 = localized_f1(pred_spans, true_spans, eps=eps)
 
     return precision, recall, f1
 
@@ -117,6 +148,10 @@ class ModelTrainer:
         from SourceCodeTools.nlp.entity.tf_models.tf_model import train
         return train(*args, summary_writer=self.summary_writer, **kwargs)
 
+    def test(self, *args, **kwargs):
+        from SourceCodeTools.nlp.entity.tf_models.tf_model import test
+        return test(*args, **kwargs)
+
     def create_summary_writer(self, path):
         self.summary_writer = tensorflow.summary.create_file_writer(path)
 
@@ -170,10 +205,20 @@ class ModelTrainer:
                 checkpoint_path = os.path.join(trial_dir, "checkpoint")
                 model.save_weights(checkpoint_path)
 
-            train_losses, train_f1, test_losses, test_f1 = self.train(
+            train_losses, train_f1, test_losses, test_f1_ = self.train(
                 model=model, train_batches=train_batcher, test_batches=test_batcher,
                 epochs=self.epochs, learning_rate=lr, scorer=lambda pred, true: scorer(pred, true, train_batcher.tagmap),
                 learning_rate_decay=lr_decay, finetune=self.finetune, save_ckpt_fn=save_ckpt_fn
+            )
+
+            test_loss, test_p, test_r, test_f1 = self.test(
+                model=model, test_batches=test_batcher,
+                scorer=lambda pred, true: scorer(pred, true, train_batcher.tagmap),
+            )
+
+            _, test_p_no_loc, test_r_no_loc, test_f1_no_loc = self.test(
+                model=model, test_batches=test_batcher,
+                scorer=lambda pred, true: scorer(pred, true, train_batcher.tagmap, localize=False),
             )
 
             # checkpoint_path = os.path.join(trial_dir, "checkpoint")
@@ -184,6 +229,11 @@ class ModelTrainer:
                 "train_f1": train_f1,
                 "test_losses": test_losses,
                 "test_f1": test_f1,
+                "test_precision": test_p,
+                "test_recall": test_r,
+                "test_f1_no_loc": test_f1_no_loc,
+                "test_precision_no_loc": test_p_no_loc,
+                "test_recall_no_loc": test_r_no_loc,
                 "learning_rate": lr,
                 "learning_rate_decay": lr_decay,
                 "epochs": self.epochs,
@@ -192,7 +242,7 @@ class ModelTrainer:
                 "batch_size": self.batch_size
             }
 
-            print("Maximum f1:", max(test_f1))
+            print("Maximum f1:", max(test_f1_))
 
             # write_config(trial_dir, params, extra_params={"suffix_prefix_buckets": suffix_prefix_buckets, "seq_len": seq_len})
 
