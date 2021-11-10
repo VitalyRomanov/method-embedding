@@ -17,19 +17,19 @@ import numpy as np
 
 class NodeClassifierObjective(AbstractObjective):
     def __init__(
-            self, name, graph_model, node_embedder, nodes, data_loading_func, device,
+            self, name, graph_model, node_embedder, dataset, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=None, target_emb_size=None, link_predictor_type=None, masker: SubwordMasker = None,
             measure_scores=False, dilate_scores=1, early_stopping=False, early_stopping_tolerance=20
     ):
         super().__init__(
-            name, graph_model, node_embedder, nodes, data_loading_func, device,
+            name, graph_model, node_embedder, dataset, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
             masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores, early_stopping=early_stopping, early_stopping_tolerance=early_stopping_tolerance
         )
 
-    def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
+    def create_target_embedder(self, data_loading_func, nodes, edges, tokenizer_path):
         self.target_embedder = ClassifierTargetMapper(
             elements=data_loading_func(), nodes=nodes
         )
@@ -120,13 +120,13 @@ class NodeClassifierObjective(AbstractObjective):
 
 class NodeNameClassifier(NodeClassifierObjective):
     def __init__(
-            self, graph_model, node_embedder, nodes, data_loading_func, device,
+            self, graph_model, node_embedder, dataset, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=None, target_emb_size=None, link_predictor_type=None, masker: SubwordMasker = None,
             measure_scores=False, dilate_scores=1, early_stopping=False, early_stopping_tolerance=20
     ):
         super().__init__(
-            "NodeNameClassifier", graph_model, node_embedder, nodes, data_loading_func, device,
+            "NodeNameClassifier", graph_model, node_embedder, dataset, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
             masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores, early_stopping=early_stopping, early_stopping_tolerance=early_stopping_tolerance

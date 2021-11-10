@@ -1,5 +1,5 @@
 import random
-from collections import Iterable
+from collections import Iterable, defaultdict
 
 import torch
 import torch.nn as nn
@@ -13,15 +13,35 @@ from SourceCodeTools.models.nlp.TorchEncoder import LSTMEncoder, Encoder
 
 class GraphLinkSampler(ElementEmbedderBase, Scorer):
     def __init__(
-            self, elements, nodes, compact_dst=True, dst_to_global=True, emb_size=None, device="cpu",
+            self, elements, nodes, edges, compact_dst=True, dst_to_global=True, emb_size=None, device="cpu",
             method="inner_prod", nn_index="brute", ns_groups=None
     ):
         assert emb_size is not None
         ElementEmbedderBase.__init__(
             self, elements=elements, nodes=nodes, compact_dst=compact_dst, dst_to_global=dst_to_global
         )
+
+        valid_nodes = set(edges["src"].tolist()).intersection(set(edges["dst"].tolist()))
+
+        edges = edges[
+            edges["src"].apply(lambda x: x in valid_nodes)
+        ]
+        edges = edges[
+            edges["dst"].apply(lambda x: x in valid_nodes)
+        ]
+
+        num_unique_nodes = len(valid_nodes)
+        id2nodeid = dict(zip(nodes['id'].tolist(), nodes['global_graph_id'].tolist()))
+        src_global_id = edges["src"].apply(lambda x: id2nodeid[x])
+        dst_global_id = edges["dst"].apply(lambda x: id2nodeid[x])
+
+        edges_lookup = defaultdict(list)
+
+        for src_, dst_ in zip(src_global_id, dst_global_id):
+            edges_lookup[src_].append(dst_)
+
         Scorer.__init__(
-            self, num_embs=len(self.elements["dst"].unique()), emb_size=emb_size, src2dst=self.element_lookup,
+            self, num_embs=num_unique_nodes, emb_size=emb_size, src2dst=edges_lookup,
             device=device, method=method, index_backend=nn_index, ns_groups=ns_groups
         )
 
@@ -42,7 +62,7 @@ class ElementEmbedder(ElementEmbedderBase, nn.Module, Scorer):
                         src2dst=self.element_lookup)
 
         self.emb_size = emb_size
-        n_elems = self.elements['emb_id'].unique().size
+        n_elems = self.elements['dst'].unique().size
         self.embed = nn.Embedding(n_elems, emb_size)
         self.norm = nn.LayerNorm(emb_size)
 
