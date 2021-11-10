@@ -19,19 +19,19 @@ import numpy as np
 
 class GraphTextPrediction(SubwordEmbedderObjective):
     def __init__(
-            self, graph_model, node_embedder, nodes, data_loading_func, device,
+            self, graph_model, node_embedder, dataset, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
             measure_scores=False, dilate_scores=1
     ):
         super().__init__(
-            "GraphTextPrediction", graph_model, node_embedder, nodes, data_loading_func, device,
+            "GraphTextPrediction", graph_model, node_embedder, dataset, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
             masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores
         )
 
-    def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
+    def create_target_embedder(self, data_loading_func, nodes, edges, tokenizer_path):
         self.target_embedder = DocstringEmbedder(
             elements=data_loading_func(), nodes=nodes, emb_size=self.target_emb_size,
             tokenizer_path=tokenizer_path
@@ -40,20 +40,20 @@ class GraphTextPrediction(SubwordEmbedderObjective):
 
 class GraphTextGeneration(SubwordEmbedderObjective):
     def __init__(
-            self, graph_model, node_embedder, nodes, data_loading_func, device,
+            self, graph_model, node_embedder, dataset, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
             measure_scores=False, dilate_scores=1, max_len=20
     ):
         self.max_len = max_len + 2  # add pad and eos
         super().__init__(
-            "GraphTextGeneration", graph_model, node_embedder, nodes, data_loading_func, device,
+            "GraphTextGeneration", graph_model, node_embedder, dataset, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
             masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores
         )
 
-    def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
+    def create_target_embedder(self, data_loading_func, nodes, edges, tokenizer_path):
         self.target_embedder = TextGenerationTargetMapper(
             elements=data_loading_func(), nodes=nodes, emb_size=self.target_emb_size,
             tokenizer_path=tokenizer_path, max_len=self.max_len

@@ -54,6 +54,9 @@ class SamplingMultitaskTrainer:
             dataset, tokenizer_path, n_dims=model_params["h_dim"],
             pretrained_path=pretrained_embeddings_path, n_buckets=trainer_params["embedding_table_size"]
         )
+        if hasattr(dataset, "heldout"):
+            self.holdout = dataset.heldout
+            self.edges = dataset.edges
 
         self.summary_writer = SummaryWriter(self.model_base_path)
 
@@ -95,7 +98,7 @@ class SamplingMultitaskTrainer:
     def create_token_pred_objective(self, dataset, tokenizer_path):
         self.objectives.append(
             TokenNamePrediction(
-                self.graph_model, self.node_embedder, dataset.nodes,
+                self.graph_model, self.node_embedder, dataset,
                 dataset.load_token_prediction, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
@@ -107,13 +110,13 @@ class SamplingMultitaskTrainer:
     def create_node_name_objective(self, dataset, tokenizer_path):
         self.objectives.append(
             # GraphTextGeneration(
-            #     self.graph_model, self.node_embedder, dataset.nodes,
+            #     self.graph_model, self.node_embedder, dataset,
             #     dataset.load_node_names, self.device,
             #     self.sampling_neighbourhood_size, self.batch_size,
             #     tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size,
             # )
             NodeNamePrediction(
-                self.graph_model, self.node_embedder, dataset.nodes,
+                self.graph_model, self.node_embedder, dataset,
                 dataset.load_node_names, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
@@ -126,7 +129,7 @@ class SamplingMultitaskTrainer:
     def create_type_ann_objective(self, dataset, tokenizer_path):
         self.objectives.append(
             TypeAnnPrediction(
-                self.graph_model, self.node_embedder, dataset.nodes,
+                self.graph_model, self.node_embedder, dataset,
                 dataset.load_type_prediction, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
@@ -139,7 +142,7 @@ class SamplingMultitaskTrainer:
     def create_node_name_classifier_objective(self, dataset, tokenizer_path):
         self.objectives.append(
             NodeNameClassifier(
-                self.graph_model, self.node_embedder, dataset.nodes,
+                self.graph_model, self.node_embedder, dataset,
                 dataset.load_node_names, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size,
@@ -152,7 +155,7 @@ class SamplingMultitaskTrainer:
     def create_var_use_objective(self, dataset, tokenizer_path):
         self.objectives.append(
             VariableNameUsePrediction(
-                self.graph_model, self.node_embedder, dataset.nodes,
+                self.graph_model, self.node_embedder, dataset,
                 dataset.load_var_use, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
@@ -165,7 +168,7 @@ class SamplingMultitaskTrainer:
     def create_api_call_objective(self, dataset, tokenizer_path):
         self.objectives.append(
             NextCallPrediction(
-                self.graph_model, self.node_embedder, dataset.nodes,
+                self.graph_model, self.node_embedder, dataset,
                 dataset.load_api_call, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
@@ -179,7 +182,7 @@ class SamplingMultitaskTrainer:
 
         self.objectives.append(
             GlobalLinkPrediction(
-                self.graph_model, self.node_embedder, dataset.nodes,
+                self.graph_model, self.node_embedder, dataset,
                 dataset.load_global_edges_prediction, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="nn",
@@ -191,7 +194,7 @@ class SamplingMultitaskTrainer:
     def create_edge_objective(self, dataset, tokenizer_path):
         self.objectives.append(
             EdgePrediction(
-                self.graph_model, self.node_embedder, dataset.nodes,
+                self.graph_model, self.node_embedder, dataset,
                 dataset.load_edge_prediction, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type=self.trainer_params["metric"],
@@ -204,7 +207,7 @@ class SamplingMultitaskTrainer:
     def create_transr_objective(self, dataset, tokenizer_path):
         self.objectives.append(
             TransRObjective(
-                self.graph_model, self.node_embedder, dataset.nodes,
+                self.graph_model, self.node_embedder, dataset,
                 dataset.load_edge_prediction, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size,
@@ -218,7 +221,7 @@ class SamplingMultitaskTrainer:
     def create_text_prediction_objective(self, dataset, tokenizer_path):
         self.objectives.append(
             GraphTextPrediction(
-                self.graph_model, self.node_embedder, dataset.nodes,
+                self.graph_model, self.node_embedder, dataset,
                 dataset.load_docstring, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
@@ -230,7 +233,7 @@ class SamplingMultitaskTrainer:
     def create_text_generation_objective(self, dataset, tokenizer_path):
         self.objectives.append(
             GraphTextGeneration(
-                self.graph_model, self.node_embedder, dataset.nodes,
+                self.graph_model, self.node_embedder, dataset,
                 dataset.load_docstring, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size,
@@ -241,7 +244,7 @@ class SamplingMultitaskTrainer:
         self.objectives.append(
             NodeClassifierObjective(
                 "NodeTypeClassifier",
-                self.graph_model, self.node_embedder, dataset.nodes,
+                self.graph_model, self.node_embedder, dataset,
                 dataset.load_node_classes, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size,
@@ -389,9 +392,10 @@ class SamplingMultitaskTrainer:
         write_best_model = False
 
         for objective in self.objectives:
-            with torch.set_grad_enabled(False):
-                self.compute_embeddings_for_scorer(objective)
-                objective.target_embedder.prepare_index()  # need this to update sampler for the next epoch
+            if not self.trainer_params["force_w2v_ns"]:
+                with torch.set_grad_enabled(False):
+                    self.compute_embeddings_for_scorer(objective)
+                    objective.target_embedder.prepare_index()  # need this to update sampler for the next epoch
 
         for epoch in range(self.epoch, self.epochs):
             self.epoch = epoch
@@ -425,7 +429,8 @@ class SamplingMultitaskTrainer:
                 for ind, (objective, (input_nodes, seeds, blocks)) in enumerate(zip(self.objectives, loaders)):
                     blocks = [blk.to(self.device) for blk in blocks]
 
-                    objective.target_embedder.prepare_index()
+                    if not self.trainer_params["force_w2v_ns"]:
+                        objective.target_embedder.prepare_index()
 
                     # do_break = False
                     # for block in blocks:
@@ -576,11 +581,16 @@ class SamplingMultitaskTrainer:
                 # train_scores = objective.evaluate("train")
                 val_scores = objective.evaluate("val")
                 test_scores = objective.evaluate("test")
+                if hasattr(self, "holdout"):
+                    objective.set_edges(self.edges)
+                    holdout_scores = objective.evaluate_holdout(self.holdout)
                 
                 summary = {}
                 # add_to_summary(summary, "train", objective.name, train_scores, postfix="final")
                 add_to_summary(summary, "val", objective.name, val_scores, postfix="final")
                 add_to_summary(summary, "test", objective.name, test_scores, postfix="final")
+                # if hasattr(self, "holdout"):
+                #     add_to_summary(summary, "holdout", objective.name, holdout_scores, postfix="final")
                 
                 summary_dict.update(summary)
 
