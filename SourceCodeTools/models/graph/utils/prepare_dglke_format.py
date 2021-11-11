@@ -47,10 +47,31 @@ def main():
         args.dataset_path, use_extra_objectives=args.extra_objectives
     )
 
-    nodes, edges = load_data(nodes_path, edges_path)
-    nodes, edges, holdout = SourceGraphDataset.holdout(nodes, edges)
-    edges = edges.astype({"src": 'str', "dst": "str", "type": 'str'})[['src', 'dst', 'type']]
-    holdout = holdout.astype({"src": 'str', "dst": "str", "type": 'str'})[['src', 'dst', 'type']]
+    dataset = SourceGraphDataset(
+        # args.node_path, args.edge_path,
+        args.dataset_path,
+        label_from="type",
+        use_node_types=False,
+        use_edge_types=True,
+        filter=None,
+        self_loops=False,
+        train_frac=0.99,
+        tokenizer_path=None,
+        random_seed=42,
+        min_count_for_objectives=2,
+        no_global_edges=True,
+        remove_reverse=False,
+        custom_reverse=None,
+        package_names=None,
+        restricted_id_pool=None,
+        use_ns_groups=False
+    )
+
+    # nodes, edges = load_data(nodes_path, edges_path)
+    # nodes, edges, holdout = SourceGraphDataset.holdout(nodes, edges)
+    nodes = dataset.nodes
+    edges = dataset.edges.astype({"src": 'str', "dst": "str", "type": 'str'})[['src', 'dst', 'type']]
+    holdout = dataset.heldout.astype({"src": 'str', "dst": "str", "type": 'str'})[['src', 'dst', 'type']]
 
     node2graph_id = compact_property(nodes['id'])
     nodes['global_graph_id'] = nodes['id'].apply(lambda x: node2graph_id[x])
