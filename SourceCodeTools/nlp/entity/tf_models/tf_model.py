@@ -33,6 +33,7 @@ from SourceCodeTools.models.nlp.TFEncoder import DefaultEmbedding, TextCnnEncode
 
 class T5Encoder(Model):
     def __init__(self):
+        super(T5Encoder, self).__init__()
         from transformers.models.t5.modeling_tf_t5 import T5Config, TFT5MainLayer
         self.adapter = Dense(40, activation=tf.nn.relu)
         self.t5_config = T5Config(d_model=40, d_ff=40, num_layers=1, num_decoder_layers=1, num_heads=1, is_encoder_decoder=False,d_kv=40)
@@ -145,7 +146,7 @@ class TypePredictor(Model):
         assert mask is not None, "Mask is required"
 
         tok_emb = self.tok_emb(token_ids)
-        graph_emb = self.graph_emb(graph_ids)
+        # graph_emb = self.graph_emb(graph_ids)
         prefix_emb = self.prefix_emb(prefix_ids)
         suffix_emb = self.suffix_emb(suffix_ids)
 
@@ -158,7 +159,7 @@ class TypePredictor(Model):
         # if target is None:
         #     logits = self.decoder.seq_decode(encoded, training=training, mask=mask)
         # else:
-        encoded = tf.concat([encoded, graph_emb], axis=-1)
+        # encoded = tf.concat([encoded, graph_emb], axis=-1)
         logits, _ = self.decoder((encoded, target), training=training, mask=mask) # consider sending input instead of target
 
         return logits
@@ -269,7 +270,10 @@ def train_step_finetune(model, optimizer, token_ids, prefix, suffix, graph_ids, 
     return loss, p, r, f1
 
 # @tf.function
-def test_step(model, token_ids, prefix, suffix, graph_ids, labels, lengths, extra_mask=None, class_weights=None, scorer=None):
+def test_step(
+        model, token_ids, prefix, suffix, graph_ids, labels, lengths, extra_mask=None, class_weights=None, scorer=None,
+        no_localization=False
+):
     """
 
     :param model: TypePrediction model instance
@@ -320,7 +324,7 @@ def test(model, test_batches, scorer=None):
 
 def train(
         model, train_batches, test_batches, epochs, report_every=10, scorer=None, learning_rate=0.01,
-        learning_rate_decay=1., finetune=False, summary_writer=None, save_ckpt_fn=None
+        learning_rate_decay=1., finetune=False, summary_writer=None, save_ckpt_fn=None, no_localization=False
 ):
 
     assert summary_writer is not None
@@ -355,7 +359,8 @@ def train(
                     loss, p, r, f1 = train_step_finetune(
                         model=model, optimizer=optimizer, token_ids=batch['tok_ids'],
                         prefix=batch['prefix'], suffix=batch['suffix'], graph_ids=batch['graph_ids'],
-                        labels=batch['tags'], lengths=batch['lens'], extra_mask=batch['hide_mask'],
+                        labels=batch['tags'], lengths=batch['lens'],
+                        extra_mask=batch['no_loc_mask'] if no_localization else batch['hide_mask'],
                         # class_weights=batch['class_weights'],
                         scorer=scorer, finetune=finetune and e/epochs > 0.6
                     )
@@ -379,7 +384,8 @@ def train(
                     test_loss, test_p, test_r, test_f1 = test_step(
                         model=model, token_ids=batch['tok_ids'],
                         prefix=batch['prefix'], suffix=batch['suffix'], graph_ids=batch['graph_ids'],
-                        labels=batch['tags'], lengths=batch['lens'], extra_mask=batch['hide_mask'],
+                        labels=batch['tags'], lengths=batch['lens'],
+                        extra_mask=batch['no_loc_mask'] if no_localization else batch['hide_mask'],
                         # class_weights=batch['class_weights'],
                         scorer=scorer
                     )

@@ -41,24 +41,19 @@ def compute_precision_recall_f1(tp, fp, fn, eps=1e-8):
 
 def localized_f1(pred_spans, true_spans, eps=1e-8):
 
-    def span_inside(predicted, correct):
-        return predicted[0] <= correct[0] and correct[1] <= predicted[1]
-
     tp = 0.
     fp = 0.
     fn = 0.
 
-    was_hit = [0.] * len(true_spans)
-
-    for p_span in pred_spans:
-        for ind, t_span in enumerate(true_spans):
-            if span_inside(p_span, t_span):
+    for pred, true in zip(pred_spans, true_spans):
+        if true != "O":
+            if true == pred:
                 tp += 1
-                was_hit[ind] = 1.
-        else:
-            fp += 1
-
-    fn = len(true_spans) - sum(was_hit)
+            else:
+                if pred == "O":
+                    fn += 1
+                else:
+                    fp += 1
 
     return compute_precision_recall_f1(tp, fp, fn)
 
@@ -71,7 +66,7 @@ def span_f1(pred_spans, true_spans, eps=1e-8):
     return compute_precision_recall_f1(tp, fp, fn)
 
 
-def scorer(pred, labels, tagmap, localize=True, eps=1e-8):
+def scorer(pred, labels, tagmap, no_localization=False, eps=1e-8):
     """
     Compute f1 score, precision, and recall from BILUO labels
     :param pred: predicted BILUO labels
@@ -86,13 +81,13 @@ def scorer(pred, labels, tagmap, localize=True, eps=1e-8):
     pred_biluo = [tagmap.inverse(p) for p in pred]
     labels_biluo = [tagmap.inverse(p) for p in labels]
 
-    pred_spans = set(parse_biluo(pred_biluo))
-    true_spans = set(parse_biluo(labels_biluo))
+    if not no_localization:
+        pred_spans = set(parse_biluo(pred_biluo))
+        true_spans = set(parse_biluo(labels_biluo))
 
-    if localize:
         precision, recall, f1 = span_f1(pred_spans, true_spans, eps=eps)
     else:
-        precision, recall, f1 = localized_f1(pred_spans, true_spans, eps=eps)
+        precision, recall, f1 = localized_f1(pred_biluo, labels_biluo, eps=eps)
 
     return precision, recall, f1
 
@@ -115,7 +110,8 @@ def write_config(trial_dir, params, extra_params=None):
 
 class ModelTrainer:
     def __init__(self, train_data, test_data, params, graph_emb_path=None, word_emb_path=None,
-            output_dir=None, epochs=30, batch_size=32, seq_len=100, finetune=False, trials=1):
+            output_dir=None, epochs=30, batch_size=32, seq_len=100, finetune=False, trials=1,
+            no_localization=False):
         self.set_batcher_class()
         self.set_model_class()
 
@@ -130,6 +126,7 @@ class ModelTrainer:
         self.finetune = finetune
         self.trials = trials
         self.seq_len = seq_len
+        self.no_localization = no_localization
 
     def set_batcher_class(self):
         self.batcher = PythonBatcher
@@ -164,14 +161,15 @@ class ModelTrainer:
             self.train_data, self.batch_size, seq_len=self.seq_len,
             graphmap=graph_emb.ind if graph_emb is not None else None,
             wordmap=word_emb.ind, tagmap=None,
-            class_weights=False, element_hash_size=suffix_prefix_buckets
+            class_weights=False, element_hash_size=suffix_prefix_buckets, no_localization=self.no_localization
         )
         test_batcher = self.get_batcher(
             self.test_data, self.batch_size, seq_len=self.seq_len,
             graphmap=graph_emb.ind if graph_emb is not None else None,
             wordmap=word_emb.ind,
             tagmap=train_batcher.tagmap,  # use the same mapping
-            class_weights=False, element_hash_size=suffix_prefix_buckets  # class_weights are not used for testing
+            class_weights=False, element_hash_size=suffix_prefix_buckets,  # class_weights are not used for testing
+            no_localization=self.no_localization
         )
         return train_batcher, test_batcher
 
@@ -205,20 +203,10 @@ class ModelTrainer:
                 checkpoint_path = os.path.join(trial_dir, "checkpoint")
                 model.save_weights(checkpoint_path)
 
-            train_losses, train_f1, test_losses, test_f1_ = self.train(
+            train_losses, train_f1, test_losses, test_f1 = self.train(
                 model=model, train_batches=train_batcher, test_batches=test_batcher,
-                epochs=self.epochs, learning_rate=lr, scorer=lambda pred, true: scorer(pred, true, train_batcher.tagmap),
-                learning_rate_decay=lr_decay, finetune=self.finetune, save_ckpt_fn=save_ckpt_fn
-            )
-
-            test_loss, test_p, test_r, test_f1 = self.test(
-                model=model, test_batches=test_batcher,
-                scorer=lambda pred, true: scorer(pred, true, train_batcher.tagmap),
-            )
-
-            _, test_p_no_loc, test_r_no_loc, test_f1_no_loc = self.test(
-                model=model, test_batches=test_batcher,
-                scorer=lambda pred, true: scorer(pred, true, train_batcher.tagmap, localize=False),
+                epochs=self.epochs, learning_rate=lr, scorer=lambda pred, true: scorer(pred, true, train_batcher.tagmap, no_localization=self.no_localization),
+                learning_rate_decay=lr_decay, finetune=self.finetune, save_ckpt_fn=save_ckpt_fn, no_localization=self.no_localization
             )
 
             # checkpoint_path = os.path.join(trial_dir, "checkpoint")
@@ -229,11 +217,6 @@ class ModelTrainer:
                 "train_f1": train_f1,
                 "test_losses": test_losses,
                 "test_f1": test_f1,
-                "test_precision": test_p,
-                "test_recall": test_r,
-                "test_f1_no_loc": test_f1_no_loc,
-                "test_precision_no_loc": test_p_no_loc,
-                "test_recall_no_loc": test_r_no_loc,
                 "learning_rate": lr,
                 "learning_rate_decay": lr_decay,
                 "epochs": self.epochs,
@@ -242,7 +225,7 @@ class ModelTrainer:
                 "batch_size": self.batch_size
             }
 
-            print("Maximum f1:", max(test_f1_))
+            print("Maximum f1:", max(test_f1))
 
             # write_config(trial_dir, params, extra_params={"suffix_prefix_buckets": suffix_prefix_buckets, "seq_len": seq_len})
 
@@ -285,6 +268,7 @@ def get_type_prediction_arguments():
     parser.add_argument('--trials', dest='trials', default=1, type=int,
                         help='')
     parser.add_argument('--finetune', action='store_true')
+    parser.add_argument('--no_localization', action='store_true')
     parser.add_argument('model_output',
                         help='')
 
@@ -328,6 +312,6 @@ if __name__ == "__main__":
         trainer = ModelTrainer(
             train_data, test_data, params, graph_emb_path=args.graph_emb_path, word_emb_path=args.word_emb_path,
             output_dir=output_dir, epochs=args.epochs, batch_size=args.batch_size,
-            finetune=args.finetune, trials=args.trials, seq_len=args.max_seq_len,
+            finetune=args.finetune, trials=args.trials, seq_len=args.max_seq_len, no_localization=args.no_localization
         )
         trainer.train_model()

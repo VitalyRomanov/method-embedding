@@ -3,12 +3,13 @@ import os
 import shelve
 import shutil
 import tempfile
+from collections import defaultdict
 from functools import lru_cache
 from math import ceil
 from typing import Dict, Optional, List
 
 import spacy
-from spacy.gold import biluo_tags_from_offsets
+from spacy.gold import biluo_tags_from_offsets as spacy_biluo_tags_from_offsets
 
 from SourceCodeTools.code.ast_tools import get_declarations
 from SourceCodeTools.models.ClassWeightNormalizer import ClassWeightNormalizer
@@ -18,6 +19,29 @@ from SourceCodeTools.nlp.entity.annotator.annotator_utils import adjust_offsets
 from SourceCodeTools.nlp.entity.utils import overlap
 
 import numpy as np
+
+
+def biluo_tags_from_offsets(doc, ents, no_localization):
+    ent_tags = spacy_biluo_tags_from_offsets(doc, ents)
+
+    if no_localization:
+        tags = []
+        for ent in ent_tags:
+            parts = ent.split("-")
+
+            assert len(parts) <= 2
+
+            if len(parts) == 2:
+                if parts[0] == "B" or parts[0] == "U":
+                    tags.append(parts[1])
+                else:
+                    tags.append("O")
+            else:
+                tags.append("O")
+
+        ent_tags = tags
+
+    return ent_tags
 
 def filter_unlabeled(entities, declarations):
     """
@@ -46,7 +70,7 @@ class PythonBatcher:
             self, data, batch_size: int, seq_len: int,
             wordmap: Dict[str, int], *, graphmap: Optional[Dict[str, int]], tagmap: Optional[TagMap] = None,
             mask_unlabeled_declarations=True,
-            class_weights=False, element_hash_size=1000, len_sort=True, tokenizer="spacy"
+            class_weights=False, element_hash_size=1000, len_sort=True, tokenizer="spacy", no_localization=False
     ):
 
         self.create_cache()
@@ -59,6 +83,7 @@ class PythonBatcher:
         self.tokenizer = tokenizer
         if tokenizer == "codebert":
             self.vocab = spacy.blank("en").vocab
+        self.no_localization = no_localization
 
         self.nlp = create_tokenizer(tokenizer)
         if tagmap is None:
@@ -161,10 +186,10 @@ class PythonBatcher:
             if self.mask_unlabeled_declarations:
                 unlabeled_dec = adjust_offsets(unlabeled_dec, -3)
 
-        ents_tags = biluo_tags_from_offsets(doc, ents)
-        repl_tags = biluo_tags_from_offsets(doc, repl)
+        ents_tags = biluo_tags_from_offsets(doc, ents, self.no_localization)
+        repl_tags = biluo_tags_from_offsets(doc, repl, self.no_localization)
         if self.mask_unlabeled_declarations:
-            unlabeled_dec = biluo_tags_from_offsets(doc, unlabeled_dec)
+            unlabeled_dec = biluo_tags_from_offsets(doc, unlabeled_dec, self.no_localization)
 
         fix_incorrect_tags(ents_tags)
         fix_incorrect_tags(repl_tags)
@@ -227,6 +252,8 @@ class PythonBatcher:
         if r is not None:
             assert len(r) == len(s)
 
+        no_localization_mask = np.array([tag != self.tagpad for tag in t]).astype(np.bool)
+
         output = {
             "tok_ids": s,
             "replacements": repl,
@@ -236,6 +263,7 @@ class PythonBatcher:
             "tags": t,
             "class_weights": classw,
             "hide_mask": hidem,
+            "no_loc_mask": no_localization_mask,
             "lens": len(sent) if len(sent) < self.seq_len else self.seq_len
         }
 
@@ -246,10 +274,11 @@ class PythonBatcher:
         return output
 
     def format_batch(self, batch):
-        fbatch = {
-            "tok_ids": [], "graph_ids": [], "prefix": [], "suffix": [],
-            "tags": [], "class_weights": [], "hide_mask": [], "lens": [], "replacements": []
-        }
+        # fbatch = {
+        #     "tok_ids": [], "graph_ids": [], "prefix": [], "suffix": [],
+        #     "tags": [], "class_weights": [], "hide_mask": [], "lens": [], "replacements": []
+        # }
+        fbatch = defaultdict(list)
 
         for sent in batch:
             for key, val in sent.items():
