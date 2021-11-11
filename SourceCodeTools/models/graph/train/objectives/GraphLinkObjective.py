@@ -6,13 +6,13 @@ from SourceCodeTools.models.graph.train.objectives.AbstractObjective import Abst
 
 class GraphLinkObjective(AbstractObjective):
     def __init__(
-            self, name, graph_model, node_embedder, dataset, data_loading_func, device,
+            self, name, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
             measure_scores=False, dilate_scores=1, nn_index="brute", ns_groups=None
     ):
         super(GraphLinkObjective, self).__init__(
-            name, graph_model, node_embedder, dataset, data_loading_func, device,
+            name, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
             masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores, nn_index=nn_index,
@@ -25,8 +25,8 @@ class GraphLinkObjective(AbstractObjective):
     def verify_parameters(self):
         pass
 
-    def create_target_embedder(self, data_loading_func, nodes, edges, tokenizer_path):
-        self.create_graph_link_sampler(data_loading_func, nodes, edges)
+    def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
+        self.create_graph_link_sampler(data_loading_func, nodes)
 
     def parameters(self, recurse: bool = True):
         return self.link_predictor.parameters()
@@ -45,7 +45,7 @@ class GraphLinkObjective(AbstractObjective):
 
 # class GraphLinkTypeObjective(GraphLinkObjective):
 #     def __init__(
-#             self, name, graph_model, node_embedder, dataset, data_loading_func, device,
+#             self, name, graph_model, node_embedder, nodes, data_loading_func, device,
 #             sampling_neighbourhood_size, batch_size,
 #             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
 #             measure_scores=False, dilate_scores=1
@@ -53,7 +53,7 @@ class GraphLinkObjective(AbstractObjective):
 #         self.set_num_classes(data_loading_func)
 #
 #         super(GraphLinkObjective, self).__init__(
-#             name, graph_model, node_embedder, dataset, data_loading_func, device,
+#             name, graph_model, node_embedder, nodes, data_loading_func, device,
 #             sampling_neighbourhood_size, batch_size,
 #             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
 #             masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores
