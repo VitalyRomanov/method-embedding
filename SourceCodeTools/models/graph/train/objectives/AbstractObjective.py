@@ -83,7 +83,7 @@ class AbstractObjective(nn.Module):
     # ntypes = None
 
     def __init__(
-            self, name, graph_model, node_embedder, dataset, data_loading_func, device,
+            self, name, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
             measure_scores=False, dilate_scores=1, early_stopping=False, early_stopping_tolerance=20, nn_index="brute",
@@ -109,16 +109,13 @@ class AbstractObjective(nn.Module):
 
         self.verify_parameters()
 
-        self.create_target_embedder(data_loading_func, dataset.nodes, dataset.edges, tokenizer_path)
+        self.create_target_embedder(data_loading_func, nodes, tokenizer_path)
         self.create_link_predictor()
         self.create_loaders()
 
         self.target_embedding_fn = self.get_targets_from_embedder
         self.negative_factor = 1
         self.update_embeddings_for_queries = True
-
-    def set_edges(self, edges):
-        self.edges = edges
 
     @abstractmethod
     def verify_parameters(self):
@@ -129,9 +126,9 @@ class AbstractObjective(nn.Module):
             elements=data_loading_func(), nodes=nodes, compact_dst=False, dst_to_global=True
         )
 
-    def create_graph_link_sampler(self, data_loading_func, nodes, edges):
+    def create_graph_link_sampler(self, data_loading_func, nodes):
         self.target_embedder = GraphLinkSampler(
-            elements=data_loading_func(), nodes=nodes, edges=edges, compact_dst=False, dst_to_global=True,
+            elements=data_loading_func(), nodes=nodes, compact_dst=False, dst_to_global=True,
             emb_size=self.target_emb_size, device=self.device, method=self.link_predictor_type, nn_index=self.nn_index,
             ns_groups=self.ns_groups
         )
@@ -143,9 +140,9 @@ class AbstractObjective(nn.Module):
         ).to(self.device)
 
     @abstractmethod
-    def create_target_embedder(self, data_loading_func, nodes, edges, tokenizer_path):
+    def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
         # self.create_base_element_sampler(data_loading_func, nodes)
-        # self.create_graph_link_sampler(data_loading_func, nodes, edges)
+        # self.create_graph_link_sampler(data_loading_func, nodes)
         # self.create_subword_embedder(data_loading_func, nodes, tokenizer_path)
         raise NotImplementedError()
 
@@ -639,62 +636,6 @@ class AbstractObjective(nn.Module):
         return scores
         # return total_loss / count, total_acc / count, {key: val / ndcg_count for key, val in
         #                                                total_ndcg.items()} if self.measure_scores else None
-
-    def format_holdout_targets(self, targets):
-        return set(item[0] for item in targets)
-
-    def evaluate_holdout(self, holdout, neg_sampling_strategy=None, negative_factor=1):
-
-        allowed = set(self.target_embedder.scorer_key_order.keys())
-
-        holdout = holdout[
-            holdout["src_typed_id"].apply(lambda x: x in allowed)
-        ]
-        holdout = holdout[
-            holdout["dst_typed_id"].apply(lambda x: x in allowed)
-        ]
-
-        src = {"node_": holdout["src_typed_id"].values}
-
-        true_lookup = defaultdict(list)
-        for src_, dst_ in zip(holdout["src_typed_id"], zip(holdout["dst_typed_id"], holdout["type"])):
-            true_lookup[src_].append(dst_)
-
-        at = [1, 3, 5, 10]
-        count = 0
-
-        sampler = dgl.dataloading.MultiLayerFullNeighborSampler(self.graph_model.num_layers)
-        loader = dgl.dataloading.NodeDataLoader(self.graph_model.g, src, sampler, batch_size=1, num_workers=0)
-
-        scores = defaultdict(list)
-
-        for ind, (input_nodes, seeds, blocks) in enumerate(tqdm(
-                loader, total=len(holdout) // 1 + 1
-        )):
-            blocks = [blk.to(self.device) for blk in blocks]
-
-            if self.masker is None:
-                masked = None
-            else:
-                masked = self.masker.get_mask(self.seeds_to_python(seeds))
-
-            src_embs = self._graph_embeddings(input_nodes, blocks, masked=masked)
-
-            true = [self.format_holdout_targets(true_lookup[seed]) for seed in seeds.tolist()]
-
-            if self.measure_scores:
-                if count % self.dilate_scores == 0:
-                    scores_ = self.target_embedder.score_candidates_with_ids(self.seeds_to_global(seeds), src_embs,
-                                                                 self.link_predictor, at=at,
-                                                                 type=self.link_predictor_type, device=self.device,
-                                                                    positive_candidates=true)
-                    for key, val in scores_.items():
-                        scores[key].append(val)
-
-            count += 1
-
-        scores = {key: sum_scores(val) for key, val in scores.items()}
-        return scores
 
     # def _evaluate_embedder(self, ee, lp, data_split, neg_sampling_factor=1):
     #

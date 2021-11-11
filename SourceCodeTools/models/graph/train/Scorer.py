@@ -92,9 +92,6 @@ class Scorer:
         :param neighbours_to_sample: default number of neighbours
         :param index_backend: Choose between sklearn and faiss
         """
-
-        from itertools import chain
-        num_embs = len(set(src2dst.keys()) | set(chain(*src2dst.values())))
         self.scorer_num_emb = num_embs
         self.scorer_emb_size = emb_size
         self.scorer_src2dst = src2dst  # mapping from src to all possible dst
@@ -302,7 +299,6 @@ class Scorer:
 
         for key in self.scorer_src2dst:
             cand = self.scorer_src2dst[key]
-            all_keys.add(key)
             for c in cand:
                 if isinstance(c, tuple):  # happens with graphlinkclassifier objectives
                     all_keys.add(c[0])
@@ -418,71 +414,6 @@ class Scorer:
         to_score_ids = to_score_ids.tolist()
 
         candidates = self.get_gt_candidates(to_score_ids)  # positive candidates
-        # keys_to_score_against = self.get_cand_to_score_against(to_score_ids)
-        keys_to_score_against = self.get_keys_for_scoring()
-
-        y_true = self.get_y_true_from_candidates(candidates, keys_to_score_against)
-
-        embs_to_score_against = self.get_embeddings_for_scoring(device=to_score_embs.device)
-
-        if type == "nn":
-            has_types = isinstance(y_true[0], dict)
-
-            y_pred = self.score_candidates_lp(
-                to_score_ids, to_score_embs, keys_to_score_against, embs_to_score_against,
-                link_predictor, at=at, with_types=y_true if has_types else None
-            )
-        elif type == "inner_prod":
-            y_pred = self.score_candidates_cosine(
-                to_score_ids, to_score_embs, keys_to_score_against, embs_to_score_against, at=at
-            )
-        elif type == "l2":
-            y_pred = self.score_candidates_l2(
-                to_score_ids, to_score_embs, keys_to_score_against, embs_to_score_against, at=at
-            )
-        else:
-            raise ValueError(f"`type` can be either `nn` or `inner_prod` but `{type}` given")
-
-        has_types = isinstance(y_pred[0], dict)
-
-        if has_types:
-            y_true = self.flatten_pred(y_true)
-            y_pred = self.flatten_pred(y_pred)
-
-        scores = {}
-        # y_true_onehot = np.array(y_true)
-        # labels=list(range(y_true_onehot.shape[1]))
-
-        if isinstance(at, Iterable):
-            scores.update({f"hits@{k}": self.hits_at_k(y_true, y_pred, k=k) for k in at})
-            scores.update({f"ndcg@{k}": ndcg_score(y_true, y_pred, k=k) for k in at})
-            # scores = {f"ndcg@{k}": ndcg_score(y_true, y_pred, k=k) for k in at}
-        else:
-            scores.update({f"hits@{at}": self.hits_at_k(y_true, y_pred, k=at)})
-            scores.update({f"ndcg@{at}": ndcg_score(y_true, y_pred, k=at)})
-            # scores = {f"ndcg@{at}": ndcg_score(y_true, y_pred, k=at)}
-
-        mr, mrr = self.mean_rank(y_true, y_pred)
-        map = self.mean_average_precision(y_true, y_pred)
-        scores["mr"] = mr
-        scores["mrr"] = mrr
-        scores["map"] = map
-        scores["scoring_time"] = time.time() - start
-        return scores
-
-    def score_candidates_with_ids(self, to_score_ids, to_score_embs, link_predictor=None, at=None, type=None, device="cpu", positive_candidates=None):
-
-        if at is None:
-            at = [1, 3, 5, 10]
-
-        start = time.time()
-
-        to_score_ids = to_score_ids.tolist()
-
-        if positive_candidates is None:
-            candidates = self.get_gt_candidates(to_score_ids)  # positive candidates
-        else:
-            candidates = positive_candidates
         # keys_to_score_against = self.get_cand_to_score_against(to_score_ids)
         keys_to_score_against = self.get_keys_for_scoring()
 

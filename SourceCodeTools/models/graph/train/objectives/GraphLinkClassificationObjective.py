@@ -1,5 +1,3 @@
-from collections import defaultdict
-
 import numpy as np
 import random as rnd
 import torch
@@ -17,13 +15,13 @@ from SourceCodeTools.tabular.common import compact_property
 
 class GraphLinkClassificationObjective(GraphLinkObjective):
     def __init__(
-            self, name, graph_model, node_embedder, dataset, data_loading_func, device,
+            self, name, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
             measure_scores=False, dilate_scores=1, ns_groups=None
     ):
         super().__init__(
-            name, graph_model, node_embedder, dataset, data_loading_func, device,
+            name, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
             masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores, ns_groups=ns_groups
@@ -31,9 +29,9 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
         self.measure_scores = True
         self.update_embeddings_for_queries = True
 
-    def create_graph_link_sampler(self, data_loading_func, nodes, edges):
+    def create_graph_link_sampler(self, data_loading_func, nodes):
         self.target_embedder = TargetLinkMapper(
-            elements=data_loading_func(), nodes=nodes, edges=edges, emb_size=self.target_emb_size, ns_groups=self.ns_groups
+            elements=data_loading_func(), nodes=nodes, emb_size=self.target_emb_size, ns_groups=self.ns_groups
         )
 
     def create_link_predictor(self):
@@ -61,13 +59,13 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
 
 class TransRObjective(GraphLinkClassificationObjective):
     def __init__(
-            self, graph_model, node_embedder, dataset, data_loading_func, device,
+            self, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
             measure_scores=False, dilate_scores=1, ns_groups=None
     ):
         super().__init__(
-            "TransR", graph_model, node_embedder, dataset, data_loading_func, device,
+            "TransR", graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
             masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores, ns_groups=ns_groups
@@ -96,22 +94,27 @@ class TransRObjective(GraphLinkClassificationObjective):
         return acc, loss
 
 class TargetLinkMapper(GraphLinkSampler):
-    def __init__(self, elements, nodes, edges, emb_size=1, ns_groups=None):
+    def __init__(self, elements, nodes, emb_size=1, ns_groups=None):
         super(TargetLinkMapper, self).__init__(
-            elements, nodes, edges, compact_dst=False, dst_to_global=True, emb_size=emb_size, ns_groups=ns_groups
+            elements, nodes, compact_dst=False, dst_to_global=True, emb_size=emb_size, ns_groups=ns_groups
         )
 
     def init(self, compact_dst):
         if compact_dst:
             elem2id, self.inverse_dst_map = compact_property(self.elements['dst'], return_order=True)
-            self.elements['dst'] = self.elements['dst'].apply(lambda x: elem2id[x])
+            self.elements['emb_id'] = self.elements['dst'].apply(lambda x: elem2id[x])
+        else:
+            self.elements['emb_id'] = self.elements['dst']
 
         self.link_type2id, self.inverse_link_type_map = compact_property(self.elements['type'], return_order=True, index_from_one=True)
         self.elements["link_type"] = list(map(lambda x: self.link_type2id[x], self.elements["type"].tolist()))
 
-        self.element_lookup = defaultdict(list)
-        for src, dst, link_type in self.elements[["src", "dst", "link_type"]].values:
-            self.element_lookup[src].append((dst, link_type))
+        self.element_lookup = {}
+        for id_, emb_id, link_type in self.elements[["id", "emb_id", "link_type"]].values:
+            if id_ in self.element_lookup:
+                self.element_lookup[id_].append((emb_id, link_type))
+            else:
+                self.element_lookup[id_] = [(emb_id, link_type)]
 
         self.init_neg_sample()
         self.num_classes = len(self.inverse_link_type_map)

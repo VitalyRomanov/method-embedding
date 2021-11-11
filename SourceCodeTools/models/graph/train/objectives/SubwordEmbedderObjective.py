@@ -7,13 +7,13 @@ from SourceCodeTools.models.graph.train.objectives.AbstractObjective import Abst
 
 class SubwordEmbedderObjective(AbstractObjective):
     def __init__(
-            self, name, graph_model, node_embedder, dataset, data_loading_func, device,
+            self, name, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
             measure_scores=False, dilate_scores=1, nn_index="brute"
     ):
         super(SubwordEmbedderObjective, self).__init__(
-            name, graph_model, node_embedder, dataset, data_loading_func, device,
+            name, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
             masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores, nn_index=nn_index
@@ -26,7 +26,7 @@ class SubwordEmbedderObjective(AbstractObjective):
         if self.link_predictor_type == "inner_prod":
             assert self.target_emb_size == self.graph_model.emb_size, "Graph embedding and target embedder dimensionality should match for `inner_prod` type of link predictor."
 
-    def create_target_embedder(self, data_loading_func, nodes, edges, tokenizer_path):
+    def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
         self.create_subword_embedder(data_loading_func, nodes, tokenizer_path)
 
     def parameters(self, recurse: bool = True):

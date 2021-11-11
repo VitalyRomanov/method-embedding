@@ -231,6 +231,8 @@ class SourceGraphDataset:
 
         self.nodes, self.edges = load_data(nodes_path, edges_path)
 
+        # self.nodes, self.edges, self.holdout = self.holdout(self.nodes, self.edges)
+
         # index is later used for sampling and is assumed to be unique
         assert len(self.nodes) == len(self.nodes.index.unique())
         assert len(self.edges) == len(self.edges.index.unique())
@@ -271,8 +273,6 @@ class SourceGraphDataset:
         if not self.edges_have_types:
             self.edges['type'] = "edge_"
             self.edges = self.edges.astype({'type': 'category'})
-
-        self.nodes, self.edges, self.heldout = self.holdout(self.nodes, self.edges)
 
         # compact labels
         # self.nodes['label'] = self.nodes[label_from]
@@ -569,9 +569,6 @@ class SourceGraphDataset:
         edges = self.add_node_types_to_edges(nodes, edges)
 
         typed_node_id = dict(zip(nodes['id'], nodes['typed_id']))
-        if hasattr(self, "heldout"):
-            self.heldout["src_typed_id"] = self.heldout["src"].apply(lambda old_id: typed_node_id[old_id])
-            self.heldout["dst_typed_id"] = self.heldout["dst"].apply(lambda old_id: typed_node_id[old_id])
 
         possible_edge_signatures = edges[['src_type', 'type', 'dst_type']].drop_duplicates(
             ['src_type', 'type', 'dst_type']
@@ -647,7 +644,7 @@ class SourceGraphDataset:
         return nodes, edges
 
     @classmethod
-    def holdout(cls, nodes: pd.DataFrame, edges: pd.DataFrame, holdout_size=1000, random_seed=42):
+    def holdout(cls, nodes: pd.DataFrame, edges: pd.DataFrame, holdout_size=10000, random_seed=42):
         """
         Create a set of holdout edges, ensure that there are no orphan nodes after these edges are removed.
         :param nodes:
@@ -657,22 +654,9 @@ class SourceGraphDataset:
         :return:
         """
 
-        original_edges = edges
-        edges = edges.copy()
         from collections import Counter
 
-        # degree_count = Counter(edges["src"].tolist()) | Counter(edges["dst"].tolist())
-        src_count = Counter(edges["src"].tolist())
-        dst_count = Counter(edges["dst"].tolist())
-
-        valid_nodes = set(src_count.keys()).intersection(set(dst_count.keys()))
-
-        edges = edges[
-            edges["src"].apply(lambda x: x in valid_nodes)
-        ]
-        edges = edges[
-            edges["dst"].apply(lambda x: x in valid_nodes)
-        ]
+        degree_count = Counter(edges["src"].tolist()) | Counter(edges["dst"].tolist())
 
         heldout = []
 
@@ -681,17 +665,11 @@ class SourceGraphDataset:
         numpy.random.seed(random_seed)
         numpy.random.shuffle(index)
 
-        dst_before = set(edges["dst"].tolist())
-        vertices_before = set(edges["src"].tolist()) | dst_before
-
         for i in index:
-            src_id = edges.loc[i]["src"]
-            dst_id = edges.loc[i]["dst"]
-            type = edges.loc[i]["type"]
-            if src_count[src_id] > 2 and dst_count[dst_id] > 2 and dst_count[src_id] > 1:
-                heldout.append(edges.loc[i]["id"])
-                src_count[src_id] -= 1
-                dst_count[dst_id] -= 1
+            src_id = edges.loc[i].src
+            if degree_count[src_id] > 2:
+                heldout.append(edges.loc[i].id)
+                degree_count[src_id] -= 1
                 if len(heldout) >= holdout_size:
                     break
 
@@ -700,19 +678,13 @@ class SourceGraphDataset:
         def is_held(id_):
             return id_ in heldout
 
-        train_edges = original_edges[
-            original_edges["id"].apply(lambda id_: not is_held(id_))
+        train_edges = edges[
+            edges["id"].apply(lambda id_: not is_held(id_))
         ]
 
         heldout_edges = edges[
             edges["id"].apply(is_held)
         ]
-
-        dst_after = set(train_edges["dst"].tolist())
-        vertices_after = set(train_edges["src"].tolist()) | dst_after
-
-        assert len(vertices_before - vertices_after) == 0
-        assert len(dst_before - dst_after) == 0
 
         assert len(edges) == edges["id"].unique().size
 
