@@ -58,9 +58,6 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
 
         return acc, loss
 
-    def format_holdout_targets(self, targets):
-        return set((item[0], self.target_embedder.link_type2id[item[1].strip("_")]) for item in targets)
-
 
 class TransRObjective(GraphLinkClassificationObjective):
     def __init__(
@@ -100,9 +97,6 @@ class TransRObjective(GraphLinkClassificationObjective):
 
 class TargetLinkMapper(GraphLinkSampler):
     def __init__(self, elements, nodes, edges, emb_size=1, ns_groups=None):
-        self.link_type2id, self.inverse_link_type_map = compact_property(
-            edges['type'].apply(lambda x: x.strip("_")).append(elements["type"]), return_order=True, index_from_one=True
-        )
         super(TargetLinkMapper, self).__init__(
             elements, nodes, edges, compact_dst=False, dst_to_global=True, emb_size=emb_size, ns_groups=ns_groups
         )
@@ -112,8 +106,7 @@ class TargetLinkMapper(GraphLinkSampler):
             elem2id, self.inverse_dst_map = compact_property(self.elements['dst'], return_order=True)
             self.elements['dst'] = self.elements['dst'].apply(lambda x: elem2id[x])
 
-        # self.link_type2id created in constructor
-        # self.link_type2id, self.inverse_link_type_map = compact_property(self.elements['type'], return_order=True, index_from_one=True)
+        self.link_type2id, self.inverse_link_type_map = compact_property(self.elements['type'], return_order=True, index_from_one=True)
         self.elements["link_type"] = list(map(lambda x: self.link_type2id[x], self.elements["type"].tolist()))
 
         self.element_lookup = defaultdict(list)
