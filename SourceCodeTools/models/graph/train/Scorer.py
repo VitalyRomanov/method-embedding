@@ -94,6 +94,7 @@ class Scorer:
         """
 
         from itertools import chain
+        num_embs = len(set(src2dst.keys()) | set(chain(*src2dst.values())))
         self.scorer_num_emb = num_embs
         self.scorer_emb_size = emb_size
         self.scorer_src2dst = src2dst  # mapping from src to all possible dst

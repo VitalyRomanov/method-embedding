@@ -37,15 +37,8 @@ class GraphLinkSampler(ElementEmbedderBase, Scorer):
 
         edges_lookup = defaultdict(list)
 
-        if hasattr(self, "link_type2id"):
-            types = edges["type"].apply(lambda x: self.link_type2id.get(x.strip("_"), -1))
-            assert -1 not in types
-
-            for src_, dst_, type in zip(src_global_id, dst_global_id, types):
-                edges_lookup[src_].append((dst_, type))
-        else:
-            for src_, dst_ in zip(src_global_id, dst_global_id):
-                edges_lookup[src_].append(dst_)
+        for src_, dst_ in zip(src_global_id, dst_global_id):
+            edges_lookup[src_].append(dst_)
 
         Scorer.__init__(
             self, num_embs=num_unique_nodes, emb_size=emb_size, src2dst=edges_lookup,

@@ -392,9 +392,10 @@ class SamplingMultitaskTrainer:
         write_best_model = False
 
         for objective in self.objectives:
-            with torch.set_grad_enabled(False):
-                self.compute_embeddings_for_scorer(objective)
-                objective.target_embedder.prepare_index()  # need this to update sampler for the next epoch
+            if not self.trainer_params["force_w2v_ns"]:
+                with torch.set_grad_enabled(False):
+                    self.compute_embeddings_for_scorer(objective)
+                    objective.target_embedder.prepare_index()  # need this to update sampler for the next epoch
 
         for epoch in range(self.epoch, self.epochs):
             self.epoch = epoch
@@ -428,7 +429,8 @@ class SamplingMultitaskTrainer:
                 for ind, (objective, (input_nodes, seeds, blocks)) in enumerate(zip(self.objectives, loaders)):
                     blocks = [blk.to(self.device) for blk in blocks]
 
-                    objective.target_embedder.prepare_index()
+                    if not self.trainer_params["force_w2v_ns"]:
+                        objective.target_embedder.prepare_index()
 
                     # do_break = False
                     # for block in blocks:
@@ -587,8 +589,8 @@ class SamplingMultitaskTrainer:
                 # add_to_summary(summary, "train", objective.name, train_scores, postfix="final")
                 add_to_summary(summary, "val", objective.name, val_scores, postfix="final")
                 add_to_summary(summary, "test", objective.name, test_scores, postfix="final")
-                if hasattr(self, "holdout"):
-                    add_to_summary(summary, "holdout", objective.name, holdout_scores, postfix="final")
+                # if hasattr(self, "holdout"):
+                #     add_to_summary(summary, "holdout", objective.name, holdout_scores, postfix="final")
                 
                 summary_dict.update(summary)
 
