@@ -99,6 +99,9 @@ def estimate_confusion(pred, true, save_path):
     pred_filtered = pred
     true_filtered = true
 
+    import matplotlib.pyplot as plt
+    plt.rcParams.update({'font.size': 50})
+
     labels = sorted(list(set(true_filtered + pred_filtered)))
     label2ind = dict(zip(labels, range(len(labels))))
 
@@ -113,7 +116,8 @@ def estimate_confusion(pred, true, save_path):
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(45,45))
-    im = ax.imshow(confusion)
+    from matplotlib.pyplot import cm
+    im = ax.imshow(confusion, interpolation='nearest', cmap=cm.Blues)
 
     # We want to show all ticks...
     ax.set_xticks(np.arange(len(labels)))
