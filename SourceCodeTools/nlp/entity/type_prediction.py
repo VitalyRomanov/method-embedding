@@ -267,6 +267,8 @@ def get_type_prediction_arguments():
                         help='')
     parser.add_argument('--trials', dest='trials', default=1, type=int,
                         help='')
+    parser.add_argument('--gpu', dest='gpu', default=-1, type=int,
+                        help='Does not work with Tensorflow backend')
     parser.add_argument('--finetune', action='store_true')
     parser.add_argument('--no_localization', action='store_true')
     parser.add_argument('model_output',
