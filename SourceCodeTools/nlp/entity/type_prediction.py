@@ -111,7 +111,7 @@ def write_config(trial_dir, params, extra_params=None):
 class ModelTrainer:
     def __init__(self, train_data, test_data, params, graph_emb_path=None, word_emb_path=None,
             output_dir=None, epochs=30, batch_size=32, seq_len=100, finetune=False, trials=1,
-            no_localization=False):
+            no_localization=False, ckpt_path=None):
         self.set_batcher_class()
         self.set_model_class()
 
@@ -127,6 +127,7 @@ class ModelTrainer:
         self.trials = trials
         self.seq_len = seq_len
         self.no_localization = no_localization
+        self.ckpt_path = ckpt_path
 
     def set_batcher_class(self):
         self.batcher = PythonBatcher
@@ -139,7 +140,10 @@ class ModelTrainer:
         return self.batcher(*args, **kwargs)
 
     def get_model(self, *args, **kwargs):
-        return self.model(*args, **kwargs)
+        model = self.model(*args, **kwargs)
+        if self.ckpt_path is not None:
+            model.load_weights(os.path.join(self.ckpt_path, "checkpoint"))
+        return model
 
     def train(self, *args, **kwargs):
         from SourceCodeTools.nlp.entity.tf_models.tf_model import train
@@ -157,10 +161,16 @@ class ModelTrainer:
     #         tensorflow.summary.scalar(value_name, value, step=step)
 
     def get_dataloaders(self, word_emb, graph_emb, suffix_prefix_buckets):
+
+        if self.ckpt_path is not None:
+            tagmap = pickle.load(open(os.path.join(self.ckpt_path, "tag_types.pkl"), "rb"))
+        else:
+            tagmap = None
+
         train_batcher = self.get_batcher(
             self.train_data, self.batch_size, seq_len=self.seq_len,
             graphmap=graph_emb.ind if graph_emb is not None else None,
-            wordmap=word_emb.ind, tagmap=None,
+            wordmap=word_emb.ind, tagmap=tagmap,
             class_weights=False, element_hash_size=suffix_prefix_buckets, no_localization=self.no_localization
         )
         test_batcher = self.get_batcher(
@@ -263,6 +273,8 @@ def get_type_prediction_arguments():
                         help='')
     parser.add_argument('--pretraining_epochs', dest='pretraining_epochs', default=0, type=int,
                         help='')
+    parser.add_argument('--ckpt_path', dest='ckpt_path', default=None, type=str,
+                        help='')
     parser.add_argument('--epochs', dest='epochs', default=500, type=int,
                         help='')
     parser.add_argument('--trials', dest='trials', default=1, type=int,
@@ -301,7 +313,7 @@ if __name__ == "__main__":
                'FrameOrSeries', 'bytes', 'DataFrame', 'Matcher', 'float', 'Tuple', 'bool_t', 'Description', 'Type'}
 
     train_data, test_data = read_data(
-        open(args.data_path, "r").readlines(), normalize=True, allowed=allowed, include_replacements=True, include_only="entities",
+        open(args.data_path, "r").readlines(), normalize=True, allowed=None, include_replacements=True, include_only="entities",
         min_entity_count=args.min_entity_count, random_seed=args.random_seed
     )
 
@@ -312,6 +324,7 @@ if __name__ == "__main__":
         trainer = ModelTrainer(
             train_data, test_data, params, graph_emb_path=args.graph_emb_path, word_emb_path=args.word_emb_path,
             output_dir=output_dir, epochs=args.epochs, batch_size=args.batch_size,
-            finetune=args.finetune, trials=args.trials, seq_len=args.max_seq_len, no_localization=args.no_localization
+            finetune=args.finetune, trials=args.trials, seq_len=args.max_seq_len, no_localization=args.no_localization,
+            ckpt_path=args.ckpt_path
         )
         trainer.train_model()
