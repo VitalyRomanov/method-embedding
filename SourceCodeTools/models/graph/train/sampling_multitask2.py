@@ -427,12 +427,12 @@ class SamplingMultitaskTrainer:
 
                     objective.target_embedder.prepare_index()
 
-                    # do_break = False
-                    # for block in blocks:
-                    #     if block.num_edges() == 0:
-                    #         do_break = True
-                    # if do_break:
-                    #     break
+                    do_break = False
+                    for block in blocks:
+                        if block.num_edges() == 0:
+                            do_break = True
+                    if do_break:
+                        break
 
                     # try:
                     loss, acc = objective(
@@ -703,7 +703,7 @@ def training_procedure(
     except EarlyStopping:
         logging.info("Early stopping triggered")
     except Exception as e:
-        raise e
+        print("There was an exception", e)
 
     trainer.eval()
     scores = trainer.final_evaluation()
