@@ -39,7 +39,7 @@ class SamplingMultitaskTrainer:
                  dataset=None, model_name=None, model_params=None,
                  trainer_params=None, restore=None, device=None,
                  pretrained_embeddings_path=None,
-                 tokenizer_path=None
+                 tokenizer_path=None, load_external_dataset=None
                  ):
 
         self.graph_model = model_name(dataset.g, **model_params).to(device)
@@ -50,22 +50,28 @@ class SamplingMultitaskTrainer:
         self.restore_epoch = 0
         self.batch = 0
         self.dtype = torch.float32
+        if load_external_dataset is not None:
+            external_args, external_dataset = load_external_dataset()
+            self.graph_model.g = external_dataset.g
+            dataset = external_dataset
         self.create_node_embedder(
             dataset, tokenizer_path, n_dims=model_params["h_dim"],
             pretrained_path=pretrained_embeddings_path, n_buckets=trainer_params["embedding_table_size"]
         )
-
-        self.summary_writer = SummaryWriter(self.model_base_path)
 
         self.create_objectives(dataset, tokenizer_path)
 
         if restore:
             self.restore_from_checkpoint(self.model_base_path)
 
+        if load_external_dataset is not None:
+            self.trainer_params["model_base_path"] = external_args.external_model_base
+
         self._create_optimizer()
 
         self.lr_scheduler = ExponentialLR(self.optimizer, gamma=1.0)
         # self.lr_scheduler = ReduceLROnPlateau(self.optimizer, patience=10, cooldown=20)
+        self.summary_writer = SummaryWriter(self.model_base_path)
 
     def create_objectives(self, dataset, tokenizer_path):
         self.objectives = nn.ModuleList()
@@ -644,7 +650,7 @@ def select_device(args):
 
 
 def training_procedure(
-        dataset, model_name, model_params, args, model_base_path, trainer=None
+        dataset, model_name, model_params, args, model_base_path, trainer=None, load_external_dataset=None
 ) -> Tuple[SamplingMultitaskTrainer, dict]:
 
     if trainer is None:
@@ -693,7 +699,8 @@ def training_procedure(
         restore=args.restore_state,
         device=device,
         pretrained_embeddings_path=args.pretrained,
-        tokenizer_path=args.tokenizer
+        tokenizer_path=args.tokenizer,
+        load_external_dataset=load_external_dataset
     )
 
     try:
