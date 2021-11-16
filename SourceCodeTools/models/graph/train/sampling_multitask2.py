@@ -51,6 +51,7 @@ class SamplingMultitaskTrainer:
         self.batch = 0
         self.dtype = torch.float32
         if load_external_dataset is not None:
+            logging.info("Loading external dataset")
             external_args, external_dataset = load_external_dataset()
             self.graph_model.g = external_dataset.g
             dataset = external_dataset
