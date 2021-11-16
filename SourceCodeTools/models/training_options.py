@@ -48,6 +48,7 @@ def add_training_arguments(parser):
     parser.add_argument("--metric", default="inner_prod", type=str)
     parser.add_argument("--nn_index", default="brute", type=str)
 
+    parser.add_argument("--external_dataset", default=None, type=str)
 
 def add_scoring_arguments(parser):
     parser.add_argument('--measure_scores', action='store_true')

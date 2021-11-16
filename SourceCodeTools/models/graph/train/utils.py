@@ -18,8 +18,8 @@ def get_name(model, timestamp):
     return "{} {}".format(model.__name__, timestamp).replace(":", "-").replace(" ", "-").replace(".", "-")
 
 
-def get_model_base(args, model_attempt):
-    if args.restore_state:
+def get_model_base(args, model_attempt, force_new=False):
+    if args.restore_state and not force_new:
         model_base = args.model_output_dir
     else:
         model_base = join(args.model_output_dir, model_attempt)
