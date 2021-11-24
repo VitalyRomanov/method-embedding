@@ -146,7 +146,7 @@ class TypePredictor(Model):
         assert mask is not None, "Mask is required"
 
         tok_emb = self.tok_emb(token_ids)
-        # graph_emb = self.graph_emb(graph_ids)
+        graph_emb = self.graph_emb(graph_ids)
         prefix_emb = self.prefix_emb(prefix_ids)
         suffix_emb = self.suffix_emb(suffix_ids)
 
@@ -159,7 +159,7 @@ class TypePredictor(Model):
         # if target is None:
         #     logits = self.decoder.seq_decode(encoded, training=training, mask=mask)
         # else:
-        # encoded = tf.concat([encoded, graph_emb], axis=-1)
+        encoded = tf.concat([encoded, graph_emb], axis=-1)
         logits, _ = self.decoder((encoded, target), training=training, mask=mask) # consider sending input instead of target
 
         return logits
