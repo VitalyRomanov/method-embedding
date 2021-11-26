@@ -201,6 +201,7 @@ class AbstractObjective(nn.Module):
             raise NotImplementedError()
 
     def create_loaders(self):
+        print("Number of nodes", self.graph_model.g.number_of_nodes())
         train_idx, val_idx, test_idx = self._get_training_targets()
         train_idx, val_idx, test_idx = self.target_embedder.create_idx_pools(
             train_idx=train_idx, val_idx=val_idx, test_idx=test_idx

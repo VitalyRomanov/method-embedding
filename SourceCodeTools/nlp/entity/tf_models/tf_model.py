@@ -1,6 +1,7 @@
 # import tensorflow as tf
 # import sys
 # from gensim.models import Word2Vec
+import logging
 from time import time
 
 import numpy as np
@@ -112,6 +113,10 @@ class TypePredictor(Model):
         # compute final embedding size after concatenation
         input_dim = tok_embedder.e.shape[1] + suffix_prefix_dims * 2 #+ graph_embedder.e.shape[1]
 
+        if cnn_win_size % 2 == 0:
+            cnn_win_size += 1
+            logging.info(f"Window size should be odd. Setting to {cnn_win_size}")
+
         self.encoder = TextCnnEncoder(
             # input_size=input_dim,
             h_sizes=h_sizes,
@@ -135,7 +140,7 @@ class TypePredictor(Model):
     # @tf.function
     def __call__(self, token_ids, prefix_ids, suffix_ids, graph_ids, target=None, training=False, mask=None):
         """
-        Inference
+        # Inference
         :param token_ids: ids for tokens, shape (?, seq_len)
         :param prefix_ids: ids for prefixes, shape (?, seq_len)
         :param suffix_ids: ids for suffixes, shape (?, seq_len)
@@ -146,7 +151,7 @@ class TypePredictor(Model):
         assert mask is not None, "Mask is required"
 
         tok_emb = self.tok_emb(token_ids)
-        # graph_emb = self.graph_emb(graph_ids)
+        graph_emb = self.graph_emb(graph_ids)
         prefix_emb = self.prefix_emb(prefix_ids)
         suffix_emb = self.suffix_emb(suffix_ids)
 
@@ -159,7 +164,7 @@ class TypePredictor(Model):
         # if target is None:
         #     logits = self.decoder.seq_decode(encoded, training=training, mask=mask)
         # else:
-        # encoded = tf.concat([encoded, graph_emb], axis=-1)
+        encoded = tf.concat([encoded, graph_emb], axis=-1)
         logits, _ = self.decoder((encoded, target), training=training, mask=mask) # consider sending input instead of target
 
         return logits

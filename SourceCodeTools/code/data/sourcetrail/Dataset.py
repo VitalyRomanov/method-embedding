@@ -1020,8 +1020,8 @@ def ensure_valid_edges(nodes, edges, ignore_src=False):
     return nodes, edges
 
 
-def read_or_create_dataset(args, model_base, labels_from="type"):
-    if args.restore_state:
+def read_or_create_dataset(args, model_base, labels_from="type", force_new=False):
+    if args.restore_state and not force_new:
         # i'm not happy with this behaviour that differs based on the flag status
         dataset = SourceGraphDataset.load(join(model_base, "dataset.pkl"), args)
     else:
