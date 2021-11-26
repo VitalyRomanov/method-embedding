@@ -300,7 +300,9 @@ class PythonBatcher:
             if len(batch) >= self.batch_size:
                 yield self.format_batch(batch)
                 batch = []
-        yield self.format_batch(batch)
+        if len(batch) > 0:
+            yield self.format_batch(batch)
+        # yield self.format_batch(batch)
 
     def __iter__(self):
         return self.generate_batches()
