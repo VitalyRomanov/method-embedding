@@ -4,6 +4,7 @@ import shelve
 import shutil
 import tempfile
 from collections import defaultdict
+from time import time
 from functools import lru_cache
 from math import ceil
 from typing import Dict, Optional, List
@@ -127,7 +128,8 @@ class PythonBatcher:
     def create_cache(self):
         char_ranges = [chr(i) for i in range(ord("a"), ord("a")+26)] + [chr(i) for i in range(ord("A"), ord("A")+26)] + [chr(i) for i in range(ord("0"), ord("0")+10)]
         from random import sample
-        rnd_name = "".join(sample(char_ranges, k=10))
+        rnd_name = "".join(sample(char_ranges, k=10)) + str(int(time() * 1e6))
+        time()
 
         self.tmp_dir = os.path.join(tempfile.gettempdir(), rnd_name)
         if os.path.isdir(self.tmp_dir):
