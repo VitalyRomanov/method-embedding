@@ -365,11 +365,11 @@ class CodeBertModelTrainer2(CodeBertModelTrainer):
 def main():
     args = get_type_prediction_arguments()
 
-    # allowed = {'str', 'bool', 'Optional', 'None', 'int', 'Any', 'Union', 'List', 'Dict', 'Callable', 'ndarray',
-    #            'FrameOrSeries', 'bytes', 'DataFrame', 'Matcher', 'float', 'Tuple', 'bool_t', 'Description', 'Type'}
+    allowed = {'str', 'bool', 'Optional', 'None', 'int', 'Any', 'Union', 'List', 'Dict', 'Callable', 'ndarray',
+               'FrameOrSeries', 'bytes', 'DataFrame', 'Matcher', 'float', 'Tuple', 'bool_t', 'Description', 'Type'}
 
     train_data, test_data = read_data(
-        open(args.data_path, "r").readlines(), normalize=True, allowed=None, include_replacements=True,
+        open(args.data_path, "r").readlines(), normalize=True, allowed=allowed, include_replacements=True,
         include_only="entities",
         min_entity_count=args.min_entity_count, random_seed=args.random_seed
     )
