@@ -232,7 +232,8 @@ class ModelTrainer:
                 "epochs": self.epochs,
                 "suffix_prefix_buckets": suffix_prefix_buckets,
                 "seq_len": self.seq_len,
-                "batch_size": self.batch_size
+                "batch_size": self.batch_size,
+                "no_localization": self.no_localization
             }
 
             print("Maximum f1:", max(test_f1))
