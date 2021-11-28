@@ -330,7 +330,9 @@ class ReplacementNodeResolver(NodeResolver):
             self.valid_new_node = nodes['id'].max() + 1
             self.old_nodes = nodes.copy()
             self.old_nodes['mentioned_in'] = pd.NA
+            self.old_nodes['string'] = pd.NA
             self.old_nodes = self.old_nodes.astype({'mentioned_in': 'Int32'})
+            self.old_nodes = self.old_nodes.astype({'string': 'string'})
         else:
             self.nodeid2name = dict()
             self.nodeid2type = dict()
@@ -349,19 +351,12 @@ class ReplacementNodeResolver(NodeResolver):
         self.stashed_nodes.extend(self.new_nodes)
         self.new_nodes = []
 
-    def resolve_substrings(self, node, replacement2srctrl):
-
-        decorated = "@" in node.name
-
-        name_ = copy(node.name)
-        if decorated:
-            name_, decorator = name_.split("@")
-        # assert not decorated
-
+    def recover_original_string(self, name_, replacement2srctrl):
         replacements = dict()
         global_node_id = []
         global_name = []
         global_type = []
+
         for name in re.finditer("srctrlrpl_[0-9]{19}", name_):
             if isinstance(name, re.Match):
                 name = name.group()
@@ -387,12 +382,25 @@ class ReplacementNodeResolver(NodeResolver):
         real_name = name_
         for r, v in replacements.items():
             real_name = real_name.replace(r, v["name"])
+        return real_name, global_name, global_node_id, global_type
+
+    def resolve_substrings(self, node, replacement2srctrl):
+
+        decorated = "@" in node.name
+
+        name_ = copy(node.name)
+        if decorated:
+            name_, decorator = name_.split("@")
+        # assert not decorated
+
+        real_name, global_name, global_node_id, global_type = self.recover_original_string(name_, replacement2srctrl)
 
         if decorated:
             real_name = real_name + "@" + decorator
 
         return GNode(
-            name=real_name, type=node.type, global_name=global_name, global_id=global_node_id, global_type=global_type
+            name=real_name, type=node.type, global_name=global_name, global_id=global_node_id, global_type=global_type,
+            string=node.string
         )
 
     def resolve_regular_replacement(self, node, replacement2srctrl):
@@ -435,10 +443,10 @@ class ReplacementNodeResolver(NodeResolver):
                     type_ = node.type
                 if hasattr(node, "scope"):
                     new_node = GNode(name=real_name, type=type_, global_name=global_name, global_id=global_node_id,
-                                     global_type=global_type, scope=node.scope)
+                                     global_type=global_type, scope=node.scope, string=node.string)
                 else:
                     new_node = GNode(name=real_name, type=type_, global_name=global_name, global_id=global_node_id,
-                                     global_type=global_type)
+                                     global_type=global_type, string=node.string)
         else:
             new_node = node
         return new_node
@@ -462,6 +470,10 @@ class ReplacementNodeResolver(NodeResolver):
                 new_node = self.resolve_substrings(node, replacement2srctrl)
             if "srctrlrpl_" in new_node.name: # if still failed to resolve
                 new_node.name = "unresolved_name"
+
+        if node.string is not None:
+            string,_,_,_ = self.recover_original_string(node.string, replacement2srctrl)
+            node.string = string
 
         # assert "srctrlrpl_" not in new_node.name
 
@@ -492,7 +504,8 @@ class ReplacementNodeResolver(NodeResolver):
                         "id": new_id,
                         "type": node.type,
                         "serialized_name": node.name,
-                        "mentioned_in": pd.NA
+                        "mentioned_in": pd.NA,
+                        "string": node.string
                     }
                 )
                 if hasattr(node, "scope"):
@@ -503,7 +516,7 @@ class ReplacementNodeResolver(NodeResolver):
 
     def prepare_for_write(self, from_stashed=False):
         nodes = pd.concat([self.old_nodes, self.new_nodes_for_write(from_stashed)])[
-            ['id', 'type', 'serialized_name', 'mentioned_in']
+            ['id', 'type', 'serialized_name', 'mentioned_in', 'string']
         ]
 
         return nodes
@@ -515,7 +528,7 @@ class ReplacementNodeResolver(NodeResolver):
             return None
 
         new_nodes = new_nodes[
-            ['id', 'type', 'serialized_name', 'mentioned_in']
+            ['id', 'type', 'serialized_name', 'mentioned_in', 'string']
         ].astype({"mentioned_in": "Int32"})
 
         return new_nodes
