@@ -77,7 +77,8 @@ class TypePredictor(Model):
     def __init__(self, tok_embedder, graph_embedder, train_embeddings=False,
                  h_sizes=None, dense_size=100, num_classes=None,
                  seq_len=100, pos_emb_size=30, cnn_win_size=3,
-                 crf_transitions=None, suffix_prefix_dims=50, suffix_prefix_buckets=1000):
+                 crf_transitions=None, suffix_prefix_dims=50, suffix_prefix_buckets=1000,
+                 no_graph=False):
         """
         Initialize TypePredictor. Model initializes embedding layers and then passes embeddings to TextCnnEncoder model
         :param tok_embedder: Embedder for tokens
@@ -136,6 +137,7 @@ class TypePredictor(Model):
         self.crf_transition_params = None
 
         self.supports_masking = True
+        self.use_graph = not no_graph
 
     # @tf.function
     def __call__(self, token_ids, prefix_ids, suffix_ids, graph_ids, target=None, training=False, mask=None):
@@ -151,7 +153,6 @@ class TypePredictor(Model):
         assert mask is not None, "Mask is required"
 
         tok_emb = self.tok_emb(token_ids)
-        graph_emb = self.graph_emb(graph_ids)
         prefix_emb = self.prefix_emb(prefix_ids)
         suffix_emb = self.suffix_emb(suffix_ids)
 
@@ -164,7 +165,9 @@ class TypePredictor(Model):
         # if target is None:
         #     logits = self.decoder.seq_decode(encoded, training=training, mask=mask)
         # else:
-        encoded = tf.concat([encoded, graph_emb], axis=-1)
+        if self.use_graph:
+            graph_emb = self.graph_emb(graph_ids)
+            encoded = tf.concat([encoded, graph_emb], axis=-1)
         logits, _ = self.decoder((encoded, target), training=training, mask=mask) # consider sending input instead of target
 
         return logits

@@ -10,6 +10,8 @@ from datetime import datetime
 # os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
 
+from pathlib import Path
+
 import tensorflow
 
 from SourceCodeTools.nlp.batchers import PythonBatcher
@@ -111,7 +113,7 @@ def write_config(trial_dir, params, extra_params=None):
 class ModelTrainer:
     def __init__(self, train_data, test_data, params, graph_emb_path=None, word_emb_path=None,
             output_dir=None, epochs=30, batch_size=32, seq_len=100, finetune=False, trials=1,
-            no_localization=False, ckpt_path=None):
+            no_localization=False, ckpt_path=None, no_graph=False):
         self.set_batcher_class()
         self.set_model_class()
 
@@ -128,6 +130,7 @@ class ModelTrainer:
         self.seq_len = seq_len
         self.no_localization = no_localization
         self.ckpt_path = ckpt_path
+        self.no_graph = no_graph
 
     def set_batcher_class(self):
         self.batcher = PythonBatcher
@@ -208,7 +211,7 @@ class ModelTrainer:
 
             model = self.get_model(
                 word_emb, graph_emb, train_embeddings=self.finetune, suffix_prefix_buckets=suffix_prefix_buckets,
-                num_classes=train_batcher.num_classes(), seq_len=self.seq_len, **params
+                num_classes=train_batcher.num_classes(), seq_len=self.seq_len, no_graph=self.no_graph, **params
             )
 
             def save_ckpt_fn():
@@ -286,6 +289,8 @@ def get_type_prediction_arguments():
                         help='Does not work with Tensorflow backend')
     parser.add_argument('--finetune', action='store_true')
     parser.add_argument('--no_localization', action='store_true')
+    parser.add_argument('--restrict_allowed', action='store_true', default=False)
+    parser.add_argument('--no_graph', action='store_true', default=False)
     parser.add_argument('model_output',
                         help='')
 
@@ -307,6 +312,22 @@ def save_entities(path, entities):
             entitiesfile.write(f"{e}\n")
 
 
+def filter_labels(dataset, allowed=None, field=None):
+    if allowed is None:
+        return dataset
+    dataset = copy(dataset)
+    for sent, annotations in dataset:
+        annotations["entities"] = [e for e in annotations["entities"] if e[2] in allowed]
+    return dataset
+
+
+def find_example(dataset, needed_label):
+    for sent, annotations in dataset:
+        for start, end, e in annotations["entities"]:
+            if e == needed_label:
+                print(f"{sent}: {sent[start: end]}")
+
+
 if __name__ == "__main__":
     args = get_type_prediction_arguments()
 
@@ -314,12 +335,29 @@ if __name__ == "__main__":
     if not os.path.isdir(output_dir):
         os.mkdir(output_dir)
 
-    allowed = {'str', 'bool', 'Optional', 'None', 'int', 'Any', 'Union', 'List', 'Dict', 'Callable', 'ndarray',
-               'FrameOrSeries', 'bytes', 'DataFrame', 'Matcher', 'float', 'Tuple', 'bool_t', 'Description', 'Type'}
+    # allowed = {'str', 'bool', 'Optional', 'None', 'int', 'Any', 'Union', 'List', 'Dict', 'Callable', 'ndarray',
+    #            'FrameOrSeries', 'bytes', 'DataFrame', 'Matcher', 'float', 'Tuple', 'bool_t', 'Description', 'Type'}
+    if args.restrict_allowed:
+        allowed = {
+            'str', 'Optional', 'int', 'Any', 'Union', 'bool', 'Callable', 'Dict', 'bytes', 'float', 'Description',
+            'List', 'Sequence', 'Namespace', 'T', 'Type', 'object', 'HTTPServerRequest', 'Future', "Matcher"
+        }
+    else:
+        allowed = None
 
-    train_data, test_data = read_data(
-        open(args.data_path, "r").readlines(), normalize=True, allowed=None, include_replacements=True, include_only="entities",
-        min_entity_count=args.min_entity_count, random_seed=args.random_seed
+    # train_data, test_data = read_data(
+    #     open(args.data_path, "r").readlines(), normalize=True, allowed=None, include_replacements=True, include_only="entities",
+    #     min_entity_count=args.min_entity_count, random_seed=args.random_seed
+    # )
+
+    dataset_dir = Path(args.data_path).parent
+    train_data = filter_labels(
+        pickle.load(open(dataset_dir.joinpath("type_prediction_dataset_no_defaults_train.pkl"), "rb")),
+        allowed=allowed
+    )
+    test_data = filter_labels(
+        pickle.load(open(dataset_dir.joinpath("type_prediction_dataset_no_defaults_test.pkl"), "rb")),
+        allowed=allowed
     )
 
     unique_entities = get_unique_entities(train_data, field="entities")
@@ -330,6 +368,6 @@ if __name__ == "__main__":
             train_data, test_data, params, graph_emb_path=args.graph_emb_path, word_emb_path=args.word_emb_path,
             output_dir=output_dir, epochs=args.epochs, batch_size=args.batch_size,
             finetune=args.finetune, trials=args.trials, seq_len=args.max_seq_len, no_localization=args.no_localization,
-            ckpt_path=args.ckpt_path
+            ckpt_path=args.ckpt_path, no_graph=args.no_graph
         )
         trainer.train_model()
