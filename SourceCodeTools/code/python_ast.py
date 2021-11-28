@@ -76,6 +76,7 @@ class GNode:
     # id = None
 
     def __init__(self, **kwargs):
+        self.string = None
         for k, v in kwargs.items():
             setattr(self, k, v)
 
@@ -104,24 +105,28 @@ class AstGraphGenerator(object):
         self.condition_status = []
         self.scope = []
 
-    def get_source_from_ast_range(self, start_line, end_line, start_col, end_col):
+    def get_source_from_ast_range(self, start_line, end_line, start_col, end_col, strip=True):
         source = ""
         num_lines = end_line - start_line + 1
         if start_line == end_line:
-            source += self.source[start_line - 1].encode("utf8")[start_col:end_col].decode(
-                "utf8").strip()
+            section = self.source[start_line - 1].encode("utf8")[start_col:end_col].decode(
+                "utf8")
+            source += section.strip() if strip else section + "\n"
         else:
             for ind, lineno in enumerate(range(start_line - 1, end_line)):
                 if ind == 0:
-                    source += self.source[lineno].encode("utf8")[start_col:].decode(
-                        "utf8").strip()
+                    section = self.source[lineno].encode("utf8")[start_col:].decode(
+                        "utf8")
+                    source += section.strip() if strip else section + "\n"
                 elif ind == num_lines - 1:
-                    source += self.source[lineno].encode("utf8")[:end_col].decode(
-                        "utf8").strip()
+                    section = self.source[lineno].encode("utf8")[:end_col].decode(
+                        "utf8")
+                    source += section.strip() if strip else section + "\n"
                 else:
-                    source += self.source[lineno].strip()
+                    section = self.source[lineno]
+                    source += section.strip() if strip else section + "\n"
 
-        return source
+        return source.rstrip()
 
     def get_name(self, *, node=None, name=None, type=None, add_random_identifier=False):
 
@@ -132,10 +137,17 @@ class AstGraphGenerator(object):
             if add_random_identifier:
                 name += f"_{str(hex(int(time_ns())))}"
 
-        if len(self.scope) > 0:
-            return GNode(name=name, type=type, scope=copy(self.scope[-1]))
+        if hasattr(node, "lineno"):
+            node_string = self.get_source_from_ast_range(node.lineno, node.end_lineno, node.col_offset, node.end_col_offset, strip=False)
+            # if "\n" in node_string:
+            #     node_string = None
         else:
-            return GNode(name=name, type=type)
+            node_string = None
+
+        if len(self.scope) > 0:
+            return GNode(name=name, type=type, scope=copy(self.scope[-1]), string=node_string)
+        else:
+            return GNode(name=name, type=type, string=node_string)
         # return (node.__class__.__name__ + "_" + str(hex(int(time_ns()))), node.__class__.__name__)
 
     def get_edges(self, as_dataframe=True):

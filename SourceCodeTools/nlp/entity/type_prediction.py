@@ -196,11 +196,13 @@ class ModelTrainer:
         lr = params.pop("learning_rate")
         lr_decay = params.pop("learning_rate_decay")
 
-        param_dir = os.path.join(output_dir, str(datetime.now())).replace(":","-").replace(" ","_")
+        timestamp = str(datetime.now()).replace(":","-").replace(" ","_")
+        param_dir = os.path.join(output_dir, timestamp)
         os.mkdir(param_dir)
 
         for trial_ind in range(self.trials):
             trial_dir = os.path.join(param_dir, repr(trial_ind))
+            logging.info(f"Running trial: {timestamp}")
             os.mkdir(trial_dir)
             self.create_summary_writer(trial_dir)
 

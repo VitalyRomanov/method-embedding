@@ -1,30 +1,31 @@
 from distutils.core import setup
 
-requitements = [
-      'nltk',
-      'tensorflow>=2.4.0',
-      'torch>=1.7.1',
-      'pandas>=1.1.1',
-      'sklearn',
-      'sentencepiece',
-      'gensim',
-      'numpy>=1.19.2',
-      'scipy',
-      'networkx',
-      'sacrebleu',
-      'datasets',
+requirements = [
+      'nltk==3.6',
+      'tensorflow==2.6.0',
+      'torch==1.9.0',
+      'pandas==1.1.1',
+      'scikit-learn==1.0',
+      'sentencepiece==0.1',
+      'gensim==3.8',
+      'numpy==1.19.5',
+      'scipy==1.4.1',
+      'networkx==2.5',
+      'sacrebleu==1.5.1',
+      'datasets==1.5.0',
       'spacy==2.3.2',
-      'pytest'
+      'pytest==6.1.2',
+      'faiss==1.7.0'
       # 'pygraphviz'
       # 'javac_parser'
 ]
 # conda install pytorch cudatoolkit=11.1 dgl-cuda11.1 -c dglteam -c pytorch -c nvidia
 setup(name='SourceCodeTools',
-      version='0.0.2',
+      version='0.0.3',
       py_modules=['SourceCodeTools'],
-      install_requires=requitements + ["dgl"],
+      install_requires=requirements + ["dgl==0.7.1"],
       extras_require={
-            "gpu": requitements + ["dgl-cu110"]
+            "gpu": requirements + ["dgl-cu111==0.7.1"]
       },
       scripts=[
             'SourceCodeTools/code/data/sourcetrail/sourcetrail_call_seq_extractor.py',
@@ -49,4 +50,4 @@ setup(name='SourceCodeTools',
             'SourceCodeTools/nlp/embed/converters/convert_fasttext_format_bin_to_vec.py',
             'SourceCodeTools/models/graph/utils/prepare_dglke_format.py',
       ],
-)
+      )
