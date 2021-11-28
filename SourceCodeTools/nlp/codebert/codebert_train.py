@@ -12,16 +12,21 @@ from transformers import RobertaTokenizer, RobertaModel
 
 from SourceCodeTools.models.Embedder import Embedder
 from SourceCodeTools.nlp.codebert.codebert import CodeBertModelTrainer, load_typed_nodes
-from SourceCodeTools.nlp.entity.type_prediction import get_type_prediction_arguments, ModelTrainer, load_pkl_emb, scorer
+from SourceCodeTools.nlp.entity.type_prediction import get_type_prediction_arguments, ModelTrainer, load_pkl_emb, \
+    scorer, filter_labels
 from SourceCodeTools.nlp.entity.utils.data import read_data
 
 import torch.nn as nn
 
 class CodebertHybridModel(nn.Module):
-    def __init__(self, codebert_model, graph_emb, padding_idx, num_classes, dense_hidden=100, dropout=0.1, bert_emb_size=768):
+    def __init__(
+            self, codebert_model, graph_emb, padding_idx, num_classes, dense_hidden=100, dropout=0.1, bert_emb_size=768,
+            no_graph=False
+    ):
         super(CodebertHybridModel, self).__init__()
 
         self.codebert_model = codebert_model
+        self.use_graph = not no_graph
 
         num_emb = padding_idx + 1  # padding id is usually not a real embedding
         emb_dim = graph_emb.shape[1]
@@ -34,7 +39,10 @@ class CodebertHybridModel(nn.Module):
         self.graph_emb.weight = new_param
         self.graph_emb.weight.requires_grad = False
 
-        self.fc1 = nn.Linear(bert_emb_size + emb_dim, dense_hidden)
+        self.fc1 = nn.Linear(
+            bert_emb_size + (emb_dim if self.use_graph else 0),
+            dense_hidden
+        )
         self.drop = nn.Dropout(dropout)
         self.fc2 = nn.Linear(dense_hidden, num_classes)
 
@@ -42,13 +50,14 @@ class CodebertHybridModel(nn.Module):
 
     def forward(self, token_ids, graph_ids, mask, finetune=False):
         if finetune:
-            bert_embs = self.codebert_model(input_ids=token_ids, attention_mask=mask).last_hidden_state
+            x = self.codebert_model(input_ids=token_ids, attention_mask=mask).last_hidden_state
         else:
             with torch.no_grad():
-                bert_embs = self.codebert_model(input_ids=token_ids, attention_mask=mask).last_hidden_state
+                x = self.codebert_model(input_ids=token_ids, attention_mask=mask).last_hidden_state
 
-        graph_emb = self.graph_emb(graph_ids)
-        x = torch.cat([bert_embs, graph_emb], dim=-1)
+        if self.use_graph:
+            graph_emb = self.graph_emb(graph_ids)
+            x = torch.cat([x, graph_emb], dim=-1)
 
         x = torch.relu(self.fc1(x))
         x = self.drop(x)
@@ -283,7 +292,10 @@ class CodeBertModelTrainer2(CodeBertModelTrainer):
         train_batcher, test_batcher = self.get_dataloaders(None, graph_emb, suffix_prefix_buckets=suffix_prefix_buckets)
 
         codebert_model = RobertaModel.from_pretrained("microsoft/codebert-base")
-        model = CodebertHybridModel(codebert_model, graph_emb.e, padding_idx=train_batcher.graphpad, num_classes=train_batcher.num_classes())
+        model = CodebertHybridModel(
+            codebert_model, graph_emb.e, padding_idx=train_batcher.graphpad, num_classes=train_batcher.num_classes(),
+            no_graph=self.no_graph
+        )
         if self.use_cuda:
             model.cuda()
 
@@ -368,18 +380,37 @@ def main():
 
     # allowed = {'str', 'bool', 'Optional', 'None', 'int', 'Any', 'Union', 'List', 'Dict', 'Callable', 'ndarray',
     #            'FrameOrSeries', 'bytes', 'DataFrame', 'Matcher', 'float', 'Tuple', 'bool_t', 'Description', 'Type'}
+    if args.restrict_allowed:
+        allowed = {
+            'str', 'Optional', 'int', 'Any', 'Union', 'bool', 'Callable', 'Dict', 'bytes', 'float', 'Description',
+            'List', 'Sequence', 'Namespace', 'T', 'Type', 'object', 'HTTPServerRequest', 'Future', "Matcher"
+        }
+    else:
+        allowed = None
 
-    train_data, test_data = read_data(
-        open(args.data_path, "r").readlines(), normalize=True, allowed=None, include_replacements=True,
-        include_only="entities",
-        min_entity_count=args.min_entity_count, random_seed=args.random_seed
+    # train_data, test_data = read_data(
+    #     open(args.data_path, "r").readlines(), normalize=True, allowed=None, include_replacements=True,
+    #     include_only="entities",
+    #     min_entity_count=args.min_entity_count, random_seed=args.random_seed
+    # )
+
+    from pathlib import Path
+    dataset_dir = Path(args.data_path).parent
+    train_data = filter_labels(
+        pickle.load(open(dataset_dir.joinpath("type_prediction_dataset_no_defaults_train.pkl"), "rb")),
+        allowed=allowed
+    )
+    test_data = filter_labels(
+        pickle.load(open(dataset_dir.joinpath("type_prediction_dataset_no_defaults_test.pkl"), "rb")),
+        allowed=allowed
     )
 
     trainer = CodeBertModelTrainer2(
         train_data, test_data, params={"learning_rate": 1e-4, "learning_rate_decay": 0.99, "suffix_prefix_buckets": 1},
         graph_emb_path=args.graph_emb_path, word_emb_path=args.word_emb_path,
         output_dir=args.model_output, epochs=args.epochs, batch_size=args.batch_size, gpu_id=args.gpu,
-        finetune=args.finetune, trials=args.trials, seq_len=args.max_seq_len, no_localization=args.no_localization
+        finetune=args.finetune, trials=args.trials, seq_len=args.max_seq_len, no_localization=args.no_localization,
+        no_graph=args.no_graph
     )
     trainer.set_type_ann_edges(args.type_ann_edges)
     trainer.train_model()
