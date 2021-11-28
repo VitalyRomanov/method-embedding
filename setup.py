@@ -18,7 +18,7 @@ requitements = [
       # 'pygraphviz'
       # 'javac_parser'
 ]
-
+# conda install pytorch cudatoolkit=11.1 dgl-cuda11.1 -c dglteam -c pytorch -c nvidia
 setup(name='SourceCodeTools',
       version='0.0.2',
       py_modules=['SourceCodeTools'],
