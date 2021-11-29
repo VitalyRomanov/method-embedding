@@ -76,6 +76,47 @@ class Tracker:
             for label in list(map(lambda x: self.inv_index[x], self.pred_labels)):
                 meta_sink.write(f"{label}\n")
 
+    def save_umap(self, save_name):
+        type_freq = {
+            "str": 532,
+            "Optional": 232,
+            "int": 206,
+            "Any": 171,
+            "Union": 156,
+            "bool": 143,
+            "Callable": 80,
+            "Dict": 77,
+            "bytes": 58,
+            "float": 48
+        }
+        from umap import UMAP
+        import matplotlib.pyplot as plt
+        plt.rcParams.update({'font.size': 5})
+        reducer = UMAP(50)
+        embedding = reducer.fit_transform(self.embeddings)
+
+        labels = list(map(lambda x: self.inv_index[x], self.pred_labels))
+        unique_labels = list(set(labels))
+
+        plt.figure(figsize=(4,4))
+        for label in unique_labels:
+            if label not in type_freq:
+                continue
+            xs = []
+            ys = []
+            for lbl, (x, y) in zip(labels, embedding):
+                if lbl == label:
+                    xs.append(x)
+                    ys.append(y)
+            plt.scatter(xs, ys, 1.)
+        plt.axis('off')
+        plt.legend(unique_labels)
+        plt.savefig(f"{save_name}_umap.pdf")
+        plt.close()
+        # plt.show()
+
+
+
     def get_metrics(self):
         all_true = self.true_labels
         all_scores = self.pred_scores
@@ -263,6 +304,7 @@ def run_experiment(e, experiment_name, args):
 
     if hasattr(experiment, "inv_index") and args.emb_out is not None:
         test_tracker.save_embs_for_tb(save_name=args.emb_out)
+        test_tracker.save_umap(save_name=args.emb_out)
 
     print(metrics[tests.index(max(tests))])
 
