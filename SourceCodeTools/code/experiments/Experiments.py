@@ -253,9 +253,41 @@ class Experiments:
             # allowed = {'str', 'bool', 'Optional', 'None', 'int', 'Any', 'Union', 'List', 'Dict', 'Callable', 'ndarray',
             #            'FrameOrSeries', 'bytes', 'DataFrame', 'Matcher', 'float', 'Tuple', 'bool_t', 'Description',
             #            'Type'}
-            # type_ann = type_ann[
-            #     type_ann["dst"].apply(lambda type_: type_ in allowed)
-            # ]
+            test_only_popular_types = False
+            if test_only_popular_types:
+                allowed = {
+                    'str', 'Optional', 'int', 'Any', 'Union', 'bool', 'Other', 'Callable', 'Dict', 'bytes', 'float',
+                    'Description',
+                    'List', 'Sequence', 'Namespace', 'T', 'Type', 'object', 'HTTPServerRequest', 'Future'
+                }
+                type_ann = type_ann[
+                    type_ann["dst"].apply(lambda type_: type_ in allowed)
+                ]
+            else:
+                allowed = None
+
+            from pathlib import Path
+            dataset_dir = Path(self.experiments['typeann']).parent
+            from SourceCodeTools.nlp.entity.type_prediction import filter_labels
+            train_data = filter_labels(
+                pickle.load(open(dataset_dir.joinpath("type_prediction_dataset_no_defaults_train.pkl"), "rb")),
+                allowed=allowed
+            )
+            test_data = filter_labels(
+                pickle.load(open(dataset_dir.joinpath("type_prediction_dataset_no_defaults_test.pkl"), "rb")),
+                allowed=allowed
+            )
+
+            def get_ids(typeann_dataset):
+                ids = []
+                for sent, annotations in typeann_dataset:
+                    for _, _, r in annotations["replacements"]:
+                        ids.append(r)
+
+                return set(ids)
+
+            train_ids = get_ids(train_data)
+            test_ids = get_ids(test_data)
 
             type_ann = type_ann[["src", "dst"]]
 
@@ -286,8 +318,10 @@ class Experiments:
 
             # return Experiment2(self.embed, nodes, edges, type_ann, split_on="nodes", neg_sampling_strategy="word2vec")
 
-            return Experiment3(self.embed, nodes, edges, type_ann, split_on="edges",
-                               neg_sampling_strategy="word2vec", compact_dst=True)
+            return Experiment3(
+                self.embed, nodes, edges, type_ann, split_on="edges", neg_sampling_strategy="word2vec",
+                compact_dst=True, train_ids=train_ids, test_ids=test_ids
+            )
 
         elif type == "typeann_name":
             type_ann = pandas.read_csv(self.experiments['typeann']).astype({"src": "int32", "dst": "str"})
@@ -370,7 +404,8 @@ class Experiment:
                  split_on="nodes",
                  neg_sampling_strategy="word2vec",
                  K=1,
-                 test_frac=0.1, compact_dst=True):
+                 test_frac=0.1, compact_dst=True,
+                 train_ids=None, test_ids=None):
 
         # store local copies"
         self.embed = embeddings
@@ -382,6 +417,8 @@ class Experiment:
         self.neg_smpl_strategy = neg_sampling_strategy
         self.K = K
         self.TEST_FRAC = test_frac
+        self.train_ids = train_ids
+        self.test_ids = test_ids
 
         # make sure to drop duplicate edges to prevent leakage into the test set
         # do it before creating experiment?
@@ -624,10 +661,11 @@ class Experiment2(Experiment):
                  split_on="nodes",
                  neg_sampling_strategy="word2vec",
                  K=1,
-                 test_frac=0.1, compact_dst=True):
+                 test_frac=0.1, compact_dst=True,
+                 train_ids=None, test_ids=None):
         super(Experiment2, self).__init__(embeddings, nodes, edges, target, split_on=split_on,
                                           neg_sampling_strategy=neg_sampling_strategy, K=K, test_frac=test_frac,
-                                          compact_dst=compact_dst)
+                                          compact_dst=compact_dst, train_ids=train_ids, test_ids=test_ids)
 
         # TODO
         # make sure that compact_property work always identically between runs
@@ -751,30 +789,40 @@ class Experiment2WithSubwords(Experiment2):
 
 
 class Experiment3(Experiment2):
-    def __init__(self, embeddings: Embedder,
-                 nodes: pandas.DataFrame,
-                 edges: pandas.DataFrame,
-                 target: pandas.DataFrame,
-                 split_on="nodes",
-                 neg_sampling_strategy="word2vec",
-                 K=1,
-                 test_frac=0.1, compact_dst=True
-                 ):
+    def __init__(
+            self, embeddings: Embedder,
+            nodes: pandas.DataFrame,
+            edges: pandas.DataFrame,
+            target: pandas.DataFrame,
+            split_on="nodes",
+            neg_sampling_strategy="word2vec",
+            K=1,
+            test_frac=0.1, compact_dst=True,
+            train_ids=None, test_ids=None
+    ):
         super(Experiment3, self).__init__(embeddings, nodes, edges, target, split_on=split_on,
                                           neg_sampling_strategy=neg_sampling_strategy, K=K, test_frac=test_frac,
-                                          compact_dst=compact_dst)
+                                          compact_dst=compact_dst, train_ids=train_ids, test_ids=test_ids)
 
     def get_training_data(self):
 
         # self.get_train_test_split()
 
-        train_positive = self.target.iloc[self.train_edge_ind].values
-        test_positive = self.target.iloc[self.test_edge_ind].values
+        if self.train_ids is not None and self.test_ids is not None:
+            test_positive = self.target[
+                self.target["src"].apply(lambda x: x in self.test_ids)
+            ].values
+            chosen_for_test = set(test_positive[:, 0].tolist())
+            train_positive = self.target[
+                self.target["src"].apply(lambda x: x in self.train_ids and x not in chosen_for_test)
+            ].values
+
+        else:
+            train_positive = self.target.iloc[self.train_edge_ind].values
+            test_positive = self.target.iloc[self.test_edge_ind].values
 
         X_train, y_train = train_positive[:, 0].reshape(-1, 1).astype(np.int32), train_positive[:, 1].reshape(-1, 1).astype(np.int32)
         X_test, y_test = test_positive[:, 0].reshape(-1, 1).astype(np.int32), test_positive[:, 1].reshape(-1, 1).astype(np.int32)
-
-
 
         self.X_train, self.y_train = shuffle(X_train, y_train)
         self.X_test, self.y_test = shuffle(X_test, y_test)
