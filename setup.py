@@ -6,7 +6,7 @@ requirements = [
       'torch==1.9.0',
       'pandas==1.1.1',
       'scikit-learn==1.0',
-      'sentencepiece==0.1',
+      'sentencepiece==0.1.96',
       'gensim==3.8',
       'numpy==1.19.5',
       'scipy==1.4.1',
@@ -15,7 +15,7 @@ requirements = [
       'datasets==1.5.0',
       'spacy==2.3.2',
       'pytest==6.1.2',
-      'faiss==1.7.0'
+      'faiss-cpu==1.7.0'
       # 'pygraphviz'
       # 'javac_parser'
 ]
@@ -27,6 +27,7 @@ setup(name='SourceCodeTools',
       extras_require={
             "gpu": requirements + ["dgl-cu111==0.7.1"]
       },
+      dependency_links=['https://data.dgl.ai/wheels/repo.html'],
       scripts=[
             'SourceCodeTools/code/data/sourcetrail/sourcetrail_call_seq_extractor.py',
             'SourceCodeTools/code/data/sourcetrail/sourcetrail_extract_node_names.py',
