@@ -10,8 +10,32 @@ Library for analyzing source code with graphs and NLP. What this repository can 
 
 ### Installation
 
+You need to use conda, create virtual environment `SourceCodeTools` with python 3.8
+```bash
+conda create -n SourceCodeTools python=3.8
+```
+
+If you plan to use graphviz
+```python
+conda install -c conda-forge pygraphviz
+```
+
+Install CUDA 11.1 if needed
+```python
+conda install -c nvidia cudatoolkit=11.1
+```
+
+To install SourceCodeTools library run
 ```bash
 git clone https://github.com/VitalyRomanov/method-embedding.git
 cd method-embedding
 pip install -e .
+# pip install -e .[gpu]
 ```
+
+### Installing Sourcetrail
+Download a release from [Github repo](https://github.com/CoatiSoftware/Sourcetrail/releases) (latest tested version is 2020.1.117). Add Sourcetrail location to `PATH`
+```bash
+echo 'export PATH=/path/to/Sourcetrail_2020_1_117:$PATH' >> ~/.bashrc
+```
+Scripts that use Sourcetrail work on Linux, some issues were spotted on Macs. 
