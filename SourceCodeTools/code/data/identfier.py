@@ -1,13 +1,19 @@
 from os import urandom
+from time import time_ns
 
 
 class IdentifierPool:
+    """
+    Creates identifier that is almost guaranteed to be unique. Beginning of identifier is based on
+    current time, and the tail of identifier is randomly generated.
+    """
     def __init__(self):
         self._used_identifiers = set()
 
     @staticmethod
     def _get_candidate():
-        return "0x" + str(urandom(8).hex())
+        return str(hex(int(time_ns())))[:12] + str(urandom(3).hex())
+        # return "0x" + str(urandom(8).hex())
 
     def get_new_identifier(self):
         candidate = self._get_candidate()
@@ -23,7 +29,10 @@ class IntIdentifierPool(IdentifierPool):
 
     @staticmethod
     def _get_candidate():
-        candidate = str(int(urandom(10).hex(), 16))
-        while len(candidate) < 19:
-            candidate = str(int(urandom(10).hex(), 16))
-        return candidate[:19]
+        candidate = str(int((str(hex(int(time_ns())))[:12] + str(urandom(3).hex())), 16))
+        # assert len(candidate) == 19
+        return candidate
+        # candidate = str(int(urandom(10).hex(), 16))
+        # while len(candidate) < 19:
+        #     candidate = str(int(urandom(10).hex(), 16))
+        # return candidate[:19]
