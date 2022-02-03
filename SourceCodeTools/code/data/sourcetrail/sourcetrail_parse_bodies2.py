@@ -175,7 +175,7 @@ def process_bodies(nodes, edges, source_location, occurrence, file_content, lang
     for group_ind, (file_id, occurrences) in custom_tqdm(
             enumerate(occurrence_groups), message="Processing function bodies", total=len(occurrence_groups)
     ):
-        sql_occurrences = SQLTable(occurrences, "/tmp/sourcetrail_occurrences.db", "occurrences")
+        sql_occurrences = SQLTable(occurrences, ":memory:", "occurrences")
 
         function_definitions = sql_get_function_definitions(sql_occurrences)
 

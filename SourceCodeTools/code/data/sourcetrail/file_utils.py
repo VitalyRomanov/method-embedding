@@ -178,3 +178,12 @@ def unpersist_or_exit(path, exit_message=None, **kwargs):
         sys.exit()
     else:
         return data
+
+
+def get_temporary_filename():
+    tmp_dir = tempfile.gettempdir()
+    name_generator = tempfile._get_candidate_names()
+    path = os.path.join(tmp_dir, next(name_generator))
+    while os.path.isdir(path):
+        path = os.path.join(tmp_dir, next(name_generator))
+    return path
