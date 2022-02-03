@@ -8,7 +8,7 @@ Library for analyzing source code with graphs and NLP. What this repository can 
 5. Train Graph Neural Network for learning representations for source code
 6. Predict Python types using NLP and graph embeddings
 
-### Installation
+### Instaling Python Libraries
 
 You need to use conda, create virtual environment `SourceCodeTools` with python 3.8
 ```bash
@@ -17,7 +17,7 @@ conda create -n SourceCodeTools python=3.8
 
 If you plan to use graphviz
 ```python
-conda install -c conda-forge pygraphviz
+conda install -c conda-forge pygraphviz graphviz
 ```
 
 Install CUDA 11.1 if needed
@@ -33,26 +33,99 @@ pip install -e .
 # pip install -e .[gpu]
 ```
 
-### Installing Sourcetrail
-Download a release from [Github repo](https://github.com/CoatiSoftware/Sourcetrail/releases) (latest tested version is 2020.1.117). Add Sourcetrail location to `PATH`
-```bash
-echo 'export PATH=/path/to/Sourcetrail_2020_1_117:$PATH' >> ~/.bashrc
-```
-Scripts that use Sourcetrail work on Linux, some issues were spotted on Macs. 
+### Processing Python Code
 
-### Create Dataset
+Source code should be structured in the following way
+```
+source_code_data    
+│
+└───package1
+│   │───source_file_1.py
+│   │───source_file_2.py
+│   └───subfolder_if_needed
+│       │───source_file_3.py
+│       └───source_file_4.py
+│   
+└───package2
+    │───source_file_1.py
+    └───source_file_2.py
+```
+
+A package should contain sell-sufficient code with its dependencies. Unmet dependencies will be labeled as non-indexed symbol.
+
+#### Indexing with Docker
+To create dataset need to first perform indexing with Sourcetrail. The easiest way to do this is with a docker container  
 ```bash
 docker run -it -v "/full/path/to/data/folder":/dataset mortiv16/sourcetrail_indexer
 ```
+#### Indexing manually with Sourcetrail (alternative option)
+This option works onl on Linux. Download a release from [Github repo](https://github.com/CoatiSoftware/Sourcetrail/releases) (latest tested version is 2020.1.117). Add Sourcetrail location to `PATH`
+```bash
+echo 'export PATH=/path/to/Sourcetrail_2020_1_117:$PATH' >> ~/.bashrc
+```
 
-[comment]: <> (```bash)
+```bash
+SCT=/path/to/SourceCodeTool_repository
+SOURCE_CODE=/path/to/source/code
+DATASET_OUTPUT=/path/to/dataset/output
+cd $SOURCE_CODE
+echo "example\nexample2" > list_of_packages.txt
+bash -i $SCT/scripts/data_collection/process_folders.sh < list_of_packages.txt
+bash -i $SCT/scripts/data_extraction/process_sourcetrail.sh $SOURCE_CODE
+```
 
-[comment]: <> (cd path/to/source_code)
+#### Creating graph 
+Need to provide a sentencepiece model for subtokenization. Model trained on CodeSearchNet can be downloaded [here](https://www.dropbox.com/s/cw7oxkzicgnkzgb/sentencepiece_bpe.model?dl=1). 
+```bash
+SCT=/path/to/SourceCodeTool_repository
+SOURCE_CODE=/path/to/source/code/indexed/with/sourcetrail
+DATASET_OUTPUT=/path/to/dataset/output
+python $SCT/SourceCodeTools/code/data/sourcetrail/DatasetCreator2.py --bpe_tokenizer sentencepiece_bpe.model --track_offsets --do_extraction $SOURCE_CODE $DATASET_OUTPUT
+```
 
-[comment]: <> (echo "example\nexample2" | zsh -i scripts/data_collection/process_folders.sh)
+The graph dataset has the following structure
+```
+source_code_data    
+│
+└───no_ast
+│   │───common_call_seq.bz2
+│   │───common_edges.bz2
+│   │───common_function_variable_pairs.bz2
+│   │───common_nodes.bz2
+│   │───common_source_graph_bodies.bz2
+│   └───node_names.bz2
+│   
+└───with_ast
+    │───common_call_seq.bz2
+    │───common_edges.bz2
+    │───common_function_variable_pairs.bz2
+    │───common_nodes.bz2
+    │───common_source_graph_bodies.bz2
+    └───node_names.bz2
+```
 
-[comment]: <> (bash -i scripts/data_extraction/process_sourcetrail.sh path/to/source_code)
+`no_ast` contains graph built from global relationships only. `with_ast` contains graph with AST nodes and edges. Two main files for building the graph are `common_nodes.bz2` and `common_edges.bz2`. The files are stored as pickled pandas table (read with `pandas.read_pickle`) and probably not portable between platforms. One can view the content by converting table into the `csv` format
+```bash
+python $SCT/SourceCodeTools/code/data/sourcetrail/pandas_format_converter.py common_nodes.bz2 csv
+```
 
-[comment]: <> (python SourceCodeTools/code/data/sourcetrail/DatasetCreator2.py --bpe_tokenizer sentencepiece_bpe.model --track_offsets --do_extraction path/to/source_code path/to/graph)
+Table `common_nodes.bz2` has columns 
+```csv
+id,type,serialized_name,mentioned_in,string 
+```
+The first column is global node id, the second is node type, third is a node name. Column `mentioned_in` stores ids of functions where AT nodes have appeared. The column `string` has string representation for some of AST nodes.
 
-[comment]: <> (```)
+Table `common_edges.bz2` has columns 
+```csv
+id,type,source_node_id,target_node_id,file_id,mentioned_in 
+```
+As with nodes, the column `mentined_in` stores id of a function where a given edge has appeared. By grouping edges with identical `mentioned_in` id one can get subgraphs for separate functions.
+
+The graph data can be loaded as pandas tables using `load_data` function
+```python
+from SourceCodeTools.code.data.sourcetrail.Dataset import load_data
+nodes, edges = load_data(
+    node_path="path/to/common_nodes.bz2",
+    edge_path="path/to/common_edges.bz2"
+)
+```
