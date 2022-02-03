@@ -31,7 +31,7 @@ def extract_call_seq(nodes, edges, source_location, occurrence):
             enumerate(occurrence_groups), message="Extracting call sequences", total=len(occurrence_groups)
     ):
 
-        sql_occurrences = SQLTable(occurrences, "/tmp/sourcetrail_occurrences.db", "occurrences")
+        sql_occurrences = SQLTable(occurrences, ":memory:", "occurrences")
 
         function_definitions = sql_get_function_definitions(sql_occurrences)
 
