@@ -5,6 +5,7 @@ from time import time_ns
 
 import networkx as nx
 
+from SourceCodeTools.code.data.identfier import IntIdentifierPool
 from SourceCodeTools.code.data.sourcetrail.common import *
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_add_reverse_edges import add_reverse_edges
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_ast_edges import NodeResolver, make_reverse_edge
@@ -187,6 +188,8 @@ class GlobalNodeMatcher:
         self.global_graph = nx.DiGraph()
         self.global_graph.add_edges_from(self.get_edges_for_graph(self.edges))
 
+        self.name_mapping = dict()
+
     @staticmethod
     def get_edges_for_graph(edges):
         try:
@@ -219,6 +222,8 @@ class GlobalNodeMatcher:
 
         if len(edges) == 0:
             return {}
+
+        local_names = dict(zip(nodes["id"], nodes["serialized_name"]))
 
         func_nodes = nodes.query("type == 'FunctionDef'")["id"].values
         class_nodes = nodes.query("type == 'ClassDef'")["id"].values
@@ -310,7 +315,9 @@ class GlobalNodeMatcher:
         module_global = get_global_module_id(module_nodes, module_candidates, func_global, class_global)
         new_node_ids.update(module_global)
 
-        return new_node_ids
+        name_mapping = {local_names[key]: self.global_names[val] for key, val in new_node_ids.items()}
+
+        return new_node_ids, name_mapping
 
     @staticmethod
     def merge_global_references(global_references, module_global_references):
@@ -343,6 +350,8 @@ class ReplacementNodeResolver(NodeResolver):
         self.new_nodes = []
         self.stashed_nodes = []
 
+        self._resolver_cache = dict()
+
     def stash_new_nodes(self):
         """
         Put new nodes into temporary storage.
@@ -352,6 +361,9 @@ class ReplacementNodeResolver(NodeResolver):
         self.new_nodes = []
 
     def recover_original_string(self, name_, replacement2srctrl):
+        if name_ in self._resolver_cache:
+            return self._resolver_cache[name_]
+
         replacements = dict()
         global_node_id = []
         global_name = []
@@ -382,6 +394,8 @@ class ReplacementNodeResolver(NodeResolver):
         real_name = name_
         for r, v in replacements.items():
             real_name = real_name.replace(r, v["name"])
+
+        self._resolver_cache[name_] = (real_name, global_name, global_node_id, global_type)
         return real_name, global_name, global_node_id, global_type
 
     def resolve_substrings(self, node, replacement2srctrl):
@@ -475,6 +489,9 @@ class ReplacementNodeResolver(NodeResolver):
             string,_,_,_ = self.recover_original_string(node.string, replacement2srctrl)
             node.string = string
 
+        if hasattr(node, "scope"):
+            node.scope = self.resolve(node.scope, replacement2srctrl)
+
         # assert "srctrlrpl_" not in new_node.name
 
         return new_node
@@ -498,6 +515,9 @@ class ReplacementNodeResolver(NodeResolver):
 
                 if not PythonSharedNodes.is_shared(node) and not node.name == "unresolved_name":
                     assert "0x" in node.name
+
+                if isinstance(node.string, str) and "srctrl" in node.string:
+                    print(node.string)
 
                 self.new_nodes.append(
                     {
@@ -978,9 +998,9 @@ def process_code(source_file_content, offsets, node_resolver, mention_tokenizer,
         global_and_ast_offsets = None
 
     # Get mapping from AST nodes to global nodes
-    ast_nodes_to_srctrl_nodes = node_matcher.match_with_global_nodes(node_resolver.new_nodes, edges)
+    ast_nodes_to_srctrl_nodes, ast_node_names_to_global_node_names = node_matcher.match_with_global_nodes(node_resolver.new_nodes, edges)
 
-    return edges, global_and_ast_offsets, ast_nodes_to_srctrl_nodes
+    return edges, global_and_ast_offsets, ast_nodes_to_srctrl_nodes, ast_node_names_to_global_node_names
 
 
 def get_ast_from_modules(
@@ -1010,6 +1030,7 @@ def get_ast_from_modules(
     mention_tokenizer = MentionTokenizer(bpe_tokenizer_path, create_subword_instances, connect_subwords)
     all_ast_edges = []
     all_global_references = {}
+    all_name_mappings = {}
     all_offsets = []
 
     for group_ind, (file_id, occurrences) in custom_tqdm(
@@ -1026,7 +1047,7 @@ def get_ast_from_modules(
 
         # process code
         # try:
-        edges, global_and_ast_offsets, ast_nodes_to_srctrl_nodes = process_code(
+        edges, global_and_ast_offsets, ast_nodes_to_srctrl_nodes, ast_node_names_to_global_node_names = process_code(
             source_file_content, offsets, node_resolver, mention_tokenizer, node_matcher, track_offsets=track_offsets
         )
         # except SyntaxError:
@@ -1045,6 +1066,7 @@ def get_ast_from_modules(
 
         all_ast_edges.extend(edges)
         node_matcher.merge_global_references(all_global_references, ast_nodes_to_srctrl_nodes)
+        all_name_mappings.update(ast_node_names_to_global_node_names)
 
         def format_offsets(global_and_ast_offsets, target):
             """
@@ -1110,6 +1132,18 @@ def get_ast_from_modules(
     if all_ast_nodes is None:
         return None, None, None
 
+    def decipher_node_name(name):
+        if name in all_name_mappings:
+            return all_name_mappings[name]
+        elif "@" in name:
+            for key, value in all_name_mappings.items():
+                if key in name:
+                    return name.replace(key, value)
+            return name
+        return name
+
+    all_ast_nodes["serialized_name"] = all_ast_nodes["serialized_name"].apply(decipher_node_name)
+
     def prepare_edges(all_ast_edges):
         all_ast_edges = pd.DataFrame(all_ast_edges)
         all_ast_edges.drop_duplicates(["type", "src", "dst"], inplace=True)
@@ -1138,6 +1172,8 @@ class OccurrenceReplacer:
         self.processed = None
         self.evicted = None
         self.edits = None
+
+        self._identifier_pool = IntIdentifierPool()
 
     @staticmethod
     def format_offsets_for_replacements(offsets):
@@ -1201,8 +1237,10 @@ class OccurrenceReplacer:
                 offset = self.group_overlapping_offsets(offset, pending)
 
                 # new_name = f"srctrlnd_{offset[2][0]}"
-                replacement_id = int(time_ns())
-                new_name = "srctrlrpl_" + str(replacement_id)
+                # replacement_id = str(int(time_ns()))
+                replacement_id = self._identifier_pool.get_new_identifier()
+                assert len(replacement_id) == 19
+                new_name = "srctrlrpl_" + replacement_id
                 replacement_index[new_name] = {
                     "srctrl_id": offset[2][0] if type(offset[2]) is not list else [o[0] for o in offset[2]],
                     "original_string": src_str
