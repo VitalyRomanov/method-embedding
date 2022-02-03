@@ -85,7 +85,7 @@ python $SCT/SourceCodeTools/code/data/sourcetrail/DatasetCreator2.py --bpe_token
 
 The graph dataset has the following structure
 ```
-source_code_data    
+graph_dataset    
 │
 └───no_ast
 │   │───common_call_seq.bz2
