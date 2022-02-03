@@ -39,3 +39,11 @@ Download a release from [Github repo](https://github.com/CoatiSoftware/Sourcetra
 echo 'export PATH=/path/to/Sourcetrail_2020_1_117:$PATH' >> ~/.bashrc
 ```
 Scripts that use Sourcetrail work on Linux, some issues were spotted on Macs. 
+
+### Create Dataset
+```bash
+cd path/to/source_code
+echo "example\nexample2" | zsh -i scripts/data_collection/process_folders.sh
+bash -i scripts/data_extraction/process_sourcetrail.sh path/to/source_code
+python SourceCodeTools/code/data/sourcetrail/DatasetCreator2.py --bpe_tokenizer sentencepiece_bpe.model --track_offsets --do_extraction path/to/source_code path/to/graph
+```
