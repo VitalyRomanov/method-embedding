@@ -6,6 +6,7 @@ from time import time_ns
 from collections.abc import Iterable
 import pandas as pd
 # import os
+from SourceCodeTools.code.data.identfier import IdentifierPool
 
 
 class PythonSyntheticNodeTypes(Enum):  # TODO NOT USED
@@ -105,6 +106,8 @@ class AstGraphGenerator(object):
         self.condition_status = []
         self.scope = []
 
+        self._identifier_pool = IdentifierPool()
+
     def get_source_from_ast_range(self, start_line, end_line, start_col, end_col, strip=True):
         source = ""
         num_lines = end_line - start_line + 1
@@ -130,12 +133,14 @@ class AstGraphGenerator(object):
 
     def get_name(self, *, node=None, name=None, type=None, add_random_identifier=False):
 
+        random_identifier = self._identifier_pool.get_new_identifier()
+
         if node is not None:
-            name = node.__class__.__name__ + "_" + str(hex(int(time_ns())))
+            name = f"{node.__class__.__name__}_{random_identifier}"
             type = node.__class__.__name__
         else:
             if add_random_identifier:
-                name += f"_{str(hex(int(time_ns())))}"
+                name = f"{name}_{random_identifier}"
 
         if hasattr(node, "lineno"):
             node_string = self.get_source_from_ast_range(node.lineno, node.end_lineno, node.col_offset, node.end_col_offset, strip=False)
