@@ -193,8 +193,8 @@ class AstGraphGenerator(object):
                 edges.extend(s[0])
 
                 if last_node is not None:
-                    edges.append({"dst": s[1], "src": last_node, "type": "next"})
-                    edges.append({"dst": last_node, "src": s[1], "type": "prev"})
+                    edges.append({"dst": s[1], "src": last_node, "type": "next", "scope": copy(self.scope[-1])})
+                    edges.append({"dst": last_node, "src": s[1], "type": "prev", "scope": copy(self.scope[-1])})
 
                 last_node = s[1]
 
