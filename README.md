@@ -50,8 +50,7 @@ source_code_data
     │───source_file_1.py
     └───source_file_2.py
 ```
-
-A package should contain sell-sufficient code with its dependencies. Unmet dependencies will be labeled as non-indexed symbol.
+An example of source code data can be found in this repository `method-embedding\res\python_testdata\example_code`. A package should contain self-sufficient code with its dependencies. Unmet dependencies will be labeled as non-indexed symbol.
 
 #### Indexing with Docker
 To create dataset need to first perform indexing with Sourcetrail. The easiest way to do this is with a docker container  
@@ -129,3 +128,78 @@ nodes, edges = load_data(
     edge_path="path/to/common_edges.bz2"
 )
 ```
+
+#### Examples of graph built from AST
+Module-level graph
+```python
+from Module import Number
+
+def main():
+    a = Number(4)
+    b = Number(5)
+    print(a+b)
+
+main()
+```
+![img_2.png](figures/img_2.png)
+
+Class-level graph
+```python
+class ExampleClass:
+    def __init__(self, argument: int):
+        """
+        Initialize. Инициализация
+        :param argument:
+        """
+        self.field = argument
+
+    def method1(self) -> str:
+        """
+        Call another method. Вызов другого метода.
+        :return:
+        """
+        return self.method2()
+
+    def method2(self) -> str:
+        """
+        Simple operations.
+        Простые операции.
+        :return:
+        """
+        variable1: int = self.field
+        variable2: str = str(variable1)
+        return variable2
+```
+![img_3.png](figures/img_3.png)
+
+Method-level graph
+```python
+def __init__(self, argument: int):
+        """
+        Initialize. Инициализация
+        :param argument:
+        """
+        self.field = argument
+```
+![img_5.png](figures/img_5.png)
+
+```python
+def method2(self) -> str:
+        """
+        Simple operations.
+        Простые операции.
+        :return:
+        """
+        variable1: int = self.field
+        variable2: str = str(variable1)
+        return variable2
+```
+![img_6.png](figures/img_6.png)
+
+```python
+def main():
+    a = Number(4)
+    b = Number(5)
+    print(a+b)
+```
+![img_7.png](figures/img_7.png)
