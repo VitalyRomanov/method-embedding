@@ -23,6 +23,9 @@ from SourceCodeTools.code.data.sourcetrail.file_utils import *
 
 
 class DatasetCreator:
+    """
+    Merges several environments indexed with Sourcetrail into a single graph.
+    """
     def __init__(
             self, path, lang,
             bpe_tokenizer, create_subword_instances,
@@ -30,6 +33,23 @@ class DatasetCreator:
             do_extraction=False, visualize=False, track_offsets=False, remove_type_annotations=False,
             recompute_l2g=False
     ):
+        """
+        :param path: path to source code dataset
+        :param lang: language to use for AST parser (only Python for now)
+        :param bpe_tokenizer: path to bpe tokenizer model
+        :param create_subword_instances: whether to create nodes that represent subword instances (doubles the
+            number of nodes)
+        :param connect_subwords: whether to connect subword instances so that the order of subwords is stored
+            in the graph. Has effect only when create_subword_instances=True
+        :param only_with_annotations: include only packages that have type annotations into the final graph
+        :param do_extraction: when True, process source code and extract AT edges. Otherwise, existing files are
+            used.
+        :param visualize: visualize graph using pygraphviz and store as PDF (infeasible for large graphs)
+        :param track_offsets: store offset information and map node occurrences to global graph ids
+        :param remove_type_annotations: when True, removes all type annotations from the graph and stores then
+            in a file called `type_annotations.bz2`
+        :param recompute_l2g: when True, run merging operation again, without extrcting AST nodes and edges second time
+        """
         self.indexed_path = path
         self.lang = lang
         self.bpe_tokenizer = bpe_tokenizer
@@ -250,7 +270,7 @@ class DatasetCreator:
                 edges = add_reverse_edges(edges)
 
                 # if bodies is not None:
-                ast_nodes, ast_edges, offsets = get_ast_from_modules(
+                ast_nodes, ast_edges, offsets, name_mappings = get_ast_from_modules(
                     nodes, edges, source_location, occurrence, filecontent,
                     self.bpe_tokenizer, self.create_subword_instances, self.connect_subwords, self.lang,
                     track_offsets=self.track_offsets
@@ -274,7 +294,7 @@ class DatasetCreator:
                 if nodes is None or nodes_with_ast is None:
                     continue
 
-                edges = bodies = call_seq = vars = edges_with_ast = offsets = None
+                edges = bodies = call_seq = vars = edges_with_ast = offsets = name_mappings = None
 
             global_nodes = self.merge_with_global(global_nodes, nodes)
             global_nodes_with_ast = self.merge_with_global(global_nodes_with_ast, nodes_with_ast)
@@ -288,7 +308,7 @@ class DatasetCreator:
 
             self.write_local(env_path, nodes, edges, bodies, call_seq, vars,
                              nodes_with_ast, edges_with_ast, offsets,
-                             local2global, local2global_with_ast)
+                             local2global, local2global_with_ast, name_mappings)
 
     def get_local2global(self, path):
         if path in self.local2global_cache:
@@ -352,7 +372,7 @@ class DatasetCreator:
 
     def write_local(self, dir, nodes, edges, bodies, call_seq, vars,
                     nodes_with_ast, edges_with_ast, offsets,
-                    local2global, local2global_with_ast):
+                    local2global, local2global_with_ast, name_mappings):
         if not self.recompute_l2g:
             write_nodes(nodes, dir)
             write_edges(edges, dir)
@@ -364,6 +384,8 @@ class DatasetCreator:
                 persist(vars, join(dir, filenames['function_variable_pairs']))
             persist(nodes_with_ast, join(dir, "nodes_with_ast.bz2"))
             persist(edges_with_ast, join(dir, "edges_with_ast.bz2"))
+            if name_mappings is not None:
+                persist(name_mappings, join(dir, "name_mappings.bz2"))
             if offsets is not None:
                 persist(offsets, join(dir, "offsets.bz2"))
             if len(edges_with_ast.query("type == 'annotation_for' or type == 'returned_by'")) > 0:
