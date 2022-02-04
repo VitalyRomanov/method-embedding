@@ -1142,7 +1142,7 @@ def get_ast_from_modules(
             return name
         return name
 
-    all_ast_nodes["serialized_name"] = all_ast_nodes["serialized_name"].apply(decipher_node_name)
+    # all_ast_nodes["serialized_name"] = all_ast_nodes["serialized_name"].apply(decipher_node_name)
 
     def prepare_edges(all_ast_edges):
         all_ast_edges = pd.DataFrame(all_ast_edges)
@@ -1161,7 +1161,15 @@ def get_ast_from_modules(
     else:
         all_offsets = None
 
-    return all_ast_nodes, all_ast_edges, all_offsets
+    if len(all_name_mappings) > 0:
+        all_name_mappings = pd.DataFrame({
+            "ast_name": list(all_name_mappings.keys()),
+            "proper_names": list(all_name_mappings.values())
+        })
+    else:
+        all_name_mappings = None
+
+    return all_ast_nodes, all_ast_edges, all_offsets, all_name_mappings
 
 
 class OccurrenceReplacer:
