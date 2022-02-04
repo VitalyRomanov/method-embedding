@@ -17,24 +17,27 @@ from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_extract_node_names import extract_node_names
 
 
-def load_data(node_path, edge_path):
+def load_data(node_path, edge_path, rename_columns=True):
     nodes = unpersist(node_path)
     edges = unpersist(edge_path)
 
-    nodes_ = nodes.rename(mapper={
-        'serialized_name': 'name'
-    }, axis=1).astype({
+    nodes = nodes.astype({
+        'type': 'category'
+    })
+    edges = edges.astype({
         'type': 'category'
     })
 
-    edges_ = edges.rename(mapper={
-        'source_node_id': 'src',
-        'target_node_id': 'dst'
-    }, axis=1).astype({
-        'type': 'category'
-    })
+    if rename_columns:
+        nodes = nodes.rename(mapper={
+            'serialized_name': 'name'
+        }, axis=1)
+        edges = edges.rename(mapper={
+            'source_node_id': 'src',
+            'target_node_id': 'dst'
+        }, axis=1)
 
-    return nodes_, edges_
+    return nodes, edges
 
 
 def get_name_group(name):
