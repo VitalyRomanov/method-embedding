@@ -32,6 +32,9 @@ def visualize(nodes, edges, output_path):
 
     g = pgv.AGraph(strict=False, directed=True)
 
+    from SourceCodeTools.code.python_ast2 import PythonNodeEdgeDefinitions
+    auxiliaty_edge_types = PythonNodeEdgeDefinitions.auxiliary_edges()
+
     for ind, edge in edges.iterrows():
         src = edge['source_node_id']
         dst = edge['target_node_id']
@@ -39,7 +42,7 @@ def visualize(nodes, edges, output_path):
         dst_name = id2name[dst]
         g.add_node(src_name, color="blue" if id2type[src] in global_types else "black")
         g.add_node(dst_name, color="blue" if id2type[dst] in global_types else "black")
-        g.add_edge(src_name, dst_name)
+        g.add_edge(src_name, dst_name, color="blue" if edge['type'] in auxiliaty_edge_types else "black")
         g_edge = g.get_edge(src_name, dst_name)
         g_edge.attr['label'] = edge['type']
 
