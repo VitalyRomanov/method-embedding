@@ -508,7 +508,7 @@ def create_test_data(output_dir):
     # [(id, source), (id, source)]
     test_code = pd.DataFrame.from_records([
         {"id": 1, "filecontent": "import numpy\nnumpy.array([1,2,3])", "package": "any_name_1"},
-        {"id": 2, "filecontent": "import numpy\n", "package": "can use the same name here any_name_1"},
+        {"id": 2, "filecontent": "from numpy import *\n", "package": "can use the same name here any_name_1"},
     ])
     persist(test_code, os.path.join(output_dir, "source_code.bz2"))
 

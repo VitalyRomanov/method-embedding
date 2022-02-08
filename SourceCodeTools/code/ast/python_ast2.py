@@ -15,13 +15,11 @@ class PythonNodeEdgeDefinitions:
     ast_node_type_edges = {
         "Assign": ["value", "targets"],
         "AugAssign": ["target", "op", "value"],
-        "ImportFrom": ["module", "names"],
         "Import": ["names"],
         "Delete": ["targets"],
         "Global": ["names"],
         "Nonlocal": ["names"],
         "withitem": ["context_expr", "optional_vars"],
-        "alias": ["name", "asname"],
         "Subscript": ["value", "slice"],
         "Slice": ["lower", "upper", "step"],
         "ExtSlice": ["dims"],
@@ -73,7 +71,9 @@ class PythonNodeEdgeDefinitions:
         "JoinedStr": [],  # overridden
         "FormattedValue": ["value"],  # overridden
         "arguments": ["args", "vararg", "kwarg", "kwonlyargs", "posonlyargs"],  # overridden
-        "comprehension": ["target", "iter", "ifs"]  # overridden, `target_for` is custom, `iter_for` is customm `ifs_rev` is custom
+        "comprehension": ["target", "iter", "ifs"],  # overridden, `target_for` is custom, `iter_for` is customm `ifs_rev` is custom
+        "alias": ["name", "asname"],
+        "ImportFrom": ["module", "names"],
     }
 
     context_edge_names = {
@@ -959,6 +959,18 @@ class AstGraphGenerator(object):
             )
 
         return edges, cph_name
+
+    def parse_alias(self, node):
+        if isinstance(node.name, str):
+            node.name = ast.Name(node.name)
+        if isinstance(node.asname, str):
+            node.asname = ast.Name(node.asname)
+        return self.generic_parse(node, ["name", "asname"])
+
+    def parse_ImportFrom(self, node):
+        if node.module is not None:
+            node.module = ast.Name(node.module)
+        return self.generic_parse(node, ["module", "names"])
 
 if __name__ == "__main__":
     c = "def f(a=5): f(a=4)"

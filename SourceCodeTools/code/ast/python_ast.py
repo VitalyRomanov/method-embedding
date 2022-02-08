@@ -433,6 +433,8 @@ class AstGraphGenerator(object):
         # #     edges.extend(edges_from)
         # #     edges.append({"scope": copy(self.scope[-1]), "src": name_from, "dst": name, "type": "module"})
         # return edges, name
+        if node.module is not None:
+            node.module = ast.Name(node.module)
         return self.generic_parse(node, ["module", "names"])
 
     def parse_Import(self, node):
@@ -471,6 +473,10 @@ class AstGraphGenerator(object):
         # # # if node.asname:
         # # #     edges.append({"scope": copy(self.scope[-1]), "src": name, "dst": node.asname, "type": "alias"})
         # return edges, name
+        if node.name is not None:
+            node.name = ast.Name(node.name)
+        if node.asname is not None:
+            node.asname = ast.Name(node.asname)
         return self.generic_parse(node, ["name", "asname"])
 
     def parse_arg(self, node):
