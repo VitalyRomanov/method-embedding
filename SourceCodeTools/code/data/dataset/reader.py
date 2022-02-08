@@ -62,7 +62,10 @@ def load_aligned_source_code(dataset_directory, tokenizer="codebert"):
 
 
 if __name__ == "__main__":
-    for tokens, node_tags in load_aligned_source_code("/home/ltv/dev/method-embedding/SourceCodeTools/code/data/ast_graph/no_global_index"):
+    import sys
+    data_path = sys.argv[1]
+    for tokens, node_tags in load_aligned_source_code(data_path):
         for t, tt in zip(tokens, node_tags):
             print(t, tt, sep="\t")
         print()
+

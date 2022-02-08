@@ -189,10 +189,14 @@ def resolve_self_collisions2(offsets):
 def align_tokens_with_graph(doc, spans, tokenzer_name):
     spans = deepcopy(spans)
     if tokenzer_name == "codebert":
+        backup_tokens = doc
         doc, adjustment = codebert_to_spacy(doc)
         spans = adjust_offsets(spans, adjustment)
 
     node_tags = biluo_tags_from_offsets(doc, spans, no_localization=False)
+
+    if tokenzer_name == "codebert":
+        doc = ["<s>"] + [t.text for t in backup_tokens] + ["</s>"]
     return doc, node_tags
 
 
