@@ -4,16 +4,15 @@ import sys
 
 import pandas as pd
 
-from SourceCodeTools.code.data.sourcetrail.common import *
-from SourceCodeTools.code.data.sourcetrail.sourcetrail_ast_edges import make_reverse_edge
+from tqdm import tqdm
+
+from SourceCodeTools.code.ast import has_valid_syntax
+from SourceCodeTools.code.data.file_utils import persist, unpersist
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_draw_graph import visualize
-from SourceCodeTools.code.python_ast2 import AstGraphGenerator, GNode, PythonSharedNodes
-# from SourceCodeTools.code.python_ast_cf import AstGraphGenerator
-from SourceCodeTools.nlp.entity.annotator.annotator_utils import adjust_offsets2
-from SourceCodeTools.nlp.entity.annotator.annotator_utils import overlap as range_overlap
-from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets, get_cum_lens
+from SourceCodeTools.code.ast.python_ast2 import AstGraphGenerator, GNode, PythonSharedNodes
+from SourceCodeTools.code.annotator_utils import adjust_offsets2
+from SourceCodeTools.code.annotator_utils import to_offsets, get_cum_lens
 from SourceCodeTools.nlp.string_tools import get_byte_to_char_map
-from SourceCodeTools.code.data.sourcetrail.sourcetrail_parse_bodies2 import has_valid_syntax
 
 
 class MentionTokenizer:
@@ -66,12 +65,16 @@ class MentionTokenizer:
                     new_edges.append(edge)
 
             elif self.bpe is not None and edge["type"] == "__global_name":
-                subwords = self.bpe(edge['src'].name)
-                new_edges.extend(produce_subw_edges(subwords, edge['dst']))
+                # should not have global edges
+                # subwords = self.bpe(edge['src'].name)
+                # new_edges.extend(produce_subw_edges(subwords, edge['dst']))
+                pass
             elif self.bpe is not None and edge['src'].type in PythonSharedNodes.tokenizable_types_and_annotations:
                 new_edges.append(edge)
                 if edge['type'] != "global_mention_rev":
-                    new_edges.append(make_reverse_edge(edge))
+                    # should not have global edges here
+                    pass
+                    # new_edges.append(make_reverse_edge(edge))
 
                 dst = edge['src']
                 subwords = self.bpe(dst.name)
@@ -393,7 +396,7 @@ def process_code_without_index(source_code, node_resolver, mention_tokenizer, tr
             :param edges: Dictionary that represents edge. Information is tored in edges but is related to source node
             :return: Information about location of this edge (offset) in the source file in fromat (start, end, node_id)
             """
-            return [(edge["offsets"][0], edge["offsets"][1], edge["src"]) for edge in edges if edge["offsets"] is not None]
+            return [(edge["offsets"][0], edge["offsets"][1], edge["src"], edge["scope"]) for edge in edges if edge["offsets"] is not None]
 
         # recover ast offsets for the current file
         ast_offsets = get_valid_offsets(edges)
@@ -411,7 +414,7 @@ def build_ast_only_graph(
     all_ast_edges = []
     all_offsets = []
 
-    for source_code_id, source_code in custom_tqdm(source_codes, message="Processing modules", total=None):
+    for package, source_code_id, source_code in tqdm(source_codes, desc="Processing modules"):
         source_code_ = source_code.lstrip()
         initial_strip = source_code[:len(source_code) - len(source_code_)]
 
@@ -451,7 +454,9 @@ def build_ast_only_graph(
                         "start": offset[0],
                         "end": offset[1],
                         "node_id": offset[2],
-                        "string": source_code[offset[0]: offset[1]]
+                        "mentioned_in": offset[3],
+                        "string": source_code[offset[0]: offset[1]],
+                        "package": package
                     })
 
         format_offsets(ast_offsets, target=all_offsets)
@@ -483,6 +488,16 @@ def build_ast_only_graph(
     else:
         all_offsets = None
 
+    node2id = dict(zip(all_ast_nodes["id"], range(len(all_ast_nodes))))
+
+    all_ast_nodes["id"] = all_ast_nodes["id"].apply(node2id.get)
+    all_ast_nodes["mentioned_in"] = all_ast_nodes["mentioned_in"].apply(node2id.get)
+    all_ast_edges["source_node_id"] = all_ast_edges["source_node_id"].apply(node2id.get)
+    all_ast_edges["target_node_id"] = all_ast_edges["target_node_id"].apply(node2id.get)
+    all_ast_edges["mentioned_in"] = all_ast_edges["mentioned_in"].apply(node2id.get)
+    all_offsets["node_id"] = all_offsets["node_id"].apply(node2id.get)
+    all_offsets["mentioned_in"] = all_offsets["mentioned_in"].apply(node2id.get)
+
     return all_ast_nodes, all_ast_edges, all_offsets
 
 
@@ -492,8 +507,8 @@ pd.options.mode.chained_assignment = None  # default='warn'
 def create_test_data(output_dir):
     # [(id, source), (id, source)]
     test_code = pd.DataFrame.from_records([
-        {"id": 1, "source_code": "import numpy\nnumpy.array([1,2,3])"},
-        {"id": 2, "source_code": "import numpy\n"},
+        {"id": 1, "filecontent": "import numpy\nnumpy.array([1,2,3])", "package": "any_name_1"},
+        {"id": 2, "filecontent": "import numpy\n", "package": "can use the same name here any_name_1"},
     ])
     persist(test_code, os.path.join(output_dir, "source_code.bz2"))
 
@@ -519,11 +534,12 @@ def build_ast_graph_from_modules():
     output_dir = args.output_path
 
     nodes, edges, offsets = build_ast_only_graph(
-        zip(source_code["id"], source_code["source_code"]), args.bpe_tokenizer,
+        zip(source_code["package"], source_code["id"], source_code["filecontent"]), args.bpe_tokenizer,
         create_subword_instances=False, connect_subwords=False, lang="py", track_offsets=True
     )
 
     print(f"Writing output to {output_dir}")
+    persist(source_code, os.path.join(output_dir, "common_filecontent.bz2"))
     persist(nodes, os.path.join(output_dir, "common_nodes.bz2"))
     persist(edges, os.path.join(output_dir, "common_edges.bz2"))
     persist(offsets, os.path.join(output_dir, "common_offsets.bz2"))

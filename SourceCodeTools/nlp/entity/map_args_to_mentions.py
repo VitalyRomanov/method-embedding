@@ -1,10 +1,9 @@
 import argparse
 import json
-import pickle
 from os.path import join
 
-from SourceCodeTools.code.data.sourcetrail.Dataset import load_data
-from SourceCodeTools.code.data.sourcetrail.file_utils import unpersist
+from SourceCodeTools.code.data.dataset.Dataset import load_data
+from SourceCodeTools.code.data.file_utils import unpersist
 
 
 def main():

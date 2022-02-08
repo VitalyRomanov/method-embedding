@@ -1,6 +1,6 @@
 import ast
 
-from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets, resolve_self_collision, adjust_offsets2
+from SourceCodeTools.code.annotator_utils import to_offsets, resolve_self_collision, adjust_offsets2
 
 
 def get_mentions(function, root, mention):

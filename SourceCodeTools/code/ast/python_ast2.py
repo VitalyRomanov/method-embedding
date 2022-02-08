@@ -8,7 +8,7 @@ from time import time_ns
 from collections.abc import Iterable
 import pandas as pd
 # import os
-from SourceCodeTools.code.data.identfier import IdentifierPool
+from SourceCodeTools.code.IdentifierPool import IdentifierPool
 
 
 class PythonNodeEdgeDefinitions:

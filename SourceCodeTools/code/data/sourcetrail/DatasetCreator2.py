@@ -1,6 +1,5 @@
 import shelve
 import shutil
-import tempfile
 from os.path import join
 from tqdm import tqdm
 
@@ -19,7 +18,7 @@ from SourceCodeTools.code.data.sourcetrail.sourcetrail_ast_edges2 import get_ast
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_extract_variable_names import extract_var_names
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_extract_node_names import extract_node_names
 
-from SourceCodeTools.code.data.sourcetrail.file_utils import *
+from SourceCodeTools.code.data.file_utils import *
 
 
 class DatasetCreator:

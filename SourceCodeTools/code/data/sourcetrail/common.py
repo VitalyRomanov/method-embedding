@@ -1,4 +1,4 @@
-from SourceCodeTools.code.data.sourcetrail.file_utils import *
+from SourceCodeTools.code.data.file_utils import *
 from tqdm import tqdm
 
 DEFINITION_TYPE = 1

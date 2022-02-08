@@ -59,9 +59,9 @@ python_ops_to_literal = {
     'Pow': "**",
     'FloorDiv': "//",
     'GtE': ">=",
-    'USub': "-", # this appearsto be the operator to chenge number sign -5
+    'USub': "-", # this appears to be the operator to change number sign -5
     'Invert': "~",
-    'UAdd': "+", # this appearsto be the operator to chenge number sign +5, method __pos__
+    'UAdd': "+", # this appears to be the operator to change number sign +5, method __pos__
     'MatMult': "@",
     'BitXor': "^",
     'LShift': "<<",
@@ -71,8 +71,10 @@ python_ops_to_literal = {
     "Continue": "continue",
 }
 
+
 def op_tokenizer(op: str):
     return python_ops_to_bpe.get(op, op)
+
 
 @lru_cache
 def op_tokenize_or_none(op, tokenize_func):

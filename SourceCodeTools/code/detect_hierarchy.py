@@ -1,8 +1,8 @@
 import argparse
 
-from SourceCodeTools.code.data.sourcetrail.Dataset import load_data
+from SourceCodeTools.code.data.dataset.Dataset import load_data
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import edge_types
-from SourceCodeTools.code.data.sourcetrail.file_utils import *
+from SourceCodeTools.code.data.file_utils import *
 import networkx as nx
 
 from functools import lru_cache

@@ -1,5 +1,33 @@
-from copy import copy
+from copy import copy, deepcopy
 from typing import List, Tuple, Iterable
+
+from SourceCodeTools.nlp import create_tokenizer
+from spacy.gold import biluo_tags_from_offsets as spacy_biluo_tags_from_offsets
+
+from SourceCodeTools.nlp.tokenizers import codebert_to_spacy
+
+
+def biluo_tags_from_offsets(doc, ents, no_localization):
+    ent_tags = spacy_biluo_tags_from_offsets(doc, ents)
+
+    if no_localization:
+        tags = []
+        for ent in ent_tags:
+            parts = ent.split("-")
+
+            assert len(parts) <= 2
+
+            if len(parts) == 2:
+                if parts[0] == "B" or parts[0] == "U":
+                    tags.append(parts[1])
+                else:
+                    tags.append("O")
+            else:
+                tags.append("O")
+
+        ent_tags = tags
+
+    return ent_tags
 
 
 def get_cum_lens(body, as_bytes=False):
@@ -156,3 +184,22 @@ def resolve_self_collisions2(offsets):
     no_collisions = list(set(no_collisions))
 
     return no_collisions
+
+
+def align_tokens_with_graph(doc, spans, tokenzer_name):
+    spans = deepcopy(spans)
+    if tokenzer_name == "codebert":
+        doc, adjustment = codebert_to_spacy(doc)
+        spans = adjust_offsets(spans, adjustment)
+
+    node_tags = biluo_tags_from_offsets(doc, spans, no_localization=False)
+    return doc, node_tags
+
+
+def source_code_graph_alignment(source_codes, node_spans, tokenizer="codebert"):
+    supported_tokenizers = ["spacy", "codebert"]
+    assert tokenizer in supported_tokenizers, f"Only these tokenizers supported for alignment: {supported_tokenizers}"
+    nlp = create_tokenizer(tokenizer)
+
+    for code, spans in zip(source_codes, node_spans):
+        yield align_tokens_with_graph(nlp(code), resolve_self_collisions2(spans), tokenzer_name=tokenizer)

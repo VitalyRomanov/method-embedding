@@ -1,6 +1,6 @@
 from os.path import join
 
-from SourceCodeTools.code.data.sourcetrail.Dataset import load_data
+from SourceCodeTools.code.data.dataset.Dataset import load_data
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_draw_graph import visualize
 
 

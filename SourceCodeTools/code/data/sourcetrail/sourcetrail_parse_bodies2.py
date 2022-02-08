@@ -2,8 +2,9 @@ import ast
 import sys
 from typing import Tuple, List, Optional
 
+from SourceCodeTools.code.ast import has_valid_syntax
 from SourceCodeTools.code.data.sourcetrail.common import *
-from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets
+from SourceCodeTools.code.annotator_utils import to_offsets
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
@@ -69,14 +70,6 @@ def get_function_body(file_content, file_id, start, end, s_col, e_col) -> str:
     body = initial_strip + file_content[file_id][offsets[0][0]: offsets[0][1]]
 
     return body
-
-
-def has_valid_syntax(function_body):
-    try:
-        ast.parse(function_body.lstrip())
-        return True
-    except SyntaxError:
-        return False
 
 
 def get_range_for_replacement(occurrence, start_col, end_col, line, nodeid2name):

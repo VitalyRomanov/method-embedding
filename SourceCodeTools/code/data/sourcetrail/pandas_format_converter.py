@@ -1,5 +1,5 @@
 import sys
-from SourceCodeTools.code.data.sourcetrail.file_utils import *
+from SourceCodeTools.code.data.file_utils import *
 
 input_path = sys.argv[1]
 target_format = sys.argv[2]

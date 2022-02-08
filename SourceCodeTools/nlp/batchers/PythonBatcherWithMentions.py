@@ -5,7 +5,7 @@ from typing import Dict, Optional, List
 import numpy as np
 from spacy.gold import biluo_tags_from_offsets
 
-from SourceCodeTools.code.ast_tools import get_declarations
+from SourceCodeTools.code.ast.ast_tools import get_declarations
 from SourceCodeTools.nlp import TagMap, try_int
 from SourceCodeTools.nlp.batchers import PythonBatcher
 from SourceCodeTools.nlp.entity import fix_incorrect_tags

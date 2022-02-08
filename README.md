@@ -10,7 +10,7 @@ Library for analyzing source code with graphs and NLP. What this repository can 
 
 For more details consult our [wiki](https://github.com/VitalyRomanov/method-embedding/wiki).
 
-### Instaling Python Libraries
+### Installing Python Libraries
 
 You need to use conda, create virtual environment `SourceCodeTools` with python 3.8
 ```bash
@@ -96,8 +96,10 @@ python $SCT/SourceCodeTools/code/data/sourcetrail/pandas_format_converter.py com
 ```
 
 The graph data can be loaded as pandas tables using `load_data` function
+
 ```python
-from SourceCodeTools.code.data.sourcetrail.Dataset import load_data
+from SourceCodeTools.code.data.dataset.Dataset import load_data
+
 nodes, edges = load_data(
     node_path="path/to/common_nodes.bz2",
     edge_path="path/to/common_edges.bz2"

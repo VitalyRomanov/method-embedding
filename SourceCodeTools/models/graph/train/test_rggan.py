@@ -1,23 +1,19 @@
 import itertools
-import json
 import logging
 from copy import copy
 from datetime import datetime
 from os import mkdir
-from os.path import isdir, join
-from typing import Tuple
+from os.path import isdir
 
-import dgl
 import pandas as pd
 
-from dgl.data import WN18Dataset, FB15kDataset, FB15k237Dataset, AIFBDataset, MUTAGDataset, BGSDataset, AMDataset
+from dgl.data import FB15kDataset, FB15k237Dataset, AMDataset
 import torch
 from sklearn.model_selection import ParameterGrid
 
-from SourceCodeTools.code.data.sourcetrail.Dataset import SourceGraphDataset
+from SourceCodeTools.code.data.dataset.Dataset import SourceGraphDataset
 from SourceCodeTools.models.graph import RGGAN
 from SourceCodeTools.models.graph.NodeEmbedder import NodeIdEmbedder
-from SourceCodeTools.models.graph.train.objectives import GraphLinkObjective
 from SourceCodeTools.models.graph.train.sampling_multitask2 import SamplingMultitaskTrainer
 from SourceCodeTools.models.graph.train.utils import get_name, get_model_base
 from SourceCodeTools.models.training_options import add_gnn_train_args, verify_arguments
@@ -70,7 +66,7 @@ class TestNodeClfGraph(SourceGraphDataset):
         assert len(self.edges) == len(self.edges.index.unique())
 
         if self_loops:
-            self.nodes, self.edges = SourceGraphDataset.assess_need_for_self_loops(self.nodes, self.edges)
+            self.nodes, self.edges = SourceGraphDataset._assess_need_for_self_loops(self.nodes, self.edges)
 
         if filter is not None:
             for e_type in filter.split(","):
@@ -84,7 +80,7 @@ class TestNodeClfGraph(SourceGraphDataset):
         #     self.remove_global_edges()
 
         if use_node_types is False and use_edge_types is False:
-            new_nodes, new_edges = self.create_nodetype_edges()
+            new_nodes, new_edges = self._create_nodetype_edges()
             self.nodes = self.nodes.append(new_nodes, ignore_index=True)
             self.edges = self.edges.append(new_edges, ignore_index=True)
 
@@ -112,15 +108,15 @@ class TestNodeClfGraph(SourceGraphDataset):
         logging.info(f"Unique edges: {len(self.edges)}, edge types: {len(self.edges['type'].unique())}")
 
         # self.nodes, self.label_map = self.add_compact_labels()
-        self.add_typed_ids()
+        self._add_typed_ids()
 
         # self.add_splits(train_frac=train_frac, package_names=package_names)
 
         # self.mark_leaf_nodes()
 
-        self.create_hetero_graph()
+        self._create_hetero_graph()
 
-        self.update_global_id()
+        self._update_global_id()
 
         self.nodes.sort_values('global_graph_id', inplace=True)
 
@@ -200,7 +196,7 @@ class TestNodeClfGraph(SourceGraphDataset):
     def add_embeddable_flag(self):
         self.nodes['embeddable'] = True
 
-    def add_typed_ids(self):
+    def _add_typed_ids(self):
         pass
 
     def load_node_classes(self):
@@ -237,9 +233,9 @@ class TestLinkPredGraph(TestNodeClfGraph):
         assert len(self.edges) == len(self.edges.index.unique())
 
         if self_loops:
-            self.nodes, self.edges = SourceGraphDataset.assess_need_for_self_loops(self.nodes, self.edges)
-            self.nodes, self.val_edges = SourceGraphDataset.assess_need_for_self_loops(self.nodes, self.val_edges)
-            self.nodes, self.test_edges = SourceGraphDataset.assess_need_for_self_loops(self.nodes, self.test_edges)
+            self.nodes, self.edges = SourceGraphDataset._assess_need_for_self_loops(self.nodes, self.edges)
+            self.nodes, self.val_edges = SourceGraphDataset._assess_need_for_self_loops(self.nodes, self.val_edges)
+            self.nodes, self.test_edges = SourceGraphDataset._assess_need_for_self_loops(self.nodes, self.test_edges)
 
         if filter is not None:
             for e_type in filter.split(","):
@@ -249,7 +245,7 @@ class TestLinkPredGraph(TestNodeClfGraph):
                 self.test_edges = self.test_edges.query(f"type != '{e_type}'")
 
         if use_node_types is False and use_edge_types is False:
-            new_nodes, new_edges = self.create_nodetype_edges()
+            new_nodes, new_edges = self._create_nodetype_edges()
             self.nodes = self.nodes.append(new_nodes, ignore_index=True)
             self.edges = self.edges.append(new_edges, ignore_index=True)
 
@@ -277,15 +273,15 @@ class TestLinkPredGraph(TestNodeClfGraph):
         logging.info(f"Unique edges: {len(self.edges)}, edge types: {len(self.edges['type'].unique())}")
 
         # self.nodes, self.label_map = self.add_compact_labels()
-        self.add_typed_ids()
+        self._add_typed_ids()
 
         # self.add_splits(train_frac=train_frac, package_names=package_names)
 
         # self.mark_leaf_nodes()
 
-        self.create_hetero_graph()
+        self._create_hetero_graph()
 
-        self.update_global_id()
+        self._update_global_id()
 
         self.nodes.sort_values('global_graph_id', inplace=True)
 

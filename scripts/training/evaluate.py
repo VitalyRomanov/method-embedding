@@ -4,13 +4,12 @@ import os
 import shutil
 from datetime import datetime
 from os import mkdir
-from os.path import isdir, join
+from os.path import isdir
 
-from SourceCodeTools.code.data.sourcetrail.Dataset import read_or_create_dataset
-from SourceCodeTools.models.graph import RGCNSampling, RGAN, RGGAN
+from SourceCodeTools.code.data.dataset.Dataset import read_or_create_gnn_dataset
+from SourceCodeTools.models.graph import RGGAN
 from SourceCodeTools.models.graph.train.utils import get_name, get_model_base
 from SourceCodeTools.models.training_options import add_gnn_train_args
-from params import rgcnsampling_params, rggan_params
 
 
 def detect_checkpoint_files(path):
@@ -49,7 +48,7 @@ def main(models, args):
 
             model_base = get_model_base(args, model_attempt)
 
-            dataset = read_or_create_dataset(args=args, model_base=model_base)
+            dataset = read_or_create_gnn_dataset(args=args, model_base=model_base)
 
             from SourceCodeTools.models.graph.train.sampling_multitask2 import evaluation_procedure
 

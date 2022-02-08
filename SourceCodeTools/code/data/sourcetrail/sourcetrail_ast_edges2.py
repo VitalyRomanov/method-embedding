@@ -1,21 +1,19 @@
 import argparse
 import re
 from copy import copy
-from time import time_ns
 
 import networkx as nx
 
-from SourceCodeTools.code.data.identfier import IntIdentifierPool
+from SourceCodeTools.code.IdentifierPool import IntIdentifierPool
+from SourceCodeTools.code.ast import has_valid_syntax
 from SourceCodeTools.code.data.sourcetrail.common import *
-from SourceCodeTools.code.data.sourcetrail.sourcetrail_add_reverse_edges import add_reverse_edges
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_ast_edges import NodeResolver, make_reverse_edge
-from SourceCodeTools.code.python_ast import AstGraphGenerator, GNode, PythonSharedNodes
+from SourceCodeTools.code.ast.python_ast import AstGraphGenerator, GNode, PythonSharedNodes
 # from SourceCodeTools.code.python_ast_cf import AstGraphGenerator
-from SourceCodeTools.nlp.entity.annotator.annotator_utils import adjust_offsets2
-from SourceCodeTools.nlp.entity.annotator.annotator_utils import overlap as range_overlap
-from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets, get_cum_lens
+from SourceCodeTools.code.annotator_utils import adjust_offsets2
+from SourceCodeTools.code.annotator_utils import overlap as range_overlap
+from SourceCodeTools.code.annotator_utils import to_offsets, get_cum_lens
 from SourceCodeTools.nlp.string_tools import get_byte_to_char_map
-from SourceCodeTools.code.data.sourcetrail.sourcetrail_parse_bodies2 import has_valid_syntax
 
 
 class MentionTokenizer:

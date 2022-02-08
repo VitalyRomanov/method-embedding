@@ -2,11 +2,11 @@ import logging
 import os
 from os.path import isdir, join, isfile
 
-from SourceCodeTools.code.data.sourcetrail.Dataset import load_data, compact_property, SourceGraphDataset
+from SourceCodeTools.code.data.dataset.Dataset import load_data, compact_property, SourceGraphDataset
 
 import argparse
 
-from SourceCodeTools.code.data.sourcetrail.file_utils import unpersist, persist
+from SourceCodeTools.code.data.file_utils import unpersist, persist
 
 
 def get_paths(dataset_path, use_extra_objectives):

@@ -5,25 +5,12 @@ from tqdm import tqdm
 from transformers import RobertaTokenizer, RobertaModel
 
 from SourceCodeTools.models.Embedder import Embedder
+from SourceCodeTools.nlp.codebert.codebert import CodeBertModelTrainer, load_typed_nodes
 from SourceCodeTools.nlp.entity.type_prediction import get_type_prediction_arguments, ModelTrainer
 from SourceCodeTools.nlp.entity.utils.data import read_data
 
 
-def load_typed_nodes(path):
-    from SourceCodeTools.code.data.file_utils import unpersist
-    type_ann = unpersist(path)
-
-    filter_rule = lambda name: "0x" not in name
-
-    type_ann = type_ann[
-        type_ann["dst"].apply(filter_rule)
-    ]
-
-    typed_nodes = set(type_ann["src"].tolist())
-    return typed_nodes
-
-
-class CodeBertModelTrainer(ModelTrainer):
+class CodeBertModelTrainer2(CodeBertModelTrainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 

@@ -3,7 +3,7 @@ from os.path import join
 import networkx as nx
 from tqdm import tqdm
 
-from SourceCodeTools.code.data.sourcetrail.Dataset import load_data
+from SourceCodeTools.code.data.dataset.Dataset import load_data
 
 
 def main():

@@ -1,9 +1,8 @@
 import sys
-from typing import Iterable
 
 from SourceCodeTools.code.data.sourcetrail.common import \
     map_id_columns, merge_with_file_if_exists, create_local_to_global_id_map
-from SourceCodeTools.code.data.sourcetrail.file_utils import *
+from SourceCodeTools.code.data.file_utils import *
 
 
 def map_columns(input_table, id_map, columns, columns_special=None):

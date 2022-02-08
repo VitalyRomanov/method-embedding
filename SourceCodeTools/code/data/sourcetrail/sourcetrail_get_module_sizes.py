@@ -2,9 +2,7 @@ import os
 from collections import Counter
 from pprint import pprint
 
-from SourceCodeTools.code.data.sourcetrail.file_utils import unpersist
-from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types
-import pandas as pd
+from SourceCodeTools.code.data.file_utils import unpersist
 
 
 # def estimate_module_sizes(nodes_path):

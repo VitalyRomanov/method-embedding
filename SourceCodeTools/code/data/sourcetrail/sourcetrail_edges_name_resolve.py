@@ -1,6 +1,5 @@
-import pandas as p
-import sys, os
-from SourceCodeTools.code.data.sourcetrail.file_utils import *
+import sys
+from SourceCodeTools.code.data.file_utils import *
 
 nodes = unpersist(sys.argv[1])
 edges = unpersist(sys.argv[2])

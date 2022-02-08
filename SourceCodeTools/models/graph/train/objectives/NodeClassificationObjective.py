@@ -6,7 +6,7 @@ from sklearn.metrics import ndcg_score, top_k_accuracy_score
 from torch import nn
 from torch.nn import CrossEntropyLoss
 
-from SourceCodeTools.code.data.sourcetrail import SubwordMasker
+from SourceCodeTools.code.data.dataset import SubwordMasker
 from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective, compute_accuracy, \
     sum_scores
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
