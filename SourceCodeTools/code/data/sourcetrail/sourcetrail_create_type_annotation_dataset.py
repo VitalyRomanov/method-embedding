@@ -7,9 +7,9 @@ from os.path import join
 import pandas as pd
 from tqdm import tqdm
 
-from SourceCodeTools.code.data.sourcetrail.file_utils import unpersist, unpersist_if_present
+from SourceCodeTools.code.data.file_utils import unpersist, unpersist_if_present
 from SourceCodeTools.nlp import create_tokenizer
-from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets, adjust_offsets2, \
+from SourceCodeTools.code.annotator_utils import to_offsets, adjust_offsets2, \
     resolve_self_collisions2
 from SourceCodeTools.nlp.spacy_tools import isvalid
 

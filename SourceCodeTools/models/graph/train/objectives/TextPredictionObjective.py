@@ -5,15 +5,14 @@ import datasets
 import torch
 from torch.nn import CrossEntropyLoss
 
-from SourceCodeTools.code.data.sourcetrail import SubwordMasker
+from SourceCodeTools.code.data.dataset import SubwordMasker
 from SourceCodeTools.models.graph.ElementEmbedder import DocstringEmbedder, create_fixed_length, \
     ElementEmbedderWithBpeSubwords
 from SourceCodeTools.models.graph.train.objectives import SubwordEmbedderObjective
-from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective, compute_accuracy, \
+from SourceCodeTools.models.graph.train.objectives.AbstractObjective import compute_accuracy, \
     sum_scores
-from SourceCodeTools.models.nlp.TorchDecoder import LSTMDecoder, Decoder
+from SourceCodeTools.models.nlp.TorchDecoder import Decoder
 from SourceCodeTools.models.nlp.Vocabulary import Vocabulary
-from SourceCodeTools.nlp.embed.bpe import load_bpe_model
 import numpy as np
 
 

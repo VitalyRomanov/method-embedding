@@ -1,7 +1,7 @@
 import os
 import sys
 
-from SourceCodeTools.code.data.sourcetrail.file_utils import unpersist
+from SourceCodeTools.code.data.file_utils import unpersist
 
 
 def main():

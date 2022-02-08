@@ -3,7 +3,7 @@ import torch
 import os
 import pandas as pd
 import numpy as np
-from SourceCodeTools.code.data.sourcetrail.Dataset import get_train_val_test_indices, load_data
+from SourceCodeTools.code.data.dataset.Dataset import SourceGraphDataset, load_data  # get_train_val_test_indices, load_data
 import pickle
 import argparse
 
@@ -66,13 +66,13 @@ nodes['global_graph_id'] = nodes['id'].apply(lambda x: ent_map[x])
 
 # splits = get_train_val_test_indices(nodes.index)
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types
-splits = get_train_val_test_indices(nodes.query(f"type_backup == '{node_types[4096]}'").index)
+splits = SourceGraphDataset.get_train_val_test_indices(nodes.query(f"type_backup == '{node_types[4096]}'").index)
 
 
 # nodes, edges, held = SourceGraphDataset.holdout(nodes, edges, 0.001)
 # nodes['label'] = nodes['type']
 
-from SourceCodeTools.code.data.sourcetrail.Dataset import create_train_val_test_masks
+# from SourceCodeTools.code.data.dataset.Dataset import create_train_val_test_masks
 # def add_splits(nodes, splits):
 #     nodes['train_mask'] = False
 #     nodes.loc[nodes.index[splits[0]], 'train_mask'] = True
@@ -94,7 +94,7 @@ torch.save(
     os.path.join(args.out_path, "state_dict.pt")
 )
 
-create_train_val_test_masks(nodes, *splits)
+SourceGraphDataset.create_train_val_test_masks(nodes, *splits)
 
 nodes.to_csv(os.path.join(args.out_path, "nodes.csv"), index=False)
 edges.to_csv(os.path.join(args.out_path, "edges.csv"), index=False)

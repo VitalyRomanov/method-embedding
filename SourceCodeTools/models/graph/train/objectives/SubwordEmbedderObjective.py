@@ -1,7 +1,7 @@
 from collections import OrderedDict
 from itertools import chain
 
-from SourceCodeTools.code.data.sourcetrail.SubwordMasker import SubwordMasker
+from SourceCodeTools.code.data.dataset.SubwordMasker import SubwordMasker
 from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective
 
 

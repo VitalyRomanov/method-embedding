@@ -1,7 +1,7 @@
 #%%
 import sys
 
-from SourceCodeTools.code.data.sourcetrail.file_utils import *
+from SourceCodeTools.code.data.file_utils import *
 
 def filter_ambiguous_edges(edges, ambiguous_edges):
 

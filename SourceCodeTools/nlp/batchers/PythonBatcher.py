@@ -5,44 +5,21 @@ import shutil
 import tempfile
 from collections import defaultdict
 from time import time
-from functools import lru_cache
 from math import ceil
 from typing import Dict, Optional, List
 
 import spacy
-from spacy.gold import biluo_tags_from_offsets as spacy_biluo_tags_from_offsets
 
-from SourceCodeTools.code.ast_tools import get_declarations
+from SourceCodeTools.code.ast.ast_tools import get_declarations
 from SourceCodeTools.models.ClassWeightNormalizer import ClassWeightNormalizer
 from SourceCodeTools.nlp import create_tokenizer, tag_map_from_sentences, TagMap, token_hasher, try_int
 from SourceCodeTools.nlp.entity import fix_incorrect_tags
-from SourceCodeTools.nlp.entity.annotator.annotator_utils import adjust_offsets
+from SourceCodeTools.code.annotator_utils import adjust_offsets, biluo_tags_from_offsets
 from SourceCodeTools.nlp.entity.utils import overlap
-
 import numpy as np
 
 
-def biluo_tags_from_offsets(doc, ents, no_localization):
-    ent_tags = spacy_biluo_tags_from_offsets(doc, ents)
 
-    if no_localization:
-        tags = []
-        for ent in ent_tags:
-            parts = ent.split("-")
-
-            assert len(parts) <= 2
-
-            if len(parts) == 2:
-                if parts[0] == "B" or parts[0] == "U":
-                    tags.append(parts[1])
-                else:
-                    tags.append("O")
-            else:
-                tags.append("O")
-
-        ent_tags = tags
-
-    return ent_tags
 
 def filter_unlabeled(entities, declarations):
     """

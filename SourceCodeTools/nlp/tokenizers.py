@@ -92,6 +92,36 @@ def create_tokenizer(type, bpe_path=None, regex=None):
     else:
         raise Exception("Supported tokenizer types: spacy, regex, bpe")
 
+
+def codebert_to_spacy(tokens):
+    backup_tokens = tokens
+    fixed_spaces = [False]
+    fixed_words = ["<s>"]
+
+    for ind, t in enumerate(tokens):
+        if len(t.text) > 1:
+            fixed_words.append(t.text.strip("Ġ"))
+        else:
+            fixed_words.append(t.text)
+        if ind != 0:
+            fixed_spaces.append(t.text.startswith("Ġ") and len(t.text) > 1)
+    fixed_spaces.append(False)
+    fixed_spaces.append(False)
+    fixed_words.append("</s>")
+
+    assert len(fixed_spaces) == len(fixed_words)
+
+    from spacy.tokens import Doc
+    import spacy
+    doc = Doc(spacy.blank("en").vocab, fixed_words, fixed_spaces)
+
+    assert len(doc) - 2 == len(backup_tokens)
+    assert len(doc.text) - 7 == len(backup_tokens.text)
+
+    adjustment = -3
+    # spans = [adjust_offsets(sp, -3) for sp in spans]
+    return doc, adjustment
+
 # import tokenize
 # from io import BytesIO
 # tokenize.tokenize(BytesIO(s.encode('utf-8')).readline)

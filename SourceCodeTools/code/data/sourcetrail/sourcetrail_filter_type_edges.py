@@ -1,7 +1,7 @@
 import sys
 from os.path import join
 
-from SourceCodeTools.code.data.sourcetrail.file_utils import *
+from SourceCodeTools.code.data.file_utils import *
 
 
 def filter_type_edges(nodes, edges, keep_proportion=0.0):

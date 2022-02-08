@@ -3,7 +3,7 @@ import random as rnd
 import torch
 from torch.nn import CrossEntropyLoss
 
-from SourceCodeTools.code.data.sourcetrail.SubwordMasker import SubwordMasker
+from SourceCodeTools.code.data.dataset.SubwordMasker import SubwordMasker
 from SourceCodeTools.mltools.torch import compute_accuracy
 from SourceCodeTools.models.graph.ElementEmbedder import GraphLinkSampler
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase

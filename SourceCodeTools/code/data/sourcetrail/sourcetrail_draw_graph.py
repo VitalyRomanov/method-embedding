@@ -9,8 +9,6 @@ def visualize(nodes, edges, output_path):
 
     edges = edges[edges["type"].apply(lambda x: not x.endswith("_rev"))]
 
-    from SourceCodeTools.code.data.sourcetrail.Dataset import get_global_edges, ensure_connectedness
-
     # def remove_ast_edges(nodes, edges):
     #     global_edges = get_global_edges()
     #     global_edges.add("subword")
@@ -32,7 +30,7 @@ def visualize(nodes, edges, output_path):
 
     g = pgv.AGraph(strict=False, directed=True)
 
-    from SourceCodeTools.code.python_ast2 import PythonNodeEdgeDefinitions
+    from SourceCodeTools.code.ast.python_ast2 import PythonNodeEdgeDefinitions
     auxiliaty_edge_types = PythonNodeEdgeDefinitions.auxiliary_edges()
 
     for ind, edge in edges.iterrows():

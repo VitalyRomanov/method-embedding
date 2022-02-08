@@ -2,7 +2,7 @@ import ast
 import os
 from typing import Iterable
 
-from SourceCodeTools.code.data.sourcetrail.file_utils import unpersist
+from SourceCodeTools.code.data.file_utils import unpersist
 import numpy as np
 
 class DepthEstimator:

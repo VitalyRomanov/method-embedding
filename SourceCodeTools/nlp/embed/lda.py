@@ -11,7 +11,7 @@ logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=lo
 
 def read_corpus(path, data_field):
     if path.endswith("bz2") or path.endswith("parquet") or path.endswith("csv"):
-        from SourceCodeTools.code.data.sourcetrail.file_utils import unpersist
+        from SourceCodeTools.code.data.file_utils import unpersist
         data = unpersist(path)[data_field].tolist()
     elif path.endswith("jsonl"):
         import json

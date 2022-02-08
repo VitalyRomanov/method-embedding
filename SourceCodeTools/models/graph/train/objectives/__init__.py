@@ -1,4 +1,4 @@
-from SourceCodeTools.code.data.sourcetrail.SubwordMasker import SubwordMasker
+from SourceCodeTools.code.data.dataset.SubwordMasker import SubwordMasker
 from SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObjective import \
     GraphLinkClassificationObjective
 from SourceCodeTools.models.graph.train.objectives.GraphLinkObjective import GraphLinkObjective

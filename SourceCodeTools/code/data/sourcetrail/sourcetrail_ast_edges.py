@@ -4,13 +4,11 @@ from copy import copy
 
 from nltk import RegexpTokenizer
 
-from SourceCodeTools.code.python_ast import AstGraphGenerator
-from SourceCodeTools.code.python_ast import GNode
-from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets, overlap, resolve_self_collision
-from SourceCodeTools.code.data.sourcetrail.file_utils import *
+from SourceCodeTools.code.ast.python_ast import AstGraphGenerator, GNode, PythonSharedNodes
+from SourceCodeTools.code.annotator_utils import to_offsets, overlap, resolve_self_collision
+from SourceCodeTools.code.data.file_utils import *
 from SourceCodeTools.nlp.embed.bpe import load_bpe_model, make_tokenizer
 from SourceCodeTools.code.data.sourcetrail.common import custom_tqdm
-from SourceCodeTools.code.python_ast import PythonSharedNodes
 
 pd.options.mode.chained_assignment = None
 
@@ -219,7 +217,7 @@ def get_ast_nodes(edges):
     return nodes
 
 
-from SourceCodeTools.nlp.entity.annotator.annotator_utils import adjust_offsets
+from SourceCodeTools.code.annotator_utils import adjust_offsets
 
 
 def format_replacement_offsets(offsets):

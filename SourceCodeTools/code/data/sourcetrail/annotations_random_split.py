@@ -1,4 +1,4 @@
-from SourceCodeTools.code.data.sourcetrail.Dataset import split, ensure_connectedness, ensure_valid_edges
+from SourceCodeTools.code.data.dataset.Dataset import SourceGraphDataset  # split, ensure_connectedness, ensure_valid_edges
 import pandas as pd
 import sys
 from os.path import join, dirname
@@ -16,9 +16,9 @@ nodes = pd.DataFrame()
 
 nodes['id'] = pd.concat([type_ann['src'], type_ann['dst']], axis=0).unique()
 
-nodes, train = ensure_connectedness(nodes, train)
+nodes, train = SourceGraphDataset.ensure_connectedness(nodes, train)
 
-nodes, test = ensure_valid_edges(nodes, test, ignore_src=True)
+nodes, test = SourceGraphDataset.ensure_valid_edges(nodes, test, ignore_src=True)
 
 train.rename({
     "dst":"source_node_id",

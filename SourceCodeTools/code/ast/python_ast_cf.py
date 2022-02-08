@@ -1,12 +1,11 @@
 import ast
 from copy import copy
-from enum import Enum
 from pprint import pprint
 from time import time_ns
 from collections.abc import Iterable
 import pandas as pd
 
-from SourceCodeTools.nlp.entity.annotator.annotator_utils import to_offsets
+from SourceCodeTools.code.annotator_utils import to_offsets
 
 
 class GNode:

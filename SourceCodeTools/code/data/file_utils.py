@@ -1,6 +1,9 @@
 import logging
 import tempfile
 from csv import QUOTE_NONNUMERIC
+from pathlib import Path
+from typing import Union
+
 import pandas as pd
 import os
 
@@ -139,7 +142,9 @@ def write_processed_bodies(df, base_path):
     persist(df, bodies_path)
 
 
-def persist(df: pd.DataFrame, path: str, **kwargs):
+def persist(df: pd.DataFrame, path: Union[str, Path], **kwargs):
+    if isinstance(path, Path):
+        path = str(path.absolute())
     if path.endswith(".csv") or path.endswith(".tsv"):
         write_csv(df, path, **kwargs)
     elif path.endswith(".pkl") or path.endswith(".bz2"):
@@ -150,7 +155,9 @@ def persist(df: pd.DataFrame, path: str, **kwargs):
         raise NotImplementedError("supported extensions: csv, bz2, pkl, parquet")
 
 
-def unpersist(path: str, **kwargs) -> pd.DataFrame:
+def unpersist(path: Union[str, Path], **kwargs) -> pd.DataFrame:
+    if isinstance(path, Path):
+        path = str(path.absolute())
     if path.endswith(".csv"):
         data = read_csv(path, **kwargs)
     elif path.endswith(".pkl") or path.endswith(".bz2"):

@@ -1,6 +1,6 @@
 import sys
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types
-from SourceCodeTools.code.data.sourcetrail.file_utils import *
+from SourceCodeTools.code.data.file_utils import *
 
 # needs testing
 def normalize(line):

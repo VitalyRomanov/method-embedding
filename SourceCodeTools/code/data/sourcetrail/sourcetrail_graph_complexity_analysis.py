@@ -1,18 +1,16 @@
 import dgl
 import pandas as pd
 import argparse
-import ast
 import numpy as np
 
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-from SourceCodeTools.code.data.sourcetrail.file_utils import read_processed_bodies, unpersist
+from SourceCodeTools.code.ast import has_valid_syntax
+from SourceCodeTools.code.data.file_utils import unpersist
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_ast_edges2 import AstProcessor, standardize_new_edges, \
     ReplacementNodeResolver, MentionTokenizer
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_compute_function_diameter import compute_diameter
-from SourceCodeTools.code.data.sourcetrail.sourcetrail_parse_bodies2 import has_valid_syntax
-from SourceCodeTools.code.python_ast import AstGraphGenerator
 from SourceCodeTools.nlp import create_tokenizer
 
 
