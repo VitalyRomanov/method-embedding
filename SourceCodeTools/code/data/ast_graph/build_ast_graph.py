@@ -165,8 +165,8 @@ class MentionTokenizer:
                 'offsets': None
             })
             if connect_subwords:
-                self.connect_prev_next_subwords(new_edges, subword, subwords[ind - 1] if ind > 0 else None,
-                                                subwords[ind + 1] if ind < len(subwords) - 1 else None)
+                self.connect_prev_next_subwords(new_edges, subword_instance, instances[ind - 1] if ind > 0 else None,
+                                                instances[ind + 1] if ind < len(instances) - 1 else None)
         return new_edges
 
 
@@ -508,7 +508,15 @@ def create_test_data(output_dir):
     # [(id, source), (id, source)]
     test_code = pd.DataFrame.from_records([
         {"id": 1, "filecontent": "import numpy\nnumpy.array([1,2,3])", "package": "any_name_1"},
-        {"id": 2, "filecontent": "from numpy import *\n", "package": "can use the same name here any_name_1"},
+        {"id": 2, "filecontent": "from numpy.submodule import fn1 as f1, fn2 as f2\n", "package": "can use the same name here any_name_1"},
+        {"id": 3, "filecontent": """try:
+   a = b
+except Exception as e:
+   a = c
+else:
+   a = d
+finally:
+   print(a)""", "package": "a"}
     ])
     persist(test_code, os.path.join(output_dir, "source_code.bz2"))
 
