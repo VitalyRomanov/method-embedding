@@ -16,6 +16,8 @@ class PythonNodeEdgeDefinitions:
         "Assign": ["value", "targets"],
         "AugAssign": ["target", "op", "value"],
         "Import": ["names"],
+        "alias": ["name", "asname"],
+        "ImportFrom": ["module", "names"],
         "Delete": ["targets"],
         "Global": ["names"],
         "Nonlocal": ["names"],
@@ -29,6 +31,7 @@ class PythonNodeEdgeDefinitions:
         "ExceptHandler": ["type"],
         "Call": ["func", "args", "keywords"],
         "Compare": ["left", "ops", "comparators"],
+        "BoolOp": ["values", "op"],
         "Assert": ["test", "msg"],
         "List": ["elts"],
         "Tuple": ["elts"],
@@ -72,8 +75,6 @@ class PythonNodeEdgeDefinitions:
         "FormattedValue": ["value"],  # overridden
         "arguments": ["args", "vararg", "kwarg", "kwonlyargs", "posonlyargs"],  # overridden
         "comprehension": ["target", "iter", "ifs"],  # overridden, `target_for` is custom, `iter_for` is customm `ifs_rev` is custom
-        "alias": ["name", "asname"],
-        "ImportFrom": ["module", "names"],
     }
 
     context_edge_names = {
@@ -81,6 +82,7 @@ class PythonNodeEdgeDefinitions:
         "FunctionDef": ["defined_in_function"],
         "ClassDef": ["defined_in_class"],
         "With": ["executed_inside_with"],
+        "AsyncWith": ["executed_inside_with"],
         "If": ["executed_if_true", "executed_if_false"],
         "For": ["executed_in_for", "executed_in_for_orelse"],
         "AsyncFor": ["executed_in_for", "executed_in_for_orelse"],
@@ -122,7 +124,7 @@ class PythonNodeEdgeDefinitions:
     operand_nodes = {  # parse_op_name
         "And", "Or", "Not", "Is", "Gt", "Lt", "GtE", "LtE", "Eq", "NotEq", "Ellipsis", "Add", "Mod",
         "Sub", "UAdd", "USub", "Div", "Mult", "MatMult", "Pow", "FloorDiv", "RShift", "LShift", "BitAnd",
-        "BitOr", "IsNot", "NotIn", "In", "Invert"
+        "BitOr", "BitXor", "IsNot", "NotIn", "In", "Invert"
     }
 
     control_flow_nodes = {  # parse_control_flow
@@ -550,7 +552,10 @@ class AstGraphGenerator(object):
                 parts = node.split("@")
                 node = GNode(name=parts[0], type=parts[1])
             else:
-                node = GNode(name=node, type="Name")
+                # node = GNode(name=node, type="Name")
+                node = ast.Name(node)
+                edges_, node = self.parse(node)
+                edges.extend(edges_)
             iter_ = node
         elif isinstance(node, int) or node is None:
             iter_ = GNode(name=str(node), type="ast_Literal")
@@ -708,6 +713,9 @@ class AstGraphGenerator(object):
         self.parse_in_context(with_name, "executed_inside_with", edges, node.body)
 
         return edges, with_name
+
+    def parse_AsyncWith(self, node):
+        return self.parse_With(node)
 
     def parse_arg(self, node):
         # node.annotation stores type annotation
@@ -881,11 +889,11 @@ class AstGraphGenerator(object):
         
         return edges, while_name
 
-    def parse_Compare(self, node):
-        return self.generic_parse(node, ["left", "ops", "comparators"])
-
-    def parse_BoolOp(self, node):
-        return self.generic_parse(node, ["values", "op"])
+    # def parse_Compare(self, node):
+    #     return self.generic_parse(node, ["left", "ops", "comparators"])
+    #
+    # def parse_BoolOp(self, node):
+    #     return self.generic_parse(node, ["values", "op"])
 
     def parse_Expr(self, node):
         edges = []
@@ -960,17 +968,17 @@ class AstGraphGenerator(object):
 
         return edges, cph_name
 
-    def parse_alias(self, node):
-        if isinstance(node.name, str):
-            node.name = ast.Name(node.name)
-        if isinstance(node.asname, str):
-            node.asname = ast.Name(node.asname)
-        return self.generic_parse(node, ["name", "asname"])
-
-    def parse_ImportFrom(self, node):
-        if node.module is not None:
-            node.module = ast.Name(node.module)
-        return self.generic_parse(node, ["module", "names"])
+    # def parse_alias(self, node):
+    #     if isinstance(node.name, str):
+    #         node.name = ast.Name(node.name)
+    #     if isinstance(node.asname, str):
+    #         node.asname = ast.Name(node.asname)
+    #     return self.generic_parse(node, ["name", "asname"])
+    #
+    # def parse_ImportFrom(self, node):
+    #     if node.module is not None:
+    #         node.module = ast.Name(node.module)
+    #     return self.generic_parse(node, ["module", "names"])
 
 if __name__ == "__main__":
     c = "def f(a=5): f(a=4)"
