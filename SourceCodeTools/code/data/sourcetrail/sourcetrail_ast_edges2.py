@@ -8,7 +8,7 @@ from SourceCodeTools.code.IdentifierPool import IntIdentifierPool
 from SourceCodeTools.code.ast import has_valid_syntax
 from SourceCodeTools.code.data.sourcetrail.common import *
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_ast_edges import NodeResolver, make_reverse_edge
-from SourceCodeTools.code.ast.python_ast import AstGraphGenerator, GNode, PythonSharedNodes
+from SourceCodeTools.code.ast.python_ast2 import AstGraphGenerator, GNode, PythonSharedNodes
 # from SourceCodeTools.code.python_ast_cf import AstGraphGenerator
 from SourceCodeTools.code.annotator_utils import adjust_offsets2
 from SourceCodeTools.code.annotator_utils import overlap as range_overlap
@@ -162,8 +162,8 @@ class MentionTokenizer:
                 'offsets': None
             })
             if connect_subwords:
-                self.connect_prev_next_subwords(new_edges, subword, subwords[ind - 1] if ind > 0 else None,
-                                                subwords[ind + 1] if ind < len(subwords) - 1 else None)
+                self.connect_prev_next_subwords(new_edges, subword_instance, instances[ind - 1] if ind > 0 else None,
+                                                instances[ind + 1] if ind < len(instances) - 1 else None)
         return new_edges
 
 
@@ -171,7 +171,7 @@ class GlobalNodeMatcher:
     def __init__(self, nodes, edges):
         from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types
         # filter function, classes, methods, and modules
-        self.allowed_node_types = set([node_types[tt] for tt in [8, 128, 4096, 8192]])
+        self.allowed_node_types = set(node_types.values())  # set([node_types[tt] for tt in [8, 128, 2048, 4096, 8192]])
         self.allowed_edge_types = {"defined_in"}  #{"defines_rev"}
 
         self.allowed_ast_node_types = {"FunctionDef", "ClassDef", "Module", "mention"}
