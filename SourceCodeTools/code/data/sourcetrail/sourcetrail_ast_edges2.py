@@ -34,11 +34,11 @@ class MentionTokenizer:
         """
 
         if self.create_subword_instances:
-            def produce_subw_edges(subwords, dst):
-                return self.produce_subword_edges_with_instances(subwords, dst)
+            def produce_subw_edges(subwords, dst, scope=None):
+                return self.produce_subword_edges_with_instances(subwords, dst, scope=scope)
         else:
-            def produce_subw_edges(subwords, dst):
-                return self.produce_subword_edges(subwords, dst, self.connect_subwords)
+            def produce_subw_edges(subwords, dst, scope=None):
+                return self.produce_subword_edges(subwords, dst, self.connect_subwords, scope=scope)
 
         new_edges = []
         for edge in edges:
@@ -61,13 +61,13 @@ class MentionTokenizer:
                     else:
                         subwords = self.bpe(edge['src'].name)
 
-                    new_edges.extend(produce_subw_edges(subwords, dst))
+                    new_edges.extend(produce_subw_edges(subwords, dst, edge["scope"] if "scope" in edge else None))
                 else:
                     new_edges.append(edge)
 
             elif self.bpe is not None and edge["type"] == "__global_name":
                 subwords = self.bpe(edge['src'].name)
-                new_edges.extend(produce_subw_edges(subwords, edge['dst']))
+                new_edges.extend(produce_subw_edges(subwords, edge['dst'], edge["scope"] if "scope" in edge else None))
             elif self.bpe is not None and edge['src'].type in PythonSharedNodes.tokenizable_types_and_annotations:
                 new_edges.append(edge)
                 if edge['type'] != "global_mention_rev":
@@ -75,7 +75,7 @@ class MentionTokenizer:
 
                 dst = edge['src']
                 subwords = self.bpe(dst.name)
-                new_edges.extend(produce_subw_edges(subwords, dst))
+                new_edges.extend(produce_subw_edges(subwords, dst, edge["scope"] if "scope" in edge else None))
             # elif self.bpe is not None and edge['dst'].type in {"Global"} and edge['src'].type != "Constant":
             #     # this brach is disabled because it does not seem to make sense
             #     # Globals can be referred by Name nodes, but they are already processed in the branch above
@@ -84,7 +84,7 @@ class MentionTokenizer:
             #
             #     dst = edge['src']
             #     subwords = self.bpe(dst.name)
-            #     new_edges.extend(produce_subw_edges(subwords, dst))
+            #     new_edges.extend(produce_subw_edges(subwords, dst, edge["scope"] if "scope" in edge else None))
             else:
                 new_edges.append(edge)
 
@@ -110,7 +110,7 @@ class MentionTokenizer:
     #     return global_edges
 
     @staticmethod
-    def connect_prev_next_subwords(edges, current, prev_subw, next_subw):
+    def connect_prev_next_subwords(edges, current, prev_subw, next_subw, scope=None):
         if next_subw is not None:
             edges.append({
                 'src': current,
@@ -118,6 +118,8 @@ class MentionTokenizer:
                 'type': 'next_subword',
                 'offsets': None
             })
+            if scope is not None:
+                edges[-1]["scope"] = scope
         if prev_subw is not None:
             edges.append({
                 'src': current,
@@ -125,8 +127,10 @@ class MentionTokenizer:
                 'type': 'prev_subword',
                 'offsets': None
             })
+            if scope is not None:
+                scope[-1]["scope"] = scope
 
-    def produce_subword_edges(self, subwords, dst, connect_subwords=False):
+    def produce_subword_edges(self, subwords, dst, connect_subwords=False, scope=None):
         new_edges = []
 
         subwords = list(map(lambda x: GNode(name=x, type="subword"), subwords))
@@ -137,12 +141,14 @@ class MentionTokenizer:
                 'type': 'subword',
                 'offsets': None
             })
+            if scope is not None:
+                new_edges[-1]["scope"] = scope
             if connect_subwords:
                 self.connect_prev_next_subwords(new_edges, subword, subwords[ind - 1] if ind > 0 else None,
-                                                subwords[ind + 1] if ind < len(subwords) - 1 else None)
+                                                subwords[ind + 1] if ind < len(subwords) - 1 else None, scope=scope)
         return new_edges
 
-    def produce_subword_edges_with_instances(self, subwords, dst, connect_subwords=True):
+    def produce_subword_edges_with_instances(self, subwords, dst, connect_subwords=True, scope=None):
         new_edges = []
 
         subwords = list(map(lambda x: GNode(name=x, type="subword"), subwords))
@@ -155,15 +161,19 @@ class MentionTokenizer:
                 'type': 'subword_instance',
                 'offsets': None
             })
+            if scope is not None:
+                new_edges[-1]["scope"] = scope
             new_edges.append({
                 'src': subword_instance,
                 'dst': dst,
                 'type': 'subword',
                 'offsets': None
             })
+            if scope is not None:
+                new_edges[-1]["scope"] = scope
             if connect_subwords:
                 self.connect_prev_next_subwords(new_edges, subword_instance, instances[ind - 1] if ind > 0 else None,
-                                                instances[ind + 1] if ind < len(instances) - 1 else None)
+                                                instances[ind + 1] if ind < len(instances) - 1 else None, scope=scope)
         return new_edges
 
 
@@ -517,18 +527,24 @@ class ReplacementNodeResolver(NodeResolver):
                 if isinstance(node.string, str) and "srctrl" in node.string:
                     print(node.string)
 
-                self.new_nodes.append(
-                    {
-                        "id": new_id,
-                        "type": node.type,
-                        "serialized_name": node.name,
-                        "mentioned_in": pd.NA,
-                        "string": node.string
-                    }
-                )
+                if node.type in {"mention", "FunctionDef", "ClassDef"}:
+                    print(node)
+                    print(node)
+                    print(node)
+                    print(node)
+
+                new_node = {
+                    "id": new_id,
+                    "type": node.type,
+                    "serialized_name": node.name,
+                    "mentioned_in": pd.NA,
+                    "string": node.string
+                }
+
+                self.new_nodes.append(new_node)
                 if hasattr(node, "scope"):
                     self.resolve_node_id(node.scope)
-                    self.new_nodes[-1]["mentioned_in"] = node.scope.id
+                    new_node["mentioned_in"] = node.scope.id
                 node.setprop("id", new_id)
         return node
 
@@ -797,7 +813,7 @@ class NameGroupTracker:
         return pd.DataFrame(self.group2names)
 
 
-def global_mention_edges_from_node(node):
+def global_mention_edges_from_node(node, scope=None):
     """
     Construct a new edge that will link to a global node.
     :param node:
@@ -817,6 +833,8 @@ def global_mention_edges_from_node(node):
             "type": "global_mention",
             "offsets": None
         }
+        if scope is not None:
+            global_mention["scope"] = scope
         global_edges.append(global_mention)
         global_edges.append(make_reverse_edge(global_mention))
     return global_edges
@@ -832,10 +850,10 @@ def add_global_mentions(edges):
     for edge in edges:
         if edge['src'].type in {"#attr#", "Name"}:
             if hasattr(edge['src'], "global_id"):
-                new_edges.extend(global_mention_edges_from_node(edge['src']))
+                new_edges.extend(global_mention_edges_from_node(edge['src'], scope=edge["scope"] if "scope" in edge else None))
         elif edge['dst'].type == "mention":
             if hasattr(edge['dst'], "global_id"):
-                new_edges.extend(global_mention_edges_from_node(edge['dst']))
+                new_edges.extend(global_mention_edges_from_node(edge['dst'], scope=edge["scope"] if "scope" in edge else None))
         new_edges.append(edge)
     return new_edges
 
