@@ -61,13 +61,17 @@ class DatasetCreator:
         self.remove_type_annotations = remove_type_annotations
         self.recompute_l2g = recompute_l2g
 
-        paths = (os.path.join(path, dir) for dir in os.listdir(path))
-        self.environments = sorted(list(filter(lambda path: os.path.isdir(path), paths)), key=lambda x: x.lower())
+        self.path = path
+        self.prepare_environments()
 
         self.init_cache()
 
         from SourceCodeTools.code.data.sourcetrail.common import UNRESOLVED_SYMBOL
         self.unsolved_symbol = UNRESOLVED_SYMBOL
+
+    def prepare_environments(self):
+        paths = (os.path.join(self.path, dir) for dir in os.listdir(self.path))
+        self.environments = sorted(list(filter(lambda path: os.path.isdir(path), paths)), key=lambda x: x.lower())
 
     def init_cache(self):
         char_ranges = [chr(i) for i in range(ord("a"), ord("a")+26)] + [chr(i) for i in range(ord("A"), ord("A")+26)] + [chr(i) for i in range(ord("0"), ord("0")+10)]
