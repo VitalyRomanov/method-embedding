@@ -14,6 +14,7 @@ class GNode:
     # id = None
 
     def __init__(self, **kwargs):
+        self.string = None
         for k, v in kwargs.items():
             setattr(self, k, v)
 
@@ -153,7 +154,8 @@ class AstGraphGenerator(object):
         offset, = offset
         line = self.full_source[offset[0]: offset[1]].replace("@","##at##")
         name = GNode(name=line, type="Name")
-        expr = GNode(name="Expression" + "_" + str(hex(int(time_ns()))), type="mention")
+        # expr = GNode(name="Expression" + "_" + str(hex(int(time_ns()))), type="mention")
+        expr = GNode(name=f"{line}@{self.scope[-1].name}", type="mention")
         edges = [
             {"scope": copy(self.scope[-1]), "src": name, "dst": expr, "type": "local_mention", "line": node.lineno - 1, "end_line": node.end_lineno - 1, "col_offset": node.col_offset, "end_col_offset": node.end_col_offset},
         ]
