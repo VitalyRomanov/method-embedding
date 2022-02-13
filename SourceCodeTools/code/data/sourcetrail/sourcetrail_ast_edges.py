@@ -422,6 +422,8 @@ def make_reverse_edge(edge):
     rev_edge['src'] = edge['dst']
     rev_edge['dst'] = edge['src']
     rev_edge['offsets'] = None
+    if "scope" in edge:
+        rev_edge["scope"] = edge["scope"]
     return rev_edge
 
 
