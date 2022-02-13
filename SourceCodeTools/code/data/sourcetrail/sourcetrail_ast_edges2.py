@@ -527,12 +527,6 @@ class ReplacementNodeResolver(NodeResolver):
                 if isinstance(node.string, str) and "srctrl" in node.string:
                     print(node.string)
 
-                if node.type in {"mention", "FunctionDef", "ClassDef"}:
-                    print(node)
-                    print(node)
-                    print(node)
-                    print(node)
-
                 new_node = {
                     "id": new_id,
                     "type": node.type,
