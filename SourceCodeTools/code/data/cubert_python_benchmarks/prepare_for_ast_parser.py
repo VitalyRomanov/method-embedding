@@ -1,6 +1,6 @@
 import hashlib
 
-import pandas as pd
+# import pandas as pd
 import ast
 import json
 from pathlib import Path
@@ -148,15 +148,6 @@ class DatasetAdapter:
 
         self.db = SQLTable(self.dataset_location.joinpath("cubert_benchmarks.db"))
 
-    def iterate_dataset(self, dataset_name):
-        for partition in self.supported_partitions:
-            for record in self.stream_processed_partition(
-                    self.dataset_location.joinpath(self.benchmark_names[dataset_name]), partition,
-                    preprocess_fns=self.preprocess.get(dataset_name, None)
-            ):
-                record["partition"] = partition
-                yield record
-
     def load_original_functions(self):
         functions = self.db.query("SELECT DISTINCT original_id, function FROM functions where comment = 'original' AND dataset = 'variable_misuse'")
         self.original_functions = dict(zip(functions["original_id"], functions["function"]))
@@ -197,64 +188,6 @@ class DatasetAdapter:
     def get_dispatch(self, function):
         root = ast.parse(function)
         return self.get_source_from_ast_range(root.body[0].decorator_list[0], function)
-
-    def import_data(self):
-
-        functions = []
-
-        # added_original = set()
-
-        for dataset_name in self.import_order:
-
-            parsed_successfully = 0
-            parsed_with_errors = 0
-
-            dataset_file = open(self.dataset_location.joinpath(f"{dataset_name}.jsonl"), "w")
-
-            for record in tqdm(self.iterate_dataset(dataset_name), desc=f"Processing {dataset_name}"):
-                info = Info(record["info"])
-
-                # if info.id != "12101e677d30de9462596e7894d2bbd1":
-                #     continue
-
-                # if dataset_name == "variable_misuse_repair":
-                #     record = self.prepare_misuse_repair_record(record)
-                # if record["function"].startswith("@dispatch"):
-                #     dispatch = self.get_dispatch(record["function"])
-                #     info.fn_path += f"@{dispatch}"
-                #     info.set_id()
-
-                record_for_writing = {
-                    # "id": info.id,
-                    # "original_id": info.original_id,
-                    # "filepath": info.filepath,
-                    "fn_path": info.fn_path,
-                    "function": record["function"],
-                    "comment": info.state,
-                    "package": info.package,
-                    "label": record["label"],
-                    # "dataset": dataset_name,
-                    "partition": record["partition"],
-                    "parsing_error": record["parsing_error"]
-                }
-
-                if record["parsing_error"] is None:
-                    parsed_successfully += 1
-                    dataset_file.write(f"{json.dumps(record_for_writing)}\n")
-                else:
-                    parsed_with_errors += 1
-
-            dataset_file.close()
-            print(f"{dataset_name}: success {parsed_successfully} error {parsed_with_errors}")
-            #     functions.append(record_for_writing)
-            #
-            #     if len(functions) > 100000:
-            #         self.db.add_records(pd.DataFrame.from_records(functions), "functions")
-            #         functions.clear()
-            #
-            # if len(functions) > 0:
-            #     self.db.add_records(pd.DataFrame.from_records(functions), "functions")
-            #     functions.clear()
 
     @staticmethod
     def remove_indent(code):
@@ -350,143 +283,90 @@ class DatasetAdapter:
                 r["partition"] = partition
             yield r
 
-    @classmethod
-    def process_dataset(cls, original_data_location, output_location):
-        partitions = ["train", "dev", "eval"]
+    # @classmethod
+    # def process_dataset(cls, original_data_location, output_location):
+    #     partitions = ["train", "dev", "eval"]
+    #
+    #     last_id = 0
+    #     column_order = None
+    #
+    #     data = pd.DataFrame.from_records(
+    #         chain(
+    #             *(cls.stream_processed_partition(original_data_location, partition, add_partition=True) for partition in
+    #               partitions)),
+    #         # columns = column_order
+    #     )
+    #     data["id"] = range(len(data))
+    #     # data.to_pickle(output_location, index=False, columns=cls.sort_columns(data.columns))
+    #     data.to_pickle(output_location)
 
-        last_id = 0
-        column_order = None
+    def iterate_dataset(self, dataset_name):
+        for partition in self.supported_partitions:
+            for record in self.stream_processed_partition(
+                    self.dataset_location.joinpath(self.benchmark_names[dataset_name]), partition,
+                    preprocess_fns=self.preprocess.get(dataset_name, None)
+            ):
+                record["partition"] = partition
+                yield record
 
-        data = pd.DataFrame.from_records(
-            chain(
-                *(cls.stream_processed_partition(original_data_location, partition, add_partition=True) for partition in
-                  partitions)),
-            # columns = column_order
-        )
-        data["id"] = range(len(data))
-        # data.to_pickle(output_location, index=False, columns=cls.sort_columns(data.columns))
-        data.to_pickle(output_location)
+    def import_data(self):
 
+        functions = []
 
-# class DatasetAdapter:
-#     replacements = {
-#         "async": "async_",
-#         "await": "await_"
-#     }
-#
-#     fields = {"function", "info", "label"}
-#     supported_partitions = {"dev", "eval", "train"}
-#
-#     # expected_directory_structure = "dev.jsontxt-00000-of-00004\n"
-#     #                                 "dev.jsontxt-00001-of-00004\n"
-#     #                                 "dev.jsontxt-00002-of-00004\n"
-#     #                                 "dev.jsontxt-00003-of-00004\n"
-#     #                                 "eval.jsontxt-00000-of-00004\n"
-#     #                                 "eval.jsontxt-00001-of-00004\n"
-#     #                                 "eval.jsontxt-00002-of-00004\n"
-#     #                                 "eval.jsontxt-00003-of-00004\n"
-#     #                                 "train.jsontxt-00000-of-00004\n"
-#     #                                 "train.jsontxt-00001-of-00004\n"
-#     #                                 "train.jsontxt-00002-of-00004\n"
-#     #                                 "train.jsontxt-00003-of-00004\n"
-#
-#     @classmethod
-#     def fix_code_if_needed(cls, code):
-#         f = code.lstrip()
-#         try:
-#             ast.parse(f)
-#         except Exception as e:
-#             tokens = CodeTokenizer.tokenize(f)
-#             recovered_tokens = [cls.replacements[token] if token in cls.replacements else token for token in tokens]
-#             f = CodeTokenizer.detokenize(recovered_tokens)
-#             ast.parse(f)
-#         return f
-#
-#     @classmethod
-#     def fix_info_if_needed(cls, info):
-#         if not info.endswith("original"):
-#             parts = info.split(" ")
-#             variable_replacement = parts[-1]
-#
-#             tokens = []
-#
-#             variable_replacement = CodeTokenizer.detokenize(
-#                 cls.replacements[token] if token in cls.replacements else token
-#                 for token in CodeTokenizer.tokenize(variable_replacement)
-#             )
-#
-#             parts[-1] = variable_replacement
-#
-#             info = " ".join(parts)
-#         return info
-#
-#     @staticmethod
-#     def get_package(info):
-#         return info.split(" ")[1].split("/")[0]
-#
-#     replacement_fns = {
-#         "function": fix_code_if_needed.__func__,
-#         "info": fix_info_if_needed.__func__
-#     }
-#
-#     extra_fields = {
-#         "info": [("package", get_package.__func__)]
-#     }
-#
-#     preferred_column_order = ["id", "package", "function", "info", "label", "partition"]
-#
-#     @classmethod
-#     def sort_columns(cls, columns):
-#         return sorted(columns, key=cls.preferred_column_order.index)
-#
-#     @classmethod
-#     def process_record(cls, record):
-#         new_record = {}
-#         for field, data in record.items():
-#             new_record[field] = data if field not in cls.replacement_fns else cls.replacement_fns[field](data)
-#
-#             for new_field, new_field_fn in cls.extra_fields.get(field, []):
-#                 new_record[new_field] = new_field_fn(data)
-#
-#         return new_record
-#
-#     @classmethod
-#     def stream_original_partition(cls, directory, partition):
-#         directory = Path(directory)
-#         assert partition in cls.supported_partitions, f"Only the partitions should be one of: {cls.supported_partitions}, but {partition} given"
-#         for file in directory.iterdir():
-#             if file.name.startswith(partition):
-#                 with open(file) as p:
-#                     for line in p:
-#                         yield json.loads(line)
-#
-#     @classmethod
-#     def stream_processed_partition(cls, directory, partition, add_partition=False):
-#         for record in cls.stream_original_partition(directory, partition):
-#             try:
-#                 r = cls.process_record(record)
-#             except MemoryError:  # there are two functions that cause this error
-#                 continue
-#             if add_partition:
-#                 r["partition"] = partition
-#             yield r
-#
-#     @classmethod
-#     def process_dataset(cls, original_data_location, output_location):
-#         partitions = ["train", "dev", "eval"]
-#
-#         last_id = 0
-#         column_order = None
-#
-#         data = pd.DataFrame.from_records(
-#             chain(
-#                 *(cls.stream_processed_partition(original_data_location, partition, add_partition=True) for partition in
-#                   partitions)),
-#             # columns = column_order
-#         )
-#         data["id"] = range(len(data))
-#         # data.to_pickle(output_location, index=False, columns=cls.sort_columns(data.columns))
-#         data.to_pickle(output_location)
+        # added_original = set()
+
+        for dataset_name in self.import_order:
+
+            parsed_successfully = 0
+            parsed_with_errors = 0
+
+            dataset_file = open(self.dataset_location.joinpath(f"{dataset_name}.jsonl"), "w")
+
+            for record in tqdm(self.iterate_dataset(dataset_name), desc=f"Processing {dataset_name}"):
+                info = Info(record["info"])
+
+                # if info.id != "12101e677d30de9462596e7894d2bbd1":
+                #     continue
+
+                # if dataset_name == "variable_misuse_repair":
+                #     record = self.prepare_misuse_repair_record(record)
+                # if record["function"].startswith("@dispatch"):
+                #     dispatch = self.get_dispatch(record["function"])
+                #     info.fn_path += f"@{dispatch}"
+                #     info.set_id()
+
+                record_for_writing = {
+                    # "id": info.id,
+                    # "original_id": info.original_id,
+                    # "filepath": info.filepath,
+                    "fn_path": info.fn_path,
+                    "function": record["function"],
+                    "comment": info.state,
+                    "package": info.package,
+                    "label": record["label"],
+                    # "dataset": dataset_name,
+                    "partition": record["partition"],
+                    "parsing_error": record["parsing_error"]
+                }
+
+                if record["parsing_error"] is None:
+                    parsed_successfully += 1
+                    dataset_file.write(f"{json.dumps(record_for_writing)}\n")
+                else:
+                    parsed_with_errors += 1
+
+            dataset_file.close()
+            print(f"{dataset_name}: success {parsed_successfully} error {parsed_with_errors}")
+            #     functions.append(record_for_writing)
+            #
+            #     if len(functions) > 100000:
+            #         self.db.add_records(pd.DataFrame.from_records(functions), "functions")
+            #         functions.clear()
+            #
+            # if len(functions) > 0:
+            #     self.db.add_records(pd.DataFrame.from_records(functions), "functions")
+            #     functions.clear()
+
 
 
 def test_fix_info_if_needed():
@@ -506,7 +386,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser("Convert CuBERT's variable misuse detection dataset for further processing")
     parser.add_argument("dataset_path", help="Path to dataset folder")
-    parser.add_argument("output_path", help="Path to output file")
+    # parser.add_argument("output_path", help="Path to output file")
     args = parser.parse_args()
 
     dataset = DatasetAdapter(args.dataset_path)
