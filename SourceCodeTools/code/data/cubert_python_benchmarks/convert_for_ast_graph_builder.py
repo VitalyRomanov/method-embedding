@@ -8,6 +8,7 @@ from tqdm import tqdm
 
 def write_chunk(temp, column_order, first_part):
         data = pd.DataFrame.from_records(temp, columns=column_order)
+        data.rename({"function": "filecontent"}, axis=1, inplace=True)
         if first_part is True:
             data.to_csv(output_path, index=False)
         else:
