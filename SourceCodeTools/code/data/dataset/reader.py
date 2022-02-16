@@ -9,10 +9,10 @@ def load_data(node_path, edge_path, rename_columns=True):
     edges = unpersist(edge_path)
 
     nodes = nodes.astype({
-        'type': 'category'
+        'type': 'category', "serialized_name": "string", "mentioned_in": "Int64", "string": "string"
     })
     edges = edges.astype({
-        'type': 'category'
+        'type': 'category', "mentioned_in": "Int64"
     })
 
     if rename_columns:
