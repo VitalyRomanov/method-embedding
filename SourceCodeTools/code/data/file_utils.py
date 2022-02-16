@@ -48,6 +48,14 @@ def read_parquet(path, **kwargs):
     return pd.read_parquet(path, **kwargs)
 
 
+def write_json(df, path, **kwargs):
+    df.to_json(path, orient="records", lines=True, **kwargs)
+
+
+def read_json(path, **kwargs):
+    return pd.read_json(path, orient="records", lines=True, **kwargs)
+
+
 def read_source_location(base_path):
     source_location_path = os.path.join(base_path, filenames["source_location"])
 
@@ -142,30 +150,58 @@ def write_processed_bodies(df, base_path):
     persist(df, bodies_path)
 
 
+def likely_format(path):
+    path = Path(path)
+    name_parts = path.name.split(".")
+    if len(name_parts) == 1:
+        raise ValueError("Extension is not found for the file:", str(path))
+
+    extensions = ".".join(name_parts[1:])
+
+    if ".csv" in extensions or ".tsv" in extensions:
+        ext = "csv"
+    elif ".pkl" in extensions:
+        ext = "pkl"
+    elif ".parquet" in extensions:
+        ext = "parquet"
+    elif ".json" in extensions:
+        ext = "json"
+    else:
+        raise NotImplementedError("supported extensions: csv, bz2, pkl, parquet, json")
+
+    return ext
+
+
 def persist(df: pd.DataFrame, path: Union[str, Path], **kwargs):
     if isinstance(path, Path):
         path = str(path.absolute())
-    if path.endswith(".csv") or path.endswith(".tsv"):
+
+    format = likely_format(path)
+    if format == "csv":
         write_csv(df, path, **kwargs)
-    elif path.endswith(".pkl") or path.endswith(".bz2"):
+    elif format == "pkl":
         write_pickle(df, path, **kwargs)
-    elif path.endswith(".parquet"):
+    elif format == "parquet":
         write_parquet(df, path, **kwargs)
-    else:
-        raise NotImplementedError("supported extensions: csv, bz2, pkl, parquet")
+    elif format == "json":
+        write_json(df, path, **kwargs)
 
 
 def unpersist(path: Union[str, Path], **kwargs) -> pd.DataFrame:
     if isinstance(path, Path):
         path = str(path.absolute())
-    if path.endswith(".csv"):
+
+    format = likely_format(path)
+    if format == "csv":
         data = read_csv(path, **kwargs)
-    elif path.endswith(".pkl") or path.endswith(".bz2"):
+    elif format == "pkl":
         data = read_pickle(path, **kwargs)
-    elif path.endswith(".parquet"):
+    elif format == "parquet":
         data = read_parquet(path, **kwargs)
+    elif format == "json":
+        data = read_json(path, **kwargs)
     else:
-        raise NotImplementedError("supported extensions: csv, bz2, pkl, parquet")
+        data = None
     return data
 
 
