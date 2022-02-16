@@ -145,6 +145,8 @@ class DatasetCreator:
                                 columns_special=[("mentioned_in", map_offsets)])
         self.create_global_file("filecontent_with_package.bz2", "local2global_with_ast.bz2", [],
                                 join(with_ast_path, "common_filecontent.bz2"), "Merging filecontents")
+        self.create_global_file("name_mappings.bz2", "local2global_with_ast.bz2", [],
+                                join(with_ast_path, "common_name_mappings.bz2"), "Merging name mappings")
 
         if self.remove_type_annotations:
             no_annotations, annotations = filter_type_edges(
@@ -325,14 +327,17 @@ class DatasetCreator:
                 l2g["global_id"] = l2g["global_id"].apply(lambda id_: mapping.get(id_, None))
                 persist(l2g, filepath)
 
+        def create_compact_mapping(node_ids):
+            return dict(zip(node_ids, range(len(node_ids))))
+
         if len(global_nodes) > 0:
             update_l2g_file(
-                mapping=dict(zip(global_nodes, range(len(global_nodes)))), filename="local2global.bz2"
+                mapping=create_compact_mapping(global_nodes), filename="local2global.bz2"
             )
 
         if len(global_nodes_with_ast) > 0:
             update_l2g_file(
-                mapping=dict(zip(global_nodes_with_ast, range(len(global_nodes)))), filename="local2global_with_ast.bz2"
+                mapping=create_compact_mapping(global_nodes_with_ast), filename="local2global_with_ast.bz2"
             )
 
     def get_local2global(self, path):
