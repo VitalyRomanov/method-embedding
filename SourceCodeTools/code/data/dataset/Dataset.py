@@ -44,7 +44,7 @@ class SourceGraphDataset:
     def __init__(
             self, data_path: Union[str, Path], use_node_types: bool = False, use_edge_types: bool = False,
             filter: Optional[List[str]] = None, self_loops: bool = False,
-            train_frac: float = 0.6, random_seed: Optional[int] = None, tokenizer_path: Optional[str, Path] = None,
+            train_frac: float = 0.6, random_seed: Optional[int] = None, tokenizer_path: Union[str, Path] = None,
             min_count_for_objectives: int = 1,
             no_global_edges: bool = False, remove_reverse: bool = False, custom_reverse: Optional[List[str]] = None,
             package_names: Optional[List[str]] = None,
@@ -81,15 +81,6 @@ class SourceGraphDataset:
         :param use_ns_groups: currently not used
 
         """
-        """
-        
-        :param use_node_types: boolean value, whether to use node types or not
-                (node-heterogeneous graph}
-        :param use_edge_types: boolean value, whether to use edge types or not
-                (edge-heterogeneous graph}
-        :param filter: list[str], the types of edges to filter from graph
-        """
-
         self.random_seed = random_seed
         self.nodes_have_types = use_node_types
         self.edges_have_types = use_edge_types
@@ -98,7 +89,7 @@ class SourceGraphDataset:
         self.min_count_for_objectives = min_count_for_objectives
         self.no_global_edges = no_global_edges
         self.remove_reverse = remove_reverse
-        self.custom_reverse = None if custom_reverse is None else custom_reverse.split(",")
+        self.custom_reverse = custom_reverse
 
         self.use_ns_groups = use_ns_groups
 
@@ -117,7 +108,7 @@ class SourceGraphDataset:
             self.nodes, self.edges = SourceGraphDataset._assess_need_for_self_loops(self.nodes, self.edges)
 
         if filter is not None:
-            for e_type in filter.split(","):
+            for e_type in filter:
                 logging.info(f"Filtering edge type {e_type}")
                 self.edges = self.edges.query(f"type != '{e_type}'")
 
@@ -131,7 +122,7 @@ class SourceGraphDataset:
             self._add_custom_reverse()
 
         if use_node_types is False and use_edge_types is False:
-            new_nodes, new_edges = self._create_nodetype_edges()
+            new_nodes, new_edges = self._create_nodetype_edges(self.nodes, self.edges)
             self.nodes = self.nodes.append(new_nodes, ignore_index=True)
             self.edges = self.edges.append(new_edges, ignore_index=True)
 
@@ -260,17 +251,11 @@ class SourceGraphDataset:
 
         # node_types = dict(zip(self.node_types['int_type'], self.node_types['str_type']))
 
-        for type in nodes['type'].unique():
-            # need to use indexes because will need to reference
-            # the original table
-            type_ind = nodes[nodes['type'] == type].index
-
-            id_map = compact_property(nodes.loc[type_ind, 'id'])
-
-            nodes.loc[type_ind, 'typed_id'] = nodes.loc[type_ind, 'id'].apply(lambda old_id: id_map[old_id])
-
-            # typed_id_map[node_types[type]] = id_map
-            typed_id_map[type] = id_map
+        for type_ in nodes['type'].unique():
+            type_mask = nodes['type'] == type_
+            id_map = compact_property(nodes.loc[type_mask, 'id'])
+            nodes.loc[type_mask, 'typed_id'] = nodes.loc[type_mask, 'id'].apply(lambda old_id: id_map[old_id])
+            typed_id_map[type_] = id_map
 
         assert any(pandas.isna(nodes['typed_id'])) is False
 
@@ -479,7 +464,7 @@ class SourceGraphDataset:
             self.g.nodes[ntype].data['original_id'] = torch.tensor(node_data['id'].values, dtype=torch.int64)
 
     @staticmethod
-    def _assess_need_for_self_loops(cls, nodes, edges):
+    def _assess_need_for_self_loops(nodes, edges):
         # this is a hack when where are only outgoing connections from this node type
         need_self_loop = set(edges['src'].values.tolist()) - set(edges['dst'].values.tolist())
         for nid in need_self_loop:
@@ -681,8 +666,7 @@ class SourceGraphDataset:
             f"Filtering isolated nodes. "
             f"Starting from {nodes.shape[0]} nodes and {edges.shape[0]} edges...",
         )
-        unique_nodes = set(edges['src'].values.tolist() +
-                           edges['dst'].values.tolist())
+        unique_nodes = set(edges['src'].append(edges['dst']))
 
         nodes = nodes[
             nodes['id'].apply(lambda nid: nid in unique_nodes)
@@ -1007,7 +991,7 @@ def read_or_create_gnn_dataset(args, model_base, force_new=False):
             args.data_path,
             use_node_types=args.use_node_types,
             use_edge_types=args.use_edge_types,
-            filter=args.filter_edges,
+            filter=None if args.filter_edges is None else args.filter_edges.split(","),
             self_loops=args.self_loops,
             train_frac=args.train_frac,
             tokenizer_path=args.tokenizer,
@@ -1015,7 +999,7 @@ def read_or_create_gnn_dataset(args, model_base, force_new=False):
             min_count_for_objectives=args.min_count_for_objectives,
             no_global_edges=args.no_global_edges,
             remove_reverse=args.remove_reverse,
-            custom_reverse=args.custom_reverse.split(","),
+            custom_reverse=None if args.custom_reverse is None else args.custom_reverse.split(","),
             package_names=open(args.packages_file).readlines() if args.packages_file is not None else None,
             restricted_id_pool=args.restricted_id_pool,
             use_ns_groups=args.use_ns_groups
