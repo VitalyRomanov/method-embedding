@@ -1,3 +1,5 @@
+import hashlib
+
 from SourceCodeTools.code.data.file_utils import *
 from tqdm import tqdm
 
@@ -108,19 +110,22 @@ def merge_with_file_if_exists(df, merge_with_file):
 
 
 def create_local_to_global_id_map(local_nodes, global_nodes):
-    local_nodes = local_nodes.copy()
-    global_nodes = global_nodes.copy()
-
-    global_nodes['node_repr'] = create_node_repr(global_nodes)
-    local_nodes['node_repr'] = create_node_repr(local_nodes)
-
-    rev_id_map = dict(zip(
-        global_nodes['node_repr'].tolist(), global_nodes['id'].tolist()
-    ))
+    # local_nodes = local_nodes.copy()
+    # global_nodes = global_nodes.copy()
+    #
+    # global_nodes['node_repr'] = create_node_repr(global_nodes)
+    # local_nodes['node_repr'] = create_node_repr(local_nodes)
+    #
+    # rev_id_map = dict(zip(
+    #     global_nodes['node_repr'].tolist(), global_nodes['id'].tolist()
+    # ))
+    # id_map = dict(zip(
+    #     local_nodes["id"].tolist(), map(
+    #         lambda x: rev_id_map[x], local_nodes["node_repr"].tolist()
+    #     )
+    # ))
     id_map = dict(zip(
-        local_nodes["id"].tolist(), map(
-            lambda x: rev_id_map[x], local_nodes["node_repr"].tolist()
-        )
+        local_nodes["id"], map(compute_long_id, create_node_repr(local_nodes))
     ))
 
     return id_map
@@ -128,3 +133,7 @@ def create_local_to_global_id_map(local_nodes, global_nodes):
 
 def custom_tqdm(iterable, total, message):
     return tqdm(iterable, total=total, desc=message, leave=False, dynamic_ncols=True)
+
+
+def compute_long_id(obj):
+    return hashlib.md5(repr(obj).encode('utf-8')).hexdigest()

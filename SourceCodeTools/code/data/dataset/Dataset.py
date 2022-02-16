@@ -187,7 +187,7 @@ class SourceGraphDataset:
 
     def _op_tokens(self):
         if self.tokenizer_path is None:
-            from SourceCodeTools.code.python_tokens_to_bpe_subwords import python_ops_to_bpe
+            from SourceCodeTools.code.ast.python_tokens_to_bpe_subwords import python_ops_to_bpe
             logging.info("Using heuristic tokenization for ops")
 
             # def op_tokenize(op_name):
@@ -201,7 +201,7 @@ class SourceGraphDataset:
             # def op_tokenize(op_name):
             #     return op_tokenize_or_none(op_name, tokenizer)
 
-            from SourceCodeTools.code.python_tokens_to_bpe_subwords import python_ops_to_literal
+            from SourceCodeTools.code.ast.python_tokens_to_bpe_subwords import python_ops_to_literal
             return {
                 op_name: tokenizer(op_literal)
                 for op_name, op_literal in python_ops_to_literal.items()

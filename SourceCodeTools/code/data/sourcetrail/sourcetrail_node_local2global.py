@@ -8,7 +8,7 @@ def get_local2global(global_nodes, local_nodes) -> pd.DataFrame:
     local_nodes = local_nodes.copy()
     id_map = create_local_to_global_id_map(local_nodes=local_nodes, global_nodes=global_nodes)
 
-    local_nodes['global_id'] = local_nodes['id'].apply(lambda x: id_map.get(x, -1))
+    local_nodes['global_id'] = local_nodes['id'].apply(lambda x: id_map.get(x, None))
 
     return local_nodes[['id', 'global_id']]
 
