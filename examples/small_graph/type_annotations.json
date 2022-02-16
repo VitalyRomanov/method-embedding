@@ -1,0 +1,16 @@
+{"src":22,"dst":"int"}
+{"src":24,"dst":"argument@FunctionDef_0x16d41315b61e0b59"}
+{"src":35,"dst":"str"}
+{"src":38,"dst":"FunctionDef_0x16d41315b69b5874"}
+{"src":49,"dst":"str"}
+{"src":38,"dst":"FunctionDef_0x16d41315b6ad90da"}
+{"src":53,"dst":"int"}
+{"src":24,"dst":"variable1@FunctionDef_0x16d41315b6ad90da"}
+{"src":56,"dst":"str"}
+{"src":38,"dst":"variable2@FunctionDef_0x16d41315b6ad90da"}
+{"src":79,"dst":"None"}
+{"src":78,"dst":"FunctionDef_0x16d41315b735b6ae"}
+{"src":104,"dst":"int"}
+{"src":24,"dst":"value@FunctionDef_0x16d41315c8deaa67"}
+{"src":128,"dst":"str"}
+{"src":38,"dst":"FunctionDef_0x16d41315c81c9bdf"}

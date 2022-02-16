@@ -1,0 +1,150 @@
+{"id":0,"type":"module","serialized_name":"ExampleModule","mentioned_in":null,"string":null}
+{"id":1,"type":"class","serialized_name":"ExampleModule.ExampleClass","mentioned_in":null,"string":null}
+{"id":2,"type":"class_method","serialized_name":"ExampleModule.ExampleClass.__init__","mentioned_in":null,"string":null}
+{"id":3,"type":"non_indexed_symbol","serialized_name":"builtins","mentioned_in":null,"string":null}
+{"id":4,"type":"class","serialized_name":"builtins.int","mentioned_in":null,"string":null}
+{"id":5,"type":"class_field","serialized_name":"ExampleModule.ExampleClass.field","mentioned_in":null,"string":null}
+{"id":6,"type":"function","serialized_name":"ExampleModule.ExampleClass.method1","mentioned_in":null,"string":null}
+{"id":7,"type":"class","serialized_name":"builtins.str","mentioned_in":null,"string":null}
+{"id":8,"type":"function","serialized_name":"ExampleModule.ExampleClass.method2","mentioned_in":null,"string":null}
+{"id":9,"type":"class_method","serialized_name":"builtins.str.__init__","mentioned_in":null,"string":null}
+{"id":10,"type":"module","serialized_name":"main","mentioned_in":null,"string":null}
+{"id":11,"type":"global_variable","serialized_name":"main.instance","mentioned_in":null,"string":null}
+{"id":12,"type":"function","serialized_name":"main.main","mentioned_in":null,"string":null}
+{"id":13,"type":"function","serialized_name":"builtins.print","mentioned_in":null,"string":null}
+{"id":14,"type":"subword","serialized_name":"\u2581self","mentioned_in":null,"string":null}
+{"id":15,"type":"mention","serialized_name":"self@FunctionDef_0x16d41315b61e0b59","mentioned_in":16,"string":null}
+{"id":16,"type":"FunctionDef","serialized_name":"FunctionDef_0x16d41315b61e0b59","mentioned_in":17,"string":"def __init__(self, argument: int):\n        \"\"\"\n        Initialize. \u0418\u043d\u0438\u0446\u0438\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u044f\n        :param argument:\n        \"\"\"\n        self.field = argument"}
+{"id":17,"type":"ClassDef","serialized_name":"ClassDef_0x16d41315b60713c7","mentioned_in":18,"string":"class ExampleClass:\n    def __init__(self, argument: int):\n        \"\"\"\n        Initialize. \u0418\u043d\u0438\u0446\u0438\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u044f\n        :param argument:\n        \"\"\"\n        self.field = argument\n\n    def method1(self) -> str:\n        \"\"\"\n        Call another method. \u0412\u044b\u0437\u043e\u0432 \u0434\u0440\u0443\u0433\u043e\u0433\u043e \u043c\u0435\u0442\u043e\u0434\u0430.\n        :return:\n        \"\"\"\n        return self.method2()\n\n    def method2(self) -> str:\n        \"\"\"\n        Simple operations.\n        \u041f\u0440\u043e\u0441\u0442\u044b\u0435 \u043e\u043f\u0435\u0440\u0430\u0446\u0438\u0438.\n        :return:\n        \"\"\"\n        variable1: int = self.field\n        variable2: str = str(variable1)\n        return variable2"}
+{"id":18,"type":"Module","serialized_name":"Module_0x16d41315b631c9ef","mentioned_in":null,"string":null}
+{"id":19,"type":"arg","serialized_name":"arg_0x16d41315b616478a","mentioned_in":16,"string":"self"}
+{"id":20,"type":"arguments","serialized_name":"arguments_0x16d41315b6320346","mentioned_in":16,"string":null}
+{"id":21,"type":"subword","serialized_name":"\u2581argument","mentioned_in":null,"string":null}
+{"id":22,"type":"mention","serialized_name":"argument@FunctionDef_0x16d41315b61e0b59","mentioned_in":16,"string":null}
+{"id":23,"type":"arg","serialized_name":"arg_0x16d41315b6854c98","mentioned_in":16,"string":"argument: int"}
+{"id":26,"type":"Assign","serialized_name":"Assign_0x16d41315b65e0868","mentioned_in":16,"string":"self.field = argument"}
+{"id":27,"type":"Attribute","serialized_name":"Attribute_0x16d41315b6d16a6d","mentioned_in":16,"string":"self.field"}
+{"id":28,"type":"#attr#","serialized_name":"field","mentioned_in":null,"string":null}
+{"id":30,"type":"subword","serialized_name":"\u2581__","mentioned_in":null,"string":null}
+{"id":31,"type":"mention","serialized_name":"__init__@ClassDef_0x16d41315b60713c7","mentioned_in":17,"string":null}
+{"id":32,"type":"subword","serialized_name":"init","mentioned_in":null,"string":null}
+{"id":33,"type":"subword","serialized_name":"__","mentioned_in":null,"string":null}
+{"id":34,"type":"mention","serialized_name":"self@FunctionDef_0x16d41315b69b5874","mentioned_in":35,"string":null}
+{"id":35,"type":"FunctionDef","serialized_name":"FunctionDef_0x16d41315b69b5874","mentioned_in":17,"string":"def method1(self) -> str:\n        \"\"\"\n        Call another method. \u0412\u044b\u0437\u043e\u0432 \u0434\u0440\u0443\u0433\u043e\u0433\u043e \u043c\u0435\u0442\u043e\u0434\u0430.\n        :return:\n        \"\"\"\n        return self.method2()"}
+{"id":36,"type":"arg","serialized_name":"arg_0x16d41315b6881089","mentioned_in":35,"string":"self"}
+{"id":37,"type":"arguments","serialized_name":"arguments_0x16d41315b64e4b84","mentioned_in":35,"string":null}
+{"id":39,"type":"subword","serialized_name":"\u2581str","mentioned_in":null,"string":null}
+{"id":40,"type":"Attribute","serialized_name":"Attribute_0x16d41315b6633cfb","mentioned_in":35,"string":"self.method2"}
+{"id":41,"type":"#attr#","serialized_name":"method2","mentioned_in":null,"string":null}
+{"id":42,"type":"subword","serialized_name":"\u2581method","mentioned_in":null,"string":null}
+{"id":43,"type":"subword","serialized_name":"2","mentioned_in":null,"string":null}
+{"id":44,"type":"Call","serialized_name":"Call_0x16d41315b6f8b441","mentioned_in":35,"string":"self.method2()"}
+{"id":45,"type":"Return","serialized_name":"Return_0x16d41315b6887186","mentioned_in":35,"string":"return self.method2()"}
+{"id":46,"type":"mention","serialized_name":"method1@ClassDef_0x16d41315b60713c7","mentioned_in":17,"string":null}
+{"id":47,"type":"subword","serialized_name":"1","mentioned_in":null,"string":null}
+{"id":48,"type":"mention","serialized_name":"self@FunctionDef_0x16d41315b6ad90da","mentioned_in":49,"string":null}
+{"id":49,"type":"FunctionDef","serialized_name":"FunctionDef_0x16d41315b6ad90da","mentioned_in":17,"string":"def method2(self) -> str:\n        \"\"\"\n        Simple operations.\n        \u041f\u0440\u043e\u0441\u0442\u044b\u0435 \u043e\u043f\u0435\u0440\u0430\u0446\u0438\u0438.\n        :return:\n        \"\"\"\n        variable1: int = self.field\n        variable2: str = str(variable1)\n        return variable2"}
+{"id":50,"type":"arg","serialized_name":"arg_0x16d41315b69c8916","mentioned_in":49,"string":"self"}
+{"id":51,"type":"arguments","serialized_name":"arguments_0x16d41315b685c455","mentioned_in":49,"string":null}
+{"id":52,"type":"subword","serialized_name":"\u2581variable","mentioned_in":null,"string":null}
+{"id":53,"type":"mention","serialized_name":"variable1@FunctionDef_0x16d41315b6ad90da","mentioned_in":49,"string":null}
+{"id":54,"type":"AnnAssign","serialized_name":"AnnAssign_0x16d41315b69586f8","mentioned_in":49,"string":"variable1: int = self.field"}
+{"id":55,"type":"Attribute","serialized_name":"Attribute_0x16d41315b692f3a5","mentioned_in":49,"string":"self.field"}
+{"id":56,"type":"mention","serialized_name":"variable2@FunctionDef_0x16d41315b6ad90da","mentioned_in":49,"string":null}
+{"id":57,"type":"AnnAssign","serialized_name":"AnnAssign_0x16d41315b64fbc69","mentioned_in":49,"string":"variable2: str = str(variable1)"}
+{"id":58,"type":"mention","serialized_name":"str@FunctionDef_0x16d41315b6ad90da","mentioned_in":49,"string":null}
+{"id":59,"type":"Call","serialized_name":"Call_0x16d41315b6720a4f","mentioned_in":49,"string":"str(variable1)"}
+{"id":60,"type":"Return","serialized_name":"Return_0x16d41315b639dcda","mentioned_in":49,"string":"return variable2"}
+{"id":61,"type":"mention","serialized_name":"method2@ClassDef_0x16d41315b60713c7","mentioned_in":17,"string":null}
+{"id":62,"type":"subword","serialized_name":"\u2581Example","mentioned_in":null,"string":null}
+{"id":63,"type":"mention","serialized_name":"ExampleClass@Module_0x16d41315b631c9ef","mentioned_in":18,"string":null}
+{"id":64,"type":"subword","serialized_name":"Class","mentioned_in":null,"string":null}
+{"id":65,"type":"mention","serialized_name":"ExampleModule@Module_0x16d41315b7d4afab","mentioned_in":66,"string":null}
+{"id":66,"type":"Module","serialized_name":"Module_0x16d41315b7d4afab","mentioned_in":null,"string":null}
+{"id":67,"type":"subword","serialized_name":"Module","mentioned_in":null,"string":null}
+{"id":68,"type":"ImportFrom","serialized_name":"ImportFrom_0x16d41315b71ee551","mentioned_in":66,"string":"from ExampleModule import ExampleClass as EC"}
+{"id":69,"type":"mention","serialized_name":"ExampleClass@Module_0x16d41315b7d4afab","mentioned_in":66,"string":null}
+{"id":70,"type":"alias","serialized_name":"alias_0x16d41315b78c6d18","mentioned_in":66,"string":null}
+{"id":71,"type":"subword","serialized_name":"\u2581EC","mentioned_in":null,"string":null}
+{"id":72,"type":"mention","serialized_name":"EC@Module_0x16d41315b7d4afab","mentioned_in":66,"string":null}
+{"id":73,"type":"Call","serialized_name":"Call_0x16d41315b75ea742","mentioned_in":66,"string":"EC(5)"}
+{"id":74,"type":"Constant","serialized_name":"Constant_","mentioned_in":null,"string":null}
+{"id":75,"type":"Assign","serialized_name":"Assign_0x16d41315b72b1e6c","mentioned_in":66,"string":"instance = EC(5)"}
+{"id":76,"type":"subword","serialized_name":"\u2581instance","mentioned_in":null,"string":null}
+{"id":77,"type":"mention","serialized_name":"instance@Module_0x16d41315b7d4afab","mentioned_in":66,"string":null}
+{"id":79,"type":"FunctionDef","serialized_name":"FunctionDef_0x16d41315b735b6ae","mentioned_in":66,"string":"def main() -> None:\n    print(instance.method1())"}
+{"id":81,"type":"subword","serialized_name":"\u2581print","mentioned_in":null,"string":null}
+{"id":82,"type":"mention","serialized_name":"print@FunctionDef_0x16d41315b735b6ae","mentioned_in":79,"string":null}
+{"id":83,"type":"Call","serialized_name":"Call_0x16d41315b795d9b1","mentioned_in":79,"string":"print(instance.method1())"}
+{"id":84,"type":"mention","serialized_name":"instance@FunctionDef_0x16d41315b735b6ae","mentioned_in":79,"string":null}
+{"id":85,"type":"Attribute","serialized_name":"Attribute_0x16d41315b7d4d09e","mentioned_in":79,"string":"instance.method1"}
+{"id":86,"type":"#attr#","serialized_name":"method1","mentioned_in":null,"string":null}
+{"id":87,"type":"Call","serialized_name":"Call_0x16d41315b7d93dbb","mentioned_in":79,"string":"instance.method1()"}
+{"id":88,"type":"subword","serialized_name":"\u2581main","mentioned_in":null,"string":null}
+{"id":89,"type":"mention","serialized_name":"main@Module_0x16d41315b7d4afab","mentioned_in":66,"string":null}
+{"id":90,"type":"Call","serialized_name":"Call_0x16d41315b738fe7d","mentioned_in":66,"string":"main()"}
+{"id":91,"type":"module","serialized_name":"Module","mentioned_in":null,"string":null}
+{"id":92,"type":"class","serialized_name":"Module.Number","mentioned_in":null,"string":null}
+{"id":93,"type":"class_method","serialized_name":"Module.Number.__init__","mentioned_in":null,"string":null}
+{"id":94,"type":"class_field","serialized_name":"Module.Number.val","mentioned_in":null,"string":null}
+{"id":95,"type":"function","serialized_name":"Module.Number.__add__","mentioned_in":null,"string":null}
+{"id":96,"type":"function","serialized_name":"Module.Number.__repr__","mentioned_in":null,"string":null}
+{"id":97,"type":"mention","serialized_name":"self@FunctionDef_0x16d41315c8deaa67","mentioned_in":98,"string":null}
+{"id":98,"type":"FunctionDef","serialized_name":"FunctionDef_0x16d41315c8deaa67","mentioned_in":99,"string":"def __init__(self, value: int):\n        \"\"\"\n        Initialize. \u0418\u043d\u0438\u0446\u0438\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u044f\n        :param argument:\n        \"\"\"\n        self.val = value"}
+{"id":99,"type":"ClassDef","serialized_name":"ClassDef_0x16d41315c87e23dc","mentioned_in":100,"string":"class Number:\n    def __init__(self, value: int):\n        \"\"\"\n        Initialize. \u0418\u043d\u0438\u0446\u0438\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u044f\n        :param argument:\n        \"\"\"\n        self.val = value\n\n    def __add__(self, value):\n        \"\"\"\n        Add two numbers.\n        \u0421\u043b\u043e\u0436\u0438\u0442\u044c 2 \u0447\u0438\u0441\u043b\u0430\n        :param value:\n        :return:\n        \"\"\"\n        return Number(self.val + value.val)\n\n    def __repr__(self) -> str:\n        \"\"\"\n        Return representation\n        :return: \u041f\u043e\u043b\u0443\u0447\u0438\u0442\u044c \u043f\u0440\u0435\u0434\u0441\u0442\u0430\u0432\u043b\u0435\u043d\u0438\u0435\n        \"\"\"\n        return f\"Number({self.val})\""}
+{"id":100,"type":"Module","serialized_name":"Module_0x16d41315c8795210","mentioned_in":null,"string":null}
+{"id":101,"type":"arg","serialized_name":"arg_0x16d41315c8c0c85f","mentioned_in":98,"string":"self"}
+{"id":102,"type":"arguments","serialized_name":"arguments_0x16d41315c86b314b","mentioned_in":98,"string":null}
+{"id":103,"type":"subword","serialized_name":"\u2581value","mentioned_in":null,"string":null}
+{"id":104,"type":"mention","serialized_name":"value@FunctionDef_0x16d41315c8deaa67","mentioned_in":98,"string":null}
+{"id":105,"type":"arg","serialized_name":"arg_0x16d41315c829b52d","mentioned_in":98,"string":"value: int"}
+{"id":106,"type":"Assign","serialized_name":"Assign_0x16d41315c8f71d5b","mentioned_in":98,"string":"self.val = value"}
+{"id":107,"type":"Attribute","serialized_name":"Attribute_0x16d41315c898a89c","mentioned_in":98,"string":"self.val"}
+{"id":108,"type":"#attr#","serialized_name":"val","mentioned_in":null,"string":null}
+{"id":110,"type":"mention","serialized_name":"__init__@ClassDef_0x16d41315c87e23dc","mentioned_in":99,"string":null}
+{"id":111,"type":"mention","serialized_name":"self@FunctionDef_0x16d41315c8336015","mentioned_in":112,"string":null}
+{"id":112,"type":"FunctionDef","serialized_name":"FunctionDef_0x16d41315c8336015","mentioned_in":99,"string":"def __add__(self, value):\n        \"\"\"\n        Add two numbers.\n        \u0421\u043b\u043e\u0436\u0438\u0442\u044c 2 \u0447\u0438\u0441\u043b\u0430\n        :param value:\n        :return:\n        \"\"\"\n        return Number(self.val + value.val)"}
+{"id":113,"type":"arg","serialized_name":"arg_0x16d41315c836c8e3","mentioned_in":112,"string":"self"}
+{"id":114,"type":"arguments","serialized_name":"arguments_0x16d41315c89f1854","mentioned_in":112,"string":null}
+{"id":115,"type":"mention","serialized_name":"value@FunctionDef_0x16d41315c8336015","mentioned_in":112,"string":null}
+{"id":116,"type":"arg","serialized_name":"arg_0x16d41315c8b89fd0","mentioned_in":112,"string":"value"}
+{"id":117,"type":"subword","serialized_name":"\u2581Number","mentioned_in":null,"string":null}
+{"id":118,"type":"mention","serialized_name":"Number@FunctionDef_0x16d41315c8336015","mentioned_in":112,"string":null}
+{"id":119,"type":"Call","serialized_name":"Call_0x16d41315c81ad247","mentioned_in":112,"string":"Number(self.val + value.val)"}
+{"id":120,"type":"Attribute","serialized_name":"Attribute_0x16d41315c8e05daa","mentioned_in":112,"string":"self.val"}
+{"id":121,"type":"BinOp","serialized_name":"BinOp_0x16d41315c81b0e8d","mentioned_in":112,"string":"self.val + value.val"}
+{"id":122,"type":"Attribute","serialized_name":"Attribute_0x16d41315c83902eb","mentioned_in":112,"string":"value.val"}
+{"id":123,"type":"Op","serialized_name":"Add","mentioned_in":null,"string":null}
+{"id":124,"type":"Return","serialized_name":"Return_0x16d41315c814af65","mentioned_in":112,"string":"return Number(self.val + value.val)"}
+{"id":125,"type":"mention","serialized_name":"__add__@ClassDef_0x16d41315c87e23dc","mentioned_in":99,"string":null}
+{"id":126,"type":"subword","serialized_name":"add","mentioned_in":null,"string":null}
+{"id":127,"type":"mention","serialized_name":"self@FunctionDef_0x16d41315c81c9bdf","mentioned_in":128,"string":null}
+{"id":128,"type":"FunctionDef","serialized_name":"FunctionDef_0x16d41315c81c9bdf","mentioned_in":99,"string":"def __repr__(self) -> str:\n        \"\"\"\n        Return representation\n        :return: \u041f\u043e\u043b\u0443\u0447\u0438\u0442\u044c \u043f\u0440\u0435\u0434\u0441\u0442\u0430\u0432\u043b\u0435\u043d\u0438\u0435\n        \"\"\"\n        return f\"Number({self.val})\""}
+{"id":129,"type":"arg","serialized_name":"arg_0x16d41315c8766105","mentioned_in":128,"string":"self"}
+{"id":130,"type":"arguments","serialized_name":"arguments_0x16d41315c8044c7c","mentioned_in":128,"string":null}
+{"id":131,"type":"JoinedStr","serialized_name":"JoinedStr_","mentioned_in":null,"string":null}
+{"id":132,"type":"Return","serialized_name":"Return_0x16d41315c8a05fc6","mentioned_in":128,"string":"return f\"Number({self.val})\""}
+{"id":133,"type":"mention","serialized_name":"__repr__@ClassDef_0x16d41315c87e23dc","mentioned_in":99,"string":null}
+{"id":134,"type":"subword","serialized_name":"repr","mentioned_in":null,"string":null}
+{"id":135,"type":"mention","serialized_name":"Number@Module_0x16d41315c8795210","mentioned_in":100,"string":null}
+{"id":136,"type":"subword","serialized_name":"\u2581Module","mentioned_in":null,"string":null}
+{"id":137,"type":"mention","serialized_name":"Module@Module_0x16d41315c9361936","mentioned_in":138,"string":null}
+{"id":138,"type":"Module","serialized_name":"Module_0x16d41315c9361936","mentioned_in":null,"string":null}
+{"id":139,"type":"ImportFrom","serialized_name":"ImportFrom_0x16d41315c996d4c8","mentioned_in":138,"string":"from Module import Number"}
+{"id":140,"type":"mention","serialized_name":"Number@Module_0x16d41315c9361936","mentioned_in":138,"string":null}
+{"id":141,"type":"alias","serialized_name":"alias_0x16d41315c9a652fd","mentioned_in":138,"string":null}
+{"id":142,"type":"mention","serialized_name":"Number@FunctionDef_0x16d41315c9c41f53","mentioned_in":143,"string":null}
+{"id":143,"type":"FunctionDef","serialized_name":"FunctionDef_0x16d41315c9c41f53","mentioned_in":138,"string":"def main():\n    a = Number(4)\n    b = Number(5)\n    print(a+b)"}
+{"id":144,"type":"Call","serialized_name":"Call_0x16d41315c99e75f7","mentioned_in":143,"string":"Number(4)"}
+{"id":145,"type":"Assign","serialized_name":"Assign_0x16d41315c909ace6","mentioned_in":143,"string":"a = Number(4)"}
+{"id":146,"type":"subword","serialized_name":"\u2581a","mentioned_in":null,"string":null}
+{"id":147,"type":"mention","serialized_name":"a@FunctionDef_0x16d41315c9c41f53","mentioned_in":143,"string":null}
+{"id":148,"type":"Call","serialized_name":"Call_0x16d41315c9bee524","mentioned_in":143,"string":"Number(5)"}
+{"id":149,"type":"Assign","serialized_name":"Assign_0x16d41315c9c3c775","mentioned_in":143,"string":"b = Number(5)"}
+{"id":150,"type":"subword","serialized_name":"\u2581b","mentioned_in":null,"string":null}
+{"id":151,"type":"mention","serialized_name":"b@FunctionDef_0x16d41315c9c41f53","mentioned_in":143,"string":null}
+{"id":152,"type":"mention","serialized_name":"print@FunctionDef_0x16d41315c9c41f53","mentioned_in":143,"string":null}
+{"id":153,"type":"Call","serialized_name":"Call_0x16d41315c9148a75","mentioned_in":143,"string":"print(a+b)"}
+{"id":154,"type":"BinOp","serialized_name":"BinOp_0x16d41315c919b5a9","mentioned_in":143,"string":"a+b"}
+{"id":155,"type":"mention","serialized_name":"main@Module_0x16d41315c9361936","mentioned_in":138,"string":null}
+{"id":156,"type":"Call","serialized_name":"Call_0x16d41315c99405f0","mentioned_in":138,"string":"main()"}
