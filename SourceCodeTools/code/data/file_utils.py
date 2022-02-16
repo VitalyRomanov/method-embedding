@@ -156,7 +156,7 @@ def likely_format(path):
     if len(name_parts) == 1:
         raise ValueError("Extension is not found for the file:", str(path))
 
-    extensions = ".".join(name_parts[1:])
+    extensions = "." + ".".join(name_parts[1:])
 
     if ".csv" in extensions or ".tsv" in extensions:
         ext = "csv"
@@ -167,7 +167,7 @@ def likely_format(path):
     elif ".json" in extensions:
         ext = "json"
     else:
-        raise NotImplementedError("supported extensions: csv, bz2, pkl, parquet, json")
+        raise NotImplementedError("supported extensions: csv, bz2, pkl, parquet, json", extensions)
 
     return ext
 
