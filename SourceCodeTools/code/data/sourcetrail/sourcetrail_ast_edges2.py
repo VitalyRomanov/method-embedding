@@ -251,6 +251,8 @@ class GlobalNodeMatcher:
             name_node = def_id
             motif = copy(motif)
             while len(motif) > 0:
+                if name_node not in graph:
+                    return None
                 link_type = motif.pop(0)
                 for node, eprop in graph[name_node].items():
                     if eprop["type"] == link_type:
@@ -941,14 +943,14 @@ def process_code(source_file_content, offsets, node_resolver, mention_tokenizer,
     try:
         ast_processor = AstProcessor(replacer.source_with_replacements)
     except:
-        return None, None, None
+        return None, None, None, None
     try: # TODO recursion error does not appear consistently. The issue is probably with library versions...
         edges = ast_processor.get_edges(as_dataframe=False)
     except RecursionError:
-        return None, None, None
+        return None, None, None, None
 
     if len(edges) == 0:
-        return None, None, None
+        return None, None, None, None
 
     # resolve sourcetrail nodes ans replace with original
     resolve = lambda node: node_resolver.resolve(node, replacer.replacement_index)
@@ -1140,7 +1142,7 @@ def get_ast_from_modules(
 
     all_ast_nodes = node_resolver.new_nodes_for_write(from_stashed=True)
     if all_ast_nodes is None:
-        return None, None, None
+        return None, None, None, None
 
     def decipher_node_name(name):
         if name in all_name_mappings:
