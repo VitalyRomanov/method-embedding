@@ -244,8 +244,8 @@ class DatasetCreator:
         persist(edges, epath)
 
     def do_extraction(self):
-        global_nodes = None
-        global_nodes_with_ast = None
+        global_nodes = set()
+        global_nodes_with_ast = set()
 
         for env_path in self.environments:
             logging.info(f"Found {os.path.basename(env_path)}")
@@ -299,8 +299,8 @@ class DatasetCreator:
 
                 edges = bodies = call_seq = vars = edges_with_ast = offsets = name_mappings = None
 
-            global_nodes = self.merge_with_global(global_nodes, nodes)
-            global_nodes_with_ast = self.merge_with_global(global_nodes_with_ast, nodes_with_ast)
+            # global_nodes = self.merge_with_global(global_nodes, nodes)
+            # global_nodes_with_ast = self.merge_with_global(global_nodes_with_ast, nodes_with_ast)
 
             local2global = get_local2global(
                 global_nodes=global_nodes, local_nodes=nodes
@@ -309,9 +309,31 @@ class DatasetCreator:
                 global_nodes=global_nodes_with_ast, local_nodes=nodes_with_ast
             )
 
+            global_nodes.update(local2global["global_id"])
+            global_nodes_with_ast.update(local2global_with_ast["global_id"])
+
             self.write_local(env_path, nodes, edges, bodies, call_seq, vars,
                              nodes_with_ast, edges_with_ast, offsets,
                              local2global, local2global_with_ast, name_mappings)
+
+        def update_l2g_file(mapping, filename):
+            for env_path in tqdm(self.environments, desc=f"Fixing {filename}"):
+                filepath = os.path.join(env_path, filename)
+                if not os.path.isfile(filepath):
+                    continue
+                l2g = unpersist(filepath)
+                l2g["global_id"] = l2g["global_id"].apply(lambda id_: mapping.get(id_, None))
+                persist(l2g, filepath)
+
+        if len(global_nodes) > 0:
+            update_l2g_file(
+                mapping=dict(zip(global_nodes, range(len(global_nodes)))), filename="local2global.bz2"
+            )
+
+        if len(global_nodes_with_ast) > 0:
+            update_l2g_file(
+                mapping=dict(zip(global_nodes_with_ast, range(len(global_nodes)))), filename="local2global_with_ast.bz2"
+            )
 
     def get_local2global(self, path):
         if path in self.local2global_cache:

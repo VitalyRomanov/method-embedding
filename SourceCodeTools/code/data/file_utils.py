@@ -160,7 +160,7 @@ def likely_format(path):
 
     if ".csv" in extensions or ".tsv" in extensions:
         ext = "csv"
-    elif ".pkl" in extensions:
+    elif ".pkl" in extensions or extensions.endswith(".bz2"):
         ext = "pkl"
     elif ".parquet" in extensions:
         ext = "parquet"
