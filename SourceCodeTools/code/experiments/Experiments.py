@@ -8,9 +8,8 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 
 # from graphtools import Embedder
-from SourceCodeTools.code.data.sourcetrail.Dataset import get_train_val_test_indices, create_train_val_test_masks, \
-    filter_dst_by_freq
-from SourceCodeTools.code.data.sourcetrail.file_utils import unpersist
+from SourceCodeTools.code.data.dataset.Dataset import filter_dst_by_freq
+from SourceCodeTools.code.data.file_utils import unpersist
 from SourceCodeTools.models.Embedder import Embedder
 import pickle
 
@@ -132,8 +131,6 @@ class Experiments:
         # edges = pandas.read_csv(join(self.base_path, "held.csv")).astype({"src": "int32", "dst": "int32"})
         edges = unpersist(join(self.base_path, "edges.bz2"))
 
-        from SourceCodeTools.code.data.sourcetrail.Dataset import SourceGraphDataset
-
         # self.splits = SourceGraphDataset.get_global_graph_id_splits(nodes)
         # global_ids = nodes['global_graph_id'].values
         # self.splits = (
@@ -217,8 +214,6 @@ class Experiments:
                               compact_dst=False)
 
         elif type == "typeann":
-            import os
-            from SourceCodeTools.nlp.entity.utils.data import read_data
 
             random_seed = 42
             min_entity_count = 3
