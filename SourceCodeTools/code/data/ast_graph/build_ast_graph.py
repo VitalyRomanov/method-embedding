@@ -1,6 +1,7 @@
 import hashlib
 import logging
 import os.path
+import shutil
 import sys
 from os.path import join
 
@@ -582,6 +583,11 @@ class AstDatasetCreator(DatasetCreator):
 
         paths = (os.path.join(temp_path, dir) for dir in os.listdir(temp_path))
         self.environments = sorted(list(filter(lambda path: os.path.isdir(path), paths)), key=lambda x: x.lower())
+
+    def __del__(self):
+        # TODO use /tmp and add flag for overriding temp folder location
+        if hasattr(self, "temp_path") and os.path.isdir(self.temp_path):
+            shutil.rmtree(self.temp_path)
 
     def do_extraction(self):
         global_nodes_with_ast = None
