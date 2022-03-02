@@ -1,6 +1,7 @@
 import os
 from collections import defaultdict
 from copy import copy
+from pprint import pprint
 from typing import Tuple
 
 import numpy as np
@@ -522,8 +523,8 @@ class SamplingMultitaskTrainer:
 
             end = time()
 
-            print(f"Epoch: {self.epoch}, Time: {int(end - start)} s", end="\t")
-            print(summary_dict)
+            print(f"Epoch: {self.epoch}, Time: {int(end - start)} s", end="\n")
+            pprint(summary_dict)
 
             self.lr_scheduler.step()
 
@@ -724,6 +725,7 @@ def training_procedure(
 def evaluation_procedure(
         dataset, model_name, model_params, args, model_base_path, trainer=None
 ):
+    model_params = copy(model_params)
 
     if trainer is None:
         trainer = SamplingMultitaskTrainer
