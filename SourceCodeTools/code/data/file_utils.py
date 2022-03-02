@@ -160,12 +160,12 @@ def likely_format(path):
 
     if ".csv" in extensions or ".tsv" in extensions:
         ext = "csv"
+    elif ".json" in extensions:
+        ext = "json"
     elif ".pkl" in extensions or extensions.endswith(".bz2"):
         ext = "pkl"
     elif ".parquet" in extensions:
         ext = "parquet"
-    elif ".json" in extensions:
-        ext = "json"
     else:
         raise NotImplementedError("supported extensions: csv, bz2, pkl, parquet, json", extensions)
 
