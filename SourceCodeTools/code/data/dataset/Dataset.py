@@ -93,8 +93,8 @@ class SourceGraphDataset:
 
         self.use_ns_groups = use_ns_groups
 
-        nodes_path = join(data_path, "nodes.bz2")
-        edges_path = join(data_path, "edges.bz2")
+        nodes_path = join(data_path, "common_nodes.json.bz2")
+        edges_path = join(data_path, "common_edges.json.bz2")
 
         self.nodes, self.edges = load_data(nodes_path, edges_path)
 
