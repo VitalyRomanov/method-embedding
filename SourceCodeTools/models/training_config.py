@@ -22,7 +22,6 @@ config_specification = {
     "TRAINING": {
         "model_output_dir": None,
         "pretrained": None,
-        "tokenizer_path": None,
         "pretraining_phase": 0,
 
         "sampling_neighbourhood_size": 10,
@@ -73,6 +72,9 @@ config_specification = {
 
         'activation': "tanh",
         # torch.nn.functional.hardswish], #[torch.nn.functional.hardtanh], #torch.nn.functional.leaky_relu
+    },
+    "TOKENIZER": {
+        "tokenizer_path": None,
     }
 }
 
