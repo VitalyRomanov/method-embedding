@@ -314,9 +314,9 @@ class RGGAN(RGAN):
     where :math:`\sigma` is the sigmoid function, and :math:`*` is the Hadamard product."""
     def __init__(self,
                  g,
-                 h_dim, num_classes,
+                 h_dim, node_emb_size,
                  num_bases,
-                 num_steps=1,
+                 n_layers=1,
                  dropout=0,
                  use_self_loop=False,
                  activation=F.relu,
@@ -324,10 +324,10 @@ class RGGAN(RGAN):
         super(RGCNSampling, self).__init__()
         self.g = g
         self.h_dim = h_dim
-        self.out_dim = num_classes
+        self.out_dim = node_emb_size
         self.activation = activation
 
-        assert h_dim == num_classes, f"Parameter h_dim and num_classes should be equal in {self.__class__.__name__}"
+        assert h_dim == node_emb_size, f"Parameter h_dim and num_classes should be equal in {self.__class__.__name__}"
 
         self.rel_names = list(set(g.etypes))
         self.ntype_names = list(set(g.ntypes))
@@ -352,7 +352,7 @@ class RGGAN(RGAN):
         # think of possibility switching to GAT
         # weight=False
 
-        self.emb_size = num_classes
-        self.num_layers = num_steps
-        self.layers = [self.layer] * num_steps
+        self.emb_size = node_emb_size
+        self.num_layers = n_layers
+        self.layers = [self.layer] * n_layers
         self.layer_norm = nn.ModuleList([nn.LayerNorm([self.h_dim]) for _ in range(self.num_layers)])
