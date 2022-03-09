@@ -1,51 +1,52 @@
 DATASET:
-  custom_reverse: null
-  data_path: large_graph
-  filter_edges: null
-  min_count_for_objectives: 5
-  no_global_edges: false
-  random_seed: 42
-  remove_reverse: false
+  custom_reverse: null                    # None or list of edges, for which reverse edges should be created (use together with `remove_reverse`)
+  data_path: large_graph                  # *** path to node type
+  filter_edges: null                      # None or list of edge type names
+  min_count_for_objectives: 5             # *** minimum frequency of targets
+  no_global_edges: false                  # remove global edges
+  random_seed: 42                         # random seed for splitting dataset int o train test validation
+  remove_reverse: false                   # remove reverse edges
   restricted_id_pool: null
-  self_loops: false
-  train_frac: 0.8
-  use_edge_types: true
-  use_node_types: false
+  self_loops: false                       # whether to add self loops
+  train_frac: 0.8                         # *** fraction of nodes to use for training
+  use_edge_types: true                    # whether to use edge types
+  use_node_types: false                   # node types currently not supported
+  tokenizer_path: sentencepiece_bpe.model # *** path to sentencepiece model
 MODEL:
-  activation: tanh
-  dropout: 0.2
-  h_dim: 100
+  activation: tanh                        # *** name of activation function, see torch.nn.functional
+  dropout: 0.2                            # ***
+  h_dim: 100                              # *** should match to node dimensionality
   n_layers: 5
-  node_emb_size: 100
-  num_bases: 10
+  node_emb_size: 100                      # *** dimensionality of node embeddings
+  num_bases: 10                           # number of bases for computing parmetwer weights for different edge types
   use_att_checkpoint: true
   use_gcn_checkpoint: true
   use_gru_checkpoint: true
-  use_self_loop: true
+  use_self_loop: true                     #
 TRAINING:
-  batch_size: 1024
-  dilate_scores: 200
+  batch_size: 1024                        # ***
+  dilate_scores: 200                      # downsampling factor for measuring scores to make evaluation faster
   early_stopping: false
   early_stopping_tolerance: 20
-  elem_emb_size: 100
-  embedding_table_size: 200000
-  epochs: 10
+  elem_emb_size: 100                      # *** dimensionality of target embeddings (for node name prediction)
+  embedding_table_size: 200000            # *** embedding table size for subwords
+  epochs: 10                              # *** number of epochs
   external_dataset: null
-  force_w2v_ns: true
-  gpu: -1
-  learning_rate: 0.001
-  measure_scores: true
+  force_w2v_ns: true                      # negative sampling strategy
+  gpu: -1                                 # gpuid
+  learning_rate: 0.001                    # ***
+  measure_scores: true                    # *** measure ranking scores during evaluation
   metric: inner_prod
-  model_output_dir: large_graph
-  neg_sampling_factor: 1
+  model_output_dir: large_graph           # *** directory to save checkpoints and training data
+  neg_sampling_factor: 1                  # *** number of negative samples for each positive sample
   nn_index: brute
-  objectives: node_clf
+  objectives: node_clf                    # type of objective
   pretrained: null
-  pretraining_phase: 0
+  pretraining_phase: 0                    # number of epochs for pretraining
   restore_state: false
-  sampling_neighbourhood_size: 10
-  save_checkpoints: false
-  save_each_epoch: false
+  sampling_neighbourhood_size: 10         # number of dependencies to sample for each node
+  save_checkpoints: false                 # set to False if checkpoints are not needed
+  save_each_epoch: false                  # save each epoch, useful in case of studying model behavior
   schedule_layers_every: 10
   tokenizer_path: sentencepiece_bpe.model
   use_layer_scheduling: false
