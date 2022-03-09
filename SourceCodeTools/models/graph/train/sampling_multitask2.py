@@ -652,7 +652,8 @@ def select_device(args):
 
 
 def training_procedure(
-        dataset, model_name, model_params, trainer_params, model_base_path, trainer=None, load_external_dataset=None
+        dataset, model_name, model_params, trainer_params, model_base_path,
+        tokenizer_path=None, trainer=None, load_external_dataset=None
 ) -> Tuple[SamplingMultitaskTrainer, dict]:
     model_params = copy(model_params)
     trainer_params = copy(trainer_params)
@@ -707,7 +708,7 @@ def training_procedure(
         restore=trainer_params["restore_state"],
         device=device,
         pretrained_embeddings_path=trainer_params["pretrained"],
-        tokenizer_path=trainer_params["tokenizer_path"],
+        tokenizer_path=tokenizer_path,
         load_external_dataset=load_external_dataset
     )
 
