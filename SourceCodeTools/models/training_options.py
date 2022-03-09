@@ -16,7 +16,7 @@ def add_data_arguments(parser):
 
 def add_pretraining_arguments(parser):
     parser.add_argument('--pretrained', '-p', dest='pretrained', default=None, help='Path to pretrained subtoken vectors')
-    parser.add_argument('--tokenizer', '-t', dest='tokenizer', default=None, help='???')
+    parser.add_argument('--tokenizer_path', '-t', dest='tokenizer_path', default=None, help='???')
     parser.add_argument('--pretraining_phase', dest='pretraining_phase', default=0, type=int, help='Number of epochs for pretraining')
 
 

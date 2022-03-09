@@ -293,7 +293,7 @@ class SamplingMultitaskTrainer:
 
     @property
     def lr(self):
-        return self.trainer_params['lr']
+        return self.trainer_params['learning_rate']
 
     @property
     def batch_size(self):
@@ -644,64 +644,70 @@ class SamplingMultitaskTrainer:
 
 def select_device(args):
     device = 'cpu'
-    use_cuda = args.gpu >= 0 and torch.cuda.is_available()
+    use_cuda = args["gpu"] >= 0 and torch.cuda.is_available()
     if use_cuda:
-        torch.cuda.set_device(args.gpu)
-        device = 'cuda:%d' % args.gpu
+        torch.cuda.set_device(args["gpu"])
+        device = 'cuda:%d' % args["gpu"]
     return device
 
 
 def training_procedure(
-        dataset, model_name, model_params, args, model_base_path, trainer=None, load_external_dataset=None
+        dataset, model_name, model_params, trainer_params, model_base_path, trainer=None, load_external_dataset=None
 ) -> Tuple[SamplingMultitaskTrainer, dict]:
+    model_params = copy(model_params)
+    trainer_params = copy(trainer_params)
 
     if trainer is None:
         trainer = SamplingMultitaskTrainer
 
-    device = select_device(args)
+    device = select_device(trainer_params)
 
-    model_params['num_classes'] = args.node_emb_size
-    model_params['use_gcn_checkpoint'] = args.use_gcn_checkpoint
-    model_params['use_att_checkpoint'] = args.use_att_checkpoint
-    model_params['use_gru_checkpoint'] = args.use_gru_checkpoint
+    # model_params['num_classes'] = args.node_emb_size
+    # model_params['use_gcn_checkpoint'] = args.use_gcn_checkpoint
+    # model_params['use_att_checkpoint'] = args.use_att_checkpoint
+    # model_params['use_gru_checkpoint'] = args.use_gru_checkpoint
 
-    if len(args.objectives.split(",")) > 1 and args.early_stopping is True:
+    if len(trainer_params["objectives"].split(",")) > 1 and trainer_params["early_stopping"] is True:
         print("Early stopping disabled when several objectives are used")
-        args.early_stopping = False
+        trainer_params["early_stopping"] = False
 
-    trainer_params = {
-        'lr': model_params.pop('lr'),
-        'batch_size': args.batch_size,
-        'sampling_neighbourhood_size': args.num_per_neigh,
-        'neg_sampling_factor': args.neg_sampling_factor,
-        'epochs': args.epochs,
-        'elem_emb_size': args.elem_emb_size,
-        'model_base_path': model_base_path,
-        'pretraining_phase': args.pretraining_phase,
-        'use_layer_scheduling': args.use_layer_scheduling,
-        'schedule_layers_every': args.schedule_layers_every,
-        'embedding_table_size': args.embedding_table_size,
-        'save_checkpoints': args.save_checkpoints,
-        'measure_scores': args.measure_scores,
-        'dilate_scores': args.dilate_scores,
-        "objectives": args.objectives.split(","),
-        "early_stopping": args.early_stopping,
-        "early_stopping_tolerance": args.early_stopping_tolerance,
-        "force_w2v_ns": args.force_w2v_ns,
-        "metric": args.metric,
-        "nn_index": args.nn_index,
-        "save_each_epoch": args.save_each_epoch
-    }
+    trainer_params['model_base_path'] = model_base_path
+
+    model_params["activation"] = eval(f"nn.functional.{model_params['activation']}")
+
+    # trainer_params = {
+    #     'lr': model_params.pop('lr'),
+    #     'batch_size': args.batch_size,
+    #     'sampling_neighbourhood_size': args.num_per_neigh,
+    #     'neg_sampling_factor': args.neg_sampling_factor,
+    #     'epochs': args.epochs,
+    #     'elem_emb_size': args.elem_emb_size,
+    #     'model_base_path': model_base_path,
+    #     'pretraining_phase': args.pretraining_phase,
+    #     'use_layer_scheduling': args.use_layer_scheduling,
+    #     'schedule_layers_every': args.schedule_layers_every,
+    #     'embedding_table_size': args.embedding_table_size,
+    #     'save_checkpoints': args.save_checkpoints,
+    #     'measure_scores': args.measure_scores,
+    #     'dilate_scores': args.dilate_scores,
+    #     "objectives": args.objectives.split(","),
+    #     "early_stopping": args.early_stopping,
+    #     "early_stopping_tolerance": args.early_stopping_tolerance,
+    #     "force_w2v_ns": args.force_w2v_ns,
+    #     "metric": args.metric,
+    #     "nn_index": args.nn_index,
+    #     "save_each_epoch": args.save_each_epoch
+    # }
 
     trainer = trainer(
         dataset=dataset,
         model_name=model_name,
         model_params=model_params,
         trainer_params=trainer_params,
-        restore=args.restore_state,
+        restore=trainer_params["restore_state"],
         device=device,
-        pretrained_embeddings_path=args.pretrained,
-        tokenizer_path=args.tokenizer,
+        pretrained_embeddings_path=trainer_params["pretrained"],
+        tokenizer_path=trainer_params["tokenizer_path"],
         load_external_dataset=load_external_dataset
     )
 

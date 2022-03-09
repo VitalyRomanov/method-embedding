@@ -19,10 +19,10 @@ def get_name(model, timestamp):
 
 
 def get_model_base(args, model_attempt, force_new=False):
-    if args.restore_state and not force_new:
-        model_base = args.model_output_dir
+    if args["restore_state"] and not force_new:
+        model_base = args["model_output_dir"]
     else:
-        model_base = join(args.model_output_dir, model_attempt)
+        model_base = join(args["model_output_dir"], model_attempt)
         if not isdir(model_base):
             mkdir(model_base)
 

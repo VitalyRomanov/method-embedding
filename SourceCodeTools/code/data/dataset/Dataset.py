@@ -38,16 +38,16 @@ class SourceGraphDataset:
     labels_from = None
     use_node_types = None
     use_edge_types = None
-    filter = None
+    filter_edges = None
     self_loops = None
 
     def __init__(
             self, data_path: Union[str, Path], use_node_types: bool = False, use_edge_types: bool = False,
-            filter: Optional[List[str]] = None, self_loops: bool = False,
+            filter_edges: Optional[List[str]] = None, self_loops: bool = False,
             train_frac: float = 0.6, random_seed: Optional[int] = None, tokenizer_path: Union[str, Path] = None,
             min_count_for_objectives: int = 1,
             no_global_edges: bool = False, remove_reverse: bool = False, custom_reverse: Optional[List[str]] = None,
-            package_names: Optional[List[str]] = None,
+            # package_names: Optional[List[str]] = None,
             restricted_id_pool: Optional[List[int]] = None, use_ns_groups: bool = False
     ):
         """
@@ -65,7 +65,7 @@ class SourceGraphDataset:
         :param data_path: path to the directory with dataset files stored in `bz2` format
         :param use_node_types:  whether to use node types in the graph
         :param use_edge_types:  whether to use edge types in the graph
-        :param filter: edge types to be removed from the graph
+        :param filter_edges: edge types to be removed from the graph
         :param self_loops: whether to include self-loops
         :param train_frac: fraction of the nodes that will be used for training
         :param random_seed: seed for generating random splits
@@ -107,8 +107,8 @@ class SourceGraphDataset:
         if self_loops:
             self.nodes, self.edges = SourceGraphDataset._assess_need_for_self_loops(self.nodes, self.edges)
 
-        if filter is not None:
-            for e_type in filter:
+        if filter_edges is not None:
+            for e_type in filter_edges:
                 logging.info(f"Filtering edge type {e_type}")
                 self.edges = self.edges.query(f"type != '{e_type}'")
 
@@ -153,7 +153,9 @@ class SourceGraphDataset:
         # self.nodes, self.label_map = self.add_compact_labels()
         self._add_typed_ids()
 
-        self._add_splits(train_frac=train_frac, package_names=package_names, restricted_id_pool=restricted_id_pool)
+        self._add_splits(train_frac=train_frac,
+                         package_names=None, #package_names,
+                         restricted_id_pool=restricted_id_pool)
 
         # self.mark_leaf_nodes()
 
@@ -991,7 +993,7 @@ def read_or_create_gnn_dataset(args, model_base, force_new=False):
             args.data_path,
             use_node_types=args.use_node_types,
             use_edge_types=args.use_edge_types,
-            filter=None if args.filter_edges is None else args.filter_edges.split(","),
+            filter_edges=None if args.filter_edges is None else args.filter_edges.split(","),
             self_loops=args.self_loops,
             train_frac=args.train_frac,
             tokenizer_path=args.tokenizer,
@@ -1000,7 +1002,7 @@ def read_or_create_gnn_dataset(args, model_base, force_new=False):
             no_global_edges=args.no_global_edges,
             remove_reverse=args.remove_reverse,
             custom_reverse=None if args.custom_reverse is None else args.custom_reverse.split(","),
-            package_names=open(args.packages_file).readlines() if args.packages_file is not None else None,
+            # package_names=open(args.packages_file).readlines() if args.packages_file is not None else None,
             restricted_id_pool=args.restricted_id_pool,
             use_ns_groups=args.use_ns_groups
         )
