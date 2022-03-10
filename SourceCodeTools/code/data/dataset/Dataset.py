@@ -748,13 +748,13 @@ class SourceGraphDataset:
         """
         :return: DataFrame that contains mapping from function ids to variable names that appear in those functions
         """
-        path = join(self.data_path, "common_function_variable_pairs.bz2")
+        path = join(self.data_path, "common_function_variable_pairs.json.bz2")
         var_use = unpersist(path)
         var_use = filter_dst_by_freq(var_use, freq=self.min_count_for_objectives)
         return var_use
 
     def load_api_call(self):
-        path = join(self.data_path, "common_call_seq.bz2")
+        path = join(self.data_path, "common_call_seq.json.bz2")
         api_call = unpersist(path)
         api_call = filter_dst_by_freq(api_call, freq=self.min_count_for_objectives)
         return api_call
@@ -785,8 +785,8 @@ class SourceGraphDataset:
 
     def load_global_edges_prediction(self):
 
-        nodes_path = join(self.data_path, "nodes.bz2")
-        edges_path = join(self.data_path, "edges.bz2")
+        nodes_path = join(self.data_path, "common_nodes.json.bz2")
+        edges_path = join(self.data_path, "common_edges.json.bz2")
 
         _, edges = load_data(nodes_path, edges_path)
 
@@ -808,8 +808,8 @@ class SourceGraphDataset:
 
     def load_edge_prediction(self):
 
-        nodes_path = join(self.data_path, "nodes.bz2")
-        edges_path = join(self.data_path, "edges.bz2")
+        nodes_path = join(self.data_path, "common_nodes.json.bz2")
+        edges_path = join(self.data_path, "common_edges.json.bz2")
 
         _, edges = load_data(nodes_path, edges_path)
 
@@ -849,7 +849,7 @@ class SourceGraphDataset:
 
     def load_type_prediction(self):
 
-        type_ann = unpersist(join(self.data_path, "type_annotations.bz2"))
+        type_ann = unpersist(join(self.data_path, "type_annotations.json.bz2"))
 
         filter_rule = lambda name: "0x" not in name
 
@@ -878,7 +878,7 @@ class SourceGraphDataset:
 
     def load_docstring(self):
 
-        docstrings_path = os.path.join(self.data_path, "common_source_graph_bodies.bz2")
+        docstrings_path = os.path.join(self.data_path, "common_source_graph_bodies.json.bz2")
 
         dosctrings = unpersist(docstrings_path)[["id", "docstring"]]
 
@@ -978,34 +978,18 @@ class SourceGraphDataset:
     @classmethod
     def load(cls, path, args):
         dataset = pickle.load(open(path, "rb"))
-        dataset.data_path = args.data_path
+        dataset.data_path = args["data_path"]
         if dataset.tokenizer_path is not None:
-            dataset.tokenizer_path = args.tokenizer
+            dataset.tokenizer_path = args["tokenizer"]
         return dataset
 
 
-def read_or_create_gnn_dataset(args, model_base, force_new=False):
-    if args.restore_state and not force_new:
+def read_or_create_gnn_dataset(args, model_base, force_new=False, restore_state=False):
+    if restore_state and not force_new:
         # i'm not happy with this behaviour that differs based on the flag status
         dataset = SourceGraphDataset.load(join(model_base, "dataset.pkl"), args)
     else:
-        dataset = SourceGraphDataset(
-            args.data_path,
-            use_node_types=args.use_node_types,
-            use_edge_types=args.use_edge_types,
-            filter_edges=None if args.filter_edges is None else args.filter_edges.split(","),
-            self_loops=args.self_loops,
-            train_frac=args.train_frac,
-            tokenizer_path=args.tokenizer,
-            random_seed=args.random_seed,
-            min_count_for_objectives=args.min_count_for_objectives,
-            no_global_edges=args.no_global_edges,
-            remove_reverse=args.remove_reverse,
-            custom_reverse=None if args.custom_reverse is None else args.custom_reverse.split(","),
-            # package_names=open(args.packages_file).readlines() if args.packages_file is not None else None,
-            restricted_id_pool=args.restricted_id_pool,
-            use_ns_groups=args.use_ns_groups
-        )
+        dataset = SourceGraphDataset(**args)
 
         # save dataset state for recovery
         pickle.dump(dataset, open(join(model_base, "dataset.pkl"), "wb"))

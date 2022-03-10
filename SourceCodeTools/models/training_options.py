@@ -3,7 +3,7 @@ def add_data_arguments(parser):
     parser.add_argument('--train_frac', dest='train_frac', default=0.9, type=float, help='Fraction of nodes to be used for training')
     parser.add_argument('--filter_edges', dest='filter_edges', default=None, help='Comma separated list of edges that should be filtered from the graph')
     parser.add_argument('--min_count_for_objectives', dest='min_count_for_objectives', default=5, type=int, help='Filter all target examples that occurr less than set numbers of times')
-    parser.add_argument('--packages_file', dest='packages_file', default=None, type=str, help='???')
+    # parser.add_argument('--packages_file', dest='packages_file', default=None, type=str, help='???')
     parser.add_argument('--self_loops', action='store_true', help='Add self loops to the graph')
     parser.add_argument('--use_node_types', action='store_true', help='Add node types to the graph')
     parser.add_argument('--use_edge_types', action='store_true', help='Add edge types to the graph')
@@ -26,7 +26,7 @@ def add_training_arguments(parser):
 
     parser.add_argument('--node_emb_size', dest='node_emb_size', default=100, type=int, help='Dimensionality of node embeddings')
     parser.add_argument('--elem_emb_size', dest='elem_emb_size', default=100, type=int, help='Dimensionality of target embeddings (node names). Should match node embeddings when cosine distance loss is used')
-    parser.add_argument('--num_per_neigh', dest='num_per_neigh', default=10, type=int, help='Number of dependencies to sample per node')
+    parser.add_argument('--sampling_neighbourhood_size', dest='sampling_neighbourhood_size', default=10, type=int, help='Number of dependencies to sample per node')
     parser.add_argument('--neg_sampling_factor', dest='neg_sampling_factor', default=3, type=int, help='Number of negative samples for each positive')
 
     parser.add_argument('--use_layer_scheduling', action='store_true', help='???')
@@ -65,18 +65,14 @@ def add_performance_arguments(parser):
 
 
 def add_gnn_train_args(parser):
-    parser.add_argument(
-        '--training_mode', '-tr', dest='training_mode', default=None,
-        help='Selects one of training procedures [multitask]'
-    )
-
+    parser.add_argument("--config", default=None, help="Path to config file")
     add_data_arguments(parser)
     add_pretraining_arguments(parser)
     add_training_arguments(parser)
     add_scoring_arguments(parser)
     add_performance_arguments(parser)
 
-    parser.add_argument('--note', dest='note', default="", help='Note, added to metadata')
+    # parser.add_argument('--note', dest='note', default="", help='Note, added to metadata')
     parser.add_argument('model_output_dir', help='Location of the final model')
 
     # parser.add_argument('--intermediate_supervision', action='store_true')
