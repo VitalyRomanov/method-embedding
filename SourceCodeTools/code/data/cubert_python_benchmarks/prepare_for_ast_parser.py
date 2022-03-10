@@ -106,12 +106,12 @@ class DatasetAdapter:
     preferred_column_order = ["id", "package", "function", "info", "label", "partition"]
 
     import_order = [
-        "variable_misuse",
-        # "variable_misuse_repair",
-        "exception",
-        "function_docstring",
-        "swapped_operands",
-        "wrong_binary_operator"
+        # "variable_misuse",
+        "variable_misuse_repair",
+        # "exception",
+        # "function_docstring",
+        # "swapped_operands",
+        # "wrong_binary_operator"
     ]
 
     # expected_directory_structure = "dev.jsontxt-00000-of-00004\n"

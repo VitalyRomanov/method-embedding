@@ -9,6 +9,7 @@ import pandas as pd
 
 from tqdm import tqdm
 
+from SourceCodeTools.cli_arguments import AstDatasetCreatorArguments
 from SourceCodeTools.code.ast import has_valid_syntax
 from SourceCodeTools.code.data.file_utils import persist, unpersist, unpersist_if_present
 from SourceCodeTools.code.data.sourcetrail.DatasetCreator2 import DatasetCreator
@@ -498,13 +499,20 @@ def build_ast_only_graph(
 
     node2id = dict(zip(all_ast_nodes["id"], range(len(all_ast_nodes))))
 
-    all_ast_nodes["id"] = all_ast_nodes["id"].apply(node2id.get)
-    all_ast_nodes["mentioned_in"] = all_ast_nodes["mentioned_in"].apply(node2id.get)
-    all_ast_edges["source_node_id"] = all_ast_edges["source_node_id"].apply(node2id.get)
-    all_ast_edges["target_node_id"] = all_ast_edges["target_node_id"].apply(node2id.get)
-    all_ast_edges["mentioned_in"] = all_ast_edges["mentioned_in"].apply(node2id.get)
-    all_offsets["node_id"] = all_offsets["node_id"].apply(node2id.get)
-    all_offsets["mentioned_in"] = all_offsets["mentioned_in"].apply(node2id.get)
+    def map_columns_to_int(table, dense_columns, sparse_columns):
+        types = {column: "int64" for column in dense_columns}
+        types.update({column: "Int64" for column in sparse_columns})
+
+        for column, dtype in types.items():
+            table[column] = table[column].apply(node2id.get).astype(dtype)
+
+    map_columns_to_int(all_ast_nodes, dense_columns=["id"], sparse_columns=["mentioned_in"])
+    map_columns_to_int(
+        all_ast_edges,
+        dense_columns=["source_node_id", "target_node_id"],
+        sparse_columns=["mentioned_in"]
+    )
+    map_columns_to_int(all_offsets, dense_columns=["node_id"], sparse_columns=["mentioned_in"])
 
     return all_ast_nodes, all_ast_edges, all_offsets
 
@@ -572,14 +580,14 @@ class AstDatasetCreator(DatasetCreator):
         dataset_location = os.path.dirname(self.path)
         temp_path = os.path.join(dataset_location, "temp_graph_builder")
         self.temp_path = temp_path
-        if os.path.isdir(temp_path):
-            raise FileExistsError(f"Directory exists: {temp_path}")
-        os.mkdir(temp_path)
-
-        for ind, chunk in enumerate(pd.read_csv(self.path, chunksize=1000)):
-            chunk_path = os.path.join(temp_path, f"chunk_{ind}")
-            os.mkdir(chunk_path)
-            persist(chunk, os.path.join(chunk_path, "source_code.bz2"))
+        # if os.path.isdir(temp_path):
+        #     raise FileExistsError(f"Directory exists: {temp_path}")
+        # os.mkdir(temp_path)
+        #
+        # for ind, chunk in enumerate(pd.read_csv(self.path, chunksize=10000)):
+        #     chunk_path = os.path.join(temp_path, f"chunk_{ind}")
+        #     os.mkdir(chunk_path)
+        #     persist(chunk, os.path.join(chunk_path, "source_code.bz2"))
 
         paths = (os.path.join(temp_path, dir) for dir in os.listdir(temp_path))
         self.environments = sorted(list(filter(lambda path: os.path.isdir(path), paths)), key=lambda x: x.lower())
@@ -590,7 +598,7 @@ class AstDatasetCreator(DatasetCreator):
             shutil.rmtree(self.temp_path)
 
     def do_extraction(self):
-        global_nodes_with_ast = None
+        global_nodes_with_ast = set()
 
         for env_path in self.environments:
             logging.info(f"Found {os.path.basename(env_path)}")
@@ -611,32 +619,23 @@ class AstDatasetCreator(DatasetCreator):
                 if nodes_with_ast is None:
                     continue
 
-                edges_with_ast = offsets = None
+                edges_with_ast = offsets = source_code = None
 
-            global_nodes_with_ast = self.merge_with_global(global_nodes_with_ast, nodes_with_ast)
+            # global_nodes_with_ast = self.merge_with_global(global_nodes_with_ast, nodes_with_ast)
 
             local2global_with_ast = get_local2global(
                 global_nodes=global_nodes_with_ast, local_nodes=nodes_with_ast
             )
 
-            self.write_local(env_path, nodes_with_ast, edges_with_ast, offsets, local2global_with_ast, source_code)
+            global_nodes_with_ast.update(local2global_with_ast["global_id"])
 
-    def write_local(self, dir,
-                    nodes_with_ast, edges_with_ast, offsets,
-                    local2global_with_ast, filecontent):
-        if not self.recompute_l2g:
-            persist(nodes_with_ast, join(dir, "nodes_with_ast.bz2"))
-            persist(edges_with_ast, join(dir, "edges_with_ast.bz2"))
-            if offsets is not None:
-                persist(offsets, join(dir, "offsets.bz2"))
-            if len(edges_with_ast.query("type == 'annotation_for' or type == 'returned_by'")) > 0:
-                with open(join(dir, "has_annotations"), "w") as has_annotations:
-                    pass
+            self.write_local(
+                env_path,
+                nodes_with_ast=nodes_with_ast, edges_with_ast=edges_with_ast, offsets=offsets,
+                local2global_with_ast=local2global_with_ast, filecontent=source_code,
+            )
 
-            # add package name to filecontent
-            persist(filecontent, join(dir, "filecontent_with_package.bz2"))
-
-        persist(local2global_with_ast, join(dir, "local2global_with_ast.bz2"))
+        self.compact_mapping_for_l2g(global_nodes_with_ast, "local2global_with_ast.bz2")
 
     def merge(self, output_directory):
 
@@ -700,28 +699,8 @@ class AstDatasetCreator(DatasetCreator):
 
 
 if __name__ == "__main__":
-    import argparse
 
-    parser = argparse.ArgumentParser(description='Merge indexed environments into a single graph')
-    parser.add_argument('source_code',
-                        help='Path to DataFrame pickle (written with pandas.to_pickle, use `bz2` format).')
-    parser.add_argument('output_directory',
-                        help='')
-    parser.add_argument('--language', "-l", dest="language", default="python",
-                        help='Path to environments indexed by sourcetrail')
-    parser.add_argument('--bpe_tokenizer', '-bpe', dest='bpe_tokenizer', type=str,
-                        help='')
-    parser.add_argument('--create_subword_instances', action='store_true', default=False, help="")
-    parser.add_argument('--connect_subwords', action='store_true', default=False,
-                        help="Takes effect only when `create_subword_instances` is False")
-    parser.add_argument('--only_with_annotations', action='store_true', default=False, help="")
-    parser.add_argument('--do_extraction', action='store_true', default=False, help="")
-    parser.add_argument('--visualize', action='store_true', default=False, help="")
-    parser.add_argument('--track_offsets', action='store_true', default=False, help="")
-    parser.add_argument('--recompute_l2g', action='store_true', default=False, help="")
-    parser.add_argument('--remove_type_annotations', action='store_true', default=False, help="")
-
-    args = parser.parse_args()
+    args = AstDatasetCreatorArguments().parse()
 
     if args.recompute_l2g:
         args.do_extraction = True

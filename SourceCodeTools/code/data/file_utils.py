@@ -224,6 +224,13 @@ def unpersist_or_exit(path, exit_message=None, **kwargs):
         return data
 
 
+def get_random_name(length=10):
+    char_ranges = [chr(i) for i in range(ord("a"), ord("a")+26)] + \
+                  [chr(i) for i in range(ord("A"), ord("A")+26)] + \
+                  [chr(i) for i in range(ord("0"), ord("0")+10)]
+    from random import sample
+    return "".join(sample(char_ranges, k=length))
+
 def get_temporary_filename():
     tmp_dir = tempfile.gettempdir()
     name_generator = tempfile._get_candidate_names()
