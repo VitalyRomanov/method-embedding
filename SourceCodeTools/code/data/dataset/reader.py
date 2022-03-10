@@ -1,19 +1,13 @@
 from pathlib import Path
 
+from SourceCodeTools.code.common import read_nodes, read_edges
 from SourceCodeTools.code.data.file_utils import unpersist
 from SourceCodeTools.code.annotator_utils import source_code_graph_alignment
 
 
 def load_data(node_path, edge_path, rename_columns=True):
-    nodes = unpersist(node_path)
-    edges = unpersist(edge_path)
-
-    nodes = nodes.astype({
-        'type': 'category', "serialized_name": "string", "mentioned_in": "Int64", "string": "string"
-    })
-    edges = edges.astype({
-        'type': 'category', "mentioned_in": "Int64"
-    })
+    nodes = read_nodes(node_path)
+    edges = read_edges(edge_path)
 
     if rename_columns:
         nodes = nodes.rename(mapper={
@@ -32,7 +26,7 @@ def load_graph(dataset_directory, rename_columns=True):
     nodes = dataset_path.joinpath("common_nodes.bz2")
     edges = dataset_path.joinpath("common_edges.bz2")
 
-    return load_data(nodes, edges)
+    return load_data(nodes, edges, rename_columns=rename_columns)
 
 
 def load_aligned_source_code(dataset_directory, tokenizer="codebert"):

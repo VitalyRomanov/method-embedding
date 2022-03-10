@@ -651,6 +651,14 @@ def select_device(args):
     return device
 
 
+def resolve_activation_function(function_name):
+    known_functions = {
+        "tanh": torch.tanh
+    }
+
+    return known_functions.get(function_name, eval(f"nn.functional.{function_name}"))
+
+
 def training_procedure(
         dataset, model_name, model_params, trainer_params, model_base_path,
         tokenizer_path=None, trainer=None, load_external_dataset=None
@@ -674,7 +682,7 @@ def training_procedure(
 
     trainer_params['model_base_path'] = model_base_path
 
-    model_params["activation"] = eval(f"nn.functional.{model_params['activation']}")
+    model_params["activation"] = resolve_activation_function(model_params["activation"])
 
     # trainer_params = {
     #     'lr': model_params.pop('lr'),

@@ -96,7 +96,10 @@ def default_config():
 
 def get_config(**kwargs):
     config = default_config()
+    return update_config(config, **kwargs)
 
+
+def update_config(config, **kwargs):
     recognized_options = set()
 
     for section, args in config.items():
