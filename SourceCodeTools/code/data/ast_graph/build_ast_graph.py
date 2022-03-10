@@ -11,16 +11,14 @@ from tqdm import tqdm
 
 from SourceCodeTools.cli_arguments import AstDatasetCreatorArguments
 from SourceCodeTools.code.ast import has_valid_syntax
+from SourceCodeTools.code.data.AbstractDatasetCreator import AbstractDatasetCreator
+from SourceCodeTools.code.data.ast_graph.extract_node_names import extract_node_names
+from SourceCodeTools.code.data.ast_graph.filter_type_edges import filter_type_edges
 from SourceCodeTools.code.data.file_utils import persist, unpersist, unpersist_if_present
-from SourceCodeTools.code.data.sourcetrail.DatasetCreator2 import DatasetCreator
-from SourceCodeTools.code.data.sourcetrail.common import map_offsets
-from SourceCodeTools.code.data.sourcetrail.sourcetrail_draw_graph import visualize
+from SourceCodeTools.code.data.ast_graph.draw_graph import visualize
 from SourceCodeTools.code.ast.python_ast2 import AstGraphGenerator, GNode, PythonSharedNodes
-from SourceCodeTools.code.annotator_utils import adjust_offsets2
-from SourceCodeTools.code.annotator_utils import to_offsets, get_cum_lens
-from SourceCodeTools.code.data.sourcetrail.sourcetrail_extract_node_names import extract_node_names
-from SourceCodeTools.code.data.sourcetrail.sourcetrail_filter_type_edges import filter_type_edges
-from SourceCodeTools.code.data.sourcetrail.sourcetrail_node_local2global import get_local2global
+from SourceCodeTools.code.annotator_utils import adjust_offsets2, map_offsets, to_offsets, get_cum_lens
+from SourceCodeTools.code.data.ast_graph.local2global import get_local2global
 from SourceCodeTools.nlp.string_tools import get_byte_to_char_map
 
 
@@ -50,12 +48,6 @@ class MentionTokenizer:
 
         new_edges = []
         for edge in edges:
-            # if edge['src'].type in {"#attr#", "Name"}:
-            #     if hasattr(edge['src'], "global_id"):
-            #         new_edges.extend(self.global_mention_edges_from_node(edge['src']))
-            # elif edge['dst'].type == "mention":
-            #     if hasattr(edge['dst'], "global_id"):
-            #         new_edges.extend(self.global_mention_edges_from_node(edge['dst']))
 
             if edge['type'] == "local_mention":
 
@@ -83,43 +75,14 @@ class MentionTokenizer:
                 if edge['type'] != "global_mention_rev":
                     # should not have global edges here
                     pass
-                    # new_edges.append(make_reverse_edge(edge))
 
                 dst = edge['src']
                 subwords = self.bpe(dst.name)
                 new_edges.extend(produce_subw_edges(subwords, dst))
-            # elif self.bpe is not None and edge['dst'].type in {"Global"} and edge['src'].type != "Constant":
-            #     # this brach is disabled because it does not seem to make sense
-            #     # Globals can be referred by Name nodes, but they are already processed in the branch above
-            #     new_edges.append(edge)
-            #     new_edges.append(make_reverse_edge(edge))
-            #
-            #     dst = edge['src']
-            #     subwords = self.bpe(dst.name)
-            #     new_edges.extend(produce_subw_edges(subwords, dst))
             else:
                 new_edges.append(edge)
 
         return new_edges
-
-    # @staticmethod
-    # def global_mention_edges_from_node(node):
-    #     global_edges = []
-    #     if type(node.global_id) is int:
-    #         id_type = [(node.global_id, node.global_type)]
-    #     else:
-    #         id_type = zip(node.global_id, node.global_type)
-    #
-    #     for gid, gtype in id_type:
-    #         global_mention = {
-    #             "src": GNode(name=None, type=gtype, id=gid),
-    #             "dst": node,
-    #             "type": "global_mention",
-    #             "offsets": None
-    #         }
-    #         global_edges.append(global_mention)
-    #         global_edges.append(make_reverse_edge(global_mention))
-    #     return global_edges
 
     @staticmethod
     def connect_prev_next_subwords(edges, current, prev_subw, next_subw):
@@ -452,7 +415,7 @@ def build_ast_only_graph(
         def format_offsets(ast_offsets, target):
             """
             Format offset as a record and add to the common storage for offsets
-            :param global_and_ast_offsets:
+            :param ast_offsets:
             :param target: List where all other offsets are stored.
             :return: Nothing
             """
@@ -572,30 +535,96 @@ def build_ast_graph_from_modules():
         visualize(nodes, edges, os.path.join(output_dir, "visualization.pdf"))
 
 
-class AstDatasetCreator(DatasetCreator):
-    # def __init__(self, *args, **kwargs):
-    #     super().__init__(self, *args, **kwargs)
+class AstDatasetCreator(AbstractDatasetCreator):
 
-    def prepare_environments(self):
-        dataset_location = os.path.dirname(self.path)
-        temp_path = os.path.join(dataset_location, "temp_graph_builder")
-        self.temp_path = temp_path
-        # if os.path.isdir(temp_path):
-        #     raise FileExistsError(f"Directory exists: {temp_path}")
-        # os.mkdir(temp_path)
-        #
-        # for ind, chunk in enumerate(pd.read_csv(self.path, chunksize=10000)):
-        #     chunk_path = os.path.join(temp_path, f"chunk_{ind}")
-        #     os.mkdir(chunk_path)
-        #     persist(chunk, os.path.join(chunk_path, "source_code.bz2"))
+    merging_specification = {
+        "source_graph_bodies.bz2": {"columns": ['id'], "output_path": "common_source_graph_bodies.json", "columns_special": [("replacement_list", map_offsets)]},
+        "function_variable_pairs.bz2": {"columns": ['src'], "output_path": "common_function_variable_pairs.json"},
+        "call_seq.bz2": {"columns": ['src', 'dst'], "output_path": "common_call_seq.json"},
 
-        paths = (os.path.join(temp_path, dir) for dir in os.listdir(temp_path))
-        self.environments = sorted(list(filter(lambda path: os.path.isdir(path), paths)), key=lambda x: x.lower())
+        "nodes_with_ast.bz2": {"columns": ['id', 'mentioned_in'], "output_path": "common_nodes.json", "ensure_unique_with": ['type', 'serialized_name']},
+        "edges_with_ast.bz2": {"columns": ['target_node_id', 'source_node_id', 'mentioned_in'], "output_path": "common_edges.json"},
+        "offsets.bz2": {"columns": ['node_id', 'mentioned_in'], "output_path": "common_offsets.json"},
+        "filecontent_with_package.bz2": {"columns": [], "output_path": "common_filecontent.json"},
+        "name_mappings.bz2": {"columns": [], "output_path": "common_name_mappings.json"},
+    }
+
+    files_for_merging_with_ast = [
+        "nodes_with_ast.bz2", "edges_with_ast.bz2", "source_graph_bodies.bz2", "function_variable_pairs.bz2",
+        "call_seq.bz2", "offsets.bz2", "filecontent_with_package.bz2"
+    ]
+
+    edge_priority = {
+        "next": -1, "prev": -1, "global_mention": -1, "global_mention_rev": -1,
+        "calls": 0,
+        "called_by": 0,
+        "defines": 1,
+        "defined_in": 1,
+        "inheritance": 1,
+        "inherited_by": 1,
+        "imports": 1,
+        "imported_by": 1,
+        "uses": 2,
+        "used_by": 2,
+        "uses_type": 2,
+        "type_used_by": 2,
+        "mention_scope": 10,
+        "mention_scope_rev": 10,
+        "defined_in_function": 4,
+        "defined_in_function_rev": 4,
+        "defined_in_class": 5,
+        "defined_in_class_rev": 5,
+        "defined_in_module": 6,
+        "defined_in_module_rev": 6
+    }
+
+    restricted_edges = {"global_mention_rev"}
+    restricted_in_types = {
+        "Op", "Constant", "#attr#", "#keyword#",
+        'CtlFlow', 'JoinedStr', 'Name', 'ast_Literal',
+        'subword', 'type_annotation'
+    }
+
+    type_annotation_edge_types = ['annotation_for', 'returned_by']
+
+    def __init__(
+            self, path, lang, bpe_tokenizer, create_subword_instances, connect_subwords, only_with_annotations,
+            do_extraction=False, visualize=False, track_offsets=False, remove_type_annotations=False,
+            recompute_l2g=False
+    ):
+        super().__init__(
+            path, lang, bpe_tokenizer, create_subword_instances, connect_subwords, only_with_annotations,
+            do_extraction, visualize, track_offsets, remove_type_annotations, recompute_l2g
+        )
 
     def __del__(self):
         # TODO use /tmp and add flag for overriding temp folder location
         if hasattr(self, "temp_path") and os.path.isdir(self.temp_path):
             shutil.rmtree(self.temp_path)
+
+    def _prepare_environments(self):
+        dataset_location = os.path.dirname(self.path)
+        temp_path = os.path.join(dataset_location, "temp_graph_builder")
+        self.temp_path = temp_path
+        if os.path.isdir(temp_path):
+            raise FileExistsError(f"Directory exists: {temp_path}")
+        os.mkdir(temp_path)
+
+        for ind, chunk in enumerate(pd.read_csv(self.path, chunksize=10000)):
+            chunk_path = os.path.join(temp_path, f"chunk_{ind}")
+            os.mkdir(chunk_path)
+            persist(chunk, os.path.join(chunk_path, "source_code.bz2"))
+
+        paths = (os.path.join(temp_path, dir) for dir in os.listdir(temp_path))
+        self.environments = sorted(list(filter(lambda path: os.path.isdir(path), paths)), key=lambda x: x.lower())
+
+    @staticmethod
+    def extract_node_names(nodes, min_count):
+        return extract_node_names(nodes, min_count=min_count)
+
+    @staticmethod
+    def filter_type_edges(nodes, edges):
+        return filter_type_edges(nodes, edges)
 
     def do_extraction(self):
         global_nodes_with_ast = set()
@@ -621,21 +650,33 @@ class AstDatasetCreator(DatasetCreator):
 
                 edges_with_ast = offsets = source_code = None
 
-            # global_nodes_with_ast = self.merge_with_global(global_nodes_with_ast, nodes_with_ast)
-
             local2global_with_ast = get_local2global(
                 global_nodes=global_nodes_with_ast, local_nodes=nodes_with_ast
             )
 
             global_nodes_with_ast.update(local2global_with_ast["global_id"])
 
+            self.write_type_annotation_flag(edges_with_ast, env_path)
+
             self.write_local(
                 env_path,
+                local2global_with_ast=local2global_with_ast,
                 nodes_with_ast=nodes_with_ast, edges_with_ast=edges_with_ast, offsets=offsets,
-                local2global_with_ast=local2global_with_ast, filecontent=source_code,
+                filecontent_with_package=source_code,
             )
 
         self.compact_mapping_for_l2g(global_nodes_with_ast, "local2global_with_ast.bz2")
+
+    def create_output_dirs(self, output_path):
+        if not os.path.isdir(output_path):
+            os.mkdir(output_path)
+
+        with_ast_path = join(output_path, "with_ast")
+
+        if not os.path.isdir(with_ast_path):
+            os.mkdir(with_ast_path)
+
+        return with_ast_path
 
     def merge(self, output_directory):
 
@@ -643,59 +684,12 @@ class AstDatasetCreator(DatasetCreator):
             logging.info("Extracting...")
             self.do_extraction()
 
-        no_ast_path, with_ast_path = self.create_output_dirs(output_directory)
+        with_ast_path = self.create_output_dirs(output_directory)
 
-        self.create_global_file("nodes_with_ast.bz2", "local2global_with_ast.bz2", ['id', 'mentioned_in'],
-                                join(with_ast_path, "common_nodes.bz2"), message="Merging nodes with ast", ensure_unique_with=['type', 'serialized_name'])
-        self.create_global_file("edges_with_ast.bz2", "local2global_with_ast.bz2", ['target_node_id', 'source_node_id', 'mentioned_in'],
-                                join(with_ast_path, "common_edges.bz2"), "Merging edges with ast")
-        self.create_global_file("source_graph_bodies.bz2", "local2global_with_ast.bz2", ['id'],
-                                join(with_ast_path, "common_source_graph_bodies.bz2"), "Merging bodies with ast", columns_special=[("replacement_list", map_offsets)])
-        self.create_global_file("function_variable_pairs.bz2", "local2global_with_ast.bz2", ['src'],
-                                join(with_ast_path, "common_function_variable_pairs.bz2"), "Merging variables with ast")
-        self.create_global_file("call_seq.bz2", "local2global_with_ast.bz2", ['src', 'dst'],
-                                join(with_ast_path, "common_call_seq.bz2"), "Merging call seq with ast")
-        self.create_global_file("offsets.bz2", "local2global_with_ast.bz2", ['node_id', 'mentioned_in'],
-                                join(with_ast_path, "common_offsets.bz2"), "Merging offsets with ast",
-                                # columns_special=[("mentioned_in", map_offsets)]
-                                )
-        self.create_global_file("filecontent_with_package.bz2", "local2global_with_ast.bz2", [],
-                                join(with_ast_path, "common_filecontent.bz2"), "Merging filecontents")
+        self.merge_graph_with_ast(with_ast_path)
 
-        if self.remove_type_annotations:
-            no_annotations, annotations = filter_type_edges(
-                unpersist(join(with_ast_path, "common_nodes.bz2")),
-                unpersist(join(with_ast_path, "common_edges.bz2"))
-            )
-            persist(no_annotations, join(with_ast_path, "common_edges.bz2"))
-            if annotations is not None:
-                persist(annotations, join(with_ast_path, "type_annotations.bz2"))
-
-        self.handle_parallel_edges(join(with_ast_path, "common_edges.bz2"))
-
-        self.post_pruning(join(with_ast_path, "common_nodes.bz2"), join(with_ast_path, "common_edges.bz2"))
-
-        global_nodes = self.filter_orphaned_nodes(
-            unpersist(join(with_ast_path, "common_nodes.bz2")), with_ast_path
-        )
-        persist(global_nodes, join(with_ast_path, "common_nodes.bz2"))
-        node_names = extract_node_names(
-            global_nodes, min_count=2
-        )
-        if node_names is not None:
-            persist(node_names, join(with_ast_path, "node_names.bz2"))
-
-        if self.visualize:
-            self.visualize_func(
-                unpersist(join(with_ast_path, "common_nodes.bz2")),
-                unpersist(join(with_ast_path, "common_edges.bz2")),
-                join(with_ast_path, "visualization.pdf")
-            )
-
-
-# if __name__ == "__main__":
-#
-#     build_ast_graph_from_modules()
+    def visualize_func(self, nodes, edges, output_path):
+        visualize(nodes, edges, output_path)
 
 
 if __name__ == "__main__":

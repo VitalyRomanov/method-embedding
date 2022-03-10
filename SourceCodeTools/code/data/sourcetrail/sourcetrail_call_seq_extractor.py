@@ -1,3 +1,4 @@
+from SourceCodeTools.code.common import custom_tqdm, SQLTable
 from SourceCodeTools.code.data.sourcetrail.common import *
 
 import sys

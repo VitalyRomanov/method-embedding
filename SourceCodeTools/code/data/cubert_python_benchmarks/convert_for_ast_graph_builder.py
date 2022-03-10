@@ -6,7 +6,7 @@ import pandas as pd
 from tqdm import tqdm
 
 
-def write_chunk(temp, column_order, first_part):
+def write_chunk(temp, column_order, first_part, output_path):
         data = pd.DataFrame.from_records(temp, columns=column_order)
         data.rename({"function": "filecontent"}, axis=1, inplace=True)
         if first_part is True:
@@ -14,10 +14,24 @@ def write_chunk(temp, column_order, first_part):
         else:
             data.to_csv(output_path, index=False, mode="a", header=False)
 
-def convert(dataset_path, output_path):
+
+def convert_bzip(dataset_path, output_path):
     assert dataset_path.name.endswith("bz2")
 
-    file = bz2.open(dataset_path, mode="rt")
+    dataset = bz2.open(dataset_path, mode="rt")
+
+    convert(dataset, output_path)
+
+
+def convert_jsonl(dataset_path, output_path):
+    assert dataset_path.name.endswith("jsonl")
+
+    dataset = open(dataset_path, mode="r")
+
+    convert(dataset, output_path)
+
+
+def convert(dataset, output_path):
 
     temp = []
     id_ = 0
@@ -25,7 +39,7 @@ def convert(dataset_path, output_path):
     column_order = None
     first_part = True
 
-    for line in tqdm(file):
+    for line in tqdm(dataset):
         record = json.loads(line)
 
         if record.pop("parsing_error"):
@@ -41,18 +55,12 @@ def convert(dataset_path, output_path):
         temp.append(record)
 
         if len(temp) > 10000:
-            write_chunk(temp, column_order, first_part)
+            write_chunk(temp, column_order, first_part, output_path)
             first_part = False
             temp.clear()
 
     if len(temp) > 0:
-        write_chunk(temp, column_order, first_part)
-
-    # dataset = pd.DataFrame.from_records(json.loads(line) for line in)
-    # dataset.rename({"function": "filecontent"}, axis=1, inplace=True)
-    # dataset["id"] = range(len(dataset))
-    #
-    # dataset.to_pickle(output_path)
+        write_chunk(temp, column_order, first_part, output_path)
 
 
 if __name__ == "__main__":
@@ -67,4 +75,7 @@ if __name__ == "__main__":
     dataset_path = Path(args.dataset_path)
     output_path = Path(args.output_path)
 
-    convert(dataset_path, output_path)
+    if dataset_path.name.endswith("bz2"):
+        convert_bzip(dataset_path, output_path)
+    else:
+        convert_jsonl(dataset_path, output_path)

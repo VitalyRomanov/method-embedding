@@ -1,23 +1,8 @@
 import sys
 
-from SourceCodeTools.code.data.sourcetrail.common import \
-    map_id_columns, merge_with_file_if_exists, create_local_to_global_id_map
+from SourceCodeTools.code.common import map_columns, merge_with_file_if_exists
+from SourceCodeTools.code.data.ast_graph.local2global import create_local_to_global_id_map
 from SourceCodeTools.code.data.file_utils import *
-
-
-def map_columns(input_table, id_map, columns, columns_special=None):
-
-    input_table = map_id_columns(input_table, columns, id_map)
-
-    if columns_special is not None:
-        assert isinstance(columns_special, list), "`columns_special` should be iterable"
-        for column, map_func in columns_special:
-            input_table[column] = map_func(input_table[column], id_map)
-
-    if len(input_table) == 0:
-        return None
-    else:
-        return input_table
 
 
 if __name__ == "__main__":

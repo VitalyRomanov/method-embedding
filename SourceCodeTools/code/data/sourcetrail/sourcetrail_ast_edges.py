@@ -8,7 +8,7 @@ from SourceCodeTools.code.ast.python_ast import AstGraphGenerator, GNode, Python
 from SourceCodeTools.code.annotator_utils import to_offsets, overlap, resolve_self_collision
 from SourceCodeTools.code.data.file_utils import *
 from SourceCodeTools.nlp.embed.bpe import load_bpe_model, make_tokenizer
-from SourceCodeTools.code.data.sourcetrail.common import custom_tqdm
+from SourceCodeTools.code.common import custom_tqdm
 
 pd.options.mode.chained_assignment = None
 
