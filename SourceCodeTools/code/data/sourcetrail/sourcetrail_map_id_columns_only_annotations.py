@@ -1,6 +1,7 @@
 import sys
 
-from SourceCodeTools.code.data.sourcetrail.common import map_id_columns, merge_with_file_if_exists, create_local_to_global_id_map
+from SourceCodeTools.code.common import map_id_columns, merge_with_file_if_exists
+from SourceCodeTools.code.data.ast_graph.local2global import create_local_to_global_id_map
 from SourceCodeTools.code.data.file_utils import *
 
 

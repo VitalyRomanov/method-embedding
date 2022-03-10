@@ -7,26 +7,6 @@ DEFINITION_TYPE = 1
 UNRESOLVED_SYMBOL = "unsolved_symbol"
 
 
-import sqlite3
-
-
-class SQLTable:
-    def __init__(self, df, filename, table_name):
-        self.conn = sqlite3.connect(filename)
-        self.path = filename
-        self.table_name = table_name
-
-        df.to_sql(self.table_name, con=self.conn, if_exists='replace', index=False, index_label=df.columns)
-
-    def query(self, query_string):
-        return pd.read_sql(query_string, self.conn)
-
-    def __del__(self):
-        self.conn.close()
-        if os.path.isfile(self.path):
-            os.remove(self.path)
-
-
 def get_occurrence_groups(nodes, edges, source_location, occurrence):
     """
     Group nodes based on file id. Return dataset that contains node ids and their offsets in the source code.
@@ -80,60 +60,3 @@ def sql_get_occurrences_from_range(occurrences, start, end) -> pd.DataFrame:
         f"select * from {occurrences.table_name} where start_line >= {start} and end_line <= {end} and occ_type != {DEFINITION_TYPE} and start_line = end_line")
     df = df.astype({"source_node_id": "Int32", "target_node_id": "Int32"})
     return df
-
-
-def create_node_repr(nodes):
-    return list(zip(nodes['serialized_name'], nodes['type']))
-
-
-def map_id_columns(df, column_names, mapper):
-    df = df.copy()
-    for col in column_names:
-        if col in df.columns:
-            df[col] = df[col].apply(lambda x: mapper.get(x, pd.NA))
-    return df
-
-
-def map_offsets(column, id_map):
-    def map_entry(entry):
-        return [(e[0], e[1], id_map[e[2]]) for e in entry]
-    return [map_entry(entry) for entry in column]
-
-
-def merge_with_file_if_exists(df, merge_with_file):
-    if os.path.isfile(merge_with_file):
-        original_data = unpersist(merge_with_file)
-        data = pd.concat([original_data, df], axis=0)
-    else:
-        data = df
-    return data
-
-
-def create_local_to_global_id_map(local_nodes, global_nodes):
-    # local_nodes = local_nodes.copy()
-    # global_nodes = global_nodes.copy()
-    #
-    # global_nodes['node_repr'] = create_node_repr(global_nodes)
-    # local_nodes['node_repr'] = create_node_repr(local_nodes)
-    #
-    # rev_id_map = dict(zip(
-    #     global_nodes['node_repr'].tolist(), global_nodes['id'].tolist()
-    # ))
-    # id_map = dict(zip(
-    #     local_nodes["id"].tolist(), map(
-    #         lambda x: rev_id_map[x], local_nodes["node_repr"].tolist()
-    #     )
-    # ))
-    id_map = dict(zip(
-        local_nodes["id"], map(compute_long_id, create_node_repr(local_nodes))
-    ))
-
-    return id_map
-
-
-def custom_tqdm(iterable, total, message):
-    return tqdm(iterable, total=total, desc=message, leave=False, dynamic_ncols=True)
-
-
-def compute_long_id(obj):
-    return hashlib.md5(repr(obj).encode('utf-8')).hexdigest()

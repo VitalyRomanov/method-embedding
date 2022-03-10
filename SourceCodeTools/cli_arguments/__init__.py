@@ -1,15 +1,13 @@
 import argparse
 
 
-class DatasetCreatorArguments:
+class AstDatasetCreatorArguments:
     parser = None
 
     def __init__(self):
         parser = argparse.ArgumentParser(description='Merge indexed environments into a single graph')
-        parser.add_argument('--language', "-l", dest="language", default="python",
-                            help='Path to environments indexed by sourcetrail')
-        parser.add_argument('--bpe_tokenizer', '-bpe', dest='bpe_tokenizer', type=str,
-                            help='')
+        parser.add_argument('--language', "-l", dest="language", default="python", help='')
+        parser.add_argument('--bpe_tokenizer', '-bpe', dest='bpe_tokenizer', type=str, help='')
         parser.add_argument('--create_subword_instances', action='store_true', default=False, help="")
         parser.add_argument('--connect_subwords', action='store_true', default=False,
                             help="Takes effect only when `create_subword_instances` is False")
@@ -24,17 +22,23 @@ class DatasetCreatorArguments:
         self.add_positional_argument()
 
     def add_positional_argument(self):
-        self.parser.add_argument('indexed_environments', help='Path to environments indexed by sourcetrail')
+        self.parser.add_argument(
+            'source_code', help='Path to DataFrame csv.'
+        )
         self.parser.add_argument('output_directory', help='')
 
     def parse(self):
         return self.parser.parse_args()
 
 
-class AstDatasetCreatorArguments(DatasetCreatorArguments):
+class DatasetCreatorArguments(AstDatasetCreatorArguments):
+
     def add_positional_argument(self):
-        self.parser.add_argument(
-            'source_code', help='Path to DataFrame pickle (written with pandas.to_pickle, use `bz2` format).'
-        )
+        self.parser.add_argument('indexed_environments', help='Path to environments indexed by sourcetrail')
         self.parser.add_argument('output_directory', help='')
+
+
+
+
+
 

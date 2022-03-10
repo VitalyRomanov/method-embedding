@@ -1,7 +1,7 @@
 import sys
 
+from SourceCodeTools.code.data.ast_graph.local2global import create_local_to_global_id_map
 from SourceCodeTools.code.data.file_utils import *
-from SourceCodeTools.code.data.sourcetrail.common import create_local_to_global_id_map
 
 
 def get_local2global(global_nodes, local_nodes) -> pd.DataFrame:

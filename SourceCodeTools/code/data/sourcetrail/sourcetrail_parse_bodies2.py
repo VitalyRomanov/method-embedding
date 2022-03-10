@@ -3,6 +3,7 @@ import sys
 from typing import Tuple, List, Optional
 
 from SourceCodeTools.code.ast import has_valid_syntax
+from SourceCodeTools.code.common import custom_tqdm, SQLTable
 from SourceCodeTools.code.data.sourcetrail.common import *
 from SourceCodeTools.code.annotator_utils import to_offsets
 

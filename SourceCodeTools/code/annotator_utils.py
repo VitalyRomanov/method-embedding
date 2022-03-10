@@ -207,3 +207,9 @@ def source_code_graph_alignment(source_codes, node_spans, tokenizer="codebert"):
 
     for code, spans in zip(source_codes, node_spans):
         yield align_tokens_with_graph(nlp(code), resolve_self_collisions2(spans), tokenzer_name=tokenizer)
+
+
+def map_offsets(column, id_map):
+    def map_entry(entry):
+        return [(e[0], e[1], id_map[e[2]]) for e in entry]
+    return [map_entry(entry) for entry in column]

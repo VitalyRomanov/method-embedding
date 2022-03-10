@@ -1,5 +1,6 @@
 import sys
 
+from SourceCodeTools.code.data.ast_graph.extract_node_names import extract_node_names
 from SourceCodeTools.code.data.file_utils import *
 
 
@@ -10,41 +11,13 @@ def get_node_name(full_name):
     return full_name.split(".")[-1].split("___")[0]
 
 
-def extract_node_names(nodes, min_count):
-
-
+def extract_node_names_(nodes, min_count):
     # some cells are empty, probably because of empty strings in AST
     # data = nodes.dropna(axis=0)
     # data = data[data['type'] != 262144]
-    data = nodes
-    data['src'] = data['id']
-    data['dst'] = data['serialized_name'].apply(get_node_name)
-
-    corrected_names = []
-    for type_, name_ in data[["type", "dst"]].values:
-        if type_ == "mention":
-            corrected_names.append(name_.split("@")[0])
-        else:
-            corrected_names.append(name_)
-
-    data["dst"] = corrected_names
-
-    def not_contains(name):
-        return "0x" not in name
-
-    data = data[
-        data["dst"].apply(not_contains)
-    ]
-
-    counts = data['dst'].value_counts()
-
-    data['counts'] = data['dst'].apply(lambda x: counts[x])
-    data = data.query(f"counts >= {min_count}")
-
-    if len(data) > 0:
-        return data[['src', 'dst']]
-    else:
-        return None
+    nodes = nodes.copy()
+    nodes['serialized_name'] = nodes['serialized_name'].apply(get_node_name)
+    return extract_node_names(nodes, min_count)
 
 
 if __name__ == "__main__":

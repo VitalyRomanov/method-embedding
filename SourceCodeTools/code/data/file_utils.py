@@ -172,7 +172,7 @@ def likely_format(path):
     return ext
 
 
-def persist(df: pd.DataFrame, path: Union[str, Path], **kwargs):
+def persist(df: pd.DataFrame, path: Union[str, Path, bytes], **kwargs):
     if isinstance(path, Path):
         path = str(path.absolute())
 
@@ -187,7 +187,7 @@ def persist(df: pd.DataFrame, path: Union[str, Path], **kwargs):
         write_json(df, path, **kwargs)
 
 
-def unpersist(path: Union[str, Path], **kwargs) -> pd.DataFrame:
+def unpersist(path: Union[str, Path, bytes], **kwargs) -> pd.DataFrame:
     if isinstance(path, Path):
         path = str(path.absolute())
 

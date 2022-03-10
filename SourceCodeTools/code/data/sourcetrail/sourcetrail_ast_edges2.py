@@ -6,6 +6,7 @@ import networkx as nx
 
 from SourceCodeTools.code.IdentifierPool import IntIdentifierPool
 from SourceCodeTools.code.ast import has_valid_syntax
+from SourceCodeTools.code.common import custom_tqdm
 from SourceCodeTools.code.data.sourcetrail.common import *
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_ast_edges import NodeResolver, make_reverse_edge
 from SourceCodeTools.code.ast.python_ast2 import AstGraphGenerator, GNode, PythonSharedNodes
