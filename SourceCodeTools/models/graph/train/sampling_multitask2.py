@@ -21,6 +21,7 @@ from SourceCodeTools.models.graph.train.objectives import VariableNameUsePredict
     NodeNameClassifier, EdgePrediction, TypeAnnPrediction, EdgePrediction2, NodeClassifierObjective
 from SourceCodeTools.models.graph.NodeEmbedder import NodeEmbedder
 from SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObjective import TransRObjective
+from SourceCodeTools.models.graph.train.objectives.SubgraphClassifierObjective import SubgraphAbstractObjective
 
 
 class EarlyStopping(Exception):
@@ -36,12 +37,10 @@ def add_to_summary(summary, partition, objective_name, scores, postfix):
 
 class SamplingMultitaskTrainer:
 
-    def __init__(self,
-                 dataset=None, model_name=None, model_params=None,
-                 trainer_params=None, restore=None, device=None,
-                 pretrained_embeddings_path=None,
-                 tokenizer_path=None, load_external_dataset=None
-                 ):
+    def __init__(
+            self, dataset=None, model_name=None, model_params=None, trainer_params=None, restore=None, device=None,
+            pretrained_embeddings_path=None, tokenizer_path=None, load_external_dataset=None
+    ):
 
         self.graph_model = model_name(dataset.g, **model_params).to(device)
         self.model_params = model_params
@@ -76,29 +75,33 @@ class SamplingMultitaskTrainer:
         self.summary_writer = SummaryWriter(self.model_base_path)
 
     def create_objectives(self, dataset, tokenizer_path):
+        objective_list = self.trainer_params["objectives"]
+
         self.objectives = nn.ModuleList()
-        if "token_pred" in self.trainer_params["objectives"]:
+        if "token_pred" in objective_list:
             self.create_token_pred_objective(dataset, tokenizer_path)
-        if "node_name_pred" in self.trainer_params["objectives"]:
+        if "node_name_pred" in objective_list:
             self.create_node_name_objective(dataset, tokenizer_path)
-        if "var_use_pred" in self.trainer_params["objectives"]:
+        if "var_use_pred" in objective_list:
             self.create_var_use_objective(dataset, tokenizer_path)
-        if "next_call_pred" in self.trainer_params["objectives"]:
+        if "next_call_pred" in objective_list:
             self.create_api_call_objective(dataset, tokenizer_path)
-        if "global_link_pred" in self.trainer_params["objectives"]:
+        if "global_link_pred" in objective_list:
             self.create_global_link_objective(dataset, tokenizer_path)
-        if "edge_pred" in self.trainer_params["objectives"]:
+        if "edge_pred" in objective_list:
             self.create_edge_objective(dataset, tokenizer_path)
-        if "transr" in self.trainer_params["objectives"]:
+        if "transr" in objective_list:
             self.create_transr_objective(dataset, tokenizer_path)
-        if "doc_pred" in self.trainer_params["objectives"]:
+        if "doc_pred" in objective_list:
             self.create_text_prediction_objective(dataset, tokenizer_path)
-        if "doc_gen" in self.trainer_params["objectives"]:
+        if "doc_gen" in objective_list:
             self.create_text_generation_objective(dataset, tokenizer_path)
-        if "node_clf" in self.trainer_params["objectives"]:
+        if "node_clf" in objective_list:
             self.create_node_classifier_objective(dataset, tokenizer_path)
-        if "type_ann_pred" in self.trainer_params["objectives"]:
+        if "type_ann_pred" in objective_list:
             self.create_type_ann_objective(dataset, tokenizer_path)
+        if "subgraph_name_clf" in objective_list:
+            self.create_subgraph_name_objective(dataset, tokenizer_path)
 
     def create_token_pred_objective(self, dataset, tokenizer_path):
         self.objectives.append(
@@ -128,6 +131,22 @@ class SamplingMultitaskTrainer:
                 masker=dataset.create_node_name_masker(tokenizer_path),
                 measure_scores=self.trainer_params["measure_scores"],
                 dilate_scores=self.trainer_params["dilate_scores"], nn_index=self.trainer_params["nn_index"]
+            )
+        )
+
+    def create_subgraph_name_objective(self, dataset, tokenizer_path):
+        self.objectives.append(
+            SubgraphAbstractObjective(
+                "SubgraphNameClf",
+                self.graph_model, self.node_embedder, dataset.nodes,
+                dataset.load_subgraph_function_names, self.device,
+                self.sampling_neighbourhood_size, self.batch_size,
+                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
+                masker=None,  # dataset.create_node_name_masker(tokenizer_path),
+                measure_scores=self.trainer_params["measure_scores"],
+                dilate_scores=self.trainer_params["dilate_scores"], nn_index=self.trainer_params["nn_index"],
+                subgraph_mapping=dataset.subgraph_mapping,
+                subgraph_partition="/Users/LTV/dev/method-embeddings/res/python_testdata/example_graph/with_ast/subgraph_partition.json"
             )
         )
 
@@ -336,6 +355,10 @@ class SamplingMultitaskTrainer:
         if self.trainer_params['pretraining_phase'] == -1:
             return False
         return self.epoch >= self.trainer_params['pretraining_phase']
+
+    @property
+    def subgraph_id_column(self):
+        return self.trainer_params["subgraph_id_column"]
 
     @property
     def do_save(self):
@@ -720,14 +743,14 @@ def training_procedure(
         load_external_dataset=load_external_dataset
     )
 
-    try:
-        trainer.train_all()
-    except KeyboardInterrupt:
-        logging.info("Training interrupted")
-    except EarlyStopping:
-        logging.info("Early stopping triggered")
-    except Exception as e:
-        print("There was an exception", e)
+    # try:
+    trainer.train_all()
+    # except KeyboardInterrupt:
+    #     logging.info("Training interrupted")
+    # except EarlyStopping:
+    #     logging.info("Early stopping triggered")
+    # except Exception as e:
+    #     print("There was an exception", e)
 
     trainer.eval()
     scores = trainer.final_evaluation()

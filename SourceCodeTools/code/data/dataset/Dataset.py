@@ -48,7 +48,8 @@ class SourceGraphDataset:
             min_count_for_objectives: int = 1,
             no_global_edges: bool = False, remove_reverse: bool = False, custom_reverse: Optional[List[str]] = None,
             # package_names: Optional[List[str]] = None,
-            restricted_id_pool: Optional[List[int]] = None, use_ns_groups: bool = False
+            restricted_id_pool: Optional[List[int]] = None, use_ns_groups: bool = False,
+            subgraph_id_column=None
     ):
         """
         Prepares the data for training GNN model. The graph is prepared in the following way:
@@ -90,6 +91,7 @@ class SourceGraphDataset:
         self.no_global_edges = no_global_edges
         self.remove_reverse = remove_reverse
         self.custom_reverse = custom_reverse
+        self.subgraph_id_column = subgraph_id_column
 
         self.use_ns_groups = use_ns_groups
 
@@ -744,6 +746,22 @@ class SourceGraphDataset:
         # path = join(self.data_path, "node_names.bz2")
         # return unpersist(path)
 
+    def load_subgraph_function_names(self):
+        names_path = os.path.join(self.data_path, "common_name_mappings.json.bz2")
+        names = unpersist(names_path)
+
+        fname2gname = dict(zip(names["ast_name"], names["proper_names"]))
+
+        functions = self.nodes.query(
+            "id in @functions", local_dict={"functions": set(self.nodes["mentioned_in"])}
+        ).query("type_backup == 'FunctionDef'")
+
+        functions["gname"] = functions["name"].apply(lambda x: fname2gname.get(x, pd.NA))
+        functions = functions.dropna(axis=0)
+        functions["gname"] = functions["gname"].apply(lambda x: x.split(".")[-1])
+
+        return functions.rename({"id": "src", "gname": "dst"}, axis=1)[["src", "dst"]]
+
     def load_var_use(self):
         """
         :return: DataFrame that contains mapping from function ids to variable names that appear in those functions
@@ -974,6 +992,35 @@ class SourceGraphDataset:
     def get_negative_sample_groups(self):
         return self.nodes[["id", "mentioned_in"]].dropna(axis=0)
 
+    @property
+    def subgraph_mapping(self):
+        assert self.subgraph_id_column is not None, "`subgraph_id_column` was not provided"
+
+        id2type = dict(zip(self.nodes["id"], self.nodes["type"]))
+
+        subgraph_mapping = dict()
+
+        def add_item(subgraph_dict, node_id):
+            type_ = id2type[node_id]
+
+            if type_ not in subgraph_dict:
+                subgraph_dict[type_] = set()
+
+            subgraph_dict[type_].add(self.typed_id_map[type_][node_id])
+
+        for src, dst, subgraph_id in self.edges[["src", "dst", self.subgraph_id_column]].values:
+            if subgraph_id not in subgraph_mapping:
+                subgraph_mapping[subgraph_id] = dict()
+
+            subgraph_dict = subgraph_mapping[subgraph_id]
+            add_item(subgraph_dict, src)
+            add_item(subgraph_dict, dst)
+
+        for subgraph_id, subgraph_dict in subgraph_mapping.items():
+            for type_ in subgraph_dict:
+                subgraph_dict[type_] = list(subgraph_dict[type_])
+
+        return subgraph_mapping
 
     @classmethod
     def load(cls, path, args):
