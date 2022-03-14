@@ -96,7 +96,7 @@ class Tracker:
         embedding = reducer.fit_transform(self.embeddings)
 
         labels = list(map(lambda x: self.inv_index[x], self.pred_labels))
-        unique_labels = list(set(labels))
+        unique_labels = sorted(list(set(labels)))
 
         plt.figure(figsize=(4,4))
         for label in unique_labels:
