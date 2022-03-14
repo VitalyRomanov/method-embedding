@@ -97,7 +97,8 @@ def read_edges(edge_path):
     }
 
     additional_types = {
-        "mentioned_in": "Int64"
+        "mentioned_in": "Int64",
+        "file_id": "Int64"
     }
 
     for col, type_ in additional_types.items():
