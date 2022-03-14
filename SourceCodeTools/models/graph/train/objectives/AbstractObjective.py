@@ -210,7 +210,7 @@ class AbstractObjective(nn.Module):
             f"val {self._idx_len(val_idx)}, "
             f"test {self._idx_len(test_idx)}."
         )
-        self.train_loader, self.test_loader, self.val_loader = self._get_loaders(
+        self.train_loader, self.val_loader, self.test_loader = self._get_loaders(
             train_idx=train_idx, val_idx=val_idx, test_idx=test_idx,
             batch_size=self.batch_size  # batch_size_node_name
         )
@@ -282,19 +282,21 @@ class AbstractObjective(nn.Module):
 
         return train_idx, val_idx, test_idx
 
+    def _create_loader(self, ids, batch_size=None, shuffle=False):
+        if batch_size is None:
+            # TODO
+            # only works when ids do not have types
+            batch_size = self._idx_len(ids)
+        sampler = dgl.dataloading.MultiLayerFullNeighborSampler(self.graph_model.num_layers)
+        loader = dgl.dataloading.NodeDataLoader(
+            self.graph_model.g, ids, sampler, batch_size=batch_size, shuffle=shuffle, num_workers=0)
+        return loader
+
     def _get_loaders(self, train_idx, val_idx, test_idx, batch_size):
 
-        layers = self.graph_model.num_layers
-
-        def create_loader(ids):
-            sampler = dgl.dataloading.MultiLayerFullNeighborSampler(layers)
-            loader = dgl.dataloading.NodeDataLoader(
-                self.graph_model.g, ids, sampler, batch_size=batch_size, shuffle=False, num_workers=0)
-            return loader
-
-        train_loader = create_loader(train_idx)
-        val_loader = create_loader(val_idx)
-        test_loader = create_loader(test_idx)
+        train_loader = self._create_loader(train_idx, batch_size, shuffle=False)
+        val_loader = self._create_loader(val_idx, batch_size, shuffle=False)
+        test_loader = self._create_loader(test_idx, batch_size, shuffle=False)
 
         return train_loader, val_loader, test_loader
 
@@ -308,10 +310,10 @@ class AbstractObjective(nn.Module):
             setattr(self, iter_name, iter(getattr(self, f"{data_split}_loader")))
         return next(getattr(self, iter_name))
 
-    def _create_loader(self, indices):
-        sampler = dgl.dataloading.MultiLayerFullNeighborSampler(self.graph_model.num_layers)
-        return dgl.dataloading.NodeDataLoader(
-            self.graph_model.g, indices, sampler, batch_size=len(indices), num_workers=0)
+    # def _create_loader(self, indices):
+    #     sampler = dgl.dataloading.MultiLayerFullNeighborSampler(self.graph_model.num_layers)
+    #     return dgl.dataloading.NodeDataLoader(
+    #         self.graph_model.g, indices, sampler, batch_size=len(indices), num_workers=0)
 
     def _extract_embed(self, input_nodes, train_embeddings=True, masked=None):
         emb = {}
