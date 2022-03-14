@@ -18,6 +18,7 @@ config_specification = {
         "custom_reverse": False,
         "restricted_id_pool": None,
         "random_seed": None,
+        "subgraph_id_column": "mentioned_in"
     },
     "TRAINING": {
         "model_output_dir": None,
