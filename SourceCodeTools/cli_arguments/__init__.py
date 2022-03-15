@@ -20,12 +20,17 @@ class AstDatasetCreatorArguments:
 
         self.parser = parser
         self.add_positional_argument()
+        self.additional_arguments()
 
     def add_positional_argument(self):
         self.parser.add_argument(
             'source_code', help='Path to DataFrame csv.'
         )
         self.parser.add_argument('output_directory', help='')
+
+    def additional_arguments(self):
+        self.parser.add_argument('--chunksize', default=10000, type=int, help='Chunksize for preparing dataset. Larger chunks are faster to process, but they take more memory.')
+        self.parser.add_argument('--keep_frac', default=1.0, type=float, help="Fraction of the dataset to keep")
 
     def parse(self):
         return self.parser.parse_args()
@@ -36,6 +41,9 @@ class DatasetCreatorArguments(AstDatasetCreatorArguments):
     def add_positional_argument(self):
         self.parser.add_argument('indexed_environments', help='Path to environments indexed by sourcetrail')
         self.parser.add_argument('output_directory', help='')
+
+    def additional_arguments(self):
+        pass
 
 
 
