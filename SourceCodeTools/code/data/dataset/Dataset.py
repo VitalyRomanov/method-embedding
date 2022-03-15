@@ -49,7 +49,7 @@ class SourceGraphDataset:
             no_global_edges: bool = False, remove_reverse: bool = False, custom_reverse: Optional[List[str]] = None,
             # package_names: Optional[List[str]] = None,
             restricted_id_pool: Optional[List[int]] = None, use_ns_groups: bool = False,
-            subgraph_id_column=None
+            subgraph_id_column=None, subgraph_partition=None
     ):
         """
         Prepares the data for training GNN model. The graph is prepared in the following way:
@@ -92,6 +92,7 @@ class SourceGraphDataset:
         self.remove_reverse = remove_reverse
         self.custom_reverse = custom_reverse
         self.subgraph_id_column = subgraph_id_column
+        self.subgraph_partition = subgraph_partition
 
         self.use_ns_groups = use_ns_groups
 

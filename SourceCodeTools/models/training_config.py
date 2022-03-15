@@ -15,10 +15,11 @@ config_specification = {
         "use_edge_types": False,
         "no_global_edges": False,
         "remove_reverse": False,
-        "custom_reverse": False,
+        "custom_reverse": None,
         "restricted_id_pool": None,
         "random_seed": None,
-        "subgraph_id_column": "mentioned_in"
+        "subgraph_id_column": "mentioned_in",
+        "subgraph_partition": None
     },
     "TRAINING": {
         "model_output_dir": None,
