@@ -70,11 +70,12 @@ def map_columns(input_table, id_map, columns, columns_special=None):
 
 
 def read_nodes(node_path):
-    nodes = unpersist(node_path)
     dtypes = {
         'type': 'category',
         "serialized_name": "string",
     }
+
+    nodes = unpersist(node_path, dtype=dtypes)
 
     additional_dtypes = {
         "mentioned_in": "Int64",
@@ -90,11 +91,11 @@ def read_nodes(node_path):
 
 
 def read_edges(edge_path):
-    edges = unpersist(edge_path)
-
     dtypes = {
         'type': 'category'
     }
+
+    edges = unpersist(edge_path, dtype=dtypes)
 
     additional_types = {
         "mentioned_in": "Int64",

@@ -141,7 +141,7 @@ class ClassifierTargetMapper(ElementEmbedderBase, Scorer):
     def set_embed(self, *args, **kwargs):
         pass
 
-    def prepare_index(self):
+    def prepare_index(self, *args):
         pass
 
 

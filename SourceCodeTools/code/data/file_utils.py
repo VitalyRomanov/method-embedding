@@ -53,7 +53,13 @@ def write_json(df, path, **kwargs):
 
 
 def read_json(path, **kwargs):
-    return pd.read_json(path, orient="records", lines=True, **kwargs)
+    data = None
+    for chunk in pd.read_json(path, orient="records", lines=True, chunksize=100000, **kwargs):
+        if data is None:
+            data = chunk
+        else:
+            data = data.append(chunk)
+    return data
 
 
 def read_source_location(base_path):

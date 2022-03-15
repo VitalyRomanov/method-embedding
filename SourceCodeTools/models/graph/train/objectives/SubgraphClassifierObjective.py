@@ -3,7 +3,9 @@ from collections import OrderedDict, defaultdict
 from itertools import chain
 from typing import Optional
 
+import numpy as np
 import torch
+from sklearn.metrics import ndcg_score, top_k_accuracy_score
 from torch import nn
 from tqdm import tqdm
 
@@ -13,6 +15,8 @@ from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedderWithBpeS
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
 from SourceCodeTools.models.graph.train.Scorer import Scorer
 from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective, sum_scores
+from SourceCodeTools.models.graph.train.objectives.NodeClassificationObjective import NodeClassifier, \
+    NodeClassifierObjective
 from SourceCodeTools.tabular.common import compact_property
 
 
@@ -81,6 +85,7 @@ class SubgraphAbstractObjective(AbstractObjective):
             early_stopping=False, early_stopping_tolerance=20, nn_index="brute",
             ns_groups=None, subgraph_mapping=None, subgraph_partition=None
     ):
+        assert subgraph_partition is not None, "Provide train/val/test splits with `subgraph_partition` option"
         self.subgraph_mapping = subgraph_mapping
         self.subgraph_partition = unpersist(subgraph_partition)
         super(SubgraphAbstractObjective, self).__init__(
@@ -249,10 +254,114 @@ class SubgraphAbstractObjective(AbstractObjective):
         scores = {key: sum_scores(val) for key, val in scores.items()}
         return scores
 
+    def verify_parameters(self):
+        pass
+
+
+class SubgraphEmbeddingObjective(SubgraphAbstractObjective):
+    def __init__(
+            self, name, graph_model, node_embedder, nodes, data_loading_func, device,
+            sampling_neighbourhood_size, batch_size,
+            tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod",
+            masker: Optional[SubwordMasker] = None, measure_scores=False, dilate_scores=1,
+            early_stopping=False, early_stopping_tolerance=20, nn_index="brute",
+            ns_groups=None, subgraph_mapping=None, subgraph_partition=None
+    ):
+        super(SubgraphEmbeddingObjective, self).__init__(
+            name, graph_model, node_embedder, nodes, data_loading_func, device,
+            sampling_neighbourhood_size, batch_size,
+            tokenizer_path, target_emb_size, link_predictor_type,
+            masker, measure_scores, dilate_scores, early_stopping, early_stopping_tolerance, nn_index,
+            ns_groups, subgraph_mapping, subgraph_partition
+        )
+
+
+class SubgraphClassifierObjective(NodeClassifierObjective, SubgraphAbstractObjective):
+    def __init__(
+            self, name, graph_model, node_embedder, nodes, data_loading_func, device,
+            sampling_neighbourhood_size, batch_size,
+            tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod",
+            masker: Optional[SubwordMasker] = None, measure_scores=False, dilate_scores=1,
+            early_stopping=False, early_stopping_tolerance=20, nn_index="brute",
+            ns_groups=None, subgraph_mapping=None, subgraph_partition=None
+    ):
+        SubgraphAbstractObjective.__init__(self,
+            name, graph_model, node_embedder, nodes, data_loading_func, device,
+            sampling_neighbourhood_size, batch_size,
+            tokenizer_path, target_emb_size, link_predictor_type,
+            masker, measure_scores, dilate_scores, early_stopping, early_stopping_tolerance, nn_index,
+            ns_groups, subgraph_mapping, subgraph_partition
+        )
+
+    def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
+        self.target_embedder = SubgraphClassifierTargetMapper(
+            elements=data_loading_func()
+        )
+
+    def evaluate_objective(self, data_split, neg_sampling_strategy=None, negative_factor=1):
+        at = [1, 3, 5, 10]
+        count = 0
+        scores = defaultdict(list)
+
+        for input_nodes, seeds, blocks in getattr(self, f"{data_split}_loader"):
+            blocks = [blk.to(self.device) for blk in blocks]
+
+            subgraph_masks, seeds = seeds
+
+            if self.masker is None:
+                masked = None
+            else:
+                masked = self.masker.get_mask(self.seeds_to_python(seeds))
+
+            src_embs = self._graph_embeddings(input_nodes, blocks, masked=masked, subgraph_masks=subgraph_masks)
+            node_embs_, element_embs_, labels = self.prepare_for_prediction(
+                src_embs, seeds, self.target_embedding_fn, negative_factor=negative_factor,
+                neg_sampling_strategy=neg_sampling_strategy,
+                train_embeddings=False
+            )
+            # indices = self.seeds_to_global(seeds).tolist()
+            # labels = self.target_embedder[indices]
+            # labels = torch.LongTensor(labels).to(self.device)
+            acc, loss, logits = self.compute_acc_loss(node_embs_, element_embs_, labels, return_logits=True)
+
+            y_pred = nn.functional.softmax(logits, dim=-1).to("cpu").numpy()
+            y_true = np.zeros(y_pred.shape)
+            y_true[np.arange(0, y_true.shape[0]), labels.to("cpu").numpy()] = 1.
+
+            if self.measure_scores:
+                if count % self.dilate_scores == 0:
+                    y_true_onehot = np.array(y_true)
+                    labels = list(range(y_true_onehot.shape[1]))
+
+                    for k in at:
+                        scores[f"ndcg@{k}"].append(ndcg_score(y_true, y_pred, k=k))
+                        scores[f"acc@{k}"].append(
+                            top_k_accuracy_score(y_true_onehot.argmax(-1), y_pred, k=k, labels=labels)
+                        )
+
+            scores["Loss"].append(loss.item())
+            scores["Accuracy"].append(acc)
+            count += 1
+
+        if count == 0:
+            count += 1
+
+        scores = {key: sum_scores(val) for key, val in scores.items()}
+        return scores
+
+    def parameters(self, recurse: bool = True):
+        return chain(self.classifier.parameters())
+
+    def custom_state_dict(self):
+        state_dict = OrderedDict()
+        for k, v in self.classifier.state_dict().items():
+            state_dict[f"classifier.{k}"] = v
+        return state_dict
+
 
 class SubgraphElementEmbedderBase(ElementEmbedderBase):
     def __init__(self, elements, compact_dst=True):
-        super(ElementEmbedderBase, self).__init__()
+        # super(ElementEmbedderBase, self).__init__()
         self.elements = elements.rename({"src": "id"}, axis=1)
         self.init(compact_dst)
 
@@ -275,3 +384,15 @@ class SubgraphElementEmbedderWithSubwords(SubgraphElementEmbedderBase, ElementEm
 
         self.emb_size = emb_size
         self.init_subwords(elements, num_buckets=num_buckets, max_len=max_len)
+
+
+class SubgraphClassifierTargetMapper(SubgraphElementEmbedderBase, Scorer):
+    def __init__(self, elements):
+        SubgraphElementEmbedderBase.__init__(self, elements=elements)
+        self.num_classes = len(self.inverse_dst_map)
+
+    def set_embed(self, *args, **kwargs):
+        pass
+
+    def prepare_index(self, *args):
+        pass

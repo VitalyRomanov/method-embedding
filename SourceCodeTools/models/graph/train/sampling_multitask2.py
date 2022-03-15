@@ -21,7 +21,8 @@ from SourceCodeTools.models.graph.train.objectives import VariableNameUsePredict
     NodeNameClassifier, EdgePrediction, TypeAnnPrediction, EdgePrediction2, NodeClassifierObjective
 from SourceCodeTools.models.graph.NodeEmbedder import NodeEmbedder
 from SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObjective import TransRObjective
-from SourceCodeTools.models.graph.train.objectives.SubgraphClassifierObjective import SubgraphAbstractObjective
+from SourceCodeTools.models.graph.train.objectives.SubgraphClassifierObjective import SubgraphAbstractObjective, \
+    SubgraphClassifierObjective, SubgraphEmbeddingObjective
 
 
 class EarlyStopping(Exception):
@@ -102,6 +103,8 @@ class SamplingMultitaskTrainer:
             self.create_type_ann_objective(dataset, tokenizer_path)
         if "subgraph_name_clf" in objective_list:
             self.create_subgraph_name_objective(dataset, tokenizer_path)
+        if "subgraph_clf" in objective_list:
+            self.create_subgraph_classifier_objective(dataset, tokenizer_path)
 
     def create_token_pred_objective(self, dataset, tokenizer_path):
         self.objectives.append(
@@ -134,19 +137,49 @@ class SamplingMultitaskTrainer:
             )
         )
 
+    def _create_subgraph_objective(
+            self, *, objective_name, objective_class, dataset, labels_fn, tokenizer_path, subgraph_mapping=None,
+            subgraph_partition=None,
+            masker=None
+    ):
+        if subgraph_mapping is None:
+            subgraph_mapping = dataset.subgraph_mapping
+
+        if subgraph_partition is None:
+            subgraph_partition = dataset.subgraph_partition
+
+        return objective_class(
+            objective_name,
+            self.graph_model, self.node_embedder, dataset.nodes,
+            labels_fn, self.device,
+            self.sampling_neighbourhood_size, self.batch_size,
+            tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
+            masker=masker,  # dataset.create_node_name_masker(tokenizer_path),
+            measure_scores=self.trainer_params["measure_scores"],
+            dilate_scores=self.trainer_params["dilate_scores"], nn_index=self.trainer_params["nn_index"],
+            subgraph_mapping=subgraph_mapping,
+            subgraph_partition=subgraph_partition
+        )
+
     def create_subgraph_name_objective(self, dataset, tokenizer_path):
         self.objectives.append(
-            SubgraphAbstractObjective(
-                "SubgraphNameClf",
-                self.graph_model, self.node_embedder, dataset.nodes,
-                dataset.load_subgraph_function_names, self.device,
-                self.sampling_neighbourhood_size, self.batch_size,
-                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
-                masker=None,  # dataset.create_node_name_masker(tokenizer_path),
-                measure_scores=self.trainer_params["measure_scores"],
-                dilate_scores=self.trainer_params["dilate_scores"], nn_index=self.trainer_params["nn_index"],
-                subgraph_mapping=dataset.subgraph_mapping,
-                subgraph_partition="/Users/LTV/dev/method-embeddings/res/python_testdata/example_graph/with_ast/subgraph_partition.json"
+            self._create_subgraph_objective(
+                objective_name="SubgraphNameEmbeddingObjective",
+                objective_class=SubgraphEmbeddingObjective,
+                dataset=dataset,
+                tokenizer_path=tokenizer_path,
+                labels_fn=dataset.load_subgraph_function_names,
+            )
+        )
+
+    def create_subgraph_classifier_objective(self, dataset, tokenizer_path):
+        self.objectives.append(
+            self._create_subgraph_objective(
+                objective_name="SubgraphClassifierObjective",
+                objective_class=SubgraphClassifierObjective,
+                dataset=dataset,
+                tokenizer_path=tokenizer_path,
+                labels_fn=dataset.load_subgraph_function_names,
             )
         )
 
