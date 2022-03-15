@@ -12,6 +12,8 @@ def add_data_arguments(parser):
     parser.add_argument('--remove_reverse', action='store_true', help="Remove reverse edges from the graph")
     parser.add_argument('--custom_reverse', dest='custom_reverse', default=None, help='List of edges for which to add reverse types. Should use together with `remove_reverse`')
     parser.add_argument('--restricted_id_pool', dest='restricted_id_pool', default=None, help='???')
+    parser.add_argument('--subgraph_partition', default=None)
+    parser.add_argument('--subgraph_id_column', default=None)
 
 
 def add_pretraining_arguments(parser):
