@@ -69,25 +69,39 @@ def map_columns(input_table, id_map, columns, columns_special=None):
         return input_table
 
 
+def grow_with_chunks(chunks, additional_dtypes):
+    dtypes = {}
+
+    table = None
+
+    for chunk in chunks:
+        for col, type_ in additional_dtypes.items():
+            if col in chunk.columns:
+                dtypes[col] = type_
+
+        chunk = chunk.astype(dtypes)
+
+        if table is None:
+            table = chunk
+        else:
+            table = pd.concat([table, chunk], copy=False)
+    return table
+
+
 def read_nodes(node_path):
     dtypes = {
         'type': 'category',
         "serialized_name": "string",
     }
 
-    nodes = unpersist(node_path, dtype=dtypes)
+    nodes_chunks = unpersist(node_path, dtype=dtypes, chunksize=100000)
 
     additional_dtypes = {
-        "mentioned_in": "Int64",
+        "mentioned_in": "Int32",
         "string": "string"
     }
 
-    for col, type_ in additional_dtypes.items():
-        if col in nodes.columns:
-            dtypes[col] = type_
-
-    nodes = nodes.astype(dtypes)
-    return nodes
+    return grow_with_chunks(nodes_chunks, additional_dtypes)
 
 
 def read_edges(edge_path):
@@ -95,16 +109,11 @@ def read_edges(edge_path):
         'type': 'category'
     }
 
-    edges = unpersist(edge_path, dtype=dtypes)
+    edge_chunks = unpersist(edge_path, dtype=dtypes, chunksize=100000)
 
     additional_types = {
-        "mentioned_in": "Int64",
-        "file_id": "Int64"
+        "mentioned_in": "Int32",
+        "file_id": "Int32"
     }
 
-    for col, type_ in additional_types.items():
-        if col in edges.columns:
-            dtypes[col] = type_
-
-    edges = edges.astype(dtypes)
-    return edges
+    return grow_with_chunks(edge_chunks, additional_types)
