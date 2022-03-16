@@ -179,7 +179,7 @@ class SamplingMultitaskTrainer:
                 objective_class=SubgraphClassifierObjective,
                 dataset=dataset,
                 tokenizer_path=tokenizer_path,
-                labels_fn=dataset.load_subgraph_function_names,
+                labels_fn=dataset.load_cubert_subgraph_labels,
             )
         )
 

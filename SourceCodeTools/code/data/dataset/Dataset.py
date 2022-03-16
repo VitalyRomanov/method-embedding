@@ -895,6 +895,11 @@ class SourceGraphDataset:
 
         return type_ann
 
+    def load_cubert_subgraph_labels(self):
+
+        filecontent = unpersist(join(self.data_path, "common_filecontent.json.bz2"))
+        return filecontent[["id", "label"]].rename({"id": "src", "label": "dst"}, axis=1)
+
     def load_docstring(self):
 
         docstrings_path = os.path.join(self.data_path, "common_source_graph_bodies.json.bz2")
