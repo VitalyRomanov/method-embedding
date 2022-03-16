@@ -49,11 +49,34 @@ def read_parquet(path, **kwargs):
 
 
 def write_json(df, path, **kwargs):
-    df.to_json(path, orient="records", lines=True, **kwargs)
+    if "mode" in kwargs:
+        mode = kwargs.pop("mode")
+    else:
+        mode = None
+
+    if mode == "a":
+        with open(path, "a") as sink:
+            sink.write("\n")
+            sink.write(df.to_json(path_or_buf=None, orient="records", lines=True, **kwargs))
+    else:
+        df.to_json(path_or_buf=path, orient="records", lines=True, **kwargs)
 
 
 def read_json(path, **kwargs):
-    return pd.read_json(path, orient="records", lines=True, **kwargs)
+    if "chunksize" in kwargs:
+        chunksize = kwargs.pop("chunksize")
+        with open(path, "r") as source:
+            # need to read manually, probably a bug in pandas
+            buffer = []
+            for ind, line in enumerate(source):
+                buffer.append(line)
+                if len(buffer) >= chunksize:
+                    yield pd.read_json("".join(buffer), orient="records", lines=True, **kwargs)
+                    buffer.clear()
+            if len(buffer) != 0:
+                yield pd.read_json("".join(buffer), orient="records", lines=True, **kwargs)
+    else:
+        return pd.read_json(path, orient="records", lines=True, **kwargs)
 
 
 def read_source_location(base_path):

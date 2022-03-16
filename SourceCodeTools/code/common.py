@@ -88,32 +88,54 @@ def grow_with_chunks(chunks, additional_dtypes):
     return table
 
 
-def read_nodes(node_path):
+def return_chunks(chunks, additional_dtypes):
+    dtypes = {}
+
+    for chunk in chunks:
+        for col, type_ in additional_dtypes.items():
+            if col in chunk.columns:
+                dtypes[col] = type_
+
+        chunk = chunk.astype(dtypes, copy=False)
+        yield chunk
+
+
+def read_nodes(node_path, as_chunks=False):
     dtypes = {
-        'type': 'category',
+        "id": "int32",
         "serialized_name": "string",
     }
 
     nodes_chunks = unpersist(node_path, dtype=dtypes, chunksize=100000)
 
     additional_dtypes = {
+        'type': 'category',
         "mentioned_in": "Int32",
         "string": "string"
     }
 
-    return grow_with_chunks(nodes_chunks, additional_dtypes)
+    if as_chunks is False:
+        return grow_with_chunks(nodes_chunks, additional_dtypes)
+    else:
+        return return_chunks(nodes_chunks, additional_dtypes)
 
 
-def read_edges(edge_path):
+def read_edges(edge_path, as_chunks=False):
     dtypes = {
-        'type': 'category'
+        "id": "int32",
+        "source_node_id": "int32",
+        "target_node_id": "int32",
     }
 
     edge_chunks = unpersist(edge_path, dtype=dtypes, chunksize=100000)
 
     additional_types = {
+        "type": 'category',
         "mentioned_in": "Int32",
         "file_id": "Int32"
     }
 
-    return grow_with_chunks(edge_chunks, additional_types)
+    if as_chunks:
+        return return_chunks(edge_chunks, additional_types)
+    else:
+        return grow_with_chunks(edge_chunks, additional_types)

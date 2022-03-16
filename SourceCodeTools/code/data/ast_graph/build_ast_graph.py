@@ -11,9 +11,10 @@ from tqdm import tqdm
 
 from SourceCodeTools.cli_arguments import AstDatasetCreatorArguments
 from SourceCodeTools.code.ast import has_valid_syntax
+from SourceCodeTools.code.common import read_nodes, read_edges
 from SourceCodeTools.code.data.AbstractDatasetCreator import AbstractDatasetCreator
 from SourceCodeTools.code.data.ast_graph.extract_node_names import extract_node_names
-from SourceCodeTools.code.data.ast_graph.filter_type_edges import filter_type_edges
+from SourceCodeTools.code.data.ast_graph.filter_type_edges import filter_type_edges, filter_type_edges_with_chunks
 from SourceCodeTools.code.data.file_utils import persist, unpersist, unpersist_if_present
 from SourceCodeTools.code.data.ast_graph.draw_graph import visualize
 from SourceCodeTools.code.ast.python_ast2 import AstGraphGenerator, GNode, PythonSharedNodes
@@ -603,6 +604,7 @@ class AstDatasetCreator(AbstractDatasetCreator):
         # TODO use /tmp and add flag for overriding temp folder location
         if hasattr(self, "temp_path") and os.path.isdir(self.temp_path):
             shutil.rmtree(self.temp_path)
+        # pass
 
     def _prepare_environments(self):
         dataset_location = os.path.dirname(self.path)
@@ -622,12 +624,13 @@ class AstDatasetCreator(AbstractDatasetCreator):
         self.environments = sorted(list(filter(lambda path: os.path.isdir(path), paths)), key=lambda x: x.lower())
 
     @staticmethod
-    def extract_node_names(nodes, min_count):
-        return extract_node_names(nodes, min_count=min_count)
+    def extract_node_names(nodes_path, min_count):
+        logging.info("Extract node names")
+        return extract_node_names(read_nodes(nodes_path), min_count=min_count)
 
-    @staticmethod
-    def filter_type_edges(nodes, edges):
-        return filter_type_edges(nodes, edges)
+    def filter_type_edges(self, nodes_path, edges_path):
+        logging.info("Filter type edges")
+        filter_type_edges_with_chunks(nodes_path, edges_path, kwarg_fn=self.get_writing_mode)
 
     def do_extraction(self):
         global_nodes_with_ast = set()
