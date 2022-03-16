@@ -1,8 +1,10 @@
 import pandas as pd
-import pygraphviz as pgv
+
 
 
 def visualize(nodes, edges, output_path):
+    import pygraphviz as pgv
+
     edges = edges[edges["type"].apply(lambda x: not x.endswith("_rev"))]
 
     id2name = dict(zip(nodes['id'], nodes['serialized_name']))
