@@ -1,3 +1,4 @@
+import bz2
 import logging
 import tempfile
 from csv import QUOTE_NONNUMERIC
@@ -65,16 +66,19 @@ def write_json(df, path, **kwargs):
 def read_json(path, **kwargs):
     if "chunksize" in kwargs:
         chunksize = kwargs.pop("chunksize")
-        with open(path, "r") as source:
-            # need to read manually, probably a bug in pandas
-            buffer = []
-            for ind, line in enumerate(source):
-                buffer.append(line)
-                if len(buffer) >= chunksize:
-                    yield pd.read_json("".join(buffer), orient="records", lines=True, **kwargs)
-                    buffer.clear()
-            if len(buffer) != 0:
+        if str(path).endswith(".bz2"):
+            source = bz2.open(path, mode="rt")
+        else:
+            source = open(path, "r")
+        # need to read manually, probably a bug in pandas
+        buffer = []
+        for ind, line in enumerate(source):
+            buffer.append(line)
+            if len(buffer) >= chunksize:
                 yield pd.read_json("".join(buffer), orient="records", lines=True, **kwargs)
+                buffer.clear()
+        if len(buffer) != 0:
+            yield pd.read_json("".join(buffer), orient="records", lines=True, **kwargs)
     else:
         return pd.read_json(path, orient="records", lines=True, **kwargs)
 
