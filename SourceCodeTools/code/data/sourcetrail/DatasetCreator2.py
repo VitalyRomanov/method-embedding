@@ -3,6 +3,7 @@ from os.path import join
 from SourceCodeTools.cli_arguments import DatasetCreatorArguments
 from SourceCodeTools.code.annotator_utils import map_offsets
 from SourceCodeTools.code.data.AbstractDatasetCreator import AbstractDatasetCreator
+from SourceCodeTools.code.data.ast_graph.filter_type_edges import filter_type_edges_with_chunks
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_filter_type_edges import filter_type_edges
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_merge_graphs import get_global_node_info, merge_global_with_local
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_node_local2global import get_local2global
@@ -259,12 +260,13 @@ class DatasetCreator(AbstractDatasetCreator):
         self.compact_mapping_for_l2g(global_nodes_with_ast, "local2global_with_ast.bz2")
 
     @staticmethod
-    def extract_node_names(nodes, min_count):
-        return extract_node_names(nodes, min_count=min_count)
+    def extract_node_names(nodes_path, min_count):
+        logging.info("Extract node names")
+        return extract_node_names(read_nodes(nodes_path), min_count=min_count)
 
-    @staticmethod
-    def filter_type_edges(nodes, edges):
-        return filter_type_edges(nodes, edges)
+    def filter_type_edges(self, nodes_path, edges_path):
+        logging.info("Filter type edges")
+        filter_type_edges_with_chunks(nodes_path, edges_path, kwarg_fn=self.get_writing_mode)
 
     def merge(self, output_directory):
 

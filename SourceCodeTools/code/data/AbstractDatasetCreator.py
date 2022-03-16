@@ -4,6 +4,7 @@ import shelve
 import shutil
 import tempfile
 from abc import abstractmethod
+from collections import defaultdict
 from copy import copy
 from functools import partial
 from os.path import join
@@ -106,50 +107,66 @@ class AbstractDatasetCreator:
         shutil.rmtree(self.tmp_dir)
         # os.remove(self.local2global_cache_filename) # TODO nofile on linux, need to check
 
-    def handle_parallel_edges(self, path):
-        pass
-        edges = read_edges(path)
-        edges["id"] = list(range(len(edges)))
+    def handle_parallel_edges(self, edges_path):
+        logging.info("Handle parallel edges")
+        last_id = 0
 
-        edge_bank = {}
-        for id_, type_, src, dst in edges[["id", "type", "source_node_id", "target_node_id"]].values:
-            key = (src, dst)
-            if key in edge_bank:
-                edge_bank[key].append((id_, type_))
-            else:
-                edge_bank[key] = [(id_, type_)]
+        temp_edges = join(os.path.dirname(edges_path), "temp_" + os.path.basename(edges_path))
 
-        ids_to_remove = set()
-        for key, parallel_edges in edge_bank.items():
-            if len(parallel_edges) > 1:
-                parallel_edges = sorted(parallel_edges, key=lambda x: self.edge_priority.get(x[1], 3))
-                ids_to_remove.update(pe[0] for pe in parallel_edges[1:])
+        for ind, edges in enumerate(read_edges(edges_path, as_chunks=True)):
+            edges["id"] = range(last_id, len(edges) + last_id)
 
-        edges = edges[
-            edges["id"].apply(lambda id_: id_ not in ids_to_remove)
-        ]
+            edge_bank = defaultdict(list)
+            for id_, type_, src, dst in edges[["id", "type", "source_node_id", "target_node_id"]].values:
+                edge_bank[(src, dst)].append((id_, type_))
 
-        edges["id"] = range(len(edges))
+            ids_to_remove = set()
+            for key, parallel_edges in edge_bank.items():
+                if len(parallel_edges) > 1:
+                    parallel_edges = sorted(parallel_edges, key=lambda x: self.edge_priority.get(x[1], 3))
+                    ids_to_remove.update(pe[0] for pe in parallel_edges[1:])
 
-        persist(edges, path)
+            edges = edges[
+                edges["id"].apply(lambda id_: id_ not in ids_to_remove)
+            ]
 
-    def post_pruning(self, npath, epath):
-        nodes = read_nodes(npath)
-        edges = read_edges(epath)
+            edges["id"] = range(last_id, len(edges) + last_id)
+            last_id = len(edges) + last_id
 
-        restricted_nodes = set(nodes[
-            nodes["type"].apply(lambda type_: type_ in self.restricted_in_types)
-        ]["id"].tolist())
+            kwargs = self.get_writing_mode(temp_edges.endswith("csv"), first_written=ind != 0)
+            persist(edges, temp_edges, **kwargs)
 
-        edges = edges[
-            edges["type"].apply(lambda type_: type_ not in self.restricted_edges)
-        ]
+        os.remove(edges_path)
+        os.rename(temp_edges, edges_path)
 
-        edges = edges[
-            edges["target_node_id"].apply(lambda type_: type_ not in restricted_nodes)
-        ]
+    def post_pruning(self, nodes_path, edges_path):
+        logging.info("Post pruning")
 
-        persist(edges, epath)
+        restricted_nodes = set()
+
+        for nodes in read_nodes(nodes_path, as_chunks=True):
+            restricted_nodes.update(
+                nodes[
+                    nodes["type"].apply(lambda type_: type_ in self.restricted_in_types)
+                ]["id"]
+            )
+
+        temp_edges = join(os.path.dirname(edges_path), "temp_" + os.path.basename(edges_path))
+
+        for ind, edges in enumerate(read_edges(edges_path, as_chunks=True)):
+            edges = edges[
+                edges["type"].apply(lambda type_: type_ not in self.restricted_edges)
+            ]
+
+            edges = edges[
+                edges["target_node_id"].apply(lambda type_: type_ not in restricted_nodes)
+            ]
+
+            kwargs = self.get_writing_mode(temp_edges.endswith("csv"), first_written=ind != 0)
+            persist(edges, temp_edges, **kwargs)
+
+        os.remove(edges_path)
+        os.rename(temp_edges, edges_path)
 
     def compact_mapping_for_l2g(self, global_nodes, filename):
         if len(global_nodes) > 0:
@@ -220,36 +237,105 @@ class AbstractDatasetCreator:
         else:
             return original
 
+    def read_mapped_local(self, env_path, filename, map_filename, columns_to_map, columns_special=None):
+        input_table_path = join(env_path, filename)
+        local2global = self.get_local2global(join(env_path, map_filename))
+        if os.path.isfile(input_table_path) and local2global is not None:
+            if self.only_with_annotations:
+                if not os.path.isfile(join(env_path, "has_annotations")):
+                    return None
+            input_table = unpersist(input_table_path)
+            new_table = map_columns(input_table, local2global, columns_to_map, columns_special=columns_special)
+            return new_table
+        else:
+            return None
+
+    def get_writing_mode(self, is_csv, first_written):
+        kwargs = {}
+        if first_written is True:
+            kwargs["mode"] = "a"
+            if is_csv:
+                kwargs["header"] = False
+        return kwargs
+
     def create_global_file(
             self, local_file, local2global_file, columns, output_path, message, ensure_unique_with=None,
             columns_special=None
     ):
-        global_table = None
+        assert output_path.endswith("json") or output_path.endswith("csv")
+
+        if ensure_unique_with is not None:
+            unique_values = set()
+        else:
+            unique_values = None
+
+        first_written = False
+
         for ind, env_path in tqdm(
                 enumerate(self.environments), desc=message, leave=True,
                 dynamic_ncols=True, total=len(self.environments)
         ):
-            global_table = self.merge_files(
-                env_path, local_file, local2global_file, columns, global_table, columns_special=columns_special
+            mapped_local = self.read_mapped_local(
+                env_path, local_file, local2global_file, columns, columns_special=columns_special
             )
 
-        if ensure_unique_with is not None:
-            global_table = global_table.drop_duplicates(subset=ensure_unique_with)
+            if mapped_local is not None:
+                if unique_values is not None:
+                    unique_verify = list(zip(*(mapped_local[col_name] for col_name in ensure_unique_with)))
 
-        if global_table is not None:
-            global_table.reset_index(drop=True, inplace=True)
-            assert len(global_table) == len(global_table.index.unique())
+                    mapped_local = mapped_local.loc[
+                        map(lambda x: x not in unique_values, unique_verify)
+                    ]
+                    unique_values.update(unique_verify)
 
-            persist(global_table, output_path)
+                kwargs = self.get_writing_mode(output_path.endswith("csv"), first_written)
 
-    def filter_orphaned_nodes(self, global_nodes, edges):
-        active_nodes = set(edges['source_node_id'].tolist() + edges['target_node_id'].tolist())
-        global_nodes = global_nodes[
-            global_nodes['id'].apply(lambda id_: id_ in active_nodes)
-        ]
-        return global_nodes
+                persist(mapped_local, output_path, **kwargs)
+                first_written = True
 
 
+    # def create_global_file(
+    #         self, local_file, local2global_file, columns, output_path, message, ensure_unique_with=None,
+    #         columns_special=None
+    # ):
+    #     global_table = None
+    #     for ind, env_path in tqdm(
+    #             enumerate(self.environments), desc=message, leave=True,
+    #             dynamic_ncols=True, total=len(self.environments)
+    #     ):
+    #         global_table = self.merge_files(
+    #             env_path, local_file, local2global_file, columns, global_table, columns_special=columns_special
+    #         )
+    #
+    #     if ensure_unique_with is not None:
+    #         global_table = global_table.drop_duplicates(subset=ensure_unique_with)
+    #
+    #     if global_table is not None:
+    #         global_table.reset_index(drop=True, inplace=True)
+    #         assert len(global_table) == len(global_table.index.unique())
+    #
+    #         persist(global_table, output_path)
+
+    def filter_orphaned_nodes(self, nodes_path, edges_path):
+        logging.info("Filter orphaned nodes")
+        active_nodes = set()
+
+        for edges in read_edges(edges_path, as_chunks=True):
+            active_nodes.update(edges['source_node_id'])
+            active_nodes.update(edges['target_node_id'])
+
+        temp_nodes = join(os.path.dirname(nodes_path), "temp_" + os.path.basename(nodes_path))
+
+        for ind, nodes in enumerate(read_nodes(nodes_path, as_chunks=True)):
+            nodes = nodes[
+                nodes['id'].apply(lambda id_: id_ in active_nodes)
+            ]
+
+            kwargs = self.get_writing_mode(temp_nodes.endswith("csv"), first_written=ind != 0)
+            persist(nodes, temp_nodes, **kwargs)
+
+        os.remove(nodes_path)
+        os.rename(temp_nodes, nodes_path)
 
     def join_files(self, files, local2global_filename, output_dir):
         for file in files:
@@ -262,23 +348,25 @@ class AbstractDatasetCreator:
 
         get_path = partial(join, output_path)
 
-        global_nodes = self.filter_orphaned_nodes(
-            read_nodes(get_path("common_nodes.json")),
-            read_edges(get_path("common_edges.json")),
+        nodes_path = get_path("common_nodes.json")
+        edges_path = get_path("common_edges.json")
+
+        self.filter_orphaned_nodes(
+            nodes_path,
+            edges_path,
         )
-        persist(global_nodes, get_path("common_nodes.json"))
         node_names = self.extract_node_names(
-            global_nodes, min_count=2
+            nodes_path, min_count=2
         )
         if node_names is not None:
             persist(node_names, get_path("node_names.json"))
 
-        self.handle_parallel_edges(get_path("common_edges.json"))
+        self.handle_parallel_edges(edges_path)
 
         if self.visualize:
             self.visualize_func(
-                read_nodes(get_path("common_nodes.json")),
-                read_edges(get_path("common_edges.json")),
+                read_nodes(nodes_path),
+                read_edges(edges_path),
                 get_path("visualization.pdf")
             )
 
@@ -288,34 +376,31 @@ class AbstractDatasetCreator:
 
         get_path = partial(join, output_path)
 
+        nodes_path = get_path("common_nodes.json")
+        edges_path = get_path("common_edges.json")
+
         if self.remove_type_annotations:
-            no_annotations, annotations = self.filter_type_edges(
-                read_nodes(get_path("common_nodes.json")),
-                read_edges(get_path("common_edges.json"))
-            )
-            persist(no_annotations, get_path("common_edges.json"))
-            if annotations is not None:
-                persist(annotations, get_path("type_annotations.json"))
+            self.filter_type_edges(nodes_path, edges_path)
 
-        self.handle_parallel_edges(get_path("common_edges.json"))
+        self.handle_parallel_edges(edges_path)
 
-        self.post_pruning(get_path("common_nodes.json"), get_path("common_edges.json"))
+        self.post_pruning(nodes_path, edges_path)
 
-        global_nodes = self.filter_orphaned_nodes(
-            read_nodes(get_path("common_nodes.json")),
-            read_edges(get_path("common_edges.json")),
+        self.filter_orphaned_nodes(
+            nodes_path,
+            edges_path,
         )
-        persist(global_nodes, get_path("common_nodes.json"))
+        # persist(global_nodes, get_path("common_nodes.json"))
         node_names = self.extract_node_names(
-            global_nodes, min_count=2
+            nodes_path, min_count=2
         )
         if node_names is not None:
             persist(node_names, get_path("node_names.json"))
 
         if self.visualize:
             self.visualize_func(
-                read_nodes(get_path("common_nodes.json")),
-                read_edges(get_path("common_edges.json")),
+                read_nodes(nodes_path),
+                read_edges(edges_path),
                 get_path("visualization.pdf")
             )
 
