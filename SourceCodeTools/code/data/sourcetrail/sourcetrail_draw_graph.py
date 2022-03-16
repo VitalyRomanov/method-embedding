@@ -1,9 +1,9 @@
 import pandas as pd
-import pygraphviz as pgv
 
 
 def visualize(nodes, edges, output_path):
     from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types
+    import pygraphviz as pgv
 
     global_types = list(node_types.values())
 
