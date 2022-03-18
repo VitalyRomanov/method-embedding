@@ -1,9 +1,13 @@
+import logging
+import os
 from os.path import join
 
 from SourceCodeTools.cli_arguments import DatasetCreatorArguments
 from SourceCodeTools.code.annotator_utils import map_offsets
+from SourceCodeTools.code.common import read_nodes
 from SourceCodeTools.code.data.AbstractDatasetCreator import AbstractDatasetCreator
 from SourceCodeTools.code.data.ast_graph.filter_type_edges import filter_type_edges_with_chunks
+from SourceCodeTools.code.data.file_utils import filenames, unpersist_if_present, read_element_component
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_filter_type_edges import filter_type_edges
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_merge_graphs import get_global_node_info, merge_global_with_local
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_node_local2global import get_local2global
@@ -16,8 +20,6 @@ from SourceCodeTools.code.data.sourcetrail.sourcetrail_add_reverse_edges import 
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_ast_edges2 import get_ast_from_modules
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_extract_variable_names import extract_var_names
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_extract_node_names import extract_node_names
-
-from SourceCodeTools.code.data.file_utils import *
 
 
 class DatasetCreator(AbstractDatasetCreator):
