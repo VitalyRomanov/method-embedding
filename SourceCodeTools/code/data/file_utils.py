@@ -5,6 +5,7 @@ from csv import QUOTE_NONNUMERIC
 from pathlib import Path
 from typing import Union
 
+import numpy as np
 import pandas as pd
 import os
 
@@ -70,13 +71,29 @@ def read_json_with_generator(path, chunksize, **kwargs):
         source = open(path, "r")
     # need to read manually, probably a bug in pandas
     buffer = []
+    last_index = 0
+
+    def prepare_chunk(buffer, last_index):
+        chunk = pd.read_json("".join(buffer), orient="records", lines=True, **kwargs)
+        chunk.index = np.array(list(range(last_index, last_index + len(chunk))))
+        last_index = last_index + len(chunk)
+        return chunk, last_index
+
     for ind, line in enumerate(source):
         buffer.append(line)
         if len(buffer) >= chunksize:
-            yield pd.read_json("".join(buffer), orient="records", lines=True, **kwargs)
+            chunk, last_index = prepare_chunk(buffer, last_index)
+            # chunk = pd.read_json("".join(buffer), orient="records", lines=True, **kwargs)
+            # chunk.index = np.array(list(range(last_index, last_index + len(chunk))))
+            # last_index = last_index + len(chunk)
+            yield chunk
             buffer.clear()
     if len(buffer) != 0:
-        yield pd.read_json("".join(buffer), orient="records", lines=True, **kwargs)
+        chunk, last_index = prepare_chunk(buffer, last_index)
+        # chunk = pd.read_json("".join(buffer), orient="records", lines=True, **kwargs)
+        # chunk.index = np.array(list(range(last_index, last_index + len(chunk))))
+        # last_index = last_index + len(chunk)
+        yield chunk
 
 
 def read_json(path, **kwargs):
