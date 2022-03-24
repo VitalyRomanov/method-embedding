@@ -63,22 +63,25 @@ def write_json(df, path, **kwargs):
         df.to_json(path_or_buf=path, orient="records", lines=True, **kwargs)
 
 
+def read_json_with_generator(path, chunksize, **kwargs):
+    if str(path).endswith(".bz2"):
+        source = bz2.open(path, mode="rt")
+    else:
+        source = open(path, "r")
+    # need to read manually, probably a bug in pandas
+    buffer = []
+    for ind, line in enumerate(source):
+        buffer.append(line)
+        if len(buffer) >= chunksize:
+            yield pd.read_json("".join(buffer), orient="records", lines=True, **kwargs)
+            buffer.clear()
+    if len(buffer) != 0:
+        yield pd.read_json("".join(buffer), orient="records", lines=True, **kwargs)
+
+
 def read_json(path, **kwargs):
     if "chunksize" in kwargs:
-        chunksize = kwargs.pop("chunksize")
-        if str(path).endswith(".bz2"):
-            source = bz2.open(path, mode="rt")
-        else:
-            source = open(path, "r")
-        # need to read manually, probably a bug in pandas
-        buffer = []
-        for ind, line in enumerate(source):
-            buffer.append(line)
-            if len(buffer) >= chunksize:
-                yield pd.read_json("".join(buffer), orient="records", lines=True, **kwargs)
-                buffer.clear()
-        if len(buffer) != 0:
-            yield pd.read_json("".join(buffer), orient="records", lines=True, **kwargs)
+        return read_json_with_generator(path, kwargs.pop("chunksize"), **kwargs)
     else:
         return pd.read_json(path, orient="records", lines=True, **kwargs)
 
