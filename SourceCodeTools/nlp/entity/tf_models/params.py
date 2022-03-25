@@ -20,22 +20,30 @@ cnn_params_grids = {
             #     "suffix_prefix_dims": 20,
             #     "suffix_prefix_buckets": 1000,
             # },
-            {
-                "h_sizes": [40, 40, 40],
-                "dense_size": 30,
-                "pos_emb_size": 30,
-                "cnn_win_size": 5,
-                "suffix_prefix_dims": 50,
-                "suffix_prefix_buckets": 2000,
-            },
-            #     {
+            # {
+            #     "h_sizes": [40, 40, 40],
+            #     "dense_size": 30,
+            #     "pos_emb_size": 30,
+            #     "cnn_win_size": 5,
+            #     "suffix_prefix_dims": 50,
+            #     "suffix_prefix_buckets": 2000,
+            # },
+            # {
             #     "h_sizes": [80, 80, 80],
             #     "dense_size": 40,
             #     "pos_emb_size": 50,
             #     "cnn_win_size": 7,
             #     "suffix_prefix_dims": 70,
             #     "suffix_prefix_buckets": 3000,
-            # }
+            # },
+            {
+                "h_sizes": [100, 100, 100],
+                "dense_size": 60,
+                "pos_emb_size": 50,
+                "cnn_win_size": 7,
+                "suffix_prefix_dims": 70,
+                "suffix_prefix_buckets": 3000,
+            }
         ],
         "learning_rate": [0.0001],
         "learning_rate_decay": [0.998]  # 0.991
