@@ -9,7 +9,7 @@ DATASET:
   restricted_id_pool: null
   self_loops: false
   subgraph_id_column: file_id
-  subgraph_partition: cubert_varmisuse_tiny/partition.json.bz2
+  subgraph_partition: cubert_varmisuse_tiny\partition.json.bz2
   train_frac: 0.9
   use_edge_types: false
   use_node_types: false
