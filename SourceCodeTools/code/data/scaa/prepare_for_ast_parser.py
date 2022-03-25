@@ -92,7 +92,7 @@ class DatasetAdapter:
     # supported_partitions = ["train", "dev", "eval"] #
 
     benchmark_names = {
-        "python_tasks": "python_9_tasks_2016.csv",
+        "python_tasks": "scaa_python.csv",
     }
 
     preferred_column_order = ["id", "package", "function", "info", "label", "partition"]
@@ -293,6 +293,7 @@ class DatasetAdapter:
                     "user": record["user"],
                     "task": record["task"],
                     "year": record["year"],
+                    "package": record["user"],
                     "parsing_error": record["parsing_error"]
                 }
 
