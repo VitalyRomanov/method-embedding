@@ -1,3 +1,4 @@
+import logging
 from collections import OrderedDict, defaultdict
 from itertools import chain
 
@@ -88,15 +89,24 @@ class NodeClassifierObjective(AbstractObjective):
             y_true[np.arange(0, y_true.shape[0]), labels.to("cpu").numpy()] = 1.
 
             if self.measure_scores:
-                if count % self.dilate_scores == 0:
-                    y_true_onehot = np.array(y_true)
-                    labels = list(range(y_true_onehot.shape[1]))
+                if y_pred.shape[1] == 2:
+                    logging.warning("Scores are meaningless for binary classification. Disabling.")
+                    self.measure_scores = False
+                else:
+                    if count % self.dilate_scores == 0:
+                        y_true_onehot = np.array(y_true)
+                        labels = list(range(y_true_onehot.shape[1]))
 
-                    for k in at:
-                        scores[f"ndcg@{k}"].append(ndcg_score(y_true, y_pred, k=k))
-                        scores[f"acc@{k}"].append(
-                            top_k_accuracy_score(y_true_onehot.argmax(-1), y_pred, k=k, labels=labels)
-                        )
+                        for k in at:
+                            if k >= y_pred.shape[1]:  # do not measure for binary classification
+                                if not hasattr(self, f"meaning_scores_warning_{k}"):
+                                    logging.warning(f"Disabling @{k} scores for task with {y_pred.shape[1]} classes")
+                                    setattr(self, f"meaning_scores_warning_{k}", True)
+                                continue  # scores do not have much sense in this situation
+                            scores[f"ndcg@{k}"].append(ndcg_score(y_true, y_pred, k=k))
+                            scores[f"acc@{k}"].append(
+                                top_k_accuracy_score(y_true_onehot.argmax(-1), y_pred, k=k, labels=labels)
+                            )
 
             scores["Loss"].append(loss.item())
             scores["Accuracy"].append(acc)
