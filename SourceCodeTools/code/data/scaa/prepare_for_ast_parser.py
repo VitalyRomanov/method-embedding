@@ -7,11 +7,8 @@ from pathlib import Path
 
 import pandas as pd
 from nltk import RegexpTokenizer
-from itertools import chain
 
 from tqdm import tqdm
-
-from SourceCodeTools.code.data.cubert_python_benchmarks.SQLTable import SQLTable
 
 
 class CodeTokenizer:

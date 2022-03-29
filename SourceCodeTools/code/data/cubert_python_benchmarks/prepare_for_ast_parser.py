@@ -9,7 +9,7 @@ from itertools import chain
 
 from tqdm import tqdm
 
-from SourceCodeTools.code.data.cubert_python_benchmarks.SQLTable import SQLTable
+# from SourceCodeTools.code.data.cubert_python_benchmarks.SQLTable import SQLTable
 
 
 class CodeTokenizer:
@@ -146,11 +146,11 @@ class DatasetAdapter:
             "provenance": [("info", self.fix_info_if_needed)]
         }
 
-        self.db = SQLTable(self.dataset_location.joinpath("cubert_benchmarks.db"))
+        # self.db = SQLTable(self.dataset_location.joinpath("cubert_benchmarks.db"))
 
-    def load_original_functions(self):
-        functions = self.db.query("SELECT DISTINCT original_id, function FROM functions where comment = 'original' AND dataset = 'variable_misuse'")
-        self.original_functions = dict(zip(functions["original_id"], functions["function"]))
+    # def load_original_functions(self):
+    #     functions = self.db.query("SELECT DISTINCT original_id, function FROM functions where comment = 'original' AND dataset = 'variable_misuse'")
+    #     self.original_functions = dict(zip(functions["original_id"], functions["function"]))
 
     def prepare_misuse_repair_record(self, record):
         print(record)
