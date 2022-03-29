@@ -1,6 +1,7 @@
 # from collections import Counter
 # from itertools import chain
 from collections import Counter
+from functools import partial
 from typing import List, Optional
 
 import pandas
@@ -9,6 +10,7 @@ import pickle
 
 from os.path import join
 
+from SourceCodeTools.code.data.GraphStorage import OnDiskGraphStorage
 from SourceCodeTools.code.data.dataset.SubwordMasker import SubwordMasker, NodeNameMasker, NodeClfMasker
 from SourceCodeTools.code.data.dataset.reader import load_data
 from SourceCodeTools.code.data.file_utils import *
@@ -42,7 +44,7 @@ class SourceGraphDataset:
     self_loops = None
 
     def __init__(
-            self, data_path: Union[str, Path], use_node_types: bool = False, use_edge_types: bool = False,
+            self, data_path: Union[str, Path], partition, use_node_types: bool = False, use_edge_types: bool = False,
             filter_edges: Optional[List[str]] = None, self_loops: bool = False,
             train_frac: float = 0.6, random_seed: Optional[int] = None, tokenizer_path: Union[str, Path] = None,
             min_count_for_objectives: int = 1,
@@ -93,27 +95,15 @@ class SourceGraphDataset:
         self.custom_reverse = custom_reverse
         self.subgraph_id_column = subgraph_id_column
         self.subgraph_partition = subgraph_partition
+        self.partition = unpersist(partition)
 
         self.use_ns_groups = use_ns_groups
 
-        nodes_path = join(data_path, "common_nodes.json.bz2")
-        edges_path = join(data_path, "common_edges.json.bz2")
+        self._open_dataset_db()
 
-        self.nodes, self.edges = load_data(nodes_path, edges_path)
-
-        # self.nodes, self.edges, self.holdout = self.holdout(self.nodes, self.edges)
-
-        # index is later used for sampling and is assumed to be unique
-        assert len(self.nodes) == len(self.nodes.index.unique())
-        assert len(self.edges) == len(self.edges.index.unique())
-
-        if self_loops:
-            self.nodes, self.edges = SourceGraphDataset._assess_need_for_self_loops(self.nodes, self.edges)
-
+        self.edge_types_to_remove = set()
         if filter_edges is not None:
-            for e_type in filter_edges:
-                logging.info(f"Filtering edge type {e_type}")
-                self.edges = self.edges.query(f"type != '{e_type}'")
+            self._filter_edges(filter_edges)
 
         if self.remove_reverse:
             self._remove_reverse_edges()
@@ -124,25 +114,24 @@ class SourceGraphDataset:
         if self.custom_reverse is not None:
             self._add_custom_reverse()
 
-        if use_node_types is False and use_edge_types is False:
-            new_nodes, new_edges = self._create_nodetype_edges(self.nodes, self.edges)
-            self.nodes = self.nodes.append(new_nodes, ignore_index=True)
-            self.edges = self.edges.append(new_edges, ignore_index=True)
+        # if use_node_types is False and use_edge_types is False:
+        #     new_nodes, new_edges = self._create_nodetype_edges(self.nodes, self.edges)
+        #     self.nodes = self.nodes.append(new_nodes, ignore_index=True)
+        #     self.edges = self.edges.append(new_edges, ignore_index=True)
 
-        self.nodes['type_backup'] = self.nodes['type']
-        if not self.nodes_have_types:
-            self.nodes['type'] = "node_"
-            self.nodes = self.nodes.astype({'type': 'category'})
+        # self.nodes['type_backup'] = self.nodes['type']
+        # if not self.nodes_have_types:
+        #     self.nodes['type'] = "node_"
+        #     self.nodes = self.nodes.astype({'type': 'category'})
 
-        self._add_embedding_names()
-        # self._add_embeddable_flag()
+        self.embeddable_names, self.name_pool = self._get_embeddable_names()
 
-        # need to do this to avoid issues insode dgl library
-        self.edges['type'] = self.edges['type'].apply(lambda x: f"{x}_")
-        self.edges['type_backup'] = self.edges['type']
-        if not self.edges_have_types:
-            self.edges['type'] = "edge_"
-            self.edges = self.edges.astype({'type': 'category'})
+        # # need to do this to avoid issues insode dgl library
+        # self.edges['type'] = self.edges['type'].apply(lambda x: f"{x}_")
+        # self.edges['type_backup'] = self.edges['type']
+        # if not self.edges_have_types:
+        #     self.edges['type'] = "edge_"
+        #     self.edges = self.edges.astype({'type': 'category'})
 
         # compact labels
         # self.nodes['label'] = self.nodes[label_from]
@@ -150,27 +139,35 @@ class SourceGraphDataset:
         # self.label_map = compact_property(self.nodes['label'])
         # assert any(pandas.isna(self.nodes['label'])) is False
 
-        logging.info(f"Unique nodes: {len(self.nodes)}, node types: {len(self.nodes['type'].unique())}")
-        logging.info(f"Unique edges: {len(self.edges)}, edge types: {len(self.edges['type'].unique())}")
+        # logging.info(f"Unique nodes: {len(self.nodes)}, node types: {len(self.nodes['type'].unique())}")
+        # logging.info(f"Unique edges: {len(self.edges)}, edge types: {len(self.edges['type'].unique())}")
 
-        # self.nodes, self.label_map = self.add_compact_labels()
-        self._add_typed_ids()
+    def _open_dataset_db(self):
+        dataset_db_path = join(self.data_path, "dataset.db")
+        if not os.path.isfile(dataset_db_path):
+            self.dataset_db = OnDiskGraphStorage(dataset_db_path)
+            self.dataset_db.import_from_files(self.data_path)
+        else:
+            self.dataset_db = OnDiskGraphStorage(dataset_db_path)
 
-        self._add_splits(train_frac=train_frac,
-                         package_names=None, #package_names,
-                         restricted_id_pool=restricted_id_pool)
+    def _filter_edges(self, types_to_filter):
+        logging.info(f"Filtering edge types: {types_to_filter}")
+        self.edge_types_to_remove.update(types_to_filter)
 
-        # self.mark_leaf_nodes()
-
-        self._create_hetero_graph()
-
-        self._update_global_id()
-
-        self.nodes.sort_values('global_graph_id', inplace=True)
-
-    def _add_embedding_names(self):
-        self.nodes["embeddable"] = True
-        self.nodes["embeddable_name"] = self.nodes["name"].apply(self.get_embeddable_name)
+    def _get_embeddable_names(self):
+        id2embeddable_name = dict()
+        name_pool = dict()
+        name_pool_rev = dict()
+        for nodes in self.dataset_db.iterate_nodes_with_chunks():
+            for node_id, embeddable_name in zip(
+                    nodes["id"],
+                    nodes["name"].apply(self.get_embeddable_name)
+            ):
+                if embeddable_name not in name_pool:
+                    name_pool[embeddable_name] = len(name_pool)
+                    name_pool_rev[name_pool[embeddable_name]] = embeddable_name
+                id2embeddable_name[node_id] = name_pool[embeddable_name]
+        return id2embeddable_name, name_pool_rev
 
     def _add_embeddable_flag(self):
         embeddable_types = PythonSharedNodes.shared_node_types | set(list(node_types.values()))
@@ -342,12 +339,11 @@ class SourceGraphDataset:
 
     def _remove_reverse_edges(self):
         from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import special_mapping
-        # TODO test this change
         global_reverse = {key for key, val in special_mapping.items()}
+        self.edge_types_to_remove.update(global_reverse)
 
-        not_reverse = lambda type: not (type.endswith("_rev") or type in global_reverse)
-        edges = self.edges.query("type.map(@not_reverse)", local_dict={"not_reverse": not_reverse})
-        self.edges = edges
+        all_edge_types = self.dataset_db.get_edge_types()
+        self.edge_types_to_remove.update(filter(lambda edge_type: edge_type.endswith("_rev"), all_edge_types))
 
     def _add_custom_reverse(self):
         to_reverse = self.edges[
@@ -1054,12 +1050,12 @@ def test_dataset():
     import sys
 
     data_path = sys.argv[1]
+    partition = sys.argv[2]
     # nodes_path = sys.argv[1]
     # edges_path = sys.argv[2]
 
     dataset = SourceGraphDataset(
-        data_path,
-        # nodes_path, edges_path,
+        data_path, partition,
         use_node_types=False,
         use_edge_types=True,
     )
