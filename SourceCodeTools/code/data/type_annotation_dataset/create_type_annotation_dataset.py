@@ -536,6 +536,7 @@ def group_offsets(offsets):
         offset_ent = (start, end, node_id)
 
         for e in mentioned_in:
+            e = tuple(e)
             if e not in offsets_grouped[package_id]:
                 offsets_grouped[package_id][e] = []
 
@@ -557,9 +558,9 @@ def create_from_dataset():
     global remove_default
     remove_default = args.remove_default
 
-    node_maps = get_node_maps(unpersist(join(args.dataset_path, "common_nodes.bz2")))
-    filecontent = get_filecontent_maps(unpersist(join(args.dataset_path, "common_filecontent.bz2")))
-    offsets = group_offsets(unpersist(join(args.dataset_path, "common_offsets.bz2")))
+    node_maps = get_node_maps(unpersist(join(args.dataset_path, "common_nodes.json.bz2")))
+    filecontent = get_filecontent_maps(unpersist(join(args.dataset_path, "common_filecontent.json.bz2")))
+    offsets = group_offsets(unpersist(join(args.dataset_path, "common_offsets.json.bz2")))
 
     data = []
     nlp = create_tokenizer("spacy")
