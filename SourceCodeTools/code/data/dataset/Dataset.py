@@ -10,7 +10,9 @@ import pickle
 
 from os.path import join
 
-from SourceCodeTools.code.data.GraphStorage import OnDiskGraphStorage
+from tqdm import tqdm
+
+from SourceCodeTools.code.data.GraphStorage import OnDiskGraphStorage, n4jGraphStorage
 from SourceCodeTools.code.data.dataset.SubwordMasker import SubwordMasker, NodeNameMasker, NodeClfMasker
 from SourceCodeTools.code.data.dataset.reader import load_data
 from SourceCodeTools.code.data.file_utils import *
@@ -42,6 +44,12 @@ class SourceGraphDataset:
     use_edge_types = None
     filter_edges = None
     self_loops = None
+
+    partition_columns = {
+        "train": "train_mask",
+        "val": "val_mask",
+        "test": "test_mak"
+    }
 
     def __init__(
             self, data_path: Union[str, Path], partition, use_node_types: bool = False, use_edge_types: bool = False,
@@ -85,8 +93,8 @@ class SourceGraphDataset:
 
         """
         self.random_seed = random_seed
-        self.nodes_have_types = use_node_types
-        self.edges_have_types = use_edge_types
+        self.use_node_types = use_node_types
+        self.use_edge_types = use_edge_types
         self.data_path = data_path
         self.tokenizer_path = tokenizer_path
         self.min_count_for_objectives = min_count_for_objectives
@@ -101,6 +109,8 @@ class SourceGraphDataset:
 
         self._open_dataset_db()
 
+        # self._load_types()
+
         self.edge_types_to_remove = set()
         if filter_edges is not None:
             self._filter_edges(filter_edges)
@@ -111,8 +121,10 @@ class SourceGraphDataset:
         if self.no_global_edges:
             self._remove_global_edges()
 
-        if self.custom_reverse is not None:
-            self._add_custom_reverse()
+        self.edge_types_to_remove = set(f"{etype}_" for etype in self.edge_types_to_remove)
+
+        # if self.custom_reverse is not None:
+        #     self._add_custom_reverse()
 
         # if use_node_types is False and use_edge_types is False:
         #     new_nodes, new_edges = self._create_nodetype_edges(self.nodes, self.edges)
@@ -124,7 +136,7 @@ class SourceGraphDataset:
         #     self.nodes['type'] = "node_"
         #     self.nodes = self.nodes.astype({'type': 'category'})
 
-        self.embeddable_names, self.name_pool = self._get_embeddable_names()
+        # self.embeddable_names, self.name_pool = self._get_embeddable_names()
 
         # # need to do this to avoid issues insode dgl library
         # self.edges['type'] = self.edges['type'].apply(lambda x: f"{x}_")
@@ -143,16 +155,29 @@ class SourceGraphDataset:
         # logging.info(f"Unique edges: {len(self.edges)}, edge types: {len(self.edges['type'].unique())}")
 
     def _open_dataset_db(self):
-        dataset_db_path = join(self.data_path, "dataset.db")
-        if not os.path.isfile(dataset_db_path):
-            self.dataset_db = OnDiskGraphStorage(dataset_db_path)
-            self.dataset_db.import_from_files(self.data_path)
-        else:
-            self.dataset_db = OnDiskGraphStorage(dataset_db_path)
+        self.dataset_db = n4jGraphStorage()
+        # dataset_db_path = join(self.data_path, "dataset.db")
+        # if not os.path.isfile(dataset_db_path):
+        #     self.dataset_db = OnDiskGraphStorage(dataset_db_path)
+        #     self.dataset_db.import_from_files(self.data_path)
+        # else:
+        #     self.dataset_db = OnDiskGraphStorage(dataset_db_path)
 
     def _filter_edges(self, types_to_filter):
         logging.info(f"Filtering edge types: {types_to_filter}")
         self.edge_types_to_remove.update(types_to_filter)
+
+    def _load_types(self):
+        def strip_types_if_needed(mapping, stripping_flag, stripped_type):
+            for key, val in mapping.items():
+                if not stripping_flag:
+                    mapping[key] = stripped_type
+                else:
+                    mapping[key] = f"{val}_"
+            return mapping
+
+        self.node_types = strip_types_if_needed(self.dataset_db.get_node_types(), self.use_node_types, "node_")
+        self.edge_types = strip_types_if_needed(self.dataset_db.get_edge_types(), self.use_edge_types, "edge_")
 
     def _get_embeddable_names(self):
         id2embeddable_name = dict()
@@ -397,35 +422,17 @@ class SourceGraphDataset:
 
         return typed_node_counts
 
-    def _create_hetero_graph(self):
+    def _create_hetero_graph(self, nodes, edges):
 
-        nodes = self.nodes.copy()
-        edges = self.edges.copy()
         edges = self._add_node_types_to_edges(nodes, edges)
-
-        typed_node_id = dict(zip(nodes['id'], nodes['typed_id']))
 
         possible_edge_signatures = edges[['src_type', 'type', 'dst_type']].drop_duplicates(
             ['src_type', 'type', 'dst_type']
         )
 
-        # node_types = dict(zip(self.node_types['int_type'], self.node_types['str_type']))
-        # edge_types = dict(zip(self.edge_types['int_type'], self.edge_types['str_type']))
-
-        # typed_subgraphs is a dictionary with subset_signature as a key,
-        # the dictionary stores directed edge lists
         typed_subgraphs = {}
 
-        # node_mapper = lambda old_id: typed_node_id[old_id]
-        # for src_type, type, dst_type, src, dst in edges[['src_type', 'type', 'dst_type', "src", "dst"]].values:
-        #     subgraph_signature = (src_type, type, dst_type)
-        #     if subgraph_signature in typed_subgraphs:
-        #         typed_subgraphs[subgraph_signature].add((node_mapper(src), node_mapper(dst)))
-        #     else:
-        #         typed_subgraphs[subgraph_signature] = {node_mapper(src), node_mapper(dst)}
-
         for ind, row in possible_edge_signatures.iterrows():  #
-            # subgraph_signature = (node_types[row['src_type']], edge_types[row['type']], node_types[row['dst_type']])
             subgraph_signature = (row['src_type'], row['type'], row['dst_type'])
 
             subset = edges.query(
@@ -434,8 +441,8 @@ class SourceGraphDataset:
 
             typed_subgraphs[subgraph_signature] = list(
                 zip(
-                    subset['src'].map(lambda old_id: typed_node_id[old_id]),
-                    subset['dst'].map(lambda old_id: typed_node_id[old_id])
+                    subset['src'],
+                    subset['dst']
                 )
             )
 
@@ -444,25 +451,25 @@ class SourceGraphDataset:
         )
 
         import dgl, torch
-        self.g = dgl.heterograph(typed_subgraphs, self.typed_node_counts)
+        return dgl.heterograph(typed_subgraphs)
 
         # node_types = dict(zip(self.node_types['str_type'], self.node_types['int_type']))
 
-        for ntype in self.g.ntypes:
-            # int_type = node_types[ntype]
-
-            node_data = self.nodes.query(
-                f"type == '{ntype}'"
-            )[[
-                'typed_id', 'train_mask', 'test_mask', 'val_mask', 'id' # 'compact_label',
-            ]].sort_values('typed_id')
-
-            self.g.nodes[ntype].data['train_mask'] = torch.tensor(node_data['train_mask'].values, dtype=torch.bool)
-            self.g.nodes[ntype].data['test_mask'] = torch.tensor(node_data['test_mask'].values, dtype=torch.bool)
-            self.g.nodes[ntype].data['val_mask'] = torch.tensor(node_data['val_mask'].values, dtype=torch.bool)
-            # self.g.nodes[ntype].data['labels'] = torch.tensor(node_data['compact_label'].values, dtype=torch.int64)
-            self.g.nodes[ntype].data['typed_id'] = torch.tensor(node_data['typed_id'].values, dtype=torch.int64)
-            self.g.nodes[ntype].data['original_id'] = torch.tensor(node_data['id'].values, dtype=torch.int64)
+        # for ntype in self.g.ntypes:
+        #     # int_type = node_types[ntype]
+        #
+        #     node_data = self.nodes.query(
+        #         f"type == '{ntype}'"
+        #     )[[
+        #         'typed_id', 'train_mask', 'test_mask', 'val_mask', 'id' # 'compact_label',
+        #     ]].sort_values('typed_id')
+        #
+        #     self.g.nodes[ntype].data['train_mask'] = torch.tensor(node_data['train_mask'].values, dtype=torch.bool)
+        #     self.g.nodes[ntype].data['test_mask'] = torch.tensor(node_data['test_mask'].values, dtype=torch.bool)
+        #     self.g.nodes[ntype].data['val_mask'] = torch.tensor(node_data['val_mask'].values, dtype=torch.bool)
+        #     # self.g.nodes[ntype].data['labels'] = torch.tensor(node_data['compact_label'].values, dtype=torch.int64)
+        #     self.g.nodes[ntype].data['typed_id'] = torch.tensor(node_data['typed_id'].values, dtype=torch.int64)
+        #     self.g.nodes[ntype].data['original_id'] = torch.tensor(node_data['id'].values, dtype=torch.int64)
 
     @staticmethod
     def _assess_need_for_self_loops(nodes, edges):
@@ -1024,13 +1031,48 @@ class SourceGraphDataset:
 
         return subgraph_mapping
 
-    @classmethod
-    def load(cls, path, args):
-        dataset = pickle.load(open(path, "rb"))
-        dataset.data_path = args["data_path"]
-        if dataset.tokenizer_path is not None:
-            dataset.tokenizer_path = args["tokenizer"]
-        return dataset
+    # @classmethod
+    # def load(cls, path, args):
+    #     dataset = pickle.load(open(path, "rb"))
+    #     dataset.data_path = args["data_path"]
+    #     if dataset.tokenizer_path is not None:
+    #         dataset.tokenizer_path = args["tokenizer"]
+    #     return dataset
+
+    def _prepare_subgraph(self, seed_nodes, number_of_hops):
+        seen_nodes = set(seed_nodes)
+        nodes_for_query = seed_nodes
+
+        for _ in range(number_of_hops):
+            inbound_neighbors = set(self.dataset_db.get_inbound_neighbors(nodes_for_query))
+            nodes_for_query = inbound_neighbors - seen_nodes
+            seen_nodes.update(inbound_neighbors)
+
+        nodes, edges = self.dataset_db.get_subgraph_from_node_ids(seen_nodes)
+        # nodes["type"] = nodes["type"].apply(self.node_types.get)
+        # edges["type"] = edges["type"].apply(self.edge_types.get)
+
+        edges.query("type not in @restricted_types", local_dict={"restricted_types": self.edge_types_to_remove}, inplace=True)
+
+        if len(edges) == 0:
+            return None
+
+        return self._create_hetero_graph(nodes, edges)
+
+    def nodes_dataloader(self, partition, number_of_hops, batch_size, labels=None):
+        partition_nodes = self.partition.query(f"{self.partition_columns[partition]} == True").sample(frac=1.)["id"]
+        # partition_nodes = partition_nodes.query("id in @node_pool", local_dict={"node_pool": set(labels.keys())})["id"]
+
+        batch = []
+        for node_id in tqdm(partition_nodes):
+            batch.append(node_id)
+            if len(batch) >= batch_size:
+                subraph = self._prepare_subgraph(batch, number_of_hops)
+                batch.clear()
+                # yield subraph, batch, [labels[nid] for nid in batch]
+
+
+
 
 
 def read_or_create_gnn_dataset(args, model_base, force_new=False, restore_state=False):
@@ -1059,6 +1101,11 @@ def test_dataset():
         use_node_types=False,
         use_edge_types=True,
     )
+    dataset.nodes_dataloader("train", 2, 512, {
+        2536243: 0,
+        1204111: 1,
+        523705: 0
+    })
 
     # sm = dataset.create_subword_masker()
     print(dataset)

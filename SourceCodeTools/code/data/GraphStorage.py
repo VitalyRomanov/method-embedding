@@ -134,14 +134,109 @@ class OnDiskGraphStorage:
         self._import_nodes(get_path("common_nodes.json.bz2"))
         self._import_edges(get_path("common_edges.json.bz2"))
 
-    def get_node_types(self):
+    def get_node_type_descriptions(self):
         return self.database.query("SELECT type_desc from node_types")["type_desc"]
 
-    def get_edge_types(self):
+    def get_edge_type_descriptions(self):
         return self.database.query("SELECT type_desc from edge_types")["type_desc"]
+
+    def get_edge_types(self):
+        table = self.database.query("SELECT * from edge_types")
+        return dict(zip(table["type_id"], table["type_desc"]))
+
+    def get_node_types(self):
+        table = self.database.query("SELECT * from node_types")
+        return dict(zip(table["type_id"], table["type_desc"]))
 
     def iterate_nodes_with_chunks(self):
         return self.database.query("SELECT * FROM nodes", chunksize=10000)
+
+    def get_inbound_neighbors(self, ids):
+        ids_query = ",".join(str(id_) for id_ in ids)
+        return self.database.query(f"SELECT src FROM edges WHERE dst IN ({ids_query})")["src"]
+
+    def get_subgraph_from_node_ids(self, ids):
+        ids_query = ",".join(str(id_) for id_ in ids)
+        nodes = self.database.query(
+            f"""SELECT 
+            id, node_types.type_desc as type 
+            FROM 
+            nodes
+            JOIN node_types ON node_types.type_id = nodes.type 
+            WHERE id IN ({ids_query})
+            """
+        )
+        edges = self.database.query(
+            f"""SELECT 
+            edge_types.type_desc as type, src, dst 
+            FROM edges
+            JOIN edge_types ON edge_types.type_id = edges.type 
+            WHERE dst IN ({ids_query}) and src IN ({ids_query})
+            """
+        )
+        return nodes, edges
+
+
+class n4jGraphStorage:
+    def __init__(self):
+        import neo4j
+        self.database = neo4j.GraphDatabase.driver("bolt://localhost:7687", auth=("neo4j", "1111"))
+        self.session = self.database.session()
+        self.tx = self.session.begin_transaction()
+
+    def query(self, query):
+        return self.tx.run(query)
+
+    def get_node_type_descriptions(self):
+        results = self.query("call db.labels()")["type_desc"]
+        return [r["label"] for r in results]
+
+    def get_edge_type_descriptions(self):
+        results = self.query("match ()-[r]->() return distinct type(r)")
+        return [r["type(r)"] for r in results]
+
+    def get_edge_types(self):
+        table = self.database.query("SELECT * from edge_types")
+        return dict(zip(table["type_id"], table["type_desc"]))
+
+    def get_node_types(self):
+        table = self.database.query("SELECT * from node_types")
+        return dict(zip(table["type_id"], table["type_desc"]))
+
+    def iterate_nodes_with_chunks(self):
+        return self.database.query("SELECT * FROM nodes", chunksize=10000)
+
+    def get_inbound_neighbors(self, ids):
+        ids_query = ",".join(f'"{id_}"' for id_ in ids)
+        results = self.query(f"MATCH (n)<--(connected) WHERE n.id in [{ids_query}] RETURN n, connected")
+        return [r["connected"]["id"] for r in results]
+
+    def get_subgraph_from_node_ids(self, ids):
+        ids_query = ",".join(f'"{id_}"' for id_ in ids)
+        results = self.query(f"MATCH p=(n)-->(m) WHERE n.id in [{ids_query}] and m.id in [{ids_query}] RETURN p")
+        # nodes = self.database.query(f"SELECT id, type FROM nodes WHERE id IN ({ids_query})")
+        # edges = self.database.query(f"SELECT type, src, dst FROM edges WHERE dst IN ({ids_query}) and src IN ({ids_query})")
+        nodes = []
+        edges = []
+        for r in results:
+            r = r["p"]
+            nodes.append({
+                "id": int(r.start_node["id"]),
+                "type": next(iter(r.start_node.labels))
+            })
+            nodes.append({
+                "id": int(r.end_node["id"]),
+                "type": next(iter(r.end_node.labels))
+            })
+            edges.append({
+                "type": r.relationships[0].type,
+                "src": nodes[-2]["id"],
+                "dst": nodes[-1]["id"]
+            })
+
+        nodes = pd.DataFrame.from_records(nodes, columns=["id", "type"]).drop_duplicates()
+        edges = pd.DataFrame.from_records(edges, columns=["type", "src", "dst"]).drop_duplicates()
+        return nodes, edges
 
 
 if __name__ == "__main__":
