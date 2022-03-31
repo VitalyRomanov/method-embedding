@@ -2,7 +2,10 @@ import pandas as pd
 from neo4j import GraphDatabase
 import argparse
 
-from SourceCodeTools.code.data.dataset.Dataset import load_data
+from tqdm import tqdm
+
+from SourceCodeTools.code.common import read_nodes, read_edges
+# from SourceCodeTools.code.data.dataset.Dataset import load_data
 # from SourceCodeTools.data.sourcetrail.sourcetrail_types import node_types, edge_types
 
 
@@ -17,7 +20,7 @@ def read_type_map(path):
 
 def main(args):
 
-    nodes, edges = load_data(args.node_path, args.edge_path)
+    # nodes, edges = load_data(args.node_path, args.edge_path)
 
     print()
 
@@ -43,16 +46,17 @@ def main(args):
 
         print("Importing nodes")
 
-        tx = session.begin_transaction()
-        for ind, row in nodes.iterrows():
-            create_node(tx, row['id'], row['name'], row['type'])
-            if (ind + 1) % args.batch_size == 0:
-                print(f"{ind}/{len(nodes)}", end="\r")
-                tx.commit()
-                tx.close()
-                tx = session.begin_transaction()
-        tx.commit()
-        tx.close()
+        for nodes in tqdm(read_nodes(args.node_path, as_chunks=True)):
+            tx = session.begin_transaction()
+            for ind, row in nodes.iterrows():
+                create_node(tx, row['id'], row['serialized_name'], row['type'])
+                if (ind + 1) % args.batch_size == 0:
+                    print(f"{ind}/{len(nodes)}", end="\r")
+                    tx.commit()
+                    tx.close()
+                    tx = session.begin_transaction()
+            tx.commit()
+            tx.close()
 
         print()
 
@@ -64,16 +68,17 @@ def main(args):
 
         print("Importing edges")
 
-        tx = session.begin_transaction()
-        for ind, row in edges.iterrows():
-            create_edge(tx, row['src'], row['dst'], row['type'])
-            if (ind + 1) % args.batch_size == 0:
-                print(f"{ind}/{len(edges)}", end="\r")
-                tx.commit()
-                tx.close()
-                tx = session.begin_transaction()
-        tx.commit()
-        tx.close()
+        for edges in tqdm(read_edges(args.edge_path, as_chunks=True)):
+            tx = session.begin_transaction()
+            for ind, row in edges.iterrows():
+                create_edge(tx, row['source_node_id'], row['target_node_id'], row['type'])
+                if (ind + 1) % args.batch_size == 0:
+                    print(f"{ind}/{len(edges)}", end="\r")
+                    tx.commit()
+                    tx.close()
+                    tx = session.begin_transaction()
+            tx.commit()
+            tx.close()
 
         print()
 
