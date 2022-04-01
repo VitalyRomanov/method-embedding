@@ -155,13 +155,14 @@ class SourceGraphDataset:
         # logging.info(f"Unique edges: {len(self.edges)}, edge types: {len(self.edges['type'].unique())}")
 
     def _open_dataset_db(self):
-        self.dataset_db = n4jGraphStorage()
-        # dataset_db_path = join(self.data_path, "dataset.db")
-        # if not os.path.isfile(dataset_db_path):
-        #     self.dataset_db = OnDiskGraphStorage(dataset_db_path)
+        # self.dataset_db = n4jGraphStorage()
+        dataset_db_path = join(self.data_path, "dataset.db")
+        if not os.path.isfile(dataset_db_path):
+            self.dataset_db = OnDiskGraphStorage(dataset_db_path)
+            self.dataset_db.import_from_files(self.data_path)
+        else:
+            self.dataset_db = OnDiskGraphStorage(dataset_db_path)
         #     self.dataset_db.import_from_files(self.data_path)
-        # else:
-        #     self.dataset_db = OnDiskGraphStorage(dataset_db_path)
 
     def _filter_edges(self, types_to_filter):
         logging.info(f"Filtering edge types: {types_to_filter}")
@@ -1064,12 +1065,13 @@ class SourceGraphDataset:
         # partition_nodes = partition_nodes.query("id in @node_pool", local_dict={"node_pool": set(labels.keys())})["id"]
 
         batch = []
-        for node_id in tqdm(partition_nodes):
-            batch.append(node_id)
-            if len(batch) >= batch_size:
-                subraph = self._prepare_subgraph(batch, number_of_hops)
-                batch.clear()
-                # yield subraph, batch, [labels[nid] for nid in batch]
+        self.dataset_db.iterate_packages()
+        # for node_id in tqdm(partition_nodes):
+        #     batch.append(node_id)
+        #     if len(batch) >= batch_size:
+        #         subraph = self._prepare_subgraph(batch, number_of_hops)
+        #         batch.clear()
+        #         # yield subraph, batch, [labels[nid] for nid in batch]
 
 
 
