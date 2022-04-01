@@ -184,7 +184,9 @@ class DatasetCreator(AbstractDatasetCreator):
         global_nodes_with_ast = set()
 
         for env_path in self.environments:
-            logging.info(f"Found {os.path.basename(env_path)}")
+            package_name = os.path.basename(env_path)
+
+            logging.info(f"Found {package_name}")
 
             if not self.is_indexed(env_path):
                 logging.info("Package not indexed")
@@ -212,12 +214,13 @@ class DatasetCreator(AbstractDatasetCreator):
                 ast_nodes, ast_edges, offsets, name_mappings = get_ast_from_modules(
                     nodes, edges, source_location, occurrence, filecontent,
                     self.bpe_tokenizer, self.create_subword_instances, self.connect_subwords, self.lang,
-                    track_offsets=self.track_offsets
+                    track_offsets=self.track_offsets, package_name=package_name
                 )
 
                 if offsets is not None:
-                    offsets["package"] = os.path.basename(env_path)
-                filecontent["package"] = os.path.basename(env_path)
+                    offsets["package"] = package_name
+                filecontent["package"] = package_name
+                # edges["package"] = os.path.basename(env_path)
 
                 # need this check in situations when module has a single file and this file cannot be parsed
                 nodes_with_ast = nodes.append(ast_nodes) if ast_nodes is not None else nodes
