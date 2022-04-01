@@ -1018,7 +1018,8 @@ def process_code(source_file_content, offsets, node_resolver, mention_tokenizer,
 
 def get_ast_from_modules(
         nodes, edges, source_location, occurrence, file_content,
-        bpe_tokenizer_path, create_subword_instances, connect_subwords, lang, track_offsets=False
+        bpe_tokenizer_path, create_subword_instances, connect_subwords, lang, track_offsets=False,
+        package_name=None
 ):
     """
     Create edges from source code and methe them wit hthe global graph. Prepare all offsets in the uniform format.
@@ -1074,6 +1075,7 @@ def get_ast_from_modules(
 
         for edge in edges:
             edge["file_id"] = file_id
+            edge["package"] = package_name
 
         # finish afterprocessing
 
@@ -1162,7 +1164,7 @@ def get_ast_from_modules(
         all_ast_edges.drop_duplicates(["type", "src", "dst"], inplace=True)
         all_ast_edges = all_ast_edges.query("src != dst")
         all_ast_edges["id"] = 0
-        all_ast_edges = all_ast_edges[["id", "type", "src", "dst", "file_id", "scope"]].rename({'src': 'source_node_id', 'dst': 'target_node_id', 'scope': 'mentioned_in'}, axis=1).astype(
+        all_ast_edges = all_ast_edges[["id", "type", "src", "dst", "scope", "file_id", "package"]].rename({'src': 'source_node_id', 'dst': 'target_node_id', 'scope': 'mentioned_in'}, axis=1).astype(
             {'file_id': 'Int32', "mentioned_in": 'Int32'}
         )
         return all_ast_edges
