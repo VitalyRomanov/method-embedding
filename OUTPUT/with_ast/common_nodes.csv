@@ -1,0 +1,233 @@
+"id","type","serialized_name","mentioned_in","string"
+0,"module","ExampleModule","",""
+1,"class","ExampleModule.ExampleClass","",""
+2,"class_method","ExampleModule.ExampleClass.__init__","",""
+3,"non_indexed_symbol","builtins","",""
+4,"class","builtins.int","",""
+5,"class_field","ExampleModule.ExampleClass.field","",""
+6,"function","ExampleModule.ExampleClass.method1","",""
+7,"class","builtins.str","",""
+8,"function","ExampleModule.ExampleClass.method2","",""
+9,"class_method","builtins.str.__init__","",""
+10,"module","main","",""
+11,"global_variable","main.instance","",""
+12,"function","main.main","",""
+13,"function","builtins.print","",""
+14,"subword","▁self","",""
+15,"mention","self@FunctionDef_0x16d0961e2dcdeec8","",""
+16,"FunctionDef","FunctionDef_0x16d0961e2dcdeec8","","def __init__(self, argument: int):
+        """"""
+        Initialize. Инициализация
+        :param argument:
+        """"""
+        self.field = argument"
+17,"ClassDef","ClassDef_0x16d0961e2db27e0c","","class ExampleClass:
+    def __init__(self, argument: int):
+        """"""
+        Initialize. Инициализация
+        :param argument:
+        """"""
+        self.field = argument
+
+    def method1(self) -> str:
+        """"""
+        Call another method. Вызов другого метода.
+        :return:
+        """"""
+        return self.method2()
+
+    def method2(self) -> str:
+        """"""
+        Simple operations.
+        Простые операции.
+        :return:
+        """"""
+        variable1: int = self.field
+        variable2: str = str(variable1)
+        return variable2"
+18,"Module","Module_0x16d0961e2d517e5b",16,""
+19,"arg","arg_0x16d0961e2d5abbad",16,"self"
+20,"arguments","arguments_0x16d0961e2d91ff93",16,""
+21,"subword","▁argument","",""
+22,"mention","argument@FunctionDef_0x16d0961e2dcdeec8",16,""
+23,"arg","arg_0x16d0961e2d993343",16,"argument: int"
+24,"type_annotation","int","",""
+26,"Assign","Assign_0x16d0961e2de53d76",16,"self.field = argument"
+27,"Attribute","Attribute_0x16d0961e2d94a0cd",16,"self.field"
+28,"#attr#","field","",""
+30,"subword","▁__","",""
+31,"mention","__init__@ClassDef_0x16d0961e2db27e0c",17,""
+32,"subword","init","",""
+33,"subword","__","",""
+34,"mention","self@FunctionDef_0x16d0961e2e20ff35","",""
+35,"FunctionDef","FunctionDef_0x16d0961e2e20ff35",35,"def method1(self) -> str:
+        """"""
+        Call another method. Вызов другого метода.
+        :return:
+        """"""
+        return self.method2()"
+36,"arg","arg_0x16d0961e2e5ff455",35,"self"
+37,"arguments","arguments_0x16d0961e2e1dd9f7",35,""
+38,"type_annotation","str","",""
+40,"Attribute","Attribute_0x16d0961e2ebd627f",35,"self.method2"
+41,"#attr#","method2","",""
+42,"subword","▁method","",""
+43,"subword","2","",""
+44,"Call","Call_0x16d0961e2eff2e02",35,"self.method2()"
+45,"Return","Return_0x16d0961e2e1d60b9",35,"return self.method2()"
+46,"mention","method1@ClassDef_0x16d0961e2db27e0c",17,""
+47,"subword","1","",""
+48,"mention","self@FunctionDef_0x16d0961e2e5b7c5d","",""
+49,"FunctionDef","FunctionDef_0x16d0961e2e5b7c5d",49,"def method2(self) -> str:
+        """"""
+        Simple operations.
+        Простые операции.
+        :return:
+        """"""
+        variable1: int = self.field
+        variable2: str = str(variable1)
+        return variable2"
+50,"arg","arg_0x16d0961e2e3262ee",49,"self"
+51,"arguments","arguments_0x16d0961e2ecb510f",49,""
+52,"subword","▁variable","",""
+53,"mention","variable1@FunctionDef_0x16d0961e2e5b7c5d",49,""
+54,"AnnAssign","AnnAssign_0x16d0961e2eb704da",49,"variable1: int = self.field"
+55,"mention","variable2@FunctionDef_0x16d0961e2e5b7c5d",49,""
+56,"AnnAssign","AnnAssign_0x16d0961e2ea3a72e",49,"variable2: str = str(variable1)"
+57,"Return","Return_0x16d0961e2e570d10",49,"return variable2"
+58,"mention","method2@ClassDef_0x16d0961e2db27e0c",17,""
+59,"subword","▁Example","",""
+60,"mention","ExampleClass@Module_0x16d0961e2d517e5b",18,""
+61,"subword","Class","",""
+62,"Name","ExampleModule","",""
+63,"ImportFrom","ImportFrom_0x16d0961e30115464","","from ExampleModule import ExampleClass as EC"
+64,"Module","Module_0x16d0961e3014e9d9",64,""
+66,"Name","ExampleClass","",""
+67,"alias","alias_0x16d0961e302e544c",64,""
+68,"Name","EC","",""
+69,"subword","▁EC","",""
+70,"mention","EC@Module_0x16d0961e3014e9d9",64,""
+71,"Call","Call_0x16d0961e30240464",64,"EC(5)"
+72,"Constant","Constant_","",""
+73,"Assign","Assign_0x16d0961e30e989bb",64,"instance = EC(5)"
+74,"subword","▁instance","",""
+75,"mention","instance@Module_0x16d0961e3014e9d9",64,""
+76,"type_annotation","None","",""
+77,"FunctionDef","FunctionDef_0x16d0961e30a31fcb",64,"def main() -> None:
+    print(instance.method1())"
+79,"subword","▁print","",""
+80,"mention","print@FunctionDef_0x16d0961e30a31fcb",77,""
+81,"Call","Call_0x16d0961e30004fd6",77,"print(instance.method1())"
+82,"mention","instance@FunctionDef_0x16d0961e30a31fcb",77,""
+83,"Attribute","Attribute_0x16d0961e30a9e65e",77,"instance.method1"
+84,"#attr#","method1","",""
+85,"Call","Call_0x16d0961e306c5cf4",77,"instance.method1()"
+86,"subword","▁main","",""
+87,"mention","main@Module_0x16d0961e3014e9d9",64,""
+88,"Call","Call_0x16d0961e308fa9b2",64,"main()"
+89,"module","Module","",""
+90,"class","Module.Number","",""
+91,"class_method","Module.Number.__init__","",""
+92,"class_field","Module.Number.val","",""
+93,"function","Module.Number.__add__","",""
+94,"function","Module.Number.__repr__","",""
+95,"mention","self@FunctionDef_0x16d0961e56fec531","",""
+96,"FunctionDef","FunctionDef_0x16d0961e56fec531","","def __init__(self, value: int):
+        """"""
+        Initialize. Инициализация
+        :param argument:
+        """"""
+        self.val = value"
+97,"ClassDef","ClassDef_0x16d0961e56c33c7e","","class Number:
+    def __init__(self, value: int):
+        """"""
+        Initialize. Инициализация
+        :param argument:
+        """"""
+        self.val = value
+
+    def __add__(self, value):
+        """"""
+        Add two numbers.
+        Сложить 2 числа
+        :param value:
+        :return:
+        """"""
+        return Number(self.val + value.val)
+
+    def __repr__(self) -> str:
+        """"""
+        Return representation
+        :return: Получить представление
+        """"""
+        return f""Number({self.val})"""
+98,"Module","Module_0x16d0961e565f53c0",96,""
+99,"arg","arg_0x16d0961e56c10e5a",96,"self"
+100,"arguments","arguments_0x16d0961e56a31019",96,""
+101,"subword","▁value","",""
+102,"mention","value@FunctionDef_0x16d0961e56fec531",96,""
+103,"arg","arg_0x16d0961e56c91e4d",96,"value: int"
+104,"Assign","Assign_0x16d0961e56cadc91",96,"self.val = value"
+105,"Attribute","Attribute_0x16d0961e56278afd",96,"self.val"
+106,"#attr#","val","",""
+108,"mention","__init__@ClassDef_0x16d0961e56c33c7e",97,""
+109,"mention","self@FunctionDef_0x16d0961e56a89490","",""
+110,"FunctionDef","FunctionDef_0x16d0961e56a89490",110,"def __add__(self, value):
+        """"""
+        Add two numbers.
+        Сложить 2 числа
+        :param value:
+        :return:
+        """"""
+        return Number(self.val + value.val)"
+111,"arg","arg_0x16d0961e56bf3e4e",110,"self"
+112,"arguments","arguments_0x16d0961e568facb1",110,""
+113,"mention","value@FunctionDef_0x16d0961e56a89490",110,""
+114,"arg","arg_0x16d0961e56b82abc",110,"value"
+115,"subword","▁Number","",""
+116,"mention","Number@FunctionDef_0x16d0961e56a89490",110,""
+117,"Call","Call_0x16d0961e560a3d1a",110,"Number(self.val + value.val)"
+118,"Attribute","Attribute_0x16d0961e5652766c",110,"self.val"
+119,"BinOp","BinOp_0x16d0961e56a7e183",110,"self.val + value.val"
+120,"Attribute","Attribute_0x16d0961e566c2157",110,"value.val"
+121,"Op","Add","",""
+122,"Return","Return_0x16d0961e56a34741",110,"return Number(self.val + value.val)"
+123,"mention","__add__@ClassDef_0x16d0961e56c33c7e",97,""
+124,"subword","add","",""
+125,"mention","self@FunctionDef_0x16d0961e564c9c19","",""
+126,"FunctionDef","FunctionDef_0x16d0961e564c9c19",126,"def __repr__(self) -> str:
+        """"""
+        Return representation
+        :return: Получить представление
+        """"""
+        return f""Number({self.val})"""
+127,"arg","arg_0x16d0961e564f175c",126,"self"
+128,"arguments","arguments_0x16d0961e561dcaa2",126,""
+129,"JoinedStr","JoinedStr_","",""
+130,"Return","Return_0x16d0961e5607da67",126,"return f""Number({self.val})"""
+131,"mention","__repr__@ClassDef_0x16d0961e56c33c7e",97,""
+132,"subword","repr","",""
+133,"mention","Number@Module_0x16d0961e565f53c0",98,""
+134,"Name","Module","",""
+135,"ImportFrom","ImportFrom_0x16d0961e584bcc31","","from Module import Number"
+136,"Module","Module_0x16d0961e583e3a1f",136,""
+138,"Name","Number","",""
+139,"alias","alias_0x16d0961e582a8984",136,""
+140,"mention","Number@FunctionDef_0x16d0961e58ef8c6f","",""
+141,"FunctionDef","FunctionDef_0x16d0961e58ef8c6f",141,"def main():
+    a = Number(4)
+    b = Number(5)
+    print(a+b)"
+142,"Call","Call_0x16d0961e58c4715a",141,"Number(4)"
+143,"Assign","Assign_0x16d0961e5804072e",141,"a = Number(4)"
+144,"subword","▁a","",""
+145,"mention","a@FunctionDef_0x16d0961e58ef8c6f",141,""
+146,"Call","Call_0x16d0961e597190da",141,"Number(5)"
+147,"Assign","Assign_0x16d0961e59508ca8",141,"b = Number(5)"
+148,"subword","▁b","",""
+149,"mention","b@FunctionDef_0x16d0961e58ef8c6f",141,""
+150,"mention","print@FunctionDef_0x16d0961e58ef8c6f",141,""
+151,"Call","Call_0x16d0961e595b7a90",141,"print(a+b)"
+152,"BinOp","BinOp_0x16d0961e59300cbd",141,"a+b"
+153,"mention","main@Module_0x16d0961e583e3a1f",136,""
+154,"Call","Call_0x16d0961e592ddca4",136,"main()"

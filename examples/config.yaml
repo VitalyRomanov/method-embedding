@@ -17,7 +17,7 @@ MODEL:
   activation: tanh
   dropout: 0.2
   h_dim: 100
-  n_layers: 7
+  n_layers: 5
   node_emb_size: 100
   num_bases: 10
   use_att_checkpoint: true
