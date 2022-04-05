@@ -1,0 +1,165 @@
+12:38:26 | LogManager.cpp:40 setLoggingEnabled() | INFO: Enabled logging for Sourcetrail 64 bit, version 2020.1.117
+12:38:26 | SharedMemoryGarbageCollector.cpp:59 run() | INFO: start shared memory garbage collection
+12:38:26 | ApplicationSettingsPrefiller.cpp:31 prefillJavaRuntimePath() | INFO: Prefilling Java path
+12:38:26 | INFO: send MessageStatus Starting Sourcetrail 64 bit, version 2020.1.117
+Starting Sourcetrail 64 bit, version 2020.1.117
+12:38:26 | INFO: send MessageStatus Load settings: /root/.config/sourcetrail/ApplicationSettings.xml
+Load settings: /root/.config/sourcetrail/ApplicationSettings.xml
+12:38:26 | INFO: send MessageStatus Enabled console and file logging.
+Enabled console and file logging.
+12:38:26 | ApplicationSettingsPrefiller.cpp:84 prefillMavenExecutablePath() | INFO: Prefilling Maven path
+12:38:26 | ApplicationSettingsPrefiller.cpp:57 prefillJreSystemLibraryPaths() | INFO: Prefilling JRE system library path
+12:38:26 | ApplicationSettingsPrefiller.cpp:110 prefillCxxHeaderPaths() | INFO: Prefilling header search paths
+12:38:26 | INFO: send MessageStatus Ran Java runtime path detection, no path found.
+Ran Java runtime path detection, no path found.
+12:38:26 | INFO: send MessageStatus Ran Maven executable path detection, no path found.
+Ran Maven executable path detection, no path found.
+12:38:26 | INFO: send MessageStatus Ran JRE system library path detection, no path found.
+Ran JRE system library path detection, no path found.
+12:38:26 | ApplicationSettingsPrefiller.cpp:134 prefillCxxFrameworkPaths() | INFO: Prefilling framework search paths
+12:38:26 | INFO: send MessageStatus Ran C/C++ header path detection, found 6 paths
+Ran C/C++ header path detection, found 6 paths
+12:38:26 | INFO: send MessageLoadProject /dataset/example/example.srctrlprj, settingsChanged: false, refreshMode: 2
+12:38:26 | INFO: send MessageStatus Loading Project: /dataset/example/example.srctrlprj - loading
+Loading Project: /dataset/example/example.srctrlprj
+12:38:26 | INFO: send MessageStatus Project could not load any symbols because the index database is empty. Please re-index the project.
+Project could not load any symbols because the index database is empty. Please re-index the project.
+12:38:26 | INFO: send MessageStatus Preparing Indexing - loading
+Preparing Indexing
+12:38:26 | INFO: send MessageErrorCountClear 
+12:38:26 | INFO: send MessageIndexingStatus 
+0% 12:38:26 | TaskExecuteCustomCommands.cpp:233 runIndexerCommand() | INFO: Execute command ""/usr/src/app/Sourcetrail/data/python/SourcetrailPythonIndexer" index --source-file-path="/dataset/example/ExampleModule.py" --database-file-path="/dataset/example/example.srctrldb_tmp" --environment-path="/usr/src/app/python_env""
+12:38:26 | INFO: send MessageStatus Starting Indexing: 2 source files - loading
+Starting Indexing: 2 source files
+12:38:26 | INFO: send MessageIndexingStarted 
+12:38:26 | INFO: send MessageIndexingStatus 
+0% 12:38:26 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_source_node_id_index"
+12:38:26 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_target_node_id_index"
+12:38:26 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "node_serialized_name_index"
+12:38:26 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "source_location_file_node_id_index"
+12:38:26 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "error_all_data_index"
+12:38:26 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "file_path_index"
+12:38:26 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "occurrence_element_id_index"
+12:38:26 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "occurrence_source_location_id_index"
+12:38:26 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "element_component_foreign_key_index"
+12:38:26 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_source_foreign_key_index"
+12:38:26 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_target_foreign_key_index"
+12:38:26 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "source_location_foreign_key_index"
+12:38:26 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "occurrence_element_foreign_key_index"
+12:38:26 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "occurrence_source_location_foreign_key_index"
+12:38:26 | TaskExecuteCustomCommands.cpp:233 runIndexerCommand() | INFO: Execute command ""/usr/src/app/Sourcetrail/data/python/SourcetrailPythonIndexer" index --source-file-path="/dataset/example/main.py" --database-file-path="/dataset/example/example.srctrldb_tmp_thread1" --environment-path="/usr/src/app/python_env""
+12:38:26 | INFO: send MessageIndexingStatus 
+0% 12:38:29 | INFO: Process output: INFO: Loaded database is compatible.
+12:38:29 | TaskExecuteCustomCommands.cpp:246 runIndexerCommand() | INFO: Process returned successfully.
+
+12:38:29 | INFO: Process output: INFO: Loaded database is compatible.
+12:38:29 | TaskExecuteCustomCommands.cpp:246 runIndexerCommand() | INFO: Process returned successfully.
+
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_source_node_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_target_node_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "node_serialized_name_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "source_location_file_node_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "error_all_data_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "file_path_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "occurrence_element_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "occurrence_source_location_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "element_component_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_source_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_target_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "source_location_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "occurrence_element_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "occurrence_source_location_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_source_node_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_target_node_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "node_serialized_name_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "source_location_file_node_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "error_all_data_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "file_path_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "occurrence_element_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "occurrence_source_location_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "element_component_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_source_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_target_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "source_location_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "occurrence_element_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "occurrence_source_location_foreign_key_index"
+12:38:29 | TaskExecuteCustomCommands.cpp:274 runPythonPostProcessing() | INFO: Starting Python post processing.
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_source_node_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_target_node_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "node_serialized_name_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "source_location_file_node_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "error_all_data_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "file_path_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "occurrence_element_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "occurrence_source_location_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "element_component_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_source_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_target_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "source_location_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "occurrence_element_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "occurrence_source_location_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_source_node_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_target_node_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "node_serialized_name_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "source_location_file_node_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "error_all_data_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "file_path_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "occurrence_element_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "occurrence_source_location_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "element_component_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_source_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_target_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "source_location_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "occurrence_element_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "occurrence_source_location_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "edge_source_node_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "edge_target_node_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "node_serialized_name_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "source_location_file_node_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "error_all_data_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "file_path_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "occurrence_element_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "occurrence_source_location_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "element_component_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "edge_source_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "edge_target_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "source_location_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "occurrence_element_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "occurrence_source_location_foreign_key_index"
+12:38:29 | TaskExecuteCustomCommands.cpp:404 runPythonPostProcessing() | INFO: Finished Python post processing.
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_source_node_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_target_node_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "node_serialized_name_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "source_location_file_node_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "error_all_data_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "file_path_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "occurrence_element_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:19 createOnDatabase() | INFO: Creating database index "occurrence_source_location_id_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "element_component_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_source_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "edge_target_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "source_location_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "occurrence_element_foreign_key_index"
+12:38:29 | SqliteDatabaseIndex.cpp:33 removeFromDatabase() | INFO: Removing database index "occurrence_source_location_foreign_key_index"
+12:38:29 | Project.cpp:780 swapToTempStorage() | INFO: Switching to temporary indexing data
+12:38:29 | INFO: send MessageStatus Finished indexing: 2/2 source files indexed; 00:00:03:017; 0 errors
+Finished indexing: 2/2 source files indexed; 00:00:03:017; 0 errors
+12:38:29 | INFO: send MessageIndexingStatus 
+12:38:29 | INFO: send MessageIndexingFinished 
+12:38:29 | Application.cpp:490 logStorageStats() | INFO: 
+Graph:
+	16 Nodes
+	27 Edges
+
+Code:
+	2 Files
+	33 Lines of Code
+
+Errors:
+	0 Errors
+	0 Fatal Errors
+
+12:38:29 | INFO: send MessageQuitApplication 
+Quitting
+12:38:29 | SharedMemoryGarbageCollector.cpp:77 stop() | INFO: stop shared memory garbage collection
+12:38:30 | SharedMemoryGarbageCollector.cpp:132 stop() | INFO: delete garbage collector memory: grbg_cllctr_64
