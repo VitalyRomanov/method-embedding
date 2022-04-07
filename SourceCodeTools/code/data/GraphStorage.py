@@ -162,8 +162,14 @@ class OnDiskGraphStorage:
         return dict(zip(table["type_id"], table["type_desc"]))
 
     def get_node_types(self):
-        table = self.database.query("SELECT * from node_types")
-        return dict(zip(table["type_id"], table["type_desc"]))
+        table = self.database.query("""
+        SELECT
+        id as id, type_desc as type
+        from
+        nodes
+        LEFT JOIN node_types on nodes.type = node_types.type_id 
+        """)
+        return dict(zip(table["id"], table["type"]))
 
     def iterate_nodes_with_chunks(self):
         return self.database.query("SELECT * FROM nodes", chunksize=10000)
@@ -194,18 +200,13 @@ class OnDiskGraphStorage:
         return nodes, edges
 
     def iterate_packages(self):
-        # nodes = []
-        all_edges = []
-
-        prev_package = None
-
         all_packages = self.database.query("SELECT DISTINCT package FROM edge_file_id")["package"]
 
         for package in all_packages:
             edges = self.database.query(
                 f"""
                 SELECT
-                edge_types.type_desc as type, src, dst
+                edges.id as id, edge_types.type_desc as type, src, dst
                 FROM
                 edge_file_id
                 LEFT JOIN edges ON edge_file_id.id = edges.id
@@ -218,7 +219,7 @@ class OnDiskGraphStorage:
             package_nodes = self.database.query(
                 f"""
                 SELECT
-                id, node_types.type_desc as type
+                id, node_types.type_desc as type, name
                 FROM
                 nodes
                 LEFT JOIN node_types ON nodes.type = node_types.type_id
@@ -226,62 +227,7 @@ class OnDiskGraphStorage:
                 """
             )
 
-            print()
-
-        # for edges in self.database.query(
-        #     """
-        #     SELECT
-        #     edges_with_type_src_node.type as type,
-        #     edges_with_type_src_node.src as src,
-        #     edges_with_type_src_node.dst as dst,
-        #     edges_with_type_src_node.src_type as src_type,
-        #     dst_node_types.type_desc as dst_type
-        #     FROM
-        #     (
-        #         SELECT
-        #         edges_with_type.type as type,
-        #         edges_with_type.src as src,
-        #         edges_with_type.dst as dst,
-        #         src_node_types.type_desc as src_type
-        #         FROM
-        #         (
-        #             SELECT
-        #             edge_types.type_desc as type, src, dst
-        #             FROM
-        #             edge_file_id
-        #             LEFT JOIN edges ON edge_file_id.id = edges.id
-        #             LEFT JOIN edge_types ON edges.type = edge_types.type_id
-        #             ORDER BY edge_file_id.package
-        #         ) as edges_with_type
-        #         LEFT JOIN nodes as src_nodes ON src = src_nodes.id
-        #         LEFT JOIN node_types as src_node_types ON src_nodes.type = src_node_types.type_id
-        #     ) as edges_with_type_src_node
-        #     LEFT JOIN nodes as dst_nodes ON dst = dst_nodes.id
-        #     LEFT JOIN node_types as dst_node_types ON dst_nodes.type = dst_node_types.type_id
-        #     """,
-        #     chunksize=10000
-        # ):
-        #
-        #     start_with = 0
-        #
-        #     for ind, package in enumerate(edges["package"]):
-        #         if prev_package is None:
-        #             prev_package = package
-        #         else:
-        #             if prev_package != package:
-        #                 all_edges.append(
-        #                     edges.iloc[start_with: ind-1]
-        #                 )
-        #                 # yield pd.concat(all_edges)
-        #                 start_with = ind
-        #                 prev_package = package
-        #
-        #     all_edges.append(
-        #         edges.iloc[start_with: -1]
-        #     )
-        #     # yield pd.concat(all_edges)
-
-
+            yield package_nodes, edges
 
 
 class n4jGraphStorage:
