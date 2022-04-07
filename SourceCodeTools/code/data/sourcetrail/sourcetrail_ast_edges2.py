@@ -977,10 +977,27 @@ def process_code(source_file_content, offsets, node_resolver, mention_tokenizer,
             :param edges: Dictionary that represents edge. Information is tored in edges but is related to source node
             :return: Information about location of this edge (offset) in the source file in fromat (start, end, node_id)
             """
-            return [(edge["offsets"][0], edge["offsets"][1], edge["src"]) for edge in edges if edge["offsets"] is not None]
+            return [(edge["offsets"][0], edge["offsets"][1], (edge["src"], edge["dst"], edge["type"])) for edge in edges if edge["offsets"] is not None]
+
+        def get_node_offsets(offsets):
+            return [(offset[0], offset[1], offset[2][0]) for offset in offsets]
+
+        def offsets_to_edge_mapping(offsets):
+            return {offset[2]: (offset[0], offset[1]) for offset in offsets}
+
+        def attach_offsets_to_edges(edges, offsets_edge_mapping):
+            for edge in edges:
+                repr = (edge["src"], edge["dst"], edge["type"])
+                if repr in offsets_edge_mapping:
+                    offset = offsets_edge_mapping[repr]
+                    edge["offset_start"] = offset[0]
+                    edge["offset_end"] = offset[1]
 
         # recover ast offsets for the current file
-        ast_offsets = replacer.recover_offsets_with_edits2(get_valid_offsets(edges))
+        valid_offsets = replacer.recover_offsets_with_edits2(get_valid_offsets(edges))
+        ast_offsets = get_node_offsets(valid_offsets)
+        attach_offsets_to_edges(edges, offsets_to_edge_mapping(valid_offsets))
+        # ast_offsets = replacer.recover_offsets_with_edits2(get_valid_offsets(edges))
 
         def merge_global_and_ast_offsets(ast_offsets, global_offsets, definitions):
             """
@@ -1164,8 +1181,9 @@ def get_ast_from_modules(
         all_ast_edges.drop_duplicates(["type", "src", "dst"], inplace=True)
         all_ast_edges = all_ast_edges.query("src != dst")
         all_ast_edges["id"] = 0
-        all_ast_edges = all_ast_edges[["id", "type", "src", "dst", "scope", "file_id", "package"]].rename({'src': 'source_node_id', 'dst': 'target_node_id', 'scope': 'mentioned_in'}, axis=1).astype(
-            {'file_id': 'Int32', "mentioned_in": 'Int32'}
+        all_ast_edges = all_ast_edges[["id", "type", "src", "dst", "scope", "file_id", "package", "offset_start", "offset_end"]] \
+            .rename({'src': 'source_node_id', 'dst': 'target_node_id', 'scope': 'mentioned_in'}, axis=1).astype(
+            {'file_id': 'Int32', "mentioned_in": 'Int32', "offset_start": "Int32", "offset_end": "Int32"}
         )
         return all_ast_edges
 

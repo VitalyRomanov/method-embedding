@@ -820,7 +820,8 @@ class AstGraphGenerator(object):
     def parse_Constant(self, node):
         # TODO
         # decide whether this name should be unique or not
-        name = GNode(name="Constant_", type="Constant")
+        value_type = type(node.value).__name__
+        name = GNode(name=f"Constant_{value_type}", type="Constant")
         # name = "Constant_"
         # if node.kind is not None:
         #     name += ""
