@@ -335,7 +335,9 @@ def process_body(nlp, body: str, replacements=None, require_labels=False):
                                                         return_cuts + annotation_cuts)
     is_valid = body_valid(body_)
     if was_valid != is_valid:
-        raise Exception()
+        print("Failed processing")
+        return None
+        # raise Exception()
 
     replacements_annotations = adjust_offsets2(replacements_annotations, len(initial_strip))
     body_ = initial_strip + body_
