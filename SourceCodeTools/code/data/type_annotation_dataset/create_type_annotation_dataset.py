@@ -489,12 +489,11 @@ def process_package(working_directory, global_names=None, require_labels=False):
     for ind, (f_body, f_offsets) in enumerate(iterate_functions(offsets, node_maps, filecontent)):
         try:
             entry = process_body(nlp, f_body, replacements=f_offsets, require_labels=require_labels)
-        except AssertionError as e:
-            print(working_directory)
-            raise e
         except Exception as e:
+            logging.warning("Error during processing")
             print(working_directory)
-            raise
+            print(e)
+            continue
 
         if entry is not None:
             entry = to_global_ids(entry, id_maps, global_names, local_names)
