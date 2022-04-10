@@ -490,6 +490,9 @@ def process_package(working_directory, global_names=None, require_labels=False):
         except AssertionError as e:
             print(working_directory)
             raise e
+        except Exception as e:
+            print(working_directory)
+            raise
 
         if entry is not None:
             entry = to_global_ids(entry, id_maps, global_names, local_names)
