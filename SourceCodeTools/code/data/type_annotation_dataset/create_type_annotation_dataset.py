@@ -482,7 +482,11 @@ def process_package(working_directory, global_names=None, require_labels=False):
     nlp = create_tokenizer("spacy")
 
     for ind, (f_body, f_offsets) in enumerate(iterate_functions(offsets, node_maps, filecontent)):
-        entry = process_body(nlp, f_body, replacements=f_offsets, require_labels=require_labels)
+        try:
+            entry = process_body(nlp, f_body, replacements=f_offsets, require_labels=require_labels)
+        except AssertionError as e:
+            print(working_directory)
+            raise e
 
         if entry is not None:
             entry = to_global_ids(entry, id_maps, global_names, local_names)
