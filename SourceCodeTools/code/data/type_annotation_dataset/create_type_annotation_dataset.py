@@ -266,7 +266,7 @@ def unpack_annotations(body, labels):
 
         head = body[:offset_ann[0]]
         orig_len = len(head)
-        head = head.rstrip()
+        head = head.rstrip(" \\\n\t")  # include character \ since it can be used to indicate line break
         stripped_len = len(head)
 
         annsymbol = ":"
