@@ -344,7 +344,7 @@ def process_body(nlp, body: str, replacements=None, require_labels=False):
 
     entry['replacements'] = resolve_self_collisions2(entry['replacements'])
 
-    assert isvalid(nlp, body_, entry['replacements'])
+    # assert isvalid(nlp, body_, entry['replacements'])
     assert isvalid(nlp, body_, entry['ents'])
 
     return entry
