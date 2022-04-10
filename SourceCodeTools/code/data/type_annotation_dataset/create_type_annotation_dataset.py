@@ -272,6 +272,9 @@ def unpack_annotations(body, labels):
         annsymbol = ":"
         assert head.endswith(annsymbol)
         beginning = beginning - (orig_len - stripped_len) - len(annsymbol)
+        # Workaround if there is a space before annotation. Example: "groupby : List[str]"
+        while beginning > 0 and body[beginning - 1] == " ":
+            beginning -= 1
         cuts.append((beginning, end))
 
         assert offset_var[0] != len(head)
