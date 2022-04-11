@@ -53,10 +53,12 @@ def filter_type_edges_with_chunks(nodes_path, edges_path, kwarg_fn):
         no_annotations = edges.query(
             f"type != 'annotation_for' and type != 'returned_by' and type != 'annotation_for_rev' and type != 'returned_by_rev'")
 
+        annotations = annotations.query("type == 'annotation_for' or type == 'returned_by'")
+
         if annotations is not None and len(annotations) > 0:
             annotations["type_string"] = annotations["source_node_id"].apply(node2name.get)
             # rename columns to use as a dataset
-            annotations.rename({"source_node_id": "dst", "type_string": "src"}, axis=1, inplace=True)
+            annotations.rename({"target_node_id": "src", "type_string": "dst"}, axis=1, inplace=True)
             annotations = annotations[["src", "dst"]]
 
             kwargs = kwarg_fn(annotations_path.endswith("csv"), first_written=annotations_written)
