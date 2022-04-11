@@ -96,11 +96,22 @@ def read_json_with_generator(path, chunksize, **kwargs):
         yield chunk
 
 
+def _grow_with_chunks(chunks):
+    table = None
+    for chunk in chunks:
+        if table is None:
+            table = chunk
+        else:
+            table = pd.concat([table, chunk], copy=False)
+    return table
+
+
 def read_json(path, **kwargs):
     if "chunksize" in kwargs:
         return read_json_with_generator(path, kwargs.pop("chunksize"), **kwargs)
     else:
-        return pd.read_json(path, orient="records", lines=True, **kwargs)
+        return _grow_with_chunks(read_json_with_generator(path, 100000, **kwargs))
+        # return pd.read_json(path, orient="records", lines=True, **kwargs)
 
 
 def read_source_location(base_path):
