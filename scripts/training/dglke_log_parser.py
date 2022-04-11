@@ -39,7 +39,9 @@ def main():
                 scores.append({})
 
     for s, v in zip(steps, buffer_pos):
-        plt.plot(np.log10(s), np.log10(v))
+        plt.plot(s, v)
+    plt.gca().set_xscale("log")
+    plt.gca().set_yscale("log")
     plt.xlabel("Step")
     plt.ylabel("Loss")
     plt.legend(model_names)
@@ -47,7 +49,9 @@ def main():
     plt.close()
 
     for s, v in zip(steps, buffer_neg):
-        plt.plot(np.log10(s), np.log10(v))
+        plt.plot(s, v)
+    plt.gca().set_xscale("log")
+    plt.gca().set_yscale("log")
     plt.xlabel("Step")
     plt.ylabel("Loss")
     plt.legend(model_names)
@@ -55,7 +59,9 @@ def main():
     plt.close()
 
     for s, v, n in zip(steps, buffer_pos, buffer_neg):
-        plt.plot(np.log10(s), np.log10(np.array(v) + np.array(n)))
+        plt.plot(s, np.array(v) + np.array(n))
+    plt.gca().set_xscale("log")
+    plt.gca().set_yscale("log")
     plt.xlabel("Step")
     plt.ylabel("Loss")
     plt.legend(model_names)
@@ -64,7 +70,7 @@ def main():
 
     import pandas as pd
     s = pd.DataFrame.from_records(scores)
-    print(s.to_string)
+    print(s.to_string())
 
 
 
