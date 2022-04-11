@@ -1,4 +1,5 @@
 # %%
+import json
 from typing import Iterable
 
 import pandas
@@ -127,9 +128,9 @@ class Experiments:
         :return: Experiment object
         """
 
-        nodes = unpersist(join(self.base_path, "nodes.bz2"))
+        nodes = unpersist(join(self.base_path, "common_nodes.json.bz2"))
         # edges = pandas.read_csv(join(self.base_path, "held.csv")).astype({"src": "int32", "dst": "int32"})
-        edges = unpersist(join(self.base_path, "edges.bz2"))
+        edges = None  # unpersist(join(self.base_path, "common_edges.json.bz2"))
 
         # self.splits = SourceGraphDataset.get_global_graph_id_splits(nodes)
         # global_ids = nodes['global_graph_id'].values
@@ -220,6 +221,8 @@ class Experiments:
 
             type_ann = unpersist(self.experiments['typeann'])
 
+            # node_names = dict(zip(nodes["id"], nodes["serialized_name"]))
+
             filter_rule = lambda name: "0x" not in name
 
             type_ann = type_ann[
@@ -251,9 +254,30 @@ class Experiments:
             test_only_popular_types = False
             if test_only_popular_types:
                 allowed = {
-                    'str', 'Optional', 'int', 'Any', 'Union', 'bool', 'Other', 'Callable', 'Dict', 'bytes', 'float',
-                    'Description',
-                    'List', 'Sequence', 'Namespace', 'T', 'Type', 'object', 'HTTPServerRequest', 'Future'
+                    # 'str', 'Optional', 'int', 'Any', 'Union', 'bool', 'Other', 'Callable', 'Dict', 'bytes', 'float',
+                    # 'Description',
+                    # 'List', 'Sequence', 'Namespace', 'T', 'Type', 'object', 'HTTPServerRequest', 'Future'
+                    "str",
+                    "Optional",
+                    "int",
+                    "Any",
+                    "Union",
+                    "bool",
+                    "Other",
+                    "Callable",
+                    "Dict",
+                    "bytes",
+                    "float",
+                    "Description",
+                    "List",
+                    "Sequence",
+                    "Namespace",
+                    "T",
+                    "Type",
+                    "object",
+                    "HTTPServerRequest",
+                    "Future",
+                    "Matcher",
                 }
                 type_ann = type_ann[
                     type_ann["dst"].apply(lambda type_: type_ in allowed)
@@ -264,12 +288,16 @@ class Experiments:
             from pathlib import Path
             dataset_dir = Path(self.experiments['typeann']).parent
             from SourceCodeTools.nlp.entity.type_prediction import filter_labels
+            def read_dataset_file(path):
+                with open(path, "r") as source:
+                    return [json.loads(line) for line in source]
+
             train_data = filter_labels(
-                pickle.load(open(dataset_dir.joinpath("type_prediction_dataset_no_defaults_train.pkl"), "rb")),
+                read_dataset_file(dataset_dir.joinpath("type_prediction_dataset_no_default_args_mapped_train.json")),
                 allowed=allowed
             )
             test_data = filter_labels(
-                pickle.load(open(dataset_dir.joinpath("type_prediction_dataset_no_defaults_test.pkl"), "rb")),
+                read_dataset_file(dataset_dir.joinpath("type_prediction_dataset_no_default_args_mapped_test.json")),
                 allowed=allowed
             )
 
@@ -763,7 +791,15 @@ class Experiment2WithSubwords(Experiment2):
                                           neg_sampling_strategy=neg_sampling_strategy, K=K, test_frac=test_frac,
                                           compact_dst=compact_dst)
 
-        from SourceCodeTools.models.graph.ElementEmbedder import window, hashstr, create_fixed_length
+        from SourceCodeTools.models.graph.ElementEmbedder import create_fixed_length
+        import hashlib
+        def hashstr(s, num_buckets):
+            return int(hashlib.md5(s.encode('utf8')).hexdigest(), 16) % num_buckets
+
+        def window(x, gram_size):
+            x = "<" + x + ">"
+            length = len(x)
+            return (x[i:i + gram_size] for i in range(0, length) if i+gram_size<=length)
 
         reprs = target['orig_dst'].map(lambda x: window(x, gram_size)) \
             .map(lambda grams: (hashstr(g, num_buckets) for g in grams)) \
