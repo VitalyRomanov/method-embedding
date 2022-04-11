@@ -1201,6 +1201,9 @@ class SourceGraphDataset:
                 subgraph = None
             else:
                 subgraph = self._create_hetero_graph(nodes, edges)
+
+            # TODO
+            # create masker here
             yield subgraph
 
     def batch_generator(self, graph, number_of_hops, batch_size, partition):
