@@ -14,6 +14,7 @@ from tqdm import tqdm
 from SourceCodeTools.code.annotator_utils import map_offsets
 from SourceCodeTools.code.common import map_columns, read_edges, read_nodes
 from SourceCodeTools.code.data.file_utils import get_random_name, unpersist, persist, unpersist_if_present
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import special_mapping
 
 
 class AbstractDatasetCreator:
@@ -111,16 +112,27 @@ class AbstractDatasetCreator:
         logging.info("Handle parallel edges")
         last_id = 0
 
+        global_edge_types = set(special_mapping.keys()) | set(special_mapping.values())
+
+        existing_global_edges = set()
+
         temp_edges = join(os.path.dirname(edges_path), "temp_" + os.path.basename(edges_path))
 
         for ind, edges in enumerate(read_edges(edges_path, as_chunks=True)):
             edges["id"] = range(last_id, len(edges) + last_id)
 
             edge_bank = defaultdict(list)
-            for id_, type_, src, dst in edges[["id", "type", "source_node_id", "target_node_id"]].values:
-                edge_bank[(src, dst)].append((id_, type_))
-
             ids_to_remove = set()
+            for id_, type_, src, dst in edges[["id", "type", "source_node_id", "target_node_id"]].values:
+                if type_ in global_edge_types:
+                    global_edge = (type_, src, dst)
+                    if global_edge not in existing_global_edges:
+                        existing_global_edges.add(global_edge)
+                    else:
+                        ids_to_remove.add(id_)
+                else:
+                    edge_bank[(src, dst)].append((id_, type_))
+
             for key, parallel_edges in edge_bank.items():
                 if len(parallel_edges) > 1:
                     parallel_edges = sorted(parallel_edges, key=lambda x: self.edge_priority.get(x[1], 3))
