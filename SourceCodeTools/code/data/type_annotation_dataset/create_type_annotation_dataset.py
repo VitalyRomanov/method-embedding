@@ -578,7 +578,7 @@ def create_from_dataset(args):
     # parser = ArgumentParser()
     # parser.add_argument("dataset_path", type=str, help="")
     # parser.add_argument("output_path", type=str, help="")
-    # parser.add_argument("--format", "-f", dest="format", default="jsonl", help="jsonl|csv")
+    # parser.add_argument("--format", "-f", dest="format", default="json", help="json|csv")
     # parser.add_argument("--remove_default", action="store_true", default=False)
     #
     # args = parser.parse_args()
@@ -604,7 +604,7 @@ def create_from_environments(args):
     # parser = ArgumentParser()
     # parser.add_argument("packages", type=str, help="")
     # parser.add_argument("output_path", type=str, help="")
-    # parser.add_argument("--format", "-f", dest="format", default="jsonl", help="jsonl|csv")
+    # parser.add_argument("--format", "-f", dest="format", default="json", help="json|csv")
     # parser.add_argument("--global_nodes", "-g", dest="global_nodes", default=None)
     # parser.add_argument("--remove_default", default=False, action="store_true")
 
@@ -628,7 +628,7 @@ def create_from_environments(args):
 
 
 def store(data, args):
-    if args.format == "jsonl":  # jsonl format is used by spacy
+    if args.format == "json":  # json format is used by spacy
         with open(args.output_path, "w") as sink:
             for entry in data:
                 sink.write(f"{json.dumps(entry)}\n")
@@ -647,7 +647,7 @@ if __name__ == "__main__":
     parser.add_argument("dataset_format", type=str)
     parser.add_argument("dataset_path", type=str, help="")
     parser.add_argument("output_path", type=str, help="")
-    parser.add_argument("--format", "-f", dest="format", default="jsonl", help="jsonl|csv")
+    parser.add_argument("--format", "-f", dest="format", default="json", help="json|csv")
     parser.add_argument("--remove_default", action="store_true", default=False)
     parser.add_argument("--global_nodes", "-g", dest="global_nodes", default=None)
     parser.add_argument("--require_labels", action="store_true", default=False)

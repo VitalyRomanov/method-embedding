@@ -5,11 +5,12 @@ from random import random
 
 import pandas as pd
 
+from SourceCodeTools.code.ast.python_ast2 import PythonSharedNodes
 from SourceCodeTools.code.common import read_nodes
 from SourceCodeTools.code.data.file_utils import persist
 
 
-def add_splits(items, train_frac, restricted_id_pool=None, force_test=None):
+def add_splits(items, train_frac, restricted_id_pool=None, force_test=None, exclude_ids=None):
     items = items.copy()
 
     if force_test is None:
@@ -17,6 +18,8 @@ def add_splits(items, train_frac, restricted_id_pool=None, force_test=None):
 
     def random_partition(node_id):
         r = random()
+        if node_id in exclude_ids:
+            return "nothing"
         if node_id not in force_test:
             if r < train_frac:
                 return "train"
@@ -73,13 +76,16 @@ def main():
     args = parser.parse_args()
 
     all_nodes = []
+    shared_nodes = set()
     for nodes in read_nodes(join(args.working_directory, "common_nodes.json.bz2"), as_chunks=True):
         all_nodes.append(nodes[["id"]])
+        shared_nodes.update(nodes.query("type in @shared", local_dict={"shared": PythonSharedNodes.shared_node_types})["id"])
 
     partition = add_splits(
         items=pd.concat(all_nodes),
         train_frac=0.8,
-        force_test=read_test_set_nodes(args.type_annotation_test_set)
+        force_test=read_test_set_nodes(args.type_annotation_test_set),
+        exclude_ids=shared_nodes
     )
 
     persist(partition, args.output_path)
