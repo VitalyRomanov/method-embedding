@@ -2,6 +2,7 @@ from functools import partial
 from os.path import join
 
 import pandas as pd
+from tqdm import tqdm
 
 from SourceCodeTools.code.common import read_nodes, read_edges
 from SourceCodeTools.code.data.SQLiteStorage import SQLiteStorage
@@ -22,19 +23,25 @@ class OnDiskGraphStorage:
                 **kwargs
             )
 
-    def _write_type_map(self, type_map, table_name):
+    def _write_mapping(self, type_map, key_name, val_name, table_name):
         type_map_list = []
         for key, val in type_map.items():
             type_map_list.append({
-                "type_id": val,
-                "type_desc": key
+                key_name: val,
+                val_name: key
             })
 
         self._write_non_empty_table(
             table=pd.DataFrame.from_records(type_map_list),
             table_name=table_name,
-            create_index=["type_id", "type_desc"]
+            create_index=[key_name, val_name]
         )
+
+    def _write_type_map(self, type_map, table_name):
+        self._write_mapping(type_map, "type_id", "type_desc", table_name)
+
+    def _write_package_map(self, package_map, table_name):
+        self._write_mapping(package_map, "package_id", "package_desc", table_name)
 
     def _import_nodes(self, path):
 
@@ -45,7 +52,7 @@ class OnDiskGraphStorage:
                 if type_ not in type_map:
                     type_map[type_] = len(type_map)
 
-        for nodes in read_nodes(path, as_chunks=True):
+        for nodes in tqdm(read_nodes(path, as_chunks=True), desc="Importing nodes"):
             update_types(nodes)
             nodes["type"] = nodes["type"].apply(type_map.get)
             nodes.rename({"serialized_name": "name"}, axis=1, inplace=True)
@@ -85,15 +92,18 @@ class OnDiskGraphStorage:
 
     def _import_edges(self, path):
         type_map = {}
+        package_map = {}
 
-        def update_types(nodes):
-            for type_ in nodes["type"]:
-                if type_ not in type_map:
-                    type_map[type_] = len(type_map)
+        def update_mapping(seq, mapping):
+            for val in seq:
+                if val not in mapping:
+                    mapping[val] = len(mapping)
 
-        for edges in read_edges(path, as_chunks=True):
-            update_types(edges)
+        for edges in tqdm(read_edges(path, as_chunks=True), desc="Importing edges"):
+            update_mapping(edges["type"], type_map)
+            update_mapping(edges["package"].dropna(), package_map)
             edges["type"] = edges["type"].apply(type_map.get)
+            edges["package"] = edges["package"].apply(package_map.get)
             edges.rename({"source_node_id": "src", "target_node_id": "dst"}, axis=1, inplace=True)
 
             self._write_non_empty_table(
@@ -115,7 +125,7 @@ class OnDiskGraphStorage:
                 dtype={
                     "id": "INT PRIMARY KEY",
                     "file_id": "INT NOT NULL",
-                    "package": "TEXT NOT NULL",
+                    "package": "INT NOT NULL",
                 }
             )
 
@@ -130,6 +140,7 @@ class OnDiskGraphStorage:
             )
 
         self._write_type_map(type_map, "edge_types")
+        self._write_package_map(package_map, "packages")
 
     def _import_filecontent(self, path):
         for filecontent in unpersist(path, chunksize=100000):
@@ -200,9 +211,9 @@ class OnDiskGraphStorage:
         return nodes, edges
 
     def iterate_packages(self):
-        all_packages = self.database.query("SELECT DISTINCT package FROM edge_file_id")["package"]
+        all_packages = self.database.query("SELECT package_id, package_desc FROM packages").values
 
-        for package in all_packages:
+        for package_id, package_name in all_packages:
             edges = self.database.query(
                 f"""
                 SELECT
@@ -211,7 +222,7 @@ class OnDiskGraphStorage:
                 edge_file_id
                 LEFT JOIN edges ON edge_file_id.id = edges.id
                 LEFT JOIN edge_types ON edges.type = edge_types.type_id
-                WHERE edge_file_id.package = '{package}'
+                WHERE edge_file_id.package = '{package_id}'
                 """
             )
 
@@ -230,7 +241,7 @@ class OnDiskGraphStorage:
             yield package_nodes, edges
 
 
-class n4jGraphStorage:
+class N4jGraphStorage:
     def __init__(self):
         import neo4j
         self.database = neo4j.GraphDatabase.driver("bolt://localhost:7687", auth=("neo4j", "1111"))

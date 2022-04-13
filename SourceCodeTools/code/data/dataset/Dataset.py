@@ -1,5 +1,3 @@
-# from collections import Counter
-# from itertools import chain
 from collections import Counter
 from functools import partial
 from typing import List, Optional
@@ -110,8 +108,6 @@ class SourceGraphDataset:
 
         self._open_dataset_db()
 
-        # self._load_types()
-
         self.edge_types_to_remove = set()
         if filter_edges is not None:
             self._filter_edges(filter_edges)
@@ -159,7 +155,7 @@ class SourceGraphDataset:
         edges.query("type not in @restricted_types", local_dict={"restricted_types": self.edge_types_to_remove}, inplace=True)
 
     def _open_dataset_db(self):
-        # self.dataset_db = n4jGraphStorage()
+        # self.dataset_db = N4jGraphStorage()
         dataset_db_path = join(self.data_path, "dataset.db")
         if not os.path.isfile(dataset_db_path):
             self.dataset_db = OnDiskGraphStorage(dataset_db_path)
@@ -171,18 +167,6 @@ class SourceGraphDataset:
     def _filter_edges(self, types_to_filter):
         logging.info(f"Filtering edge types: {types_to_filter}")
         self.edge_types_to_remove.update(types_to_filter)
-
-    def _load_types(self):
-        def strip_types_if_needed(mapping, stripping_flag, stripped_type):
-            for key, val in mapping.items():
-                if not stripping_flag:
-                    mapping[key] = stripped_type
-                else:
-                    mapping[key] = f"{val}_"
-            return mapping
-
-        self.node_types = strip_types_if_needed(self.dataset_db.get_node_types(), self.use_node_types, "node_")
-        self.edge_types = strip_types_if_needed(self.dataset_db.get_edge_types(), self.use_edge_types, "edge_")
 
     def _get_all_embeddable_names(self):
         id2embeddable_name = dict()
@@ -390,10 +374,13 @@ class SourceGraphDataset:
     def _add_custom_reverse(self, edges):
         to_reverse = edges.query("type in @custom_reverse", local_dict={"custom_reverse": self.custom_reverse})
 
-        to_reverse["type"] = to_reverse["type"].apply(lambda type_: type_ + "_rev")
-        tmp = to_reverse["src"].copy()
-        to_reverse["src"] = to_reverse["dst"]
-        to_reverse["dst"] = tmp
+        to_reverse.eval("type = type.map(@add_rev)", local_dict={"add_rev": lambda type_: type_ + "_rev"}, inplace=True)
+        to_reverse.rename({"src": "dst", "dst": "src"}, axis=1, inplace=True)
+        # to_reverse.eval("src = src", inplace=True)
+        # to_reverse["type"] = to_reverse["type"].apply(lambda type_: type_ + "_rev")
+        # tmp = to_reverse["src"].copy()
+        # to_reverse["src"] = to_reverse["dst"]
+        # to_reverse["dst"] = tmp
 
         new_id = edges["id"].max() + 1
         to_reverse["id"] = range(new_id, new_id + len(to_reverse))
@@ -467,7 +454,7 @@ class SourceGraphDataset:
         def unpack_node_data(nodes):
             node_data = {}
             for col_name, dtype in zip(nodes.columns, nodes.dtypes):
-                if col_name in {"id", "type", "name"}:
+                if col_name in {"id", "type", "name", "type_backup"}:
                     continue
                 if col_name == "label":
                     labels = nodes[["id", "label"]].dropna()
@@ -822,22 +809,34 @@ class SourceGraphDataset:
     # def get_global_node_id(self, node_id, node_type=None):
     #     return self.node_id_to_global_id[node_id]
 
-    def load_node_names(self):
+    def load_node_names(self, nodes, min_count=None):
         """
         :return: DataFrame that contains mappings from nodes to names that appear more than once in the graph
         """
-        for_training = self.nodes[
-            self.nodes['train_mask'] | self.nodes['test_mask'] | self.nodes['val_mask']
-        ][['id', 'type_backup', 'name']]\
+        for_training = nodes.query(
+            "train_mask == True or test_mask == True or val_mask == True"
+        )[['id', 'type_backup', 'name']]\
             .rename({"name": "serialized_name", "type_backup": "type"}, axis=1)
+        # for_training = nodes[
+        #     nodes['train_mask'] | nodes['test_mask'] | nodes['val_mask']
+        # ][['id', 'type_backup', 'name']]\
+        #     .rename({"name": "serialized_name", "type_backup": "type"}, axis=1)
 
-        global_node_types = set(node_types.values())
-        for_training = for_training[
-            for_training["type"].apply(lambda x: x not in global_node_types)
-        ]
+        # TODO
+        # check ho this change affects performance
+        for_training.query("type == 'mention'", inplace=True)
 
-        node_names = extract_node_names(for_training, 2)
-        node_names = filter_dst_by_freq(node_names, freq=self.min_count_for_objectives)
+        # global_node_types = set(node_types.values())
+        # for_training.query("type not in @global", local_dict={"global": global_node_types}, inplace=True)
+        # # for_training = for_training[
+        # #     for_training["type"].apply(lambda x: x not in global_node_types)
+        # # ]
+
+        if min_count is None:
+            min_count = self.min_count_for_objectives
+
+        node_names = extract_node_names(for_training, 0)
+        node_names = filter_dst_by_freq(node_names, freq=min_count)
 
         return node_names
         # path = join(self.data_path, "node_names.bz2")
@@ -1070,26 +1069,26 @@ class SourceGraphDataset:
         """
         return SubwordMasker(self.nodes, self.edges)
 
-    def create_variable_name_masker(self, tokenizer_path):
+    def create_variable_name_masker(self, nodes, edges):
         """
         :param tokenizer_path: path to bpe tokenizer
         :return: SubwordMasker for function nodes. Suitable for variable name use prediction objective
         """
-        return NodeNameMasker(self.nodes, self.edges, self.load_var_use(), tokenizer_path)
+        return NodeNameMasker(nodes, edges, self.load_var_use(), self.tokenizer_path)
 
-    def create_node_name_masker(self, tokenizer_path):
+    def create_node_name_masker(self, nodes, edges):
         """
         :param tokenizer_path: path to bpe tokenizer
         :return: SubwordMasker for function nodes. Suitable for node name use prediction objective
         """
-        return NodeNameMasker(self.nodes, self.edges, self.load_node_names(), tokenizer_path)
+        return NodeNameMasker(nodes, edges, self.load_node_names(nodes, min_count=0), self.tokenizer_path)
 
-    def create_node_clf_masker(self):
+    def create_node_clf_masker(self, nodes, edges):
         """
         :param tokenizer_path: path to bpe tokenizer
         :return: SubwordMasker for function nodes. Suitable for node name use prediction objective
         """
-        return NodeClfMasker(self.nodes, self.edges)
+        return NodeClfMasker(nodes, edges)
 
     def get_negative_sample_groups(self):
         return self.nodes[["id", "mentioned_in"]].dropna(axis=0)
@@ -1160,6 +1159,9 @@ class SourceGraphDataset:
             else:
                 return f"{value}_"
 
+        nodes["type_backup"] = nodes["type"]
+        edges["type_backup"] = edges["type"]
+
         nodes.eval(
             "type = type.map(@strip)",
             local_dict={"strip":partial(_strip_types_if_needed, stripping_flag=self.use_node_types, stripped_type="node_")},
@@ -1174,7 +1176,7 @@ class SourceGraphDataset:
     def subgraph_iterator(self):
         return self.dataset_db.iterate_packages()
 
-    def _iterate_subgraphs(self, node_data, edge_data):
+    def _iterate_subgraphs(self, node_data, edge_data, masker_fn=None):
 
         def add_data(table, data_dict):
             for key in data_dict:
@@ -1197,16 +1199,17 @@ class SourceGraphDataset:
             add_data(nodes, node_data)
             add_data(edges, edge_data)
 
-            if len(edges) == 0:
-                subgraph = None
-            else:
+            if len(edges) > 0:
                 subgraph = self._create_hetero_graph(nodes, edges)
 
-            # TODO
-            # create masker here
-            yield subgraph
+                if masker_fn is not None:
+                    masker = masker_fn(nodes, edges)
+                else:
+                    masker = None
 
-    def batch_generator(self, graph, number_of_hops, batch_size, partition):
+                yield subgraph, masker
+
+    def node_level_batch_generator(self, graph, masker, number_of_hops, batch_size, partition):
         from dgl.dataloading import MultiLayerFullNeighborSampler
         from dgl.dataloading import NodeDataLoader
 
@@ -1236,9 +1239,22 @@ class SourceGraphDataset:
             else:
                 labels = None
 
-            yield input_nodes, seeds, blocks, labels
+            if masker is not None:
+                input_mask = masker.get_mask(mask_for=seeds, input_nodes=input_nodes)
+            else:
+                input_mask = None
 
-    def nodes_dataloader(self, partition, number_of_hops, batch_size, labels=None):
+            yield input_nodes, seeds, blocks, labels, input_mask
+
+    def create_batches(self, subgraph_generator, number_of_hops, batch_size, partition):
+        for subgraph, masker in tqdm(subgraph_generator):
+            for input_nodes, seeds, blocks, labels, input_mask in self.node_level_batch_generator(subgraph, masker, number_of_hops, batch_size, partition):
+                print()
+                # yield input_nodes, seeds, blocks, labels
+
+            print()
+
+    def nodes_dataloader(self, partition, number_of_hops, batch_size, labels=None, masker_fn=None):
         partition = self.partition_columns[partition]
         # current_partition_nodes = set(self.partition.query(f"{partition} == True").sample(frac=1.)["id"])
         # partition_nodes = partition_nodes.query("id in @node_pool", local_dict={"node_pool": set(labels.keys())})["id"]
@@ -1252,13 +1268,10 @@ class SourceGraphDataset:
 
         edge_data = {}
 
-        for subgraph in tqdm(self._iterate_subgraphs(node_data, edge_data)):
-            for input_nodes, seeds, blocks, labels in self.batch_generator(subgraph, number_of_hops, batch_size, partition):
-                print()
-                # yield input_nodes, seeds, blocks, labels
-
-            print()
-
+        self.create_batches(
+            self._iterate_subgraphs(node_data, edge_data, masker_fn),
+            number_of_hops, batch_size, partition
+        )
 
         #     batch.append(node_id)
         #     if len(batch) >= batch_size:
@@ -1296,15 +1309,17 @@ def test_dataset():
         use_node_types=False,
         use_edge_types=True,
         no_global_edges=True,
-        remove_reverse=True,
-        custom_reverse=["global_mention"]
+        remove_reverse=False,
+        custom_reverse=["global_mention"],
+        tokenizer_path="/Users/LTV/Dropbox (Personal)/sentencepiece_bpe.model"
     )
-    node_names = unpersist("/Users/LTV/Downloads/NitroShare/v2_subsample_v4_new_ast2_fixed/with_ast/node_names.json.bz2")
+    node_names = unpersist("/Users/LTV/Downloads/NitroShare/v2_subsample_v4_new_ast2_fixed_distinct_types/with_ast/node_names.json.bz2")
     mapping = compact_property(node_names['dst'])
     node_names['dst'] = node_names['dst'].apply(mapping.get)
     dataset.nodes_dataloader(
         "train", 3, 512,
-        node_names
+        node_names,
+        masker_fn=dataset.create_node_name_masker
     )
 
     # sm = dataset.create_subword_masker()
