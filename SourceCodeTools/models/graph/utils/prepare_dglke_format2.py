@@ -13,7 +13,7 @@ from SourceCodeTools.code.data.dataset.Dataset import load_data, compact_propert
 import argparse
 
 from SourceCodeTools.code.data.file_utils import unpersist, persist
-from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types, special_mapping
 
 
 def get_paths(dataset_path, use_extra_objectives):
@@ -45,9 +45,18 @@ def add_counts(counter, node_ids):
         counter[node_id] += 1
 
 
+def remove_reverse(edges):
+    skip = set(special_mapping.values()) | set(special_mapping.keys())
+    skip_ = skip | set(edges.query("type.map(@rev)", local_dict={"rev": lambda x: x.endswith('_rev')})["type"])
+    edges = edges.query("type not in @skip", local_dict={"skip": skip_})
+    return edges
+
+
 def count_degrees(edges_path):
     counter = defaultdict(lambda: 0)
+
     for edges in read_edges(edges_path, as_chunks=True):
+        edges = remove_reverse(edges)
         add_counts(counter, edges["source_node_id"])
         add_counts(counter, edges["target_node_id"])
 
@@ -92,6 +101,7 @@ def do_holdout(edges_path, output_path, node_descriptions, holdout_size=10000, m
     seen = set()
 
     for edges in read_edges(edges_path, as_chunks=True):
+        edges = remove_reverse(edges)
         edges.rename({"source_node_id": "src", "target_node_id": "dst"}, axis=1, inplace=True)
         edges = edges[['src', 'dst', 'type']]
 
@@ -123,8 +133,9 @@ def do_holdout(edges_path, output_path, node_descriptions, holdout_size=10000, m
         total_holdout += len(definitely_holdout)
 
         def apply_description(edges):
-            edges["src"] = edges["src"].apply(node_descriptions.get)
-            edges["dst"] = edges["dst"].apply(node_descriptions.get)
+            if node_descriptions is not None:
+                edges["src"] = edges["src"].apply(node_descriptions.get)
+                edges["dst"] = edges["dst"].apply(node_descriptions.get)
             return edges
 
         def write_filtered(table, path, first_written):
@@ -209,6 +220,7 @@ def main():
     parser.add_argument('output_path', default=None, help='')
     parser.add_argument("--extra_objectives", action="store_true", default=False)
     parser.add_argument("--eval_frac", dest="eval_frac", default=0.05, type=float)
+    parser.add_argument("--only_distinct_mentions", default=False, action="store_true")
 
     distinct_node_types = set(node_types.values()) | {
         "FunctionDef", "mention", "Op", "#attr#", "#keyword#", "subword"
@@ -223,7 +235,10 @@ def main():
         args.dataset_path, use_extra_objectives=args.extra_objectives
     )
 
-    node_descriptions = get_node_descriptions(nodes_path, distinct_node_types)
+    if args.only_distinct_mentions:
+        node_descriptions = get_node_descriptions(nodes_path, distinct_node_types)
+    else:
+        node_descriptions = None
 
     counter, total_edges, total_holdout = do_holdout(edges_path, args.output_path, node_descriptions)
 
