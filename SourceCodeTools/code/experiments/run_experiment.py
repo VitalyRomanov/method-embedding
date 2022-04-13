@@ -299,12 +299,12 @@ def run_experiment(e, experiment_name, args):
             #                       ma_test))
 
     # plot confusion matrix
-    if hasattr(experiment, "inv_index") and args.confusion_out_path is not None:
-        test_tracker.save_confusion_matrix(save_path=args.confusion_out_path)
+    if hasattr(experiment, "inv_index") and args.out_path is not None:
+        test_tracker.save_confusion_matrix(save_path=args.out_path)
 
-    if hasattr(experiment, "inv_index") and args.emb_out is not None:
-        test_tracker.save_embs_for_tb(save_name=args.emb_out)
-        test_tracker.save_umap(save_name=args.emb_out)
+    if hasattr(experiment, "inv_index") and args.emb_out:
+        test_tracker.save_embs_for_tb(save_name=os.path.join(args.out_path, "tb"))
+        test_tracker.save_umap(save_name=os.path.join(args.out_path, "tb"))
 
     print(metrics[tests.index(max(tests))])
 
@@ -343,13 +343,18 @@ if __name__ == "__main__":
     parser.add_argument("--element_predictor_h_size", default=50, type=int, help="")
     parser.add_argument("--link_predictor_h_size", default="[20]", type=str, help="")
     parser.add_argument("--node_classifier_h_size", default="[30,15]", type=str, help="")
-    parser.add_argument("--confusion_out_path", default=None, type=str, help="")
+    parser.add_argument("--out_path", default=None, type=str, help="")
+    # parser.add_argument("--confusion_out_path", default=None, type=str, help="")
     parser.add_argument("--trials", default=1, type=int, help="")
-    parser.add_argument("--emb_out", default=None, type=str, help="")
+    parser.add_argument("--emb_out", default=False, action="store_true", help="")
+    # parser.add_argument("--emb_out", default=None, type=str, help="")
     parser.add_argument("--embeddings", default=None)
     parser.add_argument('--random', action='store_true')
     parser.add_argument('--test_embedder', action='store_true')
     args = parser.parse_args()
+
+    if args.out_path is None:
+        args.out_path = os.path.dirname(args.embeddings)
 
     print(args.__dict__)
 
