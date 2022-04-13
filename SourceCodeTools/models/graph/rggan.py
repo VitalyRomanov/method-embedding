@@ -255,6 +255,8 @@ class RGGANLayer(RGANLayer):
         """
         g = g.local_var()
         if self.use_weight:
+            # TODO
+            # this is a Neural network without hidden layer
             weight = self.basis() if self.use_basis else self.weight
             wdict = {self.rel_names[i] : {'weight' : w.squeeze(0)}
                      for i, w in enumerate(th.split(weight, 1, dim=0))}
