@@ -2,6 +2,9 @@ __pycache__
 .DS_Store
 *.pkl
 *.tsv
+*.json
+*.json.bz2
+examples/scaa
 lda_docstring_embeddings*
 .idea
 SourceCodeTools.egg-info
