@@ -9,6 +9,16 @@ from SourceCodeTools.code.data.SQLiteStorage import SQLiteStorage
 from SourceCodeTools.code.data.file_utils import unpersist
 
 
+class NodeTypes:
+    def __init__(self, node2typeid, typeid2desc):
+        self.node2typeid = node2typeid
+        self.typeid2desc = typeid2desc
+
+    def __getitem__(self, node_id):
+        node_type_id = self.node2typeid[node_id]
+        return self.typeid2desc[node_type_id]
+
+
 class OnDiskGraphStorage:
     def __init__(self, path):
         self.path = path
@@ -180,7 +190,16 @@ class OnDiskGraphStorage:
         nodes
         LEFT JOIN node_types on nodes.type = node_types.type_id 
         """)
-        return dict(zip(table["id"], table["type"]))
+        nodeid2typeid = self.database.query("SELECT id, type_id from nodes")
+        if not hasattr(self, "typeid2desc"):
+            self.typeid2desc = self.database.query("SELECT type_id, type_desc from node_types")
+
+        node_types = NodeTypes(
+            dict(zip(nodeid2typeid["id"], nodeid2typeid["type_id"])),
+            dict(zip(self.typeid2desc["type_id"], self.typeid2desc["type_desc"]))
+        )
+
+        return node_types
 
     def iterate_nodes_with_chunks(self):
         return self.database.query("SELECT * FROM nodes", chunksize=10000)
