@@ -73,7 +73,7 @@ class Tracker:
         assert self.inv_index is not None, "Cannot export for tensorboard without metadata"
         np.savetxt(f"{save_name}_embeddings.tsv", self.embeddings, delimiter="\t")
         with open(f"{save_name}_meta.tsv", "w") as meta_sink:
-            for label in list(map(lambda x: self.inv_index[x], self.pred_labels)):
+            for label in list(map(lambda x: self.inv_index[x], self.true_labels)):
                 meta_sink.write(f"{label}\n")
 
     def save_umap(self, save_name):
@@ -95,10 +95,11 @@ class Tracker:
         reducer = UMAP(50)
         embedding = reducer.fit_transform(self.embeddings)
 
-        labels = list(map(lambda x: self.inv_index[x], self.pred_labels))
+        labels = list(map(lambda x: self.inv_index[x], self.true_labels))
         unique_labels = sorted(list(set(labels)))
 
         plt.figure(figsize=(4,4))
+        legend = []
         for label in unique_labels:
             if label not in type_freq:
                 continue
@@ -109,8 +110,9 @@ class Tracker:
                     xs.append(x)
                     ys.append(y)
             plt.scatter(xs, ys, 1.)
+            legend.append(label)
         plt.axis('off')
-        plt.legend(unique_labels)
+        plt.legend(legend)
         plt.savefig(f"{save_name}_umap.pdf")
         plt.close()
         # plt.show()
@@ -338,7 +340,7 @@ if __name__ == "__main__":
     parser.add_argument("--type_link", default=None, help="")
     parser.add_argument("--type_link_train", default=None, help="")
     parser.add_argument("--type_link_test", default=None, help="")
-    parser.add_argument("--epochs", default=5, type=int, help="")
+    parser.add_argument("--epochs", default=1, type=int, help="")
     parser.add_argument("--name_emb_dim", default=100, type=int, help="")
     parser.add_argument("--element_predictor_h_size", default=50, type=int, help="")
     parser.add_argument("--link_predictor_h_size", default="[20]", type=str, help="")
