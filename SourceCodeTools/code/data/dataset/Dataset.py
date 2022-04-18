@@ -1,4 +1,4 @@
-from collections import Counter
+from collections import Counter, namedtuple
 from functools import partial
 from typing import List, Optional
 
@@ -15,11 +15,11 @@ from SourceCodeTools.code.data.SQLiteStorage import SQLiteStorage
 from SourceCodeTools.code.data.dataset.SubwordMasker import SubwordMasker, NodeNameMasker, NodeClfMasker
 from SourceCodeTools.code.data.dataset.reader import load_data
 from SourceCodeTools.code.data.file_utils import *
-from SourceCodeTools.code.ast.python_ast import PythonSharedNodes
+# from SourceCodeTools.code.ast.python_ast import PythonSharedNodes
 from SourceCodeTools.nlp import token_hasher
 from SourceCodeTools.nlp.embed.bpe import make_tokenizer, load_bpe_model
 from SourceCodeTools.tabular.common import compact_property
-from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types
+# from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_extract_node_names import extract_node_names
 import dgl, torch
 
@@ -29,6 +29,29 @@ def filter_dst_by_freq(elements, freq=1):
     allowed = {item for item, count in counter.items() if count >= freq}
     target = elements.query("dst in @allowed", local_dict={"allowed": allowed})
     return target
+
+
+class NodeStringPool:
+    def __init__(self, nodeid2stringid, stringid2string):
+        self.nodeid2stringid = nodeid2stringid
+        self.stringid2string = stringid2string
+
+    def __getitem__(self, nodeid):
+        return self.stringid2string[self.nodeid2stringid[nodeid]]
+
+    def items(self):
+        for nodeid, nameid in self.nodeid2stringid.items():
+            yield nodeid, self.stringid2string[nameid]
+
+
+class NodeNamePool(NodeStringPool):
+    def __init__(self, nodeid2nameid, nameid2name):
+        super(NodeNamePool, self).__init__(nodeid2nameid, nameid2name)
+
+
+class NodeTypePool(NodeStringPool):
+    def __init__(self, nodeid2typeid, typeid2type):
+        super(NodeTypePool, self).__init__(nodeid2typeid, typeid2type)
 
 
 class SourceGraphDataset:
@@ -168,20 +191,20 @@ class SourceGraphDataset:
         logging.info(f"Filtering edge types: {types_to_filter}")
         self.edge_types_to_remove.update(types_to_filter)
 
-    def _get_all_embeddable_names(self):
-        id2embeddable_name = dict()
-        name_pool = dict()
-        name_pool_rev = dict()
-        for nodes in self.dataset_db.iterate_nodes_with_chunks():
-            for node_id, embeddable_name in zip(
-                    nodes["id"],
-                    nodes["name"].apply(self.get_embeddable_name)
-            ):
-                if embeddable_name not in name_pool:
-                    name_pool[embeddable_name] = len(name_pool)
-                    name_pool_rev[name_pool[embeddable_name]] = embeddable_name
-                id2embeddable_name[node_id] = name_pool[embeddable_name]
-        return id2embeddable_name, name_pool_rev
+    # def _get_all_embeddable_names(self):
+    #     id2embeddable_name = dict()
+    #     name_pool = dict()
+    #     name_pool_rev = dict()
+    #     for nodes in self.dataset_db.iterate_nodes_with_chunks():
+    #         for node_id, embeddable_name in zip(
+    #                 nodes["id"],
+    #                 nodes["name"].apply(self.get_embeddable_name)
+    #         ):
+    #             if embeddable_name not in name_pool:
+    #                 name_pool[embeddable_name] = len(name_pool)
+    #                 name_pool_rev[name_pool[embeddable_name]] = embeddable_name
+    #             id2embeddable_name[node_id] = name_pool[embeddable_name]
+    #     return id2embeddable_name, name_pool_rev
 
     def _get_embeddable_names(self, nodes):
         id2embeddable_name = dict()
@@ -195,25 +218,25 @@ class SourceGraphDataset:
                 name_pool[embeddable_name] = len(name_pool)
                 name_pool_rev[name_pool[embeddable_name]] = embeddable_name
             id2embeddable_name[node_id] = name_pool[embeddable_name]
-        return id2embeddable_name, name_pool_rev
+        return NodeNamePool(id2embeddable_name, name_pool_rev)
 
-    def _add_embeddable_flag(self):
-        embeddable_types = PythonSharedNodes.shared_node_types | set(list(node_types.values()))
-
-        if len(self.nodes.query("type_backup == 'subword'")) > 0:
-            # some of the types should not be embedded if subwords were generated
-            embeddable_types = embeddable_types - PythonSharedNodes.tokenizable_types
-
-        embeddable_types |= {"node_type"}
-
-        # self.nodes['embeddable'] = False
-        self.nodes.eval(
-            "embeddable = type_backup in @embeddable_types",
-            local_dict={"embeddable_types": embeddable_types},
-            inplace=True
-        )
-
-        self.nodes["embeddable_name"] = self.nodes["name"].apply(self.get_embeddable_name)
+    # def _add_embeddable_flag(self):
+    #     embeddable_types = PythonSharedNodes.shared_node_types | set(list(node_types.values()))
+    #
+    #     if len(self.nodes.query("type_backup == 'subword'")) > 0:
+    #         # some of the types should not be embedded if subwords were generated
+    #         embeddable_types = embeddable_types - PythonSharedNodes.tokenizable_types
+    #
+    #     embeddable_types |= {"node_type"}
+    #
+    #     # self.nodes['embeddable'] = False
+    #     self.nodes.eval(
+    #         "embeddable = type_backup in @embeddable_types",
+    #         local_dict={"embeddable_types": embeddable_types},
+    #         inplace=True
+    #     )
+    #
+    #     self.nodes["embeddable_name"] = self.nodes["name"].apply(self.get_embeddable_name)
 
     def _op_tokens(self):
         if self.tokenizer_path is None:
@@ -240,59 +263,59 @@ class SourceGraphDataset:
         # self.nodes.eval("name_alter_tokens = name.map(@op_tokenize)",
         #                 local_dict={"op_tokenize": op_tokenize}, inplace=True)
 
-    def _add_splits(self, train_frac, package_names=None, restricted_id_pool=None):
-        """
-        Generates train, validation, and test masks
-        Store the masks is pandas table for nodes
-        :param train_frac:
-        :return:
-        """
+    # def _add_splits(self, train_frac, package_names=None, restricted_id_pool=None):
+    #     """
+    #     Generates train, validation, and test masks
+    #     Store the masks is pandas table for nodes
+    #     :param train_frac:
+    #     :return:
+    #     """
+    #
+    #     self.nodes.reset_index(drop=True, inplace=True)
+    #     assert len(self.nodes.index) == self.nodes.index.max() + 1
+    #     # generate splits for all nodes, additional filtering will be applied later
+    #     # by an objective
+    #
+    #     if package_names is None:
+    #         splits = self.get_train_val_test_indices(
+    #             self.nodes.index,
+    #             train_frac=train_frac, random_seed=self.random_seed
+    #         )
+    #     else:
+    #         splits = self.get_train_val_test_indices_on_packages(
+    #             self.nodes, package_names,
+    #             train_frac=train_frac, random_seed=self.random_seed
+    #         )
+    #
+    #     self.create_train_val_test_masks(self.nodes, *splits)
+    #
+    #     if restricted_id_pool is not None:
+    #         node_ids = set(pd.read_csv(restricted_id_pool)["node_id"].tolist()) | \
+    #                    set(self.nodes.query("type_backup == 'FunctionDef' or type_backup == 'mention'")["id"].tolist())
+    #         to_keep = self.nodes["id"].apply(lambda id_: id_ in node_ids)
+    #         self.nodes["train_mask"] = self.nodes["train_mask"] & to_keep
+    #         self.nodes["test_mask"] = self.nodes["test_mask"] & to_keep
+    #         self.nodes["val_mask"] = self.nodes["val_mask"] & to_keep
 
-        self.nodes.reset_index(drop=True, inplace=True)
-        assert len(self.nodes.index) == self.nodes.index.max() + 1
-        # generate splits for all nodes, additional filtering will be applied later
-        # by an objective
-
-        if package_names is None:
-            splits = self.get_train_val_test_indices(
-                self.nodes.index,
-                train_frac=train_frac, random_seed=self.random_seed
-            )
-        else:
-            splits = self.get_train_val_test_indices_on_packages(
-                self.nodes, package_names,
-                train_frac=train_frac, random_seed=self.random_seed
-            )
-
-        self.create_train_val_test_masks(self.nodes, *splits)
-
-        if restricted_id_pool is not None:
-            node_ids = set(pd.read_csv(restricted_id_pool)["node_id"].tolist()) | \
-                       set(self.nodes.query("type_backup == 'FunctionDef' or type_backup == 'mention'")["id"].tolist())
-            to_keep = self.nodes["id"].apply(lambda id_: id_ in node_ids)
-            self.nodes["train_mask"] = self.nodes["train_mask"] & to_keep
-            self.nodes["test_mask"] = self.nodes["test_mask"] & to_keep
-            self.nodes["val_mask"] = self.nodes["val_mask"] & to_keep
-
-    def _add_typed_ids(self):
-        nodes = self.nodes.copy()
-
-        typed_id_map = {}
-
-        # node_types = dict(zip(self.node_types['int_type'], self.node_types['str_type']))
-
-        for type_ in nodes['type'].unique():
-            type_mask = nodes['type'] == type_
-            id_map = compact_property(nodes.loc[type_mask, 'id'])
-            nodes.loc[type_mask, 'typed_id'] = nodes.loc[type_mask, 'id'].apply(lambda old_id: id_map[old_id])
-            typed_id_map[type_] = id_map
-
-        assert any(pandas.isna(nodes['typed_id'])) is False
-
-        nodes = nodes.astype({"typed_id": "int"})
-
-        self.nodes, self.typed_id_map = nodes, typed_id_map
-        # return nodes, typed_id_map
+    # def _add_typed_ids(self):
+    #     nodes = self.nodes.copy()
+    #
+    #     typed_id_map = {}
+    #
+    #     # node_types = dict(zip(self.node_types['int_type'], self.node_types['str_type']))
+    #
+    #     for type_ in nodes['type'].unique():
+    #         type_mask = nodes['type'] == type_
+    #         id_map = compact_property(nodes.loc[type_mask, 'id'])
+    #         nodes.loc[type_mask, 'typed_id'] = nodes.loc[type_mask, 'id'].apply(lambda old_id: id_map[old_id])
+    #         typed_id_map[type_] = id_map
+    #
+    #     assert any(pandas.isna(nodes['typed_id'])) is False
+    #
+    #     nodes = nodes.astype({"typed_id": "int"})
+    #
+    #     self.nodes, self.typed_id_map = nodes, typed_id_map
+    #     # return nodes, typed_id_map
 
     # def add_compact_labels(self):
     #     nodes = self.nodes.copy()
@@ -311,40 +334,40 @@ class SourceGraphDataset:
 
         return edges
 
-    @staticmethod
-    def _create_nodetype_edges(nodes, edges):
-        node_new_id = nodes["id"].max() + 1
-        edge_new_id = edges["id"].max() + 1
-
-        new_nodes = []
-        new_edges = []
-        added_type_nodes = {}
-
-        node_slice = nodes[["id", "type"]].values
-
-        for id, type in node_slice:
-            if type not in added_type_nodes:
-                added_type_nodes[type] = node_new_id
-                node_new_id += 1
-
-                new_nodes.append({
-                    "id": added_type_nodes[type],
-                    "name": f"##node_type_{type}",
-                    "type": "node_type",
-                    "mentioned_in": pd.NA
-                })
-
-            new_edges.append({
-                "id": edge_new_id,
-                "type": "node_type",
-                "src": added_type_nodes[type],
-                "dst": id,
-                "file_id": pd.NA,
-                "mentioned_in": pd.NA
-            })
-            edge_new_id += 1
-
-        return pd.DataFrame(new_nodes), pd.DataFrame(new_edges)
+    # @staticmethod
+    # def _create_nodetype_edges(nodes, edges):
+    #     node_new_id = nodes["id"].max() + 1
+    #     edge_new_id = edges["id"].max() + 1
+    #
+    #     new_nodes = []
+    #     new_edges = []
+    #     added_type_nodes = {}
+    #
+    #     node_slice = nodes[["id", "type"]].values
+    #
+    #     for id, type in node_slice:
+    #         if type not in added_type_nodes:
+    #             added_type_nodes[type] = node_new_id
+    #             node_new_id += 1
+    #
+    #             new_nodes.append({
+    #                 "id": added_type_nodes[type],
+    #                 "name": f"##node_type_{type}",
+    #                 "type": "node_type",
+    #                 "mentioned_in": pd.NA
+    #             })
+    #
+    #         new_edges.append({
+    #             "id": edge_new_id,
+    #             "type": "node_type",
+    #             "src": added_type_nodes[type],
+    #             "dst": id,
+    #             "file_id": pd.NA,
+    #             "mentioned_in": pd.NA
+    #         })
+    #         edge_new_id += 1
+    #
+    #     return pd.DataFrame(new_nodes), pd.DataFrame(new_edges)
 
     # def _remove_ast_edges(self):
     #     global_edges = self.get_global_edges()
@@ -387,45 +410,45 @@ class SourceGraphDataset:
 
         return edges.append(to_reverse[["src", "dst", "type"]])
 
-    def _update_global_id(self):
-        orig_id = []
-        graph_id = []
-        prev_offset = 0
+    # def _update_global_id(self):
+    #     orig_id = []
+    #     graph_id = []
+    #     prev_offset = 0
+    #
+    #     typed_node_id_maps = self.typed_id_map
+    #
+    #     for type in self.g.ntypes:
+    #         from_id, to_id = zip(*typed_node_id_maps[type].items())
+    #         orig_id.extend(from_id)
+    #         graph_id.extend([t + prev_offset for t in to_id])
+    #         prev_offset += self.g.number_of_nodes(type)
+    #
+    #     global_map = dict(zip(orig_id, graph_id))
+    #
+    #     self.nodes['global_graph_id'] = self.nodes['id'].apply(lambda old_id: global_map[old_id])
+    #     import torch
+    #     for ntype in self.g.ntypes:
+    #         self.g.nodes[ntype].data['global_graph_id'] = torch.LongTensor(
+    #             list(map(lambda x: global_map[x], self.g.nodes[ntype].data['original_id'].tolist()))
+    #         )
+    #
+    #     self.node_id_to_global_id = dict(zip(self.nodes["id"], self.nodes["global_graph_id"]))
 
-        typed_node_id_maps = self.typed_id_map
-
-        for type in self.g.ntypes:
-            from_id, to_id = zip(*typed_node_id_maps[type].items())
-            orig_id.extend(from_id)
-            graph_id.extend([t + prev_offset for t in to_id])
-            prev_offset += self.g.number_of_nodes(type)
-
-        global_map = dict(zip(orig_id, graph_id))
-
-        self.nodes['global_graph_id'] = self.nodes['id'].apply(lambda old_id: global_map[old_id])
-        import torch
-        for ntype in self.g.ntypes:
-            self.g.nodes[ntype].data['global_graph_id'] = torch.LongTensor(
-                list(map(lambda x: global_map[x], self.g.nodes[ntype].data['original_id'].tolist()))
-            )
-
-        self.node_id_to_global_id = dict(zip(self.nodes["id"], self.nodes["global_graph_id"]))
-
-    @property
-    def typed_node_counts(self):
-
-        typed_node_counts = dict()
-
-        unique_types = self.nodes['type'].unique()
-
-        # node_types = dict(zip(self.node_types['int_type'], self.node_types['str_type']))
-
-        for type_id, type in enumerate(unique_types):
-            nodes_of_type = len(self.nodes.query(f"type == '{type}'"))
-            # typed_node_counts[node_types[type]] = nodes_of_type
-            typed_node_counts[type] = nodes_of_type
-
-        return typed_node_counts
+    # @property
+    # def typed_node_counts(self):
+    #
+    #     typed_node_counts = dict()
+    #
+    #     unique_types = self.nodes['type'].unique()
+    #
+    #     # node_types = dict(zip(self.node_types['int_type'], self.node_types['str_type']))
+    #
+    #     for type_id, type in enumerate(unique_types):
+    #         nodes_of_type = len(self.nodes.query(f"type == '{type}'"))
+    #         # typed_node_counts[node_types[type]] = nodes_of_type
+    #         typed_node_counts[type] = nodes_of_type
+    #
+    #     return typed_node_counts
 
     def _create_hetero_graph(self, nodes, edges):
 
@@ -471,7 +494,6 @@ class SourceGraphDataset:
                     dtype=get_torch_dtype(get_canonical_type(dtype))
                 )
             return node_data
-
 
         edges = self._add_node_types_to_edges(nodes, edges)
 
@@ -551,19 +573,19 @@ class SourceGraphDataset:
         #     self.g.nodes[ntype].data['typed_id'] = torch.tensor(node_data['typed_id'].values, dtype=torch.int64)
         #     self.g.nodes[ntype].data['original_id'] = torch.tensor(node_data['id'].values, dtype=torch.int64)
 
-    @staticmethod
-    def _assess_need_for_self_loops(nodes, edges):
-        # this is a hack when where are only outgoing connections from this node type
-        need_self_loop = set(edges['src'].values.tolist()) - set(edges['dst'].values.tolist())
-        for nid in need_self_loop:
-            edges = edges.append({
-                "id": -1,
-                "type": 99,
-                "src": nid,
-                "dst": nid
-            }, ignore_index=True)
-
-        return nodes, edges
+    # @staticmethod
+    # def _assess_need_for_self_loops(nodes, edges):
+    #     # this is a hack when where are only outgoing connections from this node type
+    #     need_self_loop = set(edges['src'].values.tolist()) - set(edges['dst'].values.tolist())
+    #     for nid in need_self_loop:
+    #         edges = edges.append({
+    #             "id": -1,
+    #             "type": 99,
+    #             "src": nid,
+    #             "dst": nid
+    #         }, ignore_index=True)
+    #
+    #     return nodes, edges
 
     @staticmethod
     def holdout(nodes: pd.DataFrame, edges: pd.DataFrame, holdout_size=10000, random_seed=42):
@@ -622,98 +644,98 @@ class SourceGraphDataset:
             return group
         return pd.NA
 
-    @staticmethod
-    def create_train_val_test_masks(nodes, train_idx, val_idx, test_idx):
-        nodes['train_mask'] = True
-        # nodes.loc[train_idx, 'train_mask'] = True
-        nodes['val_mask'] = False
-        nodes.loc[val_idx, 'val_mask'] = True
-        nodes['test_mask'] = False
-        nodes.loc[test_idx, 'test_mask'] = True
-        nodes['train_mask'] = nodes['train_mask'] ^ (nodes['val_mask'] | nodes['test_mask'])
-        starts_with = lambda x: x.startswith("##node_type")
-        nodes.loc[
-            nodes.eval("name.map(@starts_with)", local_dict={"starts_with": starts_with}), ['train_mask', 'val_mask',
-                                                                                            'test_mask']] = False
-    @staticmethod
-    def get_train_val_test_indices(indices, train_frac=0.6, random_seed=None):
-        if random_seed is not None:
-            numpy.random.seed(random_seed)
-            logging.warning("Random state for splitting dataset is fixed")
-        else:
-            logging.info("Random state is not set")
+    # @staticmethod
+    # def create_train_val_test_masks(nodes, train_idx, val_idx, test_idx):
+    #     nodes['train_mask'] = True
+    #     # nodes.loc[train_idx, 'train_mask'] = True
+    #     nodes['val_mask'] = False
+    #     nodes.loc[val_idx, 'val_mask'] = True
+    #     nodes['test_mask'] = False
+    #     nodes.loc[test_idx, 'test_mask'] = True
+    #     nodes['train_mask'] = nodes['train_mask'] ^ (nodes['val_mask'] | nodes['test_mask'])
+    #     starts_with = lambda x: x.startswith("##node_type")
+    #     nodes.loc[
+    #         nodes.eval("name.map(@starts_with)", local_dict={"starts_with": starts_with}), ['train_mask', 'val_mask',
+    #                                                                                         'test_mask']] = False
+    # @staticmethod
+    # def get_train_val_test_indices(indices, train_frac=0.6, random_seed=None):
+    #     if random_seed is not None:
+    #         numpy.random.seed(random_seed)
+    #         logging.warning("Random state for splitting dataset is fixed")
+    #     else:
+    #         logging.info("Random state is not set")
+    #
+    #     indices = indices.to_numpy()
+    #
+    #     numpy.random.shuffle(indices)
+    #
+    #     train = int(indices.size * train_frac)
+    #     test = int(indices.size * (train_frac + (1 - train_frac) / 2))
+    #
+    #     logging.info(
+    #         f"Splitting into train {train}, validation {test - train}, and test {indices.size - test} sets"
+    #     )
+    #
+    #     return indices[:train], indices[train: test], indices[test:]
 
-        indices = indices.to_numpy()
-
-        numpy.random.shuffle(indices)
-
-        train = int(indices.size * train_frac)
-        test = int(indices.size * (train_frac + (1 - train_frac) / 2))
-
-        logging.info(
-            f"Splitting into train {train}, validation {test - train}, and test {indices.size - test} sets"
-        )
-
-        return indices[:train], indices[train: test], indices[test:]
-
-    @staticmethod
-    def get_train_val_test_indices_on_packages(nodes, package_names, train_frac=0.6, random_seed=None):
-        if random_seed is not None:
-            numpy.random.seed(random_seed)
-            logging.warning("Random state for splitting dataset is fixed")
-        else:
-            logging.info("Random state is not set")
-
-        nodes = nodes.copy()
-
-        package_names = [name.replace("\n", "").replace("-", "_").replace(".", "_") for name in package_names]
-
-        package_names = numpy.array(package_names)
-        numpy.random.shuffle(package_names)
-
-        train = int(package_names.size * train_frac)
-        test = int(package_names.size * (train_frac + (1 - train_frac) / 2))
-
-        logging.info(
-            f"Splitting into train {train}, validation {test - train}, and test {package_names.size - test} packages"
-        )
-
-        train, valid, test = package_names[:train], package_names[train: test], package_names[test:]
-
-        train = set(train.tolist())
-        valid = set(valid.tolist())
-        test = set(test.tolist())
-
-        nodes["node_package_names"] = nodes["name"].map(lambda name: name.split(".")[0])
-
-        def get_split_indices(split):
-            global_types = {val for _, val in node_types.items()}
-
-            def is_global_type(type):
-                return type in global_types
-
-            def in_split(name):
-                return name in split
-
-            global_nodes = nodes.query(
-                "node_package_names.map(@in_split) and type_backup.map(@is_global_type)",
-                local_dict={"in_split": in_split, "is_global_type": is_global_type}
-            )["id"]
-            global_nodes = set(global_nodes.tolist())
-
-            def in_global(node_id):
-                return node_id in global_nodes
-
-            ast_nodes = nodes.query("mentioned_in.map(@in_global)", local_dict={"in_global": in_global})["id"]
-
-            split_nodes = global_nodes | set(ast_nodes.tolist())
-
-            def nodes_in_split(node_id):
-                return node_id in split_nodes
-
-            return nodes.query("id.map(@nodes_in_split)", local_dict={"nodes_in_split": nodes_in_split}).index
-
-        return get_split_indices(train), get_split_indices(valid), get_split_indices(test)
+    # @staticmethod
+    # def get_train_val_test_indices_on_packages(nodes, package_names, train_frac=0.6, random_seed=None):
+    #     if random_seed is not None:
+    #         numpy.random.seed(random_seed)
+    #         logging.warning("Random state for splitting dataset is fixed")
+    #     else:
+    #         logging.info("Random state is not set")
+    #
+    #     nodes = nodes.copy()
+    #
+    #     package_names = [name.replace("\n", "").replace("-", "_").replace(".", "_") for name in package_names]
+    #
+    #     package_names = numpy.array(package_names)
+    #     numpy.random.shuffle(package_names)
+    #
+    #     train = int(package_names.size * train_frac)
+    #     test = int(package_names.size * (train_frac + (1 - train_frac) / 2))
+    #
+    #     logging.info(
+    #         f"Splitting into train {train}, validation {test - train}, and test {package_names.size - test} packages"
+    #     )
+    #
+    #     train, valid, test = package_names[:train], package_names[train: test], package_names[test:]
+    #
+    #     train = set(train.tolist())
+    #     valid = set(valid.tolist())
+    #     test = set(test.tolist())
+    #
+    #     nodes["node_package_names"] = nodes["name"].map(lambda name: name.split(".")[0])
+    #
+    #     def get_split_indices(split):
+    #         global_types = {val for _, val in node_types.items()}
+    #
+    #         def is_global_type(type):
+    #             return type in global_types
+    #
+    #         def in_split(name):
+    #             return name in split
+    #
+    #         global_nodes = nodes.query(
+    #             "node_package_names.map(@in_split) and type_backup.map(@is_global_type)",
+    #             local_dict={"in_split": in_split, "is_global_type": is_global_type}
+    #         )["id"]
+    #         global_nodes = set(global_nodes.tolist())
+    #
+    #         def in_global(node_id):
+    #             return node_id in global_nodes
+    #
+    #         ast_nodes = nodes.query("mentioned_in.map(@in_global)", local_dict={"in_global": in_global})["id"]
+    #
+    #         split_nodes = global_nodes | set(ast_nodes.tolist())
+    #
+    #         def nodes_in_split(node_id):
+    #             return node_id in split_nodes
+    #
+    #         return nodes.query("id.map(@nodes_in_split)", local_dict={"nodes_in_split": nodes_in_split}).index
+    #
+    #     return get_split_indices(train), get_split_indices(valid), get_split_indices(test)
 
     @staticmethod
     def get_global_edges():
@@ -1131,26 +1153,26 @@ class SourceGraphDataset:
     #         dataset.tokenizer_path = args["tokenizer"]
     #     return dataset
 
-    def _get_node_name2bucket_mapping(self, node_id2name, name_pool):
-        return {key: token_hasher(name_pool[val], self.n_buckets) for key, val in node_id2name.items()}
+    def _get_node_name2bucket_mapping(self, node_id2name):
+        return {key: token_hasher(val, self.n_buckets) for key, val in node_id2name.items()}
 
-    def _prepare_subgraph(self, seed_nodes, number_of_hops):
-        seen_nodes = set(seed_nodes)
-        nodes_for_query = seed_nodes
-
-        for _ in range(number_of_hops):
-            inbound_neighbors = set(self.dataset_db.get_inbound_neighbors(nodes_for_query))
-            nodes_for_query = inbound_neighbors - seen_nodes
-            seen_nodes.update(inbound_neighbors)
-
-        nodes, edges = self.dataset_db.get_subgraph_from_node_ids(seen_nodes)
-
-        edges.query("type not in @restricted_types", local_dict={"restricted_types": self.edge_types_to_remove}, inplace=True)
-
-        if len(edges) == 0:
-            return None
-
-        return self._create_hetero_graph(nodes, edges)
+    # def _prepare_subgraph(self, seed_nodes, number_of_hops):
+    #     seen_nodes = set(seed_nodes)
+    #     nodes_for_query = seed_nodes
+    #
+    #     for _ in range(number_of_hops):
+    #         inbound_neighbors = set(self.dataset_db.get_inbound_neighbors(nodes_for_query))
+    #         nodes_for_query = inbound_neighbors - seen_nodes
+    #         seen_nodes.update(inbound_neighbors)
+    #
+    #     nodes, edges = self.dataset_db.get_subgraph_from_node_ids(seen_nodes)
+    #
+    #     edges.query("type not in @restricted_types", local_dict={"restricted_types": self.edge_types_to_remove}, inplace=True)
+    #
+    #     if len(edges) == 0:
+    #         return None
+    #
+    #     return self._create_hetero_graph(nodes, edges)
 
     def _adjust_types(self, nodes, edges):
         def _strip_types_if_needed(value, stripping_flag, stripped_type):
@@ -1173,16 +1195,34 @@ class SourceGraphDataset:
             inplace=True
         )
 
+    def prepare_node_type_pool(self, nodes):
+        # could be updated gradually to prevent from repeating this every epoch
+        mapping, inv_index = compact_property(nodes["type"], return_order=True)
+        nodeid2typeid = dict(zip(nodes["id"], nodes["type"].map(mapping.get)))
+        return NodeTypePool(nodeid2typeid, inv_index)
+
     def subgraph_iterator(self):
         return self.dataset_db.iterate_packages()
 
-    def _iterate_subgraphs(self, node_data, edge_data, masker_fn=None):
+    def _iterate_subgraphs(self, node_data, edge_data, masker_fn=None, node_labels=None, edge_labels=None):
 
         def add_data(table, data_dict):
             for key in data_dict:
                 table.eval(f"{key} = id.map(@mapper)", local_dict={"mapper": lambda x: data_dict[key].get(x, pd.NA)}, inplace=True)
             if "label" in data_dict:
                 table["label"] = table["label"].astype("Int64")
+
+        def prepare_labels(label_pack):
+            return label_pack.label_loader(label_pack.labels, **label_pack.label_loader_params)
+
+        node_labels_loader = None
+        edge_labels_loader = None
+
+        if node_labels is not None:
+            node_labels_loader = prepare_labels(node_labels)
+
+        if edge_labels is not None:
+            edge_labels_loader = prepare_labels(edge_labels)
 
         for nodes, edges in self.subgraph_iterator():
             self._remove_edges_with_restricted_types(edges)
@@ -1191,8 +1231,9 @@ class SourceGraphDataset:
                 edges = self._add_custom_reverse(edges)
             self.ensure_connectedness(nodes, edges)
 
-            node_name_mapping, node_name_pool = self._get_embeddable_names(nodes)
-            node_data["embedding_id"] = self._get_node_name2bucket_mapping(node_name_mapping, node_name_pool)
+            node_name_mapping = self._get_embeddable_names(nodes)
+            node_data["embedding_id"] = self._get_node_name2bucket_mapping(node_name_mapping)
+            # node_type_pool = self.prepare_node_type_pool(nodes)
 
             self._adjust_types(nodes, edges)
 
@@ -1207,9 +1248,11 @@ class SourceGraphDataset:
                 else:
                     masker = None
 
-                yield subgraph, masker
+                yield subgraph, masker, node_labels_loader, edge_labels_loader
 
-    def node_level_batch_generator(self, graph, masker, number_of_hops, batch_size, partition):
+    def node_level_batch_generator(
+            self, graph, masker, number_of_hops, batch_size, partition
+    ):
         from dgl.dataloading import MultiLayerFullNeighborSampler
         from dgl.dataloading import NodeDataLoader
 
@@ -1231,30 +1274,36 @@ class SourceGraphDataset:
         sampler = MultiLayerFullNeighborSampler(number_of_hops)
         nodes_for_batching = get_nodes_from_partition(graph, partition)
         loader = NodeDataLoader(graph, nodes_for_batching, sampler, batch_size=batch_size, shuffle=False, num_workers=0)
+        # node_types = self.dataset_db.get_node_types()
 
         for ind, (input_nodes, seeds, blocks) in enumerate(loader):
             last_block = blocks[-1]
-            if "label" in last_block.ndata:
-                labels = {ntype: last_block.dstnodes[ntype].data["label"] for ntype in set(last_block.ntypes)}
-            else:
-                labels = None
+            # if "label" in last_block.ndata:
+            #     labels = {ntype: last_block.dstnodes[ntype].data["label"] for ntype in set(last_block.ntypes)}
+            # else:
+            #     labels = None
 
             if masker is not None:
                 input_mask = masker.get_mask(mask_for=seeds, input_nodes=input_nodes)
             else:
                 input_mask = None
 
-            yield input_nodes, seeds, blocks, labels, input_mask
+            yield input_nodes, seeds, blocks, input_mask
 
     def create_batches(self, subgraph_generator, number_of_hops, batch_size, partition):
-        for subgraph, masker in tqdm(subgraph_generator):
-            for input_nodes, seeds, blocks, labels, input_mask in self.node_level_batch_generator(subgraph, masker, number_of_hops, batch_size, partition):
+        for subgraph, masker, node_labels_loader, edge_labels_loader  in tqdm(subgraph_generator):
+            for input_nodes, seeds, blocks, input_mask in self.node_level_batch_generator(
+                    subgraph, masker, number_of_hops, batch_size, partition
+            ):
                 print()
-                # yield input_nodes, seeds, blocks, labels
+                # yield input_nodes, seeds, blocks, input_mask, node_labels_loader, edge_labels_loader
 
             print()
 
-    def nodes_dataloader(self, partition, number_of_hops, batch_size, labels=None, masker_fn=None):
+    def nodes_dataloader(
+            self, partition, number_of_hops, batch_size, labels=None, masker_fn=None, label_loader=None,
+            label_loader_params=None
+    ):
         partition = self.partition_columns[partition]
         # current_partition_nodes = set(self.partition.query(f"{partition} == True").sample(frac=1.)["id"])
         # partition_nodes = partition_nodes.query("id in @node_pool", local_dict={"node_pool": set(labels.keys())})["id"]
@@ -1263,13 +1312,15 @@ class SourceGraphDataset:
         for partition_key in ["train_mask", "test_mask", "val_mask"]:
             node_data[partition_key] = dict(zip(self.partition["id"], self.partition[partition_key]))
 
+        node_labels_pack = None
         if labels is not None:
-            node_data["label"] = dict(zip(labels["src"], labels["dst"]))
+            labels_pack = namedtuple("LabelPack", ["label_loader", "labels", "label_loader_params"])
+            node_labels_pack = labels_pack(label_loader, labels, label_loader_params)  # dict(zip(labels["src"], labels["dst"]))
 
         edge_data = {}
 
         self.create_batches(
-            self._iterate_subgraphs(node_data, edge_data, masker_fn),
+            self._iterate_subgraphs(node_data, edge_data, masker_fn, node_labels=node_labels_pack),
             number_of_hops, batch_size, partition
         )
 
@@ -1314,12 +1365,17 @@ def test_dataset():
         tokenizer_path="/Users/LTV/Dropbox (Personal)/sentencepiece_bpe.model"
     )
     node_names = unpersist("/Users/LTV/Downloads/NitroShare/v2_subsample_v4_new_ast2_fixed_distinct_types/with_ast/node_names.json.bz2")
-    mapping = compact_property(node_names['dst'])
-    node_names['dst'] = node_names['dst'].apply(mapping.get)
+    # mapping = compact_property(node_names['dst'])
+    # node_names['dst'] = node_names['dst'].apply(mapping.get)
+    from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
+    from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedder
+    from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedderWithBpeSubwords
     dataset.nodes_dataloader(
         "train", 3, 512,
         node_names,
-        masker_fn=dataset.create_node_name_masker
+        masker_fn=dataset.create_node_name_masker,
+        label_loader=ElementEmbedderWithBpeSubwords,
+        label_loader_params={"emb_size": 100, "tokenizer_path": "/Users/LTV/Dropbox (Personal)/sentencepiece_bpe.model"}
     )
 
     # sm = dataset.create_subword_masker()
