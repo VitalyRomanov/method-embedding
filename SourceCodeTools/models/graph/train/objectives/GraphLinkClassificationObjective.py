@@ -1,3 +1,7 @@
+import logging
+import sys
+from collections import defaultdict
+
 import numpy as np
 import random as rnd
 import torch
@@ -93,34 +97,32 @@ class TransRObjective(GraphLinkClassificationObjective):
 
         return acc, loss
 
+
 class TargetLinkMapper(GraphLinkSampler):
-    def __init__(self, elements, nodes, emb_size=1, ns_groups=None):
+    def __init__(self, elements, emb_size=1, ns_groups=None):
         super(TargetLinkMapper, self).__init__(
-            elements, nodes, compact_dst=False, dst_to_global=True, emb_size=emb_size, ns_groups=ns_groups
+            elements, compact_dst=False, emb_size=emb_size, ns_groups=ns_groups
         )
 
-    def init(self, compact_dst):
-        if compact_dst:
-            elem2id, self.inverse_dst_map = compact_property(self.elements['dst'], return_order=True)
-            self.elements['emb_id'] = self.elements['dst'].apply(lambda x: elem2id[x])
-        else:
-            self.elements['emb_id'] = self.elements['dst']
+    def init(self, elements, compact_dst):
+        if len(elements) == 0:
+            logging.error(f"Not enough data for the embedder: {len(elements)}. Exiting...")
+            sys.exit()
 
-        self.link_type2id, self.inverse_link_type_map = compact_property(self.elements['type'], return_order=True, index_from_one=True)
-        self.elements["link_type"] = list(map(lambda x: self.link_type2id[x], self.elements["type"].tolist()))
+        compacted = self.compact_dst(elements, compact_dst)
 
-        self.element_lookup = {}
-        for id_, emb_id, link_type in self.elements[["id", "emb_id", "link_type"]].values:
-            if id_ in self.element_lookup:
-                self.element_lookup[id_].append((emb_id, link_type))
-            else:
-                self.element_lookup[id_] = [(emb_id, link_type)]
+        self.link_type2id, self.inverse_link_type_map = compact_property(elements['type'], return_order=True, index_from_one=True)
+        links_type = list(map(lambda x: self.link_type2id[x], elements["type"].tolist()))
 
-        self.init_neg_sample()
+        self.element_lookup = defaultdict(list)
+        for src, dst, link_type in zip(elements["id"], compacted, links_type):
+            self.element_lookup[src].append((dst, link_type))
+
+        self.init_neg_sample(elements)
         self.num_classes = len(self.inverse_link_type_map)
         self.null_class = 0
 
-    def __getitem__(self, ids):
+    def sample_positive(self, ids):
         self.cached_ids = ids
         node_ids, labels = zip(*(rnd.choice(self.element_lookup[id]) for id in ids))
         self.cached_labels = list(labels)

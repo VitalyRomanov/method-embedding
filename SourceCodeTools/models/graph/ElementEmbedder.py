@@ -1,6 +1,3 @@
-import random
-from collections import Iterable
-
 import torch
 import torch.nn as nn
 import numpy as np
@@ -8,20 +5,21 @@ import random as rnd
 
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
 from SourceCodeTools.models.graph.train.Scorer import Scorer
-from SourceCodeTools.models.nlp.TorchEncoder import LSTMEncoder, Encoder
+from SourceCodeTools.models.nlp.TorchEncoder import LSTMEncoder
 
 
 class GraphLinkSampler(ElementEmbedderBase, Scorer):
     def __init__(
-            self, elements, nodes, compact_dst=True, dst_to_global=True, emb_size=None, device="cpu",
+            self, elements, compact_dst=True, emb_size=None, device="cpu",
             method="inner_prod", nn_index="brute", ns_groups=None
     ):
         assert emb_size is not None
+        assert compact_dst is False
         ElementEmbedderBase.__init__(
-            self, elements=elements, nodes=nodes, compact_dst=compact_dst, dst_to_global=dst_to_global
+            self, elements=elements, compact_dst=compact_dst
         )
         Scorer.__init__(
-            self, num_embs=len(self.elements["dst"].unique()), emb_size=emb_size, src2dst=self.element_lookup,
+            self, num_embs=self.num_unique_targets, emb_size=emb_size, src2dst=self.element_lookup,
             device=device, method=method, index_backend=nn_index, ns_groups=ns_groups
         )
 
@@ -35,19 +33,20 @@ class GraphLinkSampler(ElementEmbedderBase, Scorer):
 
 
 class ElementEmbedder(ElementEmbedderBase, nn.Module, Scorer):
-    def __init__(self, elements, nodes, emb_size, compact_dst=True):
-        ElementEmbedderBase.__init__(self, elements=elements, nodes=nodes, compact_dst=compact_dst)
+    def __init__(self, elements, emb_size):
+        ElementEmbedderBase.__init__(self, elements=elements)
         nn.Module.__init__(self)
-        Scorer.__init__(self, num_embs=len(self.elements["dst"].unique()), emb_size=emb_size,
-                        src2dst=self.element_lookup)
+        Scorer.__init__(
+            self, num_embs=self.num_unique_targets, emb_size=emb_size, src2dst=self.element_lookup
+        )
 
         self.emb_size = emb_size
         n_elems = self.elements['emb_id'].unique().size
         self.embed = nn.Embedding(n_elems, emb_size)
         self.norm = nn.LayerNorm(emb_size)
 
-    def __getitem__(self, ids):
-        return torch.LongTensor(ElementEmbedderBase.__getitem__(self, ids=ids))
+    def sample_positive(self, ids):
+        return torch.LongTensor(ElementEmbedderBase.sample_positive(self, ids=ids))
 
     def sample_negative(self, size, ids=None, strategy="closest"):
         # TODO
@@ -64,13 +63,13 @@ class ElementEmbedder(ElementEmbedderBase, nn.Module, Scorer):
     def forward(self, input, **kwargs):
         return self.norm(self.embed(input))
 
-    def set_embed(self):
+    def set_embed(self, ids, embs):
         all_keys = self.get_keys_for_scoring()
         with torch.set_grad_enabled(False):
             self.scorer_all_emb = self(torch.LongTensor(all_keys).to(self.embed.weight.device)).detach().cpu().numpy()
 
-    def prepare_index(self):
-        self.set_embed()
+    def prepare_index(self, override_strategy=None):
+        self.set_embed(None, None)
         Scorer.prepare_index(self)
 
 
@@ -96,11 +95,12 @@ from SourceCodeTools.nlp.embed.fasttext import char_ngram_window
 
 
 class ElementEmbedderWithCharNGramSubwords(ElementEmbedderBase, nn.Module, Scorer):
-    def __init__(self, elements, nodes, emb_size, num_buckets=5000, max_len=100, gram_size=3):
-        ElementEmbedderBase.__init__(self, elements=elements, nodes=nodes, compact_dst=False)
+    def __init__(self, elements, emb_size, num_buckets=5000, max_len=100, gram_size=3):
+        ElementEmbedderBase.__init__(self, elements=elements, compact_dst=False)
         nn.Module.__init__(self)
-        Scorer.__init__(self, num_embs=len(self.elements["dst"].unique()), emb_size=emb_size,
-                        src2dst=self.element_lookup)
+        Scorer.__init__(
+            self, num_embs=self.num_unique_targets, emb_size=emb_size, src2dst=self.element_lookup
+        )
 
         self.gram_size = gram_size
         self.emb_size = emb_size
@@ -118,7 +118,7 @@ class ElementEmbedderWithCharNGramSubwords(ElementEmbedderBase, nn.Module, Score
         self.embed = nn.Embedding(num_buckets, self.emb_size, padding_idx=0)
         self.norm = nn.LayerNorm(self.emb_size)
 
-    def __getitem__(self, ids):
+    def sample_positive(self, ids):
         """
         Get possible targets
         :param ids: Takes a list of original ids
@@ -157,10 +157,10 @@ class ElementEmbedderWithCharNGramSubwords(ElementEmbedderBase, nn.Module, Score
 
 
 class ElementEmbedderWithBpeSubwords(ElementEmbedderWithCharNGramSubwords, nn.Module):
-    def __init__(self, elements, nodes, emb_size, tokenizer_path, num_buckets=100000, max_len=10):
+    def __init__(self, elements, emb_size, tokenizer_path, num_buckets=100000, max_len=10):
         self.tokenizer_path = tokenizer_path
         ElementEmbedderWithCharNGramSubwords.__init__(
-            self, elements=elements, nodes=nodes, emb_size=emb_size, num_buckets=num_buckets,
+            self, elements=elements, emb_size=emb_size, num_buckets=num_buckets,
             max_len=max_len
         )
 
@@ -181,9 +181,9 @@ class ElementEmbedderWithBpeSubwords(ElementEmbedderWithCharNGramSubwords, nn.Mo
 
 
 class DocstringEmbedder(ElementEmbedderWithBpeSubwords):
-    def __init__(self, elements, nodes, emb_size, tokenizer_path, num_buckets=100000, max_len=100):
+    def __init__(self, elements, emb_size, tokenizer_path, num_buckets=100000, max_len=100):
         super().__init__(
-            elements=elements, nodes=nodes, emb_size=emb_size, tokenizer_path=tokenizer_path,
+            elements=elements, emb_size=emb_size, tokenizer_path=tokenizer_path,
             num_buckets=num_buckets, max_len=max_len
         )
         self.encoder = LSTMEncoder(embed_dim=emb_size, num_layers=1, dropout_in=0.1, dropout_out=0.1)
@@ -197,8 +197,8 @@ class DocstringEmbedder(ElementEmbedderWithBpeSubwords):
 
 
 class NameEmbedderWithGroups(ElementEmbedderWithBpeSubwords):
-    def __init__(self, elements, nodes, emb_size, tokenizer_path, num_buckets=100000, max_len=10):
-        super(NameEmbedderWithGroups, self).__init__(elements, nodes, emb_size, tokenizer_path, num_buckets, max_len)
+    def __init__(self, elements, emb_size, tokenizer_path, num_buckets=100000, max_len=10):
+        super(NameEmbedderWithGroups, self).__init__(elements, emb_size, tokenizer_path, num_buckets, max_len)
 
         self.group_lookup = {}
         for dst, group_ in self.elements[["dst", "group"]].values:
