@@ -2,7 +2,7 @@ from distutils.core import setup
 
 requirements = [
       'nltk==3.6',
-      'tensorflow==2.6.0',
+      'tensorflow==2.6.2',
       'torch==1.9.0',
       'pandas==1.1.1',
       'scikit-learn==1.0',
@@ -48,7 +48,7 @@ setup(name='SourceCodeTools',
             'SourceCodeTools/code/data/sourcetrail/sourcetrail_node_local2global.py',
             'SourceCodeTools/code/data/sourcetrail/sourcetrail_connected_component.py',
             'SourceCodeTools/code/data/sourcetrail/pandas_format_converter.py',
-            'SourceCodeTools/code/data/sourcetrail/sourcetrail_create_type_annotation_dataset.py',
+#            'SourceCodeTools/code/data/sourcetrail/sourcetrail_create_type_annotation_dataset.py',
             'SourceCodeTools/nlp/embed/converters/convert_fasttext_format_bin_to_vec.py',
             'SourceCodeTools/models/graph/utils/prepare_dglke_format.py',
       ],
