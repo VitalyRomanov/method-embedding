@@ -1,0 +1,1 @@
+Test for creating small visualizations of graph building blocks

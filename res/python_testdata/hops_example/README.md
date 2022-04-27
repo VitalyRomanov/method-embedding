@@ -1,0 +1,1 @@
+Small example suitable for visualizing k-hop graph
