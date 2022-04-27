@@ -208,7 +208,7 @@ def write_processed_bodies(df, base_path):
     persist(df, bodies_path)
 
 
-def likely_format(path):
+def likely_format(path, kwargs):
     path = Path(path)
     name_parts = path.name.split(".")
     if len(name_parts) == 1:
@@ -216,8 +216,11 @@ def likely_format(path):
 
     extensions = "." + ".".join(name_parts[1:])
 
-    if ".csv" in extensions or ".tsv" in extensions:
+    if ".csv" in extensions:
         ext = "csv"
+    elif ".tsv" in extensions:
+        ext = "csv"
+        kwargs["sep"] = "\t"
     elif ".json" in extensions:
         ext = "json"
     elif ".pkl" in extensions or extensions.endswith(".bz2"):
@@ -227,14 +230,14 @@ def likely_format(path):
     else:
         raise NotImplementedError("supported extensions: csv, bz2, pkl, parquet, json", extensions)
 
-    return ext
+    return ext, kwargs
 
 
 def persist(df: pd.DataFrame, path: Union[str, Path, bytes], **kwargs):
     if isinstance(path, Path):
         path = str(path.absolute())
 
-    format = likely_format(path)
+    format, kwargs = likely_format(path, kwargs)
     if format == "csv":
         write_csv(df, path, **kwargs)
     elif format == "pkl":
@@ -249,7 +252,7 @@ def unpersist(path: Union[str, Path, bytes], **kwargs) -> pd.DataFrame:
     if isinstance(path, Path):
         path = str(path.absolute())
 
-    format = likely_format(path)
+    format, kwargs = likely_format(path, kwargs)
     if format == "csv":
         data = read_csv(path, **kwargs)
     elif format == "pkl":
