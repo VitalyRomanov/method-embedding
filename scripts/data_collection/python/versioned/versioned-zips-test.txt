@@ -1,0 +1,10 @@
+https://codeload.github.com/0101/pipetools/zip/42f71af0ecaeacee0f3d64c8706ddb1caacf8bc1
+https://codeload.github.com/02strich/django-auth-kerberos/zip/416c2e2fafe6f0dbddf79bef6f6dbb90b04ceedc
+https://codeload.github.com/05bit/peewee-async/zip/d15f4629da1d9975da4ec37306188e68d288c862
+https://codeload.github.com/0compute/xtraceback/zip/5f4ae11cf21e6eea830d79aed66d3cd91bd013cd
+https://codeload.github.com/0k/kids.cache/zip/668f3b966877c4a0855d60e05cc3706cf37e4570
+https://codeload.github.com/0k/kids.cmd/zip/bbe958556bc72e6579d4007a28064e2f62109bcf
+https://codeload.github.com/0k/shyaml/zip/8dcf9bb39f995564271600a4dae1fc114077c2e0
+https://codeload.github.com/101Loop/drf-addons/zip/62392c72e8bce237f4140a2b7171e89984cb15c5
+https://codeload.github.com/10gen/mongo-orchestration/zip/81fd2224205922ea2178b08190b53a33aec47261
+https://codeload.github.com/1and1/infrascope/zip/d7e291917e618a0a3cd6d5bfc20c6b5defd7550c
