@@ -107,7 +107,8 @@ class TypePredictor(Model):
         # initialize embeddings
         with tf.device('/CPU:0'):
             self.tok_emb = DefaultEmbedding(init_vectors=tok_embedder.e, trainable=train_embeddings)
-            self.graph_emb = DefaultEmbedding(init_vectors=graph_embedder.e, trainable=train_embeddings)
+            logging.warning("Not finetuning graph embeddings")
+            self.graph_emb = DefaultEmbedding(init_vectors=graph_embedder.e, trainable=False)  #    train_embeddings)
         self.prefix_emb = DefaultEmbedding(shape=(suffix_prefix_buckets, suffix_prefix_dims))
         self.suffix_emb = DefaultEmbedding(shape=(suffix_prefix_buckets, suffix_prefix_dims))
 
