@@ -36,7 +36,8 @@ class NodeClassifierObjective(AbstractObjective):
         )
 
     def create_link_predictor(self):
-        self.classifier = NodeClassifier(self.target_emb_size, self.target_embedder.num_classes).to(self.device)
+        self.classifier = NodeClassifier(
+            self.target_emb_size, self.target_embedder.num_classes).to(self.device)
 
     def compute_acc_loss(self, graph_emb, element_emb, labels, return_logits=False):
         logits = self.classifier(graph_emb)
@@ -56,7 +57,8 @@ class NodeClassifierObjective(AbstractObjective):
             neg_sampling_strategy=None, train_embeddings=True,
     ):
         indices = self.seeds_to_global(seeds).tolist()
-        labels = torch.LongTensor(self.target_embedder[indices]).to(self.device)
+        labels = torch.LongTensor(
+            self.target_embedder[indices]).to(self.device)
 
         return node_embeddings, None, labels
 
@@ -73,7 +75,8 @@ class NodeClassifierObjective(AbstractObjective):
             else:
                 masked = self.masker.get_mask(self.seeds_to_python(seeds))
 
-            src_embs = self._graph_embeddings(input_nodes, blocks, masked=masked)
+            src_embs = self._graph_embeddings(
+                input_nodes, blocks, masked=masked)
             node_embs_, element_embs_, labels = self.prepare_for_prediction(
                 src_embs, seeds, self.target_embedding_fn, negative_factor=negative_factor,
                 neg_sampling_strategy=neg_sampling_strategy,
@@ -82,15 +85,18 @@ class NodeClassifierObjective(AbstractObjective):
             # indices = self.seeds_to_global(seeds).tolist()
             # labels = self.target_embedder[indices]
             # labels = torch.LongTensor(labels).to(self.device)
-            acc, loss, logits = self.compute_acc_loss(node_embs_, element_embs_, labels, return_logits=True)
+            acc, loss, logits = self.compute_acc_loss(
+                node_embs_, element_embs_, labels, return_logits=True)
 
             y_pred = nn.functional.softmax(logits, dim=-1).to("cpu").numpy()
             y_true = np.zeros(y_pred.shape)
-            y_true[np.arange(0, y_true.shape[0]), labels.to("cpu").numpy()] = 1.
+            y_true[np.arange(0, y_true.shape[0]),
+                   labels.to("cpu").numpy()] = 1.
 
             if self.measure_scores:
                 if y_pred.shape[1] == 2:
-                    logging.warning("Scores are meaningless for binary classification. Disabling.")
+                    logging.warning(
+                        "Scores are meaningless for binary classification. Disabling.")
                     self.measure_scores = False
                 else:
                     if count % self.dilate_scores == 0:
@@ -98,14 +104,19 @@ class NodeClassifierObjective(AbstractObjective):
                         labels = list(range(y_true_onehot.shape[1]))
 
                         for k in at:
-                            if k >= y_pred.shape[1]:  # do not measure for binary classification
+                            # do not measure for binary classification
+                            if k >= y_pred.shape[1]:
                                 if not hasattr(self, f"meaning_scores_warning_{k}"):
-                                    logging.warning(f"Disabling @{k} scores for task with {y_pred.shape[1]} classes")
-                                    setattr(self, f"meaning_scores_warning_{k}", True)
+                                    logging.warning(
+                                        f"Disabling @{k} scores for task with {y_pred.shape[1]} classes")
+                                    setattr(
+                                        self, f"meaning_scores_warning_{k}", True)
                                 continue  # scores do not have much sense in this situation
-                            scores[f"ndcg@{k}"].append(ndcg_score(y_true, y_pred, k=k))
+                            scores[f"ndcg@{k}"].append(
+                                ndcg_score(y_true, y_pred, k=k))
                             scores[f"acc@{k}"].append(
-                                top_k_accuracy_score(y_true_onehot.argmax(-1), y_pred, k=k, labels=labels)
+                                top_k_accuracy_score(
+                                    y_true_onehot.argmax(-1), y_pred, k=k, labels=labels)
                             )
 
             scores["Loss"].append(loss.item())
@@ -156,9 +167,9 @@ class ClassifierTargetMapper(ElementEmbedderBase, Scorer):
 
 
 class NodeClassifier(nn.Module):
-    def __init__(self, input_dims, num_classes, hidden=100):
+    def __init__(self, input_dims, num_classes, hidden=50):
         super().__init__()
-
+        print('id', input_dims, 'nc', num_classes)
         self.l1 = nn.Linear(input_dims, hidden)
         self.l1_a = nn.LeakyReLU()
 
