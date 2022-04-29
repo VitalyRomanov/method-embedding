@@ -1,6 +1,6 @@
 DATASET:
   custom_reverse: null
-  data_path: scaa
+  data_path: examples/scaa
   filter_edges: null
   min_count_for_objectives: 5
   no_global_edges: false
@@ -9,7 +9,7 @@ DATASET:
   restricted_id_pool: null
   self_loops: false
   subgraph_id_column: file_id
-  subgraph_partition: scaa/subgraph_partition.json.bz2
+  subgraph_partition: examples/scaa/subgraph_partition.json.bz2
   train_frac: 0.9
   use_edge_types: false
   use_node_types: false
@@ -25,7 +25,7 @@ MODEL:
   use_gru_checkpoint: false
   use_self_loop: true
 TOKENIZER:
-  tokenizer_path: sentencepiece_bpe.model
+  tokenizer_path: examples/sentencepiece_bpe.model
 TRAINING:
   batch_size: 128
   dilate_scores: 200
@@ -40,7 +40,7 @@ TRAINING:
   learning_rate: 0.001
   measure_scores: false
   metric: inner_prod
-  model_output_dir: scaa
+  model_output_dir: examples/scaa
   neg_sampling_factor: 3
   nn_index: brute
   objectives: subgraph_clf
