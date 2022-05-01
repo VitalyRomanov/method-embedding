@@ -15,14 +15,12 @@ class PoolingLayer(torch.nn.Module):
         self.k = k
 
     def forward(self, x):
-        print('in', x.shape, end='\t')
         length = torch.norm(self.learnable_vector)
         y = torch.mm(x, self.learnable_vector)/length
-        idx = torch.topk(y, self.k)
-        y = torch.gather(y, -1, idx.indices)
+        idx = torch.topk(y, self.k, dim=0)
+        y = torch.gather(y, 0, idx.indices)
         y = torch.sigmoid(y)
-        x_part = torch.gather(x, -1, idx.indices)
-        print('out', torch.mul(x_part, y).shape)
+        x_part = torch.gather(x, 0, idx.indices)
         return torch.mul(x_part, y)
 
 
@@ -43,7 +41,7 @@ class SCAAClassifierObjective(SubgraphClassifierObjective):
                                              masker, measure_scores, dilate_scores, early_stopping, early_stopping_tolerance, nn_index,
                                              ns_groups, subgraph_mapping, subgraph_partition
                                              )
-        self.pooler = PoolingLayer(50, (100, 100))
+        self.pooler = PoolingLayer(6, (100, 1))
 
     def parameters(self, recurse: bool = True):
         return chain(self.classifier.parameters(), self.pooler.parameters())
