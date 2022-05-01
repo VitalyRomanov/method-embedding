@@ -167,7 +167,7 @@ class ClassifierTargetMapper(ElementEmbedderBase, Scorer):
 
 
 class NodeClassifier(nn.Module):
-    def __init__(self, input_dims, num_classes, hidden=50):
+    def __init__(self, input_dims, num_classes, hidden=100):
         super().__init__()
         print('id', input_dims, 'nc', num_classes)
         self.l1 = nn.Linear(input_dims, hidden)

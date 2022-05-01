@@ -31,7 +31,7 @@ TRAINING:
   dilate_scores: 200
   early_stopping: false
   early_stopping_tolerance: 20
-  elem_emb_size: 50
+  elem_emb_size: 6
   embedding_table_size: 200000
   epochs: 1000
   external_dataset: null
