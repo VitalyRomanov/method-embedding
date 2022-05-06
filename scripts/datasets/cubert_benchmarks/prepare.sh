@@ -3,7 +3,7 @@ BPE_TOKENIZER=$(realpath "$2")
 OUTPUT_PATH=$(realpath "$3")
 RUN_DIR=$(realpath "$(dirname "$0")")
 
-KEEP_FRAC=0.02
+KEEP_FRAC=0.10
 
 python "$RUN_DIR/../../../SourceCodeTools/code/data/cubert_python_benchmarks/prepare_for_ast_parser.py" $CUBERT_DATA_PATH
 python "$RUN_DIR/../../../SourceCodeTools/code/data/cubert_python_benchmarks/convert_for_ast_graph_builder.py" $CUBERT_DATA_PATH/variable_misuse.json $CUBERT_DATA_PATH/variable_misuse.csv
