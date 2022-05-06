@@ -5,6 +5,7 @@ import shutil
 import sys
 from os.path import join
 
+import numpy as np
 import pandas as pd
 
 from tqdm import tqdm
@@ -591,10 +592,11 @@ class AstDatasetCreator(AbstractDatasetCreator):
     def __init__(
             self, path, lang, bpe_tokenizer, create_subword_instances, connect_subwords, only_with_annotations,
             do_extraction=False, visualize=False, track_offsets=False, remove_type_annotations=False,
-            recompute_l2g=False, chunksize=10000, keep_frac=1.0
+            recompute_l2g=False, chunksize=10000, keep_frac=1.0, seed=None
     ):
         self.chunksize = chunksize
         self.keep_frac = keep_frac
+        self.seed = seed
         super().__init__(
             path, lang, bpe_tokenizer, create_subword_instances, connect_subwords, only_with_annotations,
             do_extraction, visualize, track_offsets, remove_type_annotations, recompute_l2g
@@ -614,8 +616,10 @@ class AstDatasetCreator(AbstractDatasetCreator):
             raise FileExistsError(f"Directory exists: {temp_path}")
         os.mkdir(temp_path)
 
+        rnd_state = np.random.RandomState(self.seed)
+
         for ind, chunk in enumerate(pd.read_csv(self.path, chunksize=self.chunksize)):
-            chunk = chunk.sample(frac=self.keep_frac)
+            chunk = chunk.sample(frac=self.keep_frac, random_state=rnd_state)
             chunk_path = os.path.join(temp_path, f"chunk_{ind}")
             os.mkdir(chunk_path)
             persist(chunk, os.path.join(chunk_path, "source_code.bz2"))
@@ -710,6 +714,6 @@ if __name__ == "__main__":
     dataset = AstDatasetCreator(
         args.source_code, args.language, args.bpe_tokenizer, args.create_subword_instances,
         args.connect_subwords, args.only_with_annotations, args.do_extraction, args.visualize, args.track_offsets,
-        args.remove_type_annotations, args.recompute_l2g, args.chunksize, args.keep_frac
+        args.remove_type_annotations, args.recompute_l2g, args.chunksize, args.keep_frac, args.seed
     )
     dataset.merge(args.output_directory)

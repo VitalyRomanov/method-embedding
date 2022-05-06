@@ -17,6 +17,7 @@ class AstDatasetCreatorArguments:
         parser.add_argument('--track_offsets', action='store_true', default=False, help="")
         parser.add_argument('--recompute_l2g', action='store_true', default=False, help="")
         parser.add_argument('--remove_type_annotations', action='store_true', default=False, help="")
+        parser.add_argument('--seed', type=int, default=None, help="")
 
         self.parser = parser
         self.add_positional_argument()
