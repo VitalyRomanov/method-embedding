@@ -23,8 +23,8 @@ def convert_bzip(dataset_path, output_path):
     convert(dataset, output_path)
 
 
-def convert_jsonl(dataset_path, output_path):
-    assert dataset_path.name.endswith("jsonl")
+def convert_json(dataset_path, output_path):
+    assert dataset_path.name.endswith("json")
 
     dataset = open(dataset_path, mode="r")
 
@@ -65,9 +65,9 @@ def convert(dataset, output_path):
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser("Convert CuBERT dataset file from jsonl format to pandas table comparible with AST graph builder")
+    parser = argparse.ArgumentParser("Convert CuBERT dataset file from json format to pandas table comparible with AST graph builder")
 
-    parser.add_argument("dataset_path", help="Path to jsonl file (compressed bz2)")
+    parser.add_argument("dataset_path", help="Path to json file (compressed bz2)")
     parser.add_argument("output_path")
 
     args = parser.parse_args()
@@ -78,4 +78,4 @@ if __name__ == "__main__":
     if dataset_path.name.endswith("bz2"):
         convert_bzip(dataset_path, output_path)
     else:
-        convert_jsonl(dataset_path, output_path)
+        convert_json(dataset_path, output_path)
