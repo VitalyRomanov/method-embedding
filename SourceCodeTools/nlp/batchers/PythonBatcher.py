@@ -234,6 +234,7 @@ class PythonBatcher:
         no_localization_mask = np.array([tag != self.tagpad for tag in t]).astype(np.bool)
 
         output = {
+            "toks": sent,
             "tok_ids": s,
             "replacements": repl,
             # "graph_ids": r,
@@ -269,8 +270,8 @@ class PythonBatcher:
         max_len = max(fbatch["lens"])
 
         return {
-            key: np.stack(val)[:,:max_len] if key != "lens" and key != "replacements"
-            else (np.array(val, dtype=np.int32) if key != "replacements" else np.array(val)) for key, val in fbatch.items()}
+            key: np.stack(val)[:,:max_len] if key != "lens" and key != "replacements" and key != "toks"
+            else (np.array(val, dtype=np.int32) if key == "lens" else np.array(val)) for key, val in fbatch.items()}
 
     def generate_batches(self):
         batch = []
