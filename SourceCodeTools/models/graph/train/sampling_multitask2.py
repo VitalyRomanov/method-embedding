@@ -21,8 +21,9 @@ from SourceCodeTools.models.graph.train.objectives import VariableNameUsePredict
     NodeNameClassifier, EdgePrediction, TypeAnnPrediction, EdgePrediction2, NodeClassifierObjective
 from SourceCodeTools.models.graph.NodeEmbedder import NodeEmbedder
 from SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObjective import TransRObjective
-from SourceCodeTools.models.graph.train.objectives.SubgraphClassifierObjective import SubgraphAbstractObjective, \
-    SubgraphClassifierObjective, SubgraphEmbeddingObjective
+from SourceCodeTools.models.graph.train.objectives.SubgraphClassifierObjective import SubgraphClassifierObjective
+from SourceCodeTools.models.graph.train.objectives.SubgraphEmbedderObjective import SubgraphEmbeddingObjective, \
+    SubgraphMatchingObjective
 
 
 class EarlyStopping(Exception):
@@ -105,6 +106,8 @@ class SamplingMultitaskTrainer:
             self.create_subgraph_name_objective(dataset, tokenizer_path)
         if "subgraph_clf" in objective_list:
             self.create_subgraph_classifier_objective(dataset, tokenizer_path)
+        if "subgraph_match" in objective_list:
+            self.create_subgraph_matching_objective(dataset, tokenizer_path)
 
     def create_token_pred_objective(self, dataset, tokenizer_path):
         self.objectives.append(
@@ -180,6 +183,17 @@ class SamplingMultitaskTrainer:
                 dataset=dataset,
                 tokenizer_path=tokenizer_path,
                 labels_fn=dataset.load_cubert_subgraph_labels,
+            )
+        )
+
+    def create_subgraph_matching_objective(self, dataset, tokenizer_path):
+        self.objectives.append(
+            self._create_subgraph_objective(
+                objective_name="SubgraphMatchingObjective",
+                objective_class=SubgraphMatchingObjective,
+                dataset=dataset,
+                tokenizer_path=tokenizer_path,
+                labels_fn=dataset.load_scaa_subgraph_labels,
             )
         )
 
