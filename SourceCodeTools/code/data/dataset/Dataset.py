@@ -16,6 +16,7 @@ from SourceCodeTools.code.data.dataset.SubwordMasker import SubwordMasker, NodeN
 from SourceCodeTools.code.data.dataset.reader import load_data
 from SourceCodeTools.code.data.file_utils import *
 # from SourceCodeTools.code.ast.python_ast import PythonSharedNodes
+from SourceCodeTools.models.graph.TargetLoader import TargetLoader
 from SourceCodeTools.nlp import token_hasher
 from SourceCodeTools.nlp.embed.bpe import make_tokenizer, load_bpe_model
 from SourceCodeTools.tabular.common import compact_property
@@ -54,6 +55,59 @@ class NodeTypePool(NodeStringPool):
         super(NodeTypePool, self).__init__(nodeid2typeid, typeid2type)
 
 
+class PartitionIndex:
+    def __init__(self, partition_table=None):
+        self._partition_label_order = ["train_mask", "test_mask", "val_mask"]
+        self._index = None
+        self._exclusive_label = None
+
+        if partition_table is not None:
+            self.populate_index(partition_table)
+
+    def populate_index(self, partition_table):
+        self._index = dict()
+        self._train_set = set()
+        self._test_set = set()
+        self._val_set = set()
+        columns = ["id"] + self._partition_label_order
+        # variable order depends on label order in __init__
+        assert self._partition_label_order == ["train_mask", "test_mask", "val_mask"]
+        for id, train_mask, test_mask, val_mask in partition_table[columns].values:
+            self._index[id] = (train_mask, test_mask, val_mask)
+            if train_mask is True:
+                self._train_set.add(id)
+            if test_mask is True:
+                self._test_set.add(id)
+            if val_mask is True:
+                self._val_set.add(id)
+
+    def create_exclusive(self, exclusive_label):
+        new_index = self.__class__()
+        new_index._index = self._index
+        new_index._exclusive_label = self._partition_label_order.index(exclusive_label)
+        return new_index
+
+    def is_train(self, id):
+        return id in self._train_set
+
+    def is_validation(self, id):
+        return id in self._val_set
+
+    def is_test(self, id):
+        return id in self._test_set
+
+    def __getitem__(self, item):
+        if self._exclusive_label is None:
+            return self._index[item]
+        else:
+            return self._index[item][self._exclusive_label]
+
+    def get(self, item, default):
+        if item not in self._index:
+            return default
+        return self[item]
+
+
 class SourceGraphDataset:
     node_types = None
     edge_types = None
@@ -66,7 +120,7 @@ class SourceGraphDataset:
     filter_edges = None
     self_loops = None
 
-    partition_columns = {
+    partition_columns_names = {
         "train": "train_mask",
         "val": "val_mask",
         "test": "test_mak"
@@ -124,7 +178,7 @@ class SourceGraphDataset:
         self.custom_reverse = custom_reverse
         self.subgraph_id_column = subgraph_id_column
         self.subgraph_partition = subgraph_partition
-        self.partition = unpersist(partition)
+        self.partition = PartitionIndex(unpersist(partition))
         self.n_buckets = 200000
 
         self.use_ns_groups = use_ns_groups
@@ -474,23 +528,31 @@ class SourceGraphDataset:
             }
             return torch_types[canonical_type]
 
+        # def get_default_value(canonical_type):
+        #     default = {
+        #         "int32": -1,
+        #         "int64": -1,
+        #         "bool": False,
+        #     }
+        #     return default[canonical_type]
+
         def unpack_node_data(nodes):
             node_data = {}
             for col_name, dtype in zip(nodes.columns, nodes.dtypes):
                 if col_name in {"id", "type", "name", "type_backup"}:
                     continue
-                if col_name == "label":
-                    labels = nodes[["id", "label"]].dropna()
-                    mapping = dict(zip(labels["id"], labels[col_name]))
-                    has_label_mask = torch.tensor(
-                        [node_id in mapping for node_id in range(nodes["id"].max() + 1)],
-                        dtype=torch.bool
-                    )
-                    node_data["has_label"] = has_label_mask
-                else:
-                    mapping = dict(zip(nodes["id"], nodes[col_name]))
+                # if col_name == "label":
+                #     labels = nodes[["id", "label"]].dropna()
+                #     mapping = dict(zip(labels["id"], labels[col_name]))
+                #     has_label_mask = torch.tensor(
+                #         [node_id in mapping for node_id in range(nodes["id"].max() + 1)],
+                #         dtype=torch.bool
+                #     )
+                #     node_data["has_label"] = has_label_mask
+                # else:
+                mapping = dict(zip(nodes["id"], nodes[col_name]))
                 node_data[col_name] = torch.tensor(
-                    [mapping.get(node_id, 0) for node_id in range(num_nodes)],
+                    [mapping.get(node_id, -1) for node_id in range(num_nodes)],
                     dtype=get_torch_dtype(get_canonical_type(dtype))
                 )
             return node_data
@@ -535,14 +597,15 @@ class SourceGraphDataset:
 
             node_data = unpack_node_data(nodes)
 
-            def add_node_data_to_graph(graph, col_name, data, canonical_type):
-                data = torch.tensor(data, dtype=get_torch_dtype(canonical_type))
-                graph.nodes[ntype].data[col_name] = data
+            # def add_node_data_to_graph(graph, col_name, data, canonical_type):
+            #     data = torch.tensor(data, dtype=get_torch_dtype(canonical_type))
+            #     graph.nodes[ntype].data[col_name] = data
 
             for ntype in graph.ntypes:
                 valid_subset = set(nodes_table.query(f"select id from nodes where type = '{ntype}'")["id"])
                 node_ids_for_ntype = graph.nodes(ntype)
                 valid_mask = torch.tensor(
+                    # check memory consumption here
                     [node_id in valid_subset for node_id in node_ids_for_ntype.tolist()],
                     dtype=get_torch_dtype("bool")
                 )
@@ -1013,12 +1076,10 @@ class SourceGraphDataset:
         return type_ann
 
     def load_cubert_subgraph_labels(self):
-
         filecontent = unpersist(join(self.data_path, "common_filecontent.json.bz2"))
         return filecontent[["id", "label"]].rename({"id": "src", "label": "dst"}, axis=1)
 
     def load_docstring(self):
-
         docstrings_path = os.path.join(self.data_path, "common_source_graph_bodies.json.bz2")
 
         dosctrings = unpersist(docstrings_path)[["id", "docstring"]]
@@ -1041,6 +1102,7 @@ class SourceGraphDataset:
         return dosctrings
 
     def load_node_classes(self):
+        # TODO
         have_inbound = set(self.edges["dst"].tolist())
         labels = self.nodes.query("train_mask == True or test_mask == True or val_mask == True")[["id", "type_backup"]].rename({
             "id": "src",
@@ -1089,6 +1151,7 @@ class SourceGraphDataset:
         """
         :return: SubwordMasker for all nodes that have subwords. Suitable for token prediction objective.
         """
+        # TODO
         return SubwordMasker(self.nodes, self.edges)
 
     def create_variable_name_masker(self, nodes, edges):
@@ -1113,12 +1176,13 @@ class SourceGraphDataset:
         return NodeClfMasker(nodes, edges)
 
     def get_negative_sample_groups(self):
+        # TODO
         return self.nodes[["id", "mentioned_in"]].dropna(axis=0)
 
     @property
     def subgraph_mapping(self):
         assert self.subgraph_id_column is not None, "`subgraph_id_column` was not provided"
-
+        # TODO
         id2type = dict(zip(self.nodes["id"], self.nodes["type"]))
 
         subgraph_mapping = dict()
@@ -1211,6 +1275,8 @@ class SourceGraphDataset:
                 table.eval(f"{key} = id.map(@mapper)", local_dict={"mapper": lambda x: data_dict[key].get(x, pd.NA)}, inplace=True)
             if "label" in data_dict:
                 table["label"] = table["label"].astype("Int64")
+            if "has_label" in data_dict:
+                table["has_label"].fillna(False, inplace=True)
 
         def prepare_labels(label_pack):
             return label_pack.label_loader(label_pack.labels, **label_pack.label_loader_params)
@@ -1220,9 +1286,11 @@ class SourceGraphDataset:
 
         if node_labels is not None:
             node_labels_loader = prepare_labels(node_labels)
+            node_data["has_label"] = node_labels_loader.has_label_mask()
 
         if edge_labels is not None:
             edge_labels_loader = prepare_labels(edge_labels)
+            edge_data["has_label"] = edge_labels_loader.has_label_mask()
 
         for nodes, edges in self.subgraph_iterator():
             self._remove_edges_with_restricted_types(edges)
@@ -1274,7 +1342,6 @@ class SourceGraphDataset:
         sampler = MultiLayerFullNeighborSampler(number_of_hops)
         nodes_for_batching = get_nodes_from_partition(graph, partition)
         loader = NodeDataLoader(graph, nodes_for_batching, sampler, batch_size=batch_size, shuffle=False, num_workers=0)
-        # node_types = self.dataset_db.get_node_types()
 
         for ind, (input_nodes, seeds, blocks) in enumerate(loader):
             last_block = blocks[-1]
@@ -1295,33 +1362,46 @@ class SourceGraphDataset:
             for input_nodes, seeds, blocks, input_mask in self.node_level_batch_generator(
                     subgraph, masker, number_of_hops, batch_size, partition
             ):
+                indices = seeds.tolist()
+                positive_indices = node_labels_loader.sample_positive(indices)
+                negative_indices = node_labels_loader.sample_negative_w2v(indices)
+
                 print()
                 # yield input_nodes, seeds, blocks, input_mask, node_labels_loader, edge_labels_loader
 
             print()
 
     def nodes_dataloader(
-            self, partition, number_of_hops, batch_size, labels=None, masker_fn=None, label_loader=None,
+            self, partition_label, number_of_hops, batch_size, labels=None, masker_fn=None, label_loader_class=None,
             label_loader_params=None
     ):
-        partition = self.partition_columns[partition]
-        # current_partition_nodes = set(self.partition.query(f"{partition} == True").sample(frac=1.)["id"])
-        # partition_nodes = partition_nodes.query("id in @node_pool", local_dict={"node_pool": set(labels.keys())})["id"]
+        """
+        Returns generator with batches for node-level prediction
+        :param partition_label: one of train|val|test
+        :param number_of_hops: GNN depth
+        :param batch_size: number of examples without negative
+        :param labels: DataFrame with labels
+        :param masker_fn: function that takes nodes and edges as input and returns an instance of SubwordMasker
+        :param label_loader_class: an instance of ElementEmbedder
+        :param label_loader_params: dictionary with parameters to be passed to `label_loader_class`
+        :return:
+        """
+        partition_label = self.partition_columns_names[partition_label]  # get name for the partition mask
 
         node_data = {}
         for partition_key in ["train_mask", "test_mask", "val_mask"]:
-            node_data[partition_key] = dict(zip(self.partition["id"], self.partition[partition_key]))
+            node_data[partition_key] = self.partition.create_exclusive(partition_key)
 
         node_labels_pack = None
         if labels is not None:
             labels_pack = namedtuple("LabelPack", ["label_loader", "labels", "label_loader_params"])
-            node_labels_pack = labels_pack(label_loader, labels, label_loader_params)  # dict(zip(labels["src"], labels["dst"]))
+            node_labels_pack = labels_pack(label_loader_class, labels, label_loader_params)
 
         edge_data = {}
 
         self.create_batches(
             self._iterate_subgraphs(node_data, edge_data, masker_fn, node_labels=node_labels_pack),
-            number_of_hops, batch_size, partition
+            number_of_hops, batch_size, partition_label
         )
 
         #     batch.append(node_id)
@@ -1337,6 +1417,7 @@ class SourceGraphDataset:
 def read_or_create_gnn_dataset(args, model_base, force_new=False, restore_state=False):
     if restore_state and not force_new:
         # i'm not happy with this behaviour that differs based on the flag status
+        # TODO
         dataset = SourceGraphDataset.load(join(model_base, "dataset.pkl"), args)
     else:
         dataset = SourceGraphDataset(**args)
@@ -1362,7 +1443,7 @@ def test_dataset():
         no_global_edges=True,
         remove_reverse=False,
         custom_reverse=["global_mention"],
-        tokenizer_path="/Users/LTV/Dropbox (Personal)/sentencepiece_bpe.model"
+        tokenizer_path="/Users/LTV/Downloads/NitroShare/v2_subsample_no_spacy_v3/with_ast/sentencepiece_bpe.model"
     )
     node_names = unpersist("/Users/LTV/Downloads/NitroShare/v2_subsample_v4_new_ast2_fixed_distinct_types/with_ast/node_names.json.bz2")
     # mapping = compact_property(node_names['dst'])
@@ -1370,13 +1451,9 @@ def test_dataset():
     from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
     from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedder
     from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedderWithBpeSubwords
-    dataset.nodes_dataloader(
-        "train", 3, 512,
-        node_names,
-        masker_fn=dataset.create_node_name_masker,
-        label_loader=ElementEmbedderWithBpeSubwords,
-        label_loader_params={"emb_size": 100, "tokenizer_path": "/Users/LTV/Dropbox (Personal)/sentencepiece_bpe.model"}
-    )
+    dataset.nodes_dataloader("train", 3, 512, node_names, masker_fn=dataset.create_node_name_masker,
+                             label_loader_class=TargetLoader, label_loader_params={"emb_size": 100,
+                                                                                               "tokenizer_path": "/Users/LTV/Downloads/NitroShare/v2_subsample_no_spacy_v3/with_ast/sentencepiece_bpe.model"})
 
     # sm = dataset.create_subword_masker()
     print(dataset)
