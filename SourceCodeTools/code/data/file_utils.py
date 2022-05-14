@@ -248,9 +248,17 @@ def persist(df: pd.DataFrame, path: Union[str, Path, bytes], **kwargs):
         write_json(df, path, **kwargs)
 
 
+def get_cached_path(path):
+    return path + "__cached.pkl"
+
+
 def unpersist(path: Union[str, Path, bytes], **kwargs) -> pd.DataFrame:
     if isinstance(path, Path):
         path = str(path.absolute())
+
+    cached_path = get_cached_path(path)
+    if os.path.isfile(cached_path):
+        return read_pickle(cached_path)
 
     format, kwargs = likely_format(path, kwargs)
     if format == "csv":
@@ -263,6 +271,10 @@ def unpersist(path: Union[str, Path, bytes], **kwargs) -> pd.DataFrame:
         data = read_json(path, **kwargs)
     else:
         data = None
+
+    if data is not None:
+        write_pickle(data, cached_path)
+
     return data
 
 
@@ -291,6 +303,7 @@ def get_random_name(length=10):
                   [chr(i) for i in range(ord("0"), ord("0")+10)]
     from random import sample
     return "".join(sample(char_ranges, k=length))
+
 
 def get_temporary_filename():
     tmp_dir = tempfile.gettempdir()
