@@ -32,6 +32,7 @@ class SubgraphLoader:
     def load_ids(self, batch_ids):
         node_ids = dict()
         subgraphs = dict()
+<<<<<<< HEAD
 
         for id_ in batch_ids:
             subgraph_nodes = self._get_subgraph(id_)
@@ -72,6 +73,41 @@ class SubgraphLoader:
         # TODO
         # supports only nodes without types
 
+=======
+
+        for id_ in batch_ids:
+            subgraph_nodes = self._get_subgraph(id_)
+            subgraphs[id_] = subgraph_nodes
+
+            for type_ in subgraph_nodes:
+                if type_ not in node_ids:
+                    node_ids[type_] = set()
+                node_ids[type_].update(subgraph_nodes[type_])
+
+        for type_ in node_ids:
+            node_ids[type_] = sorted(list(node_ids[type_]))
+
+        coincidence_matrix = []
+        for id_, subgraph in subgraphs.items():
+            coincidence_matrix.append([])
+            for type_ in self.graph_node_types:
+                subgraph_nodes = subgraph[type_]
+                for node_id in node_ids[type_]:
+                    coincidence_matrix[-1].append(node_id in subgraph_nodes)
+
+        coincidence_matrix = torch.BoolTensor(coincidence_matrix)
+
+        loader = self.loading_fn(node_ids)
+
+        for input_nodes, seeds, blocks in loader:
+            # generator contains only one batch
+            return input_nodes, (coincidence_matrix, torch.LongTensor(batch_ids)), blocks
+
+    def __iter__(self):
+        # TODO
+        # supports only nodes without types
+
+>>>>>>> 2da1c57 (embedding training)
         for i in range(0, len(self.ids), self.batch_size):
             batch_ids = self.ids[i: i + self.batch_size]
             yield self.load_ids(batch_ids)
@@ -200,10 +236,11 @@ class SubgraphAbstractObjective(AbstractObjective):
         )
 
     def pooling_fn(self, node_embeddings):
-        p = np.random()  # learnable vertor of weights
-        y = node_embeddings @ p / (p.abs)
+        # learnable vertor of weights
+        p = torch.nn.Parameter(torch.randn((100, 1)))
+        y = node_embeddings @ p / (torch.norm(p))
 
-        return torch.mean(node_embeddings, dim=0, keepdim=True)
+        return torch.mean(y, dim=0, keepdim=True)
 
     def _graph_embeddings(self, input_nodes, blocks, train_embeddings=True, masked=None, subgraph_masks=None):
         node_embs = super(SubgraphAbstractObjective, self)._graph_embeddings(
@@ -221,13 +258,11 @@ class SubgraphAbstractObjective(AbstractObjective):
             seeds)) if self.masker is not None else None
         graph_emb = self._graph_embeddings(
             input_nodes, blocks, train_embeddings, masked=masked, subgraph_masks=subgraph_masks)
-        print('graph', graph_emb.shape)
         subgraph_embs_, element_embs_, labels = self.prepare_for_prediction(
             graph_emb, seeds, self.target_embedding_fn, negative_factor=self.negative_factor,
             neg_sampling_strategy=neg_sampling_strategy,
             train_embeddings=train_embeddings
         )
-        print('before acc', subgraph_embs_.shape)
         acc, loss = self.compute_acc_loss(
             subgraph_embs_, element_embs_, labels)
 
@@ -406,6 +441,7 @@ class SubgraphElementEmbedderBase(ElementEmbedderBase):
 # class SubgraphElementEmbedderWithSubwords(SubgraphElementEmbedderBase, ElementEmbedderWithBpeSubwords):
 #     def __init__(self, elements, emb_size, tokenizer_path, num_buckets=100000, max_len=10):
 #         self.tokenizer_path = tokenizer_path
+<<<<<<< HEAD
 #         SubgraphElementEmbedderBase.__init__(self, elements=elements, compact_dst=False)
 #         nn.Module.__init__(self)
 #         Scorer.__init__(self, num_embs=len(self.elements["dst"].unique()), emb_size=emb_size,
@@ -423,9 +459,16 @@ class SubgraphElementEmbedderWithSubwords(SubgraphElementEmbedderBase, ElementEm
         nn.Module.__init__(self)
         Scorer.__init__(self, num_embs=len(self.elements["dst"].unique()), emb_size=emb_size,
                         src2dst=self.element_lookup)
+=======
+#         SubgraphElementEmbedderBase.__init__(
+#             self, elements=elements, compact_dst=False)
+#         nn.Module.__init__(self)
+#         Scorer.__init__(self, num_embs=len(self.elements["dst"].unique()), emb_size=emb_size,
+#                         src2dst=self.element_lookup)
+>>>>>>> 2da1c57 (embedding training)
 
-        self.emb_size = emb_size
-        self.init_subwords(elements, num_buckets=num_buckets, max_len=max_len)
+#         self.emb_size = emb_size
+#         self.init_subwords(elements, num_buckets=num_buckets, max_len=max_len)
 
 
 class SubgraphClassifierTargetMapper(SubgraphElementEmbedderBase, Scorer):
