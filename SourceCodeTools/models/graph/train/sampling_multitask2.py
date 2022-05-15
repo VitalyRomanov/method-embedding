@@ -16,13 +16,13 @@ import logging
 from tqdm import tqdm
 
 from SourceCodeTools.models.Embedder import Embedder
-from SourceCodeTools.models.graph.train.objectives import VariableNameUsePrediction, TokenNamePrediction, \
-    NextCallPrediction, NodeNamePrediction, GlobalLinkPrediction, GraphTextPrediction, GraphTextGeneration, \
-    NodeNameClassifier, EdgePrediction, TypeAnnPrediction, EdgePrediction2, NodeClassifierObjective
-from SourceCodeTools.models.graph.NodeEmbedder import NodeEmbedder
+from SourceCodeTools.models.graph.TargetLoader import TargetLoader
+from SourceCodeTools.models.graph.train.objectives import GraphTextPrediction, GraphTextGeneration, \
+    NodeNameClassifier, NodeClassifierObjective, SubwordEmbedderObjective
+from SourceCodeTools.models.graph.NodeEmbedder import SimplestNodeEmbedder
 from SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObjective import TransRObjective
-from SourceCodeTools.models.graph.train.objectives.SubgraphClassifierObjective import SubgraphAbstractObjective, \
-    SubgraphClassifierObjective, SubgraphEmbeddingObjective
+from SourceCodeTools.models.graph.train.objectives.SubgraphClassifierObjective import SubgraphClassifierObjective, \
+    SubgraphEmbeddingObjective
 
 
 class EarlyStopping(Exception):
@@ -30,20 +30,13 @@ class EarlyStopping(Exception):
         super(EarlyStopping, self).__init__(*args, **kwargs)
 
 
-def add_to_summary(summary, partition, objective_name, scores, postfix):
-    summary.update({
-        f"{key}/{partition}/{objective_name}_{postfix}": val for key, val in scores.items()
-    })
-
-
 class SamplingMultitaskTrainer:
 
     def __init__(
             self, dataset=None, model_name=None, model_params=None, trainer_params=None, restore=None, device=None,
-            pretrained_embeddings_path=None, tokenizer_path=None, load_external_dataset=None
+            pretrained_embeddings_path=None, tokenizer_path=None  #, load_external_dataset=None
     ):
 
-        self.graph_model = model_name(dataset.g, **model_params).to(device)
         self.model_params = model_params
         self.trainer_params = trainer_params
         self.device = device
@@ -51,23 +44,27 @@ class SamplingMultitaskTrainer:
         self.restore_epoch = 0
         self.batch = 0
         self.dtype = torch.float32
-        if load_external_dataset is not None:
-            logging.info("Loading external dataset")
-            external_args, external_dataset = load_external_dataset()
-            self.graph_model.g = external_dataset.g
-            dataset = external_dataset
+        self.dataset = dataset
+        # if load_external_dataset is not None:
+        #     logging.info("Loading external dataset")
+        #     external_args, external_dataset = load_external_dataset()
+        #     self.graph_model.g = external_dataset.g
+        #     dataset = external_dataset
+
         self.create_node_embedder(
             dataset, tokenizer_path, n_dims=model_params["h_dim"],
             pretrained_path=pretrained_embeddings_path, n_buckets=trainer_params["embedding_table_size"]
         )
+
+        self.graph_model = model_name(trainer_params["ntypes"], trainer_params["etypes"], **model_params).to(device)
 
         self.create_objectives(dataset, tokenizer_path)
 
         if restore:
             self.restore_from_checkpoint(self.model_base_path)
 
-        if load_external_dataset is not None:
-            self.trainer_params["model_base_path"] = external_args.external_model_base
+        # if load_external_dataset is not None:
+        #     self.trainer_params["model_base_path"] = external_args.external_model_base
 
         self._create_optimizer()
 
@@ -120,21 +117,31 @@ class SamplingMultitaskTrainer:
 
     def create_node_name_objective(self, dataset, tokenizer_path):
         self.objectives.append(
-            # GraphTextGeneration(
-            #     self.graph_model, self.node_embedder, dataset.nodes,
-            #     dataset.load_node_names, self.device,
-            #     self.sampling_neighbourhood_size, self.batch_size,
-            #     tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size,
-            # )
-            NodeNamePrediction(
-                self.graph_model, self.node_embedder, dataset.nodes,
-                dataset.load_node_names, self.device,
-                self.sampling_neighbourhood_size, self.batch_size,
-                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
-                masker=dataset.create_node_name_masker(tokenizer_path),
-                measure_scores=self.trainer_params["measure_scores"],
-                dilate_scores=self.trainer_params["dilate_scores"], nn_index=self.trainer_params["nn_index"]
+            self._create_node_level_objective(
+                objective_name="NodeNamePrediction",
+                objective_class=SubwordEmbedderObjective,
+                dataset=dataset,
+                labels_fn=dataset.load_node_names,
+                tokenizer_path=tokenizer_path,
+                masker_fn=dataset.create_node_name_masker,
+                preload_for="package"
             )
+        )
+
+    def _create_node_level_objective(
+            self, *, objective_name, objective_class, dataset, labels_fn, tokenizer_path,
+            masker_fn=None, preload_for="package"
+    ):
+        return objective_class(
+            name=objective_name, graph_model=self.graph_model, node_embedder=self.node_embedder, dataset=dataset,
+            label_load_fn=labels_fn, device=self.device, sampling_neighbourhood_size=self.sampling_neighbourhood_size,
+            batch_size=self.batch_size, labels_for="nodes", number_of_hops=self.model_params["n_layers"],
+            preload_for=preload_for, masker_fn=masker_fn, label_loader_class=TargetLoader,
+            label_loader_params={"emb_size": self.elem_emb_size, "tokenizer_path": tokenizer_path},
+            tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
+            measure_scores=self.trainer_params["measure_scores"], dilate_scores=self.trainer_params["dilate_scores"],
+            early_stopping=False, early_stopping_tolerance=20, nn_index=self.trainer_params["nn_index"],
+            model_base_path=self.model_base_path, force_w2v=self.trainer_params["force_w2v_ns"]
         )
 
     def _create_subgraph_objective(
@@ -314,32 +321,14 @@ class SamplingMultitaskTrainer:
         )
 
     def create_node_embedder(self, dataset, tokenizer_path, n_dims=None, pretrained_path=None, n_buckets=500000):
-        from SourceCodeTools.nlp.embed.fasttext import load_w2v_map
-
         if pretrained_path is not None:
-            pretrained = load_w2v_map(pretrained_path)
-        else:
-            pretrained = None
+            logging.info("Loading pre-trained node embeddings is no longer supported. Initializing new embedding table.")
 
-        if pretrained_path is None and n_dims is None:
-            raise ValueError(f"Specify embedding dimensionality or provide pretrained embeddings")
-        elif pretrained_path is not None and n_dims is not None:
-            assert n_dims == pretrained.n_dims, f"Requested embedding size and pretrained embedding " \
-                                                f"size should match: {n_dims} != {pretrained.n_dims}"
-        elif pretrained_path is not None and n_dims is None:
-            n_dims = pretrained.n_dims
+        logging.info(f"Node embedding size is {n_dims}")
 
-        if pretrained is not None:
-            logging.info(f"Loading pretrained embeddings...")
-        logging.info(f"Input embedding size is {n_dims}")
-
-        self.node_embedder = NodeEmbedder(
-            nodes=dataset.nodes,
+        self.node_embedder = SimplestNodeEmbedder(
             emb_size=n_dims,
-            # tokenizer_path=tokenizer_path,
             dtype=self.dtype,
-            pretrained=dataset.buckets_from_pretrained_embeddings(pretrained_path, n_buckets)
-            if pretrained_path is not None else None,
             n_buckets=n_buckets
         )
 
@@ -397,6 +386,12 @@ class SamplingMultitaskTrainer:
     def do_save(self):
         return self.trainer_params['save_checkpoints']
 
+    @staticmethod
+    def add_to_summary(summary, partition, objective_name, scores, postfix):
+        summary.update({
+            f"{key}/{partition}/{objective_name}_{postfix}": val for key, val in scores.items()
+        })
+
     def write_summary(self, scores, batch_step):
         # main_name = os.path.basename(self.model_base_path)
         for var, val in scores.items():
@@ -428,19 +423,34 @@ class SamplingMultitaskTrainer:
             [{"params": nodeembedder_params}], lr=self.lr
         )
 
-    def compute_embeddings_for_scorer(self, objective):
-        if hasattr(objective.target_embedder, "scorer_all_keys") and objective.update_embeddings_for_queries:
-            def chunks(lst, n):
-                for i in range(0, len(lst), n):
-                    yield torch.LongTensor(lst[i:i + n])
+    # def _warm_up_proximity_ns(self, objective, update_ns_callback):
+    #     if objective.update_embeddings_for_queries:
+    #         def chunks(lst, n):
+    #             for i in range(0, len(lst), n):
+    #                 yield torch.LongTensor(lst[i:i + n])
+    #
+    #         all_keys = objective.target_embedder.keys()
+    #         batches = chunks(all_keys, self.trainer_params["batch_size"])
+    #         for batch in tqdm(
+    #                 batches,
+    #                 total=len(all_keys) // self.trainer_params["batch_size"] + 1,
+    #                 desc="Precompute Target Embeddings", leave=True
+    #         ):
+    #             _ = objective.target_embedding_fn(batch, update_ns_callback)  # scorer embedding updated inside
+    #
+    #         self.proximity_ns_warmup_complete = True
 
-            batches = chunks(objective.target_embedder.scorer_all_keys, self.trainer_params["batch_size"])
-            for batch in tqdm(
-                    batches,
-                    total=len(objective.target_embedder.scorer_all_keys) // self.trainer_params["batch_size"] + 1,
-                    desc="Precompute Target Embeddings", leave=True
-            ):
-                _ = objective.target_embedding_fn(batch)  # scorer embedding updated inside
+    def _get_grad_norms(self):
+        total_norm = 0.
+        for p in self.parameters():
+            if p.grad is not None:
+                param_norm = p.grad.detach().data.norm(2)
+                total_norm += param_norm.item() ** 2
+        total_norm = total_norm ** 0.5
+        return total_norm
+
+    def _reduce_metrics(self, metrics):
+        return {key: sum(val) / len(val) for key, val in metrics.items()}
 
     def train_all(self):
         """
@@ -452,11 +462,6 @@ class SamplingMultitaskTrainer:
         best_val_loss = float("inf")
         write_best_model = False
 
-        for objective in self.objectives:
-            with torch.set_grad_enabled(False):
-                self.compute_embeddings_for_scorer(objective)
-                objective.target_embedder.prepare_index()  # need this to update sampler for the next epoch
-
         for epoch in range(self.epoch, self.epochs):
             self.epoch = epoch
 
@@ -465,19 +470,12 @@ class SamplingMultitaskTrainer:
             summary_dict = {}
             num_batches = min([objective.num_train_batches for objective in self.objectives])
 
-            train_losses = defaultdict(list)
-            train_accs = defaultdict(list)
-
-            # def append_metric(destination, name, metric):
-            #     if name not in destination:
-            #         destination[name] = []
-            #     destination[name].append(metric)
+            longterm_metrics = defaultdict(list)
 
             for step in tqdm(range(num_batches), total=num_batches, desc=f"Epoch {self.epoch}"):
 
-                loss_accum = 0
-
                 summary = {}
+                batch_summary = {}
 
                 try:
                     loaders = [objective.loader_next("train") for objective in self.objectives]
@@ -486,60 +484,39 @@ class SamplingMultitaskTrainer:
 
                 self.optimizer.zero_grad()
                 self.sparse_optimizer.zero_grad()
-                for ind, (objective, (input_nodes, seeds, blocks)) in enumerate(zip(self.objectives, loaders)):
-                    blocks = [blk.to(self.device) for blk in blocks]
-
-                    objective.target_embedder.prepare_index()
-
-                    do_break = False
-                    for block in blocks:
-                        if block.num_edges() == 0:
-                            do_break = True
-                    if do_break:
-                        break
-
-                    # try:
-                    loss, acc = objective(
-                        input_nodes, seeds, blocks, train_embeddings=self.finetune,
-                        neg_sampling_strategy="w2v" if self.trainer_params["force_w2v_ns"] else None
+                for ind, (objective, batch) in enumerate(zip(self.objectives, loaders)):
+                    loss, scores = objective.make_step(
+                        ind, batch, "train", longterm_metrics, scorer=None
                     )
 
-                    loss = loss / len(self.objectives)  # assumes the same batch size for all objectives
-                    loss_accum += loss.item()
-                    # for groups in self.optimizer.param_groups:
-                    #     for param in groups["params"]:
-                    #         torch.nn.utils.clip_grad_norm_(param, max_norm=1.)
-                    loss.backward()  # create_graph = True
-                    
-                    summary = {}
-                    add_to_summary(
-                        summary=summary, partition="train", objective_name=objective.name,
-                        scores={"Loss": loss.item(), "Accuracy": acc}, postfix=""
+                    if scores is None:
+                        continue
+
+                    loss.backward()
+                    for groups in self.optimizer.param_groups:
+                        for param in groups["params"]:
+                            torch.nn.utils.clip_grad_norm_(param, max_norm=1.)
+
+                    self.add_to_summary(
+                        summary=batch_summary, partition="train", objective_name=objective.name,
+                        scores=scores, postfix=""
                     )
 
-                    train_losses[f"Loss/train_avg/{objective.name}"].append(loss.item())
-                    train_accs[f"Accuracy/train_avg/{objective.name}"].append(acc)
-
-                    # except ZeroEdges as e:
-                    #     logging.warning(f"Zero edges in loader in step {step}")
-                    # except Exception as e:
-                    #     raise e
+                self.add_to_summary(
+                    summary=batch_summary, partition="train", objective_name="",
+                    scores={"grad_norm": self._get_grad_norms()}, postfix=""
+                )
 
                 self.optimizer.step()
                 self.sparse_optimizer.step()
-                step += 1
 
-                self.write_summary(summary, self.batch)
-                summary_dict.update(summary)
+                self.write_summary(batch_summary, self.batch)
 
                 self.batch += 1
-                # summary = {
-                #     f"Loss/train": loss_accum,
-                # }
-                summary = {key: sum(val) / len(val) for key, val in train_losses.items()}
-                summary.update({key: sum(val) / len(val) for key, val in train_accs.items()})
-                self.write_summary(summary, self.batch)
-                summary_dict.update(summary)
+
+            summary = self._reduce_metrics(longterm_metrics)
+            self.write_summary(summary, self.batch)
+            summary_dict.update(summary)
 
             for objective in self.objectives:
                 objective.reset_iterator("train")
@@ -548,14 +525,12 @@ class SamplingMultitaskTrainer:
                 objective.eval()
 
                 with torch.set_grad_enabled(False):
-                    objective.target_embedder.prepare_index()  # need this to update sampler for the next epoch
-
                     val_scores = objective.evaluate("val")
                     test_scores = objective.evaluate("test")
                     
                 summary = {}
-                add_to_summary(summary, "val", objective.name, val_scores, postfix="")
-                add_to_summary(summary, "test", objective.name, test_scores, postfix="")
+                self.add_to_summary(summary, "val_avg", objective.name, self._reduce_metrics(val_scores), postfix="")
+                self.add_to_summary(summary, "test_avg", objective.name, self._reduce_metrics(test_scores), postfix="")
 
                 self.write_summary(summary, self.batch)
                 summary_dict.update(summary)
@@ -583,6 +558,17 @@ class SamplingMultitaskTrainer:
             pprint(summary_dict)
 
             self.lr_scheduler.step()
+
+    def parameters(self):
+        for par in self.graph_model.parameters():
+            yield par
+
+        for par in self.node_embedder.parameters():
+            yield par
+
+        for objective in self.objectives:
+            for par in objective.parameters():
+                yield par
 
     def save_checkpoint(self, checkpoint_path=None, checkpoint_name=None, write_best_model=False, **kwargs):
 
@@ -629,8 +615,8 @@ class SamplingMultitaskTrainer:
             objective.reset_iterator("val")
             objective.reset_iterator("test")
             # objective.early_stopping = False
-            self.compute_embeddings_for_scorer(objective)
-            objective.target_embedder.prepare_index()
+            # self._warm_up_proximity_ns(objective)
+            # objective.target_embedder.update_index()
             objective.update_embeddings_for_queries = False
 
         with torch.set_grad_enabled(False):
@@ -642,9 +628,9 @@ class SamplingMultitaskTrainer:
                 test_scores = objective.evaluate("test")
                 
                 summary = {}
-                # add_to_summary(summary, "train", objective.name, train_scores, postfix="final")
-                add_to_summary(summary, "val", objective.name, val_scores, postfix="final")
-                add_to_summary(summary, "test", objective.name, test_scores, postfix="final")
+                # self.add_to_summary(summary, "train", objective.name, train_scores, postfix="final")
+                self.add_to_summary(summary, "val", objective.name, val_scores, postfix="final")
+                self.add_to_summary(summary, "test", objective.name, test_scores, postfix="final")
                 
                 summary_dict.update(summary)
 
@@ -674,28 +660,70 @@ class SamplingMultitaskTrainer:
         for objective in self.objectives:
             objective.to(device)
 
-    def get_embeddings(self):
-        # self.graph_model.g.nodes["function"].data.keys()
-        nodes = self.graph_model.g.nodes
-        node_embs = {
-            ntype: self.node_embedder(node_type=ntype, node_ids=nodes[ntype].data['typed_id'], train_embeddings=False)
-            for ntype in self.graph_model.g.ntypes
-        }
+    def inference(self):
+        from SourceCodeTools.code.data.dataset.DataLoader import SGNodesDataLoader
+        self.dataset.inference_mode()
+        batch_size = 512  # self.trainer_params["batch_size"]
+        dataloader = SGNodesDataLoader(
+            dataset=self.dataset, labels_for="nodes", number_of_hops=self.model_params["n_layers"],
+            batch_size=batch_size, preload_for="package", labels=self.dataset.inference_labels,
+            masker_fn=None, label_loader_class=TargetLoader, label_loader_params={}, device="cpu",
+            negative_sampling_strategy="w2v"
+        )
 
-        logging.info("Computing all embeddings")
-        h = self.graph_model.inference(batch_size=2048, device='cpu', num_workers=0, x=node_embs)
-
-        original_id = []
-        global_id = []
+        id_maps = dict()
         embeddings = []
-        for ntype in self.graph_model.g.ntypes:
-            embeddings.append(h[ntype])
-            original_id.extend(nodes[ntype].data['original_id'].tolist())
-            global_id.extend(nodes[ntype].data['global_graph_id'].tolist())
 
-        embeddings = torch.cat(embeddings, dim=0).detach().numpy()
+        for batch in tqdm(
+                dataloader.nodes_dataloader("train"),
+                total=dataloader.train_num_batches,
+                desc="Computing final embeddings"
+        ):
+            with torch.no_grad():
+                graph_emb = self.graph_model(
+                    {"node_": self.node_embedder(batch["input_nodes"])},
+                    batch["blocks"]
+                )["node_"].to("cpu").numpy()
 
-        return [Embedder(dict(zip(original_id, global_id)), embeddings)]
+            for node_id, emb in zip(batch["indices"], graph_emb):
+                if node_id not in id_maps:
+                    id_maps[node_id] = len(id_maps)
+
+                ind_to_set = id_maps[node_id]
+
+                if ind_to_set == len(embeddings):
+                    embeddings.append(emb)
+                elif ind_to_set < len(embeddings):
+                    embeddings[ind_to_set] = emb
+                else:
+                    raise ValueError()
+
+        embedder = Embedder(id_maps, np.vstack(embeddings))
+
+        return embedder
+
+    # def get_embeddings(self):
+    #     # self.graph_model.g.nodes["function"].data.keys()
+    #     nodes = self.graph_model.g.nodes
+    #     node_embs = {
+    #         ntype: self.node_embedder(node_type=ntype, node_ids=nodes[ntype].data['typed_id'], train_embeddings=False)
+    #         for ntype in self.graph_model.g.ntypes
+    #     }
+    #
+    #     logging.info("Computing all embeddings")
+    #     h = self.graph_model.inference(batch_size=2048, device='cpu', num_workers=0, x=node_embs)
+    #
+    #     original_id = []
+    #     global_id = []
+    #     embeddings = []
+    #     for ntype in self.graph_model.g.ntypes:
+    #         embeddings.append(h[ntype])
+    #         original_id.extend(nodes[ntype].data['original_id'].tolist())
+    #         global_id.extend(nodes[ntype].data['global_graph_id'].tolist())
+    #
+    #     embeddings = torch.cat(embeddings, dim=0).detach().numpy()
+    #
+    #     return [Embedder(dict(zip(original_id, global_id)), embeddings)]
 
 
 def select_device(args):
@@ -718,7 +746,7 @@ def resolve_activation_function(function_name):
 def training_procedure(
         dataset, model_name, model_params, trainer_params, model_base_path,
         tokenizer_path=None, trainer=None, load_external_dataset=None
-) -> Tuple[SamplingMultitaskTrainer, dict]:
+) -> Tuple[SamplingMultitaskTrainer, dict, Embedder]:
     model_params = copy(model_params)
     trainer_params = copy(trainer_params)
 
@@ -773,7 +801,7 @@ def training_procedure(
         device=device,
         pretrained_embeddings_path=trainer_params["pretrained"],
         tokenizer_path=tokenizer_path,
-        load_external_dataset=load_external_dataset
+        # load_external_dataset=load_external_dataset
     )
 
     # try:
@@ -790,7 +818,9 @@ def training_procedure(
 
     trainer.to('cpu')
 
-    return trainer, scores
+    embedder = trainer.inference()
+
+    return trainer, scores, embedder
 
 
 def evaluation_procedure(
@@ -824,7 +854,10 @@ def evaluation_procedure(
         'embedding_table_size': args.embedding_table_size,
         'save_checkpoints': args.save_checkpoints,
         'measure_scores': args.measure_scores,
-        'dilate_scores': args.dilate_scores
+        'dilate_scores': args.dilate_scores,
+        'ntypes': args.ntypes,
+        'etypes': args.etypes,
+        'force_w2v': args.force_w2v_ns
     }
 
     trainer = trainer( #SamplingMultitaskTrainer(

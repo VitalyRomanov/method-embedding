@@ -1,33 +1,27 @@
 from collections import OrderedDict
 from itertools import chain
 
-from SourceCodeTools.code.data.dataset.SubwordMasker import SubwordMasker
+from SourceCodeTools.models.graph.TargetEmbedder import TargetEmbedderWithBpeSubwords
 from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective
 
 
 class SubwordEmbedderObjective(AbstractObjective):
-    def __init__(
-            self, name, graph_model, node_embedder, nodes, data_loading_func, device,
-            sampling_neighbourhood_size, batch_size,
-            tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
-            measure_scores=False, dilate_scores=1, nn_index="brute"
-    ):
-        super(SubwordEmbedderObjective, self).__init__(
-            name, graph_model, node_embedder, nodes, data_loading_func, device,
-            sampling_neighbourhood_size, batch_size,
-            tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
-            masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores, nn_index=nn_index
-        )
+    def __init__(self, **kwargs):
+        super(SubwordEmbedderObjective, self).__init__(**kwargs)
+
         self.target_embedding_fn = self.get_targets_from_embedder
         self.negative_factor = 1
-        self.update_embeddings_for_queries = False
+        self.update_embeddings_for_queries = True
 
-    def verify_parameters(self):
-        if self.link_predictor_type == "inner_prod":
-            assert self.target_emb_size == self.graph_model.emb_size, "Graph embedding and target embedder dimensionality should match for `inner_prod` type of link predictor."
+    # def _verify_parameters(self):
+    #     if self.link_predictor_type == "inner_prod":
+    #         assert self.target_emb_size == self.graph_model.emb_size, "Graph embedding and target embedder dimensionality should match for `inner_prod` type of link predictor."
 
-    def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
-        self.create_subword_embedder(data_loading_func, nodes, tokenizer_path)
+    def _create_target_embedder(self, target_emb_size, tokenizer_path):
+        self.target_embedder = TargetEmbedderWithBpeSubwords(
+            self.dataloader.label_encoder.get_original_targets(), emb_size=target_emb_size, num_buckets=200000,
+            max_len=20, tokenizer_path=tokenizer_path
+        )
 
     def parameters(self, recurse: bool = True):
         return chain(self.target_embedder.parameters(), self.link_predictor.parameters())
