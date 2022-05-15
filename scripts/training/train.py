@@ -1,5 +1,6 @@
 import json
 import logging
+import pickle
 from copy import copy
 from datetime import datetime
 from os import mkdir
@@ -11,7 +12,7 @@ from SourceCodeTools.models.graph.train.sampling_multitask2 import training_proc
 from SourceCodeTools.models.graph.train.utils import get_name, get_model_base
 from SourceCodeTools.models.training_config import get_config, load_config, update_config, save_config
 from SourceCodeTools.models.training_options import add_gnn_train_args, verify_arguments
-from params import rggan_params
+# from params import rggan_params
 
 
 def train_grid(models, args):
@@ -41,6 +42,9 @@ def train_grid(models, args):
                 args = copy(args.__dict__)
                 args.update(params)
                 args['activation'] = args['activation'].__name__
+                ntypes, etypes = dataset.get_graph_types()
+                args['ntypes'] = ntypes
+                args['etypes'] = etypes
                 with open(join(model_base, "params.json"), "w") as mdata:
                     mdata.write(json.dumps(args, indent=4))
 
@@ -109,9 +113,12 @@ def main(args):
     )
 
     if not restore_state:
+        ntypes, etypes = dataset.get_graph_types()
+        config["TRAINING"]['ntypes'] = ntypes
+        config["TRAINING"]['etypes'] = etypes
         save_config(config, join(model_base, "config.yaml"))
 
-    trainer, scores = training_procedure(
+    trainer, scores, embedder = training_procedure(
         dataset,
         model_name=model,
         model_params=config["MODEL"],
@@ -136,9 +143,11 @@ def main(args):
 
     metadata["config"] = args
 
-    # pickle.dump(dataset, open(join(model_base, "dataset.pkl"), "wb"))
-    import pickle
-    pickle.dump(trainer.get_embeddings(), open(join(model_base, metadata['layers']), "wb"))
+    pickle.dump(embedder, open(join(model_base, metadata['layers']), "wb"))
+    # TODO
+    # add a switch to dataset that changed partition so that all nodes are in the same partition. Then
+    # make labels table that creates entry for all nodes that need to be extracted
+    # then pass all this to the standard dataloader
 
     with open(join(model_base, "metadata.json"), "w") as mdata:
         mdata.write(json.dumps(metadata, indent=4))

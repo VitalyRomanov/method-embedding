@@ -1,17 +1,68 @@
+from copy import copy
+
 import torch
 from dgl.dataloading import MultiLayerFullNeighborSampler, NodeDataLoader
 from tqdm import tqdm
 
 from SourceCodeTools.code.data.dataset.Dataset import SGPartitionStrategies
 from SourceCodeTools.code.data.dataset.partition_strategies import SGLabelSpec
+from SourceCodeTools.models.graph.TargetLoader import LabelDenseEncoder
 
 
 class SGNodesDataLoader:
-    def __init__(self, dataset):
+    def __init__(
+            self, dataset, labels_for, number_of_hops, batch_size, preload_for="package", labels=None,
+            masker_fn=None, label_loader_class=None, label_loader_params=None, device="cpu",
+            negative_sampling_strategy="w2v", base_path=None, objective_name=None
+    ):
+        preload_for = SGPartitionStrategies[preload_for]
+        labels_for = SGLabelSpec[labels_for]
+
+        if labels_for == SGLabelSpec.subgraphs:
+            assert preload_for == SGPartitionStrategies.file, "Subgraphs objectives are currently " \
+                                                              "partitioned only in files"
+
         self.dataset = dataset
+        self.labels_for = labels_for
+        self.number_of_hops = number_of_hops
+        self.batch_size = batch_size
+        self.preload_for = preload_for
+        self.masker_fn = masker_fn
+        self.device = device
+        self.negative_sampling_strategy = negative_sampling_strategy
+        assert negative_sampling_strategy in {"w2v", "closest"}
+        # self.labels = labels
+        # self.label_loader_class = label_loader_class
+        # self.label_loader_params = label_loader_params
+        self.label_encoder = LabelDenseEncoder(labels)
+
+        for partition_label in ["train", "val", "test"]:
+            self._create_loader_for_partition(
+                labels, partition_label, label_loader_class, label_loader_params, base_path, objective_name
+            )
+
+    def _create_loader_for_partition(
+            self, labels, partition_label, label_loader_class, label_loader_params, base_path, objective_name
+    ):
+        partition_labels = self.dataset.get_labels_for_partition(
+            labels, partition_label, self.labels_for, group_by=self.preload_for
+        )
+        setattr(self, f"{partition_label}_num_batches", len(partition_labels) // self.batch_size + 1)
+        if partition_label == "train":
+            label_loader_params = copy(label_loader_params)
+            label_loader_params["logger_path"] = base_path
+            label_loader_params["logger_name"] = objective_name
+        setattr(
+            self, f"{partition_label}_loader", label_loader_class(
+                partition_labels, self.label_encoder, **label_loader_params
+            )
+        )
 
     def subgraph_iterator(self):
         return self.dataset.iterate_packages()
+
+    # def get_original_targets(self):
+    #     return self.node_label_loader.get_original_targets()
 
     def _iterate_subgraphs(
             self, node_data, edge_data, masker_fn=None, node_label_loader=None, edge_label_loader=None,
@@ -64,7 +115,7 @@ class SGNodesDataLoader:
         return python_seeds
 
     def create_batches(self, subgraph_generator, number_of_hops, batch_size, partition, labels_for):
-        for group, subgraph, masker, node_labels_loader, edge_labels_loader in tqdm(subgraph_generator):
+        for group, subgraph, masker, node_labels_loader, edge_labels_loader in subgraph_generator:
 
             # TODO shuffle subgraphs
 
@@ -74,42 +125,42 @@ class SGNodesDataLoader:
                 subgraph, nodes_for_batching, sampler, batch_size=batch_size, shuffle=True, num_workers=0
             )
 
-            with torch.no_grad():
-                for ind, (input_nodes, seeds, blocks) in enumerate(loader):
-                    if masker is not None:
-                        input_mask = masker.get_mask(mask_for=seeds, input_nodes=input_nodes)
-                    else:
-                        input_mask = None
+            for ind, (input_nodes, seeds, blocks) in enumerate(loader):
+                if masker is not None:
+                    input_mask = masker.get_mask(mask_for=seeds, input_nodes=input_nodes).to(self.device)
+                else:
+                    input_mask = None
 
-                    indices = self.seeds_to_python(seeds)  # dgl returns torch tensor
+                indices = self.seeds_to_python(seeds)  # dgl returns torch tensor
 
-                    if isinstance(indices, dict):
-                        raise NotImplementedError("Using node types is currently not supported. Set use_node_types=False")
+                if isinstance(indices, dict):
+                    raise NotImplementedError("Using node types is currently not supported. Set use_node_types=False")
 
-                    positive_indices = node_labels_loader.sample_positive(indices)
-                    negative_indices = node_labels_loader.sample_negative_w2v(indices)
+                positive_indices = torch.LongTensor(node_labels_loader.sample_positive(indices))
+                negative_indices = torch.LongTensor(node_labels_loader.sample_negative(indices, strategy=self.negative_sampling_strategy))
 
-                    batch = {
-                        "group": group,
-                        "input_nodes": input_nodes,
-                        "input_mask": input_mask,
-                        "indices": indices,
-                        "positive_indices": positive_indices,
-                        "negative_indices": negative_indices,
-                        "node_labels_loader": node_labels_loader,
-                        "edge_labels_loader": edge_labels_loader
-                        # "update_node_negative_sampler_callback": node_labels_loader.set_embed,
-                        # "update_edge_negative_sampler_callback": None,
-                    }
+                batch = {
+                    "group": group,
+                    "subgraph": subgraph,
+                    "input_nodes": blocks[0].srcnodes["node_"].data["embedding_id"].to(self.device),
+                    "input_mask": input_mask,
+                    "indices": indices,
+                    "blocks": [block.to(self.device) for block in blocks],
+                    "positive_indices": positive_indices.to(self.device),
+                    "negative_indices": negative_indices.to(self.device),
+                    "node_labels_loader": node_labels_loader,
+                    # "edge_labels_loader": edge_labels_loader,
+                    # "update_node_negative_sampler_callback": node_labels_loader.set_embed,
+                    # "update_edge_negative_sampler_callback": None,
+                }
 
-                    print()
-                    # yield batch
+                # print()
+                yield batch
 
-            print()
+            # print()
 
     def nodes_dataloader(
-            self, partition_label, labels_for, number_of_hops, batch_size, preload_for="package", labels=None,
-            masker_fn=None, label_loader_class=None, label_loader_params=None
+            self, partition_label
     ):
         """
         Returns generator with batches for node-level prediction
@@ -125,15 +176,7 @@ class SGNodesDataLoader:
         :return:
         """
 
-        preload_for = SGPartitionStrategies[preload_for]
-        labels_for = SGLabelSpec[labels_for]
-
-        if labels_for == SGLabelSpec.subgraphs:
-            assert preload_for == SGPartitionStrategies.file, "Subgraphs objectives are currently " \
-                                                              "partitioned only in files"
-
-        labels = self.dataset.get_labels_for_partition(labels, partition_label, labels_for, group_by=preload_for)
-        node_label_loader = label_loader_class(labels, **label_loader_params)
+        node_label_loader = getattr(self, f"{partition_label}_loader")
 
         node_data = {}
         edge_data = {}
@@ -143,9 +186,23 @@ class SGNodesDataLoader:
         # get name for the partition mask
         current_partition_key = self.dataset.get_proper_partition_column_name(partition_label)
 
-        self.create_batches(
+        return self.create_batches(
             self._iterate_subgraphs(
-                node_data, edge_data, masker_fn, node_label_loader=node_label_loader, grouping_strategy=preload_for
+                node_data, edge_data, self.masker_fn, node_label_loader=node_label_loader,
+                grouping_strategy=self.preload_for
             ),
-            number_of_hops, batch_size, current_partition_key, labels_for
+            self.number_of_hops, self.batch_size, current_partition_key, self.labels_for
         )
+
+    def partition_iterator(self, partition_label):
+        class SGDLIter:
+            iter_fn = self.nodes_dataloader
+
+            def __init__(self):
+                self.partition_label = partition_label
+
+            @staticmethod
+            def __iter__():
+                return self.nodes_dataloader(partition_label)
+
+        return SGDLIter()

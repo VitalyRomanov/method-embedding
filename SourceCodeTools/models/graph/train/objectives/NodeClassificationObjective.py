@@ -8,8 +8,7 @@ from torch import nn
 from torch.nn import CrossEntropyLoss
 
 from SourceCodeTools.code.data.dataset import SubwordMasker
-from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective, compute_accuracy, \
-    sum_scores
+from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective, compute_accuracy
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
 from SourceCodeTools.models.graph.train.Scorer import Scorer
 
@@ -17,28 +16,19 @@ import numpy as np
 
 
 class NodeClassifierObjective(AbstractObjective):
-    def __init__(
-            self, name, graph_model, node_embedder, nodes, data_loading_func, device,
-            sampling_neighbourhood_size, batch_size,
-            tokenizer_path=None, target_emb_size=None, link_predictor_type=None, masker: SubwordMasker = None,
-            measure_scores=False, dilate_scores=1, early_stopping=False, early_stopping_tolerance=20
-    ):
-        super().__init__(
-            name, graph_model, node_embedder, nodes, data_loading_func, device,
-            sampling_neighbourhood_size, batch_size,
-            tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
-            masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores, early_stopping=early_stopping, early_stopping_tolerance=early_stopping_tolerance
-        )
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
-    def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
-        self.target_embedder = ClassifierTargetMapper(
-            elements=data_loading_func(), nodes=nodes
-        )
+    def _create_target_embedder(self, data_loading_func, tokenizer_path):
+        raise NotImplementedError()
+        # self.target_embedder = ClassifierTargetMapper(
+        #     elements=data_loading_func(), nodes=nodes
+        # )
 
-    def create_link_predictor(self):
+    def _create_link_predictor(self):
         self.classifier = NodeClassifier(self.target_emb_size, self.target_embedder.num_classes).to(self.device)
 
-    def compute_acc_loss(self, graph_emb, element_emb, labels, return_logits=False):
+    def _compute_acc_loss(self, graph_emb, element_emb, labels, return_logits=False):
         logits = self.classifier(graph_emb)
 
         loss_fct = CrossEntropyLoss(ignore_index=-100)
@@ -51,7 +41,7 @@ class NodeClassifierObjective(AbstractObjective):
             return acc, loss, logits
         return acc, loss
 
-    def prepare_for_prediction(
+    def _prepare_for_prediction(
             self, node_embeddings, seeds, target_embedding_fn, negative_factor=1,
             neg_sampling_strategy=None, train_embeddings=True,
     ):
@@ -60,7 +50,7 @@ class NodeClassifierObjective(AbstractObjective):
 
         return node_embeddings, None, labels
 
-    def evaluate_objective(self, data_split, neg_sampling_strategy=None, negative_factor=1):
+    def _evaluate_objective(self, data_split, neg_sampling_strategy=None, negative_factor=1):
         at = [1, 3, 5, 10]
         count = 0
         scores = defaultdict(list)
@@ -82,7 +72,7 @@ class NodeClassifierObjective(AbstractObjective):
             # indices = self.seeds_to_global(seeds).tolist()
             # labels = self.target_embedder[indices]
             # labels = torch.LongTensor(labels).to(self.device)
-            acc, loss, logits = self.compute_acc_loss(node_embs_, element_embs_, labels, return_logits=True)
+            acc, loss, logits = self._compute_acc_loss(node_embs_, element_embs_, labels)
 
             y_pred = nn.functional.softmax(logits, dim=-1).to("cpu").numpy()
             y_true = np.zeros(y_pred.shape)
@@ -115,7 +105,7 @@ class NodeClassifierObjective(AbstractObjective):
         if count == 0:
             count += 1
 
-        scores = {key: sum_scores(val) for key, val in scores.items()}
+        scores = {key: self._sum_scores(val) for key, val in scores.items()}
         return scores
 
     def parameters(self, recurse: bool = True):
@@ -130,17 +120,9 @@ class NodeClassifierObjective(AbstractObjective):
 
 class NodeNameClassifier(NodeClassifierObjective):
     def __init__(
-            self, graph_model, node_embedder, nodes, data_loading_func, device,
-            sampling_neighbourhood_size, batch_size,
-            tokenizer_path=None, target_emb_size=None, link_predictor_type=None, masker: SubwordMasker = None,
-            measure_scores=False, dilate_scores=1, early_stopping=False, early_stopping_tolerance=20
+            self, **kwargs
     ):
-        super().__init__(
-            "NodeNameClassifier", graph_model, node_embedder, nodes, data_loading_func, device,
-            sampling_neighbourhood_size, batch_size,
-            tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
-            masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores, early_stopping=early_stopping, early_stopping_tolerance=early_stopping_tolerance
-        )
+        super().__init__(name="NodeNameClassifier", **kwargs)
 
 
 class ClassifierTargetMapper(ElementEmbedderBase, Scorer):

@@ -9,6 +9,7 @@ import numpy
 import pandas
 import torch
 
+from SourceCodeTools.code.ast.python_ast2 import PythonSharedNodes
 from SourceCodeTools.code.data.GraphStorage import OnDiskGraphStorage
 from SourceCodeTools.code.data.SQLiteStorage import SQLiteStorage
 from SourceCodeTools.code.data.dataset.SubwordMasker import SubwordMasker, NodeNameMasker, NodeClfMasker
@@ -40,6 +41,8 @@ class DatasetCache:
         if not self.cache_path.is_dir():
             self.cache_path.mkdir()
 
+        self.warned = False
+
     def get_path_for_level(self, level):
         if level is not None:
             cache_path = self.cache_path.joinpath(level)
@@ -56,7 +59,9 @@ class DatasetCache:
         filename = self.get_filename(cache_path, cache_key)
 
         if filename.is_file():
-            logging.warning("Using cached results. Remove cache if you have updated the dataset.")
+            if not self.warned:
+                logging.warning("Using cached results. Remove cache if you have updated the dataset.")
+                self.warned = True
             return pickle.load(open(filename, "rb"))
         else:
             return None
@@ -131,11 +136,14 @@ class PartitionIndex:
         return node_id in self.get_partition_ids(partition_label)
 
     def get_partition_ids(self, partition_label):
-        partition_label_source = {
-            "train_mask": self._train_set,
-            "test_mask": self._test_set,
-            "val_mask": self._val_set,
-        }
+        if partition_label == "any":
+            partition_label_source = {"any": self._train_set | self._test_set | self._val_set}
+        else:
+            partition_label_source = {
+                "train_mask": self._train_set,
+                "test_mask": self._test_set,
+                "val_mask": self._val_set,
+            }
         if partition_label in partition_label_source:
             p = partition_label_source[partition_label]
         else:
@@ -184,7 +192,8 @@ class SourceGraphDataset:
     partition_columns_names = {
         "train": "train_mask",
         "val": "val_mask",
-        "test": "test_mak"
+        "test": "test_mask",
+        "any": "any"
     }
 
     def __init__(
@@ -764,27 +773,28 @@ class SourceGraphDataset:
     #
     #     return self._create_hetero_graph(nodes, edges)
 
-    def _adjust_types(self, nodes, edges):
-        def _strip_types_if_needed(value, stripping_flag, stripped_type):
-            if not stripping_flag:
-                return stripped_type
-            else:
-                return f"{value}_"
+    @staticmethod
+    def _strip_types_if_needed(value, stripping_flag, stripped_type):
+        if not stripping_flag:
+            return stripped_type
+        else:
+            return f"{value}_"
 
+    def _adjust_types(self, nodes, edges):
         nodes["type_backup"] = nodes["type"]
         edges["type_backup"] = edges["type"]
 
         nodes.eval(
             "type = type.map(@strip)",
             local_dict={
-                "strip": partial(_strip_types_if_needed, stripping_flag=self.use_node_types, stripped_type="node_")
+                "strip": partial(self._strip_types_if_needed, stripping_flag=self.use_node_types, stripped_type="node_")
             },
             inplace=True
         )
         edges.eval(
             "type = type.map(@strip)",
             local_dict={
-                "strip": partial(_strip_types_if_needed, stripping_flag=self.use_edge_types, stripped_type="edge_")
+                "strip": partial(self._strip_types_if_needed, stripping_flag=self.use_edge_types, stripped_type="edge_")
             },
             inplace=True
         )
@@ -829,7 +839,7 @@ class SourceGraphDataset:
 
     def get_labels_for_partition(self, labels, partition_label, labels_for, group_by=SGPartitionStrategies.package):
 
-        cache_key = self._get_df_hash(labels)
+        cache_key = f"{self._get_df_hash(labels)}_{partition_label}_{labels_for}_{group_by.name}"
         cached_result = self._load_cache_if_exists(cache_key)
         if cached_result is not None:
             return cached_result
@@ -852,21 +862,36 @@ class SourceGraphDataset:
         self._write_to_cache(labels_, cache_key)
         return labels_
 
+    def inference_mode(self):
+        shared_node_types = PythonSharedNodes.shared_node_types
+        type_filter = [ntype for ntype in self.dataset_db.get_node_type_descriptions() if ntype not in shared_node_types]
+        nodes = self.dataset_db.get_nodes(type_filter=type_filter)
+        nodes["train_mask"] = True
+        nodes["test_mask"] = True
+        nodes["val_mask"] = True
+
+        self.train_partition = self.partition
+        self.partition = PartitionIndex(nodes)
+        self.inference_labels = nodes[["id", "type"]].rename({"id": "src", "type": "dst"}, axis=1)
+
     def iterate_subgraphs(self, how, groups, node_data, edge_data):
 
         iterator = self.dataset_db.iterate_subgraphs(how, groups)
 
         def add_data(table, data_dict):
+            boolean_fields = {"train_mask", "test_mask", "val_mask", "has_label"}
             for key in data_dict:
                 table.eval(
                     f"{key} = id.map(@mapper)",
                     local_dict={"mapper": lambda x: data_dict[key].get(x, pd.NA)},
                     inplace=True
                 )
+                if key in boolean_fields:
+                    table[key].fillna(False, inplace=True)
             if "label" in data_dict:
                 table["label"] = table["label"].astype("Int64")
-            if "has_label" in data_dict:
-                table["has_label"].fillna(False, inplace=True)
+            # if "has_label" in data_dict:
+            #     table["has_label"].fillna(False, inplace=True)
 
         for group, nodes, edges in iterator:
             self._remove_edges_with_restricted_types(edges)
@@ -1049,6 +1074,22 @@ class SourceGraphDataset:
             types.add(value + "_name")
 
         return types
+
+    def get_graph_types(self):
+        ntypes = self.dataset_db.get_node_type_descriptions()
+        etypes = self.dataset_db.get_edge_type_descriptions()
+
+        return list(
+            map(
+                partial(self._strip_types_if_needed, stripping_flag=self.use_node_types, stripped_type="node_"),
+                ntypes
+            )
+        ), list(
+            map(
+                partial(self._strip_types_if_needed, stripping_flag=self.use_edge_types, stripped_type="edge_"),
+                etypes
+            )
+        )
 
     @staticmethod
     def ensure_connectedness(nodes: pandas.DataFrame, edges: pandas.DataFrame):
@@ -1424,15 +1465,15 @@ def test_dataset():
     # from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedder
     # from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedderWithBpeSubwords
     from SourceCodeTools.code.data.dataset.DataLoader import SGNodesDataLoader
-    dataloader = SGNodesDataLoader(dataset)
-    dataloader.nodes_dataloader(
-        partition_label="train", labels_for="nodes", number_of_hops=3, batch_size=512, labels=node_names,
+    dataloader = SGNodesDataLoader(dataset, labels_for="nodes", number_of_hops=3, batch_size=512, labels=node_names,
         masker_fn=dataset.create_node_name_masker,
         label_loader_class=TargetLoader,
         label_loader_params={
             "emb_size": 100,
             "tokenizer_path": "/Users/LTV/Downloads/NitroShare/v2_subsample_no_spacy_v3/with_ast/sentencepiece_bpe.model"
-        },
+        })
+    dataloader.nodes_dataloader(
+        partition_label="train",
     )
 
     # sm = dataset.create_subword_masker()

@@ -21,6 +21,9 @@ class TargetEmbedder(nn.Module):
         self._create_target_input_features()
         self._create_embedding_model()
 
+    def keys(self):
+        return list(self.ind2repr.keys())
+
     def _create_target_input_features(self):
         # need a structure that supports indexing (dict style) and
         # return the same value as the index
@@ -60,7 +63,7 @@ class TargetEmbedderWithCharNGramSubwords(TargetEmbedder):
         return empty
 
     def _create_target_input_features(self):
-        names = pd.Series(self._inverse_target_map)
+        names = pd.Series(self.unique_targets)
         reprs = names.map(lambda x: char_ngram_window(x, self.gram_size)) \
             .map(lambda grams: (token_hasher(g, self.num_buckets) for g in grams)) \
             .map(lambda int_grams: np.fromiter(int_grams, dtype=np.int32)) \
@@ -88,15 +91,18 @@ class TargetEmbedderWithBpeSubwords(TargetEmbedderWithCharNGramSubwords, nn.Modu
         from SourceCodeTools.nlp.embed.bpe import load_bpe_model, make_tokenizer
         tokenize = make_tokenizer(load_bpe_model(self.tokenizer_path))
 
-        names = pd.Series(self._inverse_target_map)
+        inds = list(self.ind2repr.keys())
+        targets = list(self.ind2repr.values())
+
+        names = pd.Series(targets)
         reprs = names.map(tokenize) \
             .map(lambda tokens: (token_hasher(t, self.num_buckets) for t in tokens)) \
             .map(lambda int_tokens: np.fromiter(int_tokens, dtype=np.int32))\
             .map(lambda parts: self._create_fixed_length(parts, self.max_len, 0))
 
         self.feature_map = dict()
-        for name, repr_ in zip(names, reprs):
-            self.feature_map[self._target2target_id[name]] = repr_
+        for ind, repr_ in zip(inds, reprs):
+            self.feature_map[ind] = repr_
 
 
 class DocstringEmbedder(TargetEmbedderWithBpeSubwords):

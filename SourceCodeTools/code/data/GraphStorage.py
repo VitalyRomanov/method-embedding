@@ -157,7 +157,7 @@ class OnDiskGraphStorage:
                 }
             )
 
-            rest_columns = [col for col in edges.columns if col not in {"src", "dst", "type", "file_id", "package"}]
+            rest_columns = [col for col in edges.columns if col not in {"id", "src", "dst", "type", "file_id", "package"}]
             self._write_non_empty_table(
                 table=edges[["id"] + rest_columns],
                 table_name="edge_hierarchy",
