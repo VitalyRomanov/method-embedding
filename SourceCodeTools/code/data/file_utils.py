@@ -256,9 +256,9 @@ def unpersist(path: Union[str, Path, bytes], **kwargs) -> pd.DataFrame:
     if isinstance(path, Path):
         path = str(path.absolute())
 
-    cached_path = get_cached_path(path)
-    if os.path.isfile(cached_path):
-        return read_pickle(cached_path)
+    # cached_path = get_cached_path(path)
+    # if os.path.isfile(cached_path):
+    #     return read_pickle(cached_path)
 
     format, kwargs = likely_format(path, kwargs)
     if format == "csv":
@@ -272,8 +272,9 @@ def unpersist(path: Union[str, Path, bytes], **kwargs) -> pd.DataFrame:
     else:
         data = None
 
-    if data is not None:
-        write_pickle(data, cached_path)
+    # if isinstance(data, pd.DataFrame):
+    #     if data is not None:
+    #         write_pickle(data, cached_path)
 
     return data
 
