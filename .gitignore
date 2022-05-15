@@ -4,7 +4,10 @@ __pycache__
 *.tsv
 *.json
 *.json.bz2
+*.csv
 examples/scaa
+examples/new_scaa
+examples/one_to_one
 lda_docstring_embeddings*
 .idea
 SourceCodeTools.egg-info

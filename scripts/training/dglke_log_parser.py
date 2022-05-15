@@ -39,32 +39,38 @@ def main():
                 scores.append({})
 
     for s, v in zip(steps, buffer_pos):
-        plt.plot(np.log10(s), np.log10(v))
+        plt.plot(s, v)
     plt.xlabel("Step")
     plt.ylabel("Loss")
+    plt.gca().set_yscale("log")
     plt.legend(model_names)
-    plt.savefig("positive_loss.png")
+    plt.grid()
+    plt.savefig("positive_loss.svg")
     plt.close()
 
     for s, v in zip(steps, buffer_neg):
-        plt.plot(np.log10(s), np.log10(v))
+        plt.plot(s, v)
     plt.xlabel("Step")
     plt.ylabel("Loss")
+    plt.gca().set_yscale("log")
+    plt.grid()
     plt.legend(model_names)
-    plt.savefig("negative_loss.png")
+    plt.savefig("negative_loss.svg")
     plt.close()
 
     for s, v, n in zip(steps, buffer_pos, buffer_neg):
-        plt.plot(np.log10(s), np.log10(np.array(v) + np.array(n)))
+        plt.plot(s, np.array(v) + np.array(n))
     plt.xlabel("Step")
     plt.ylabel("Loss")
+    plt.gca().set_yscale("log")
+    plt.grid()
     plt.legend(model_names)
-    plt.savefig("overall_loss.png")
+    plt.savefig("overall_loss.svg")
     plt.close()
 
     import pandas as pd
     s = pd.DataFrame.from_records(scores)
-    print(s.to_string)
+    print(s.to_string())
 
 
 

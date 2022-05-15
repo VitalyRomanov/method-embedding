@@ -41,28 +41,31 @@ for dir in os.listdir(results_path):
 if not os.path.isdir(output_path):
     os.mkdir(output_path)
 
-plt.figure(figsize=(20, 10))
+# plt.figure(figsize=(20, 10))
 for s in test_f1:
     plt.plot(s)
 plt.title("Test F1")
 plt.legend(legend, loc='upper left')
-plt.savefig(os.path.join(output_path, "test_f1.png"))
+plt.grid()
+plt.savefig(os.path.join(output_path, "test_f1.svg"))
 plt.close()
 
 for train_loss, train_f1, test_loss, test_f1, label in zip(train_losses, train_f1, test_losses, test_f1, legend):
-    plt.figure(figsize=(20, 10))
+    # plt.figure(figsize=(20, 10))
     plt.plot(train_loss)
     plt.plot(test_loss)
     plt.yscale('log')
+    plt.grid()
     plt.title(f"{label} loss")
     plt.legend(["Train", "Test"], loc='upper left')
-    plt.savefig(os.path.join(output_path, f"{label}_loss.png"))
+    plt.savefig(os.path.join(output_path, f"{label}_loss.svg"))
     plt.close()
 
-    plt.figure(figsize=(20, 10))
+    # plt.figure(figsize=(20, 10))
     plt.plot(train_f1)
     plt.plot(test_f1)
+    plt.grid()
     plt.title(f"{label} f1")
     plt.legend(["Train", "test"], loc='upper left')
-    plt.savefig(os.path.join(output_path, f"{label}_f1.png"))
+    plt.savefig(os.path.join(output_path, f"{label}_f1.svg"))
     plt.close()
