@@ -266,12 +266,15 @@ def unpack_annotations(body, labels):
 
         head = body[:offset_ann[0]]
         orig_len = len(head)
-        head = head.rstrip()
+        head = head.rstrip(" \\\n\t")  # include character \ since it can be used to indicate line break
         stripped_len = len(head)
 
         annsymbol = ":"
         assert head.endswith(annsymbol)
         beginning = beginning - (orig_len - stripped_len) - len(annsymbol)
+        # Workaround if there is a space before annotation. Example: "groupby : List[str]"
+        while beginning > 0 and body[beginning - 1] == " ":
+            beginning -= 1
         cuts.append((beginning, end))
 
         assert offset_var[0] != len(head)
@@ -291,7 +294,7 @@ def body_valid(body):
         return False
 
 
-def process_body(nlp, body: str, replacements=None):
+def process_body(nlp, body: str, replacements=None, require_labels=False):
     """
     Extract annotation information, strip documentation and type annotations.
     :param nlp: Spacy tokenizer
@@ -322,8 +325,8 @@ def process_body(nlp, body: str, replacements=None):
     was_valid = body_valid(body_)
     initial_labels = get_initial_labels(body_)
 
-    # if initial_labels is None:
-    #     return None
+    if require_labels and initial_labels is None:
+        return None
 
     returns, return_cuts = unpack_returns(body_, initial_labels)
     annotations, annotation_cuts = unpack_annotations(body_, initial_labels)
@@ -332,7 +335,9 @@ def process_body(nlp, body: str, replacements=None):
                                                         return_cuts + annotation_cuts)
     is_valid = body_valid(body_)
     if was_valid != is_valid:
-        raise Exception()
+        print("Failed processing")
+        return None
+        # raise Exception()
 
     replacements_annotations = adjust_offsets2(replacements_annotations, len(initial_strip))
     body_ = initial_strip + body_
@@ -344,7 +349,7 @@ def process_body(nlp, body: str, replacements=None):
 
     entry['replacements'] = resolve_self_collisions2(entry['replacements'])
 
-    assert isvalid(nlp, body_, entry['replacements'])
+    # assert isvalid(nlp, body_, entry['replacements'])
     assert isvalid(nlp, body_, entry['ents'])
 
     return entry
@@ -442,25 +447,28 @@ def load_names(nodes_path):
     return names
 
 
-def process_package(working_directory, global_names=None):
+def process_package(working_directory, global_names=None, require_labels=False):
     """
     Find functions with annotations, extract annotation information, strip documentation and type annotations.
     :param working_directory: location of package related files
     :param global_names: optional, mapping from global node ids to names
     :return: list of entries in spacy compatible format
     """
-    bodies = unpersist_if_present(os.path.join(working_directory, "source_graph_bodies.bz2"))
-    if bodies is None:
+    # bodies = unpersist_if_present(os.path.join(working_directory, "source_graph_bodies.bz2"))
+    # if bodies is None:
+    #     return []
+
+    # offsets_path = os.path.join(working_directory, "offsets.bz2")
+
+    # # offsets store information about spans for nodes referenced in the source code
+    # if os.path.isfile(offsets_path):
+    #     offsets = unpersist(offsets_path)
+    # else:
+    #     logging.warning(f"No file with offsets: {offsets_path}")
+    #     offsets = None
+
+    if not os.path.isfile(join(working_directory, "has_annotations")):
         return []
-
-    offsets_path = os.path.join(working_directory, "offsets.bz2")
-
-    # offsets store information about spans for nodes referenced in the source code
-    if os.path.isfile(offsets_path):
-        offsets = unpersist(offsets_path)
-    else:
-        logging.warning(f"No file with offsets: {offsets_path}")
-        offsets = None
 
     def load_local2global(working_directory):
         local2global = unpersist(os.path.join(working_directory, "local2global_with_ast.bz2"))
@@ -471,26 +479,46 @@ def process_package(working_directory, global_names=None):
 
     local_names = load_names(os.path.join(working_directory, "nodes_with_ast.bz2"))
 
-    nlp = create_tokenizer("spacy")
+    node_maps = get_node_maps(unpersist(join(working_directory, "nodes_with_ast.bz2")))
+    filecontent = get_filecontent_maps(unpersist(join(working_directory, "filecontent_with_package.bz2")))
+    offsets = group_offsets(unpersist(join(working_directory, "offsets.bz2")))
 
     data = []
+    nlp = create_tokenizer("spacy")
 
-    for ind, (_, row) in tqdm(
-            enumerate(bodies.iterrows()), total=len(bodies),
-            leave=True, desc=os.path.basename(working_directory)
-    ):
-        body = row['body']
-
-        if offsets is not None:
-            graph_node_spans = offsets_for_func(offsets, body, row["id"])
-        else:
-            graph_node_spans = []
-
-        entry = process_body(nlp, body, replacements=graph_node_spans)
+    for ind, (f_body, f_offsets) in enumerate(iterate_functions(offsets, node_maps, filecontent)):
+        try:
+            entry = process_body(nlp, f_body, replacements=f_offsets, require_labels=require_labels)
+        except Exception as e:
+            logging.warning("Error during processing")
+            print(working_directory)
+            print(e)
+            continue
 
         if entry is not None:
             entry = to_global_ids(entry, id_maps, global_names, local_names)
             data.append(entry)
+
+    # nlp = create_tokenizer("spacy")
+    #
+    # data = []
+    #
+    # for ind, (_, row) in tqdm(
+    #         enumerate(bodies.iterrows()), total=len(bodies),
+    #         leave=True, desc=os.path.basename(working_directory)
+    # ):
+    #     body = row['body']
+    #
+    #     if offsets is not None:
+    #         graph_node_spans = offsets_for_func(offsets, body, row["id"])
+    #     else:
+    #         graph_node_spans = []
+    #
+    #     entry = process_body(nlp, body, replacements=graph_node_spans)
+    #
+    #     if entry is not None:
+    #         entry = to_global_ids(entry, id_maps, global_names, local_names)
+    #         data.append(entry)
 
     return data
 
@@ -536,6 +564,7 @@ def group_offsets(offsets):
         offset_ent = (start, end, node_id)
 
         for e in mentioned_in:
+            e = tuple(e)
             if e not in offsets_grouped[package_id]:
                 offsets_grouped[package_id][e] = []
 
@@ -544,52 +573,56 @@ def group_offsets(offsets):
     return offsets_grouped
 
 
-def create_from_dataset():
+def create_from_dataset(args):
     from argparse import ArgumentParser
-    parser = ArgumentParser()
-    parser.add_argument("dataset_path", type=str, help="")
-    parser.add_argument("output_path", type=str, help="")
-    parser.add_argument("--format", "-f", dest="format", default="jsonl", help="jsonl|csv")
-    parser.add_argument("--remove_default", action="store_true", default=False)
-
-    args = parser.parse_args()
+    # parser = ArgumentParser()
+    # parser.add_argument("dataset_path", type=str, help="")
+    # parser.add_argument("output_path", type=str, help="")
+    # parser.add_argument("--format", "-f", dest="format", default="jsonl", help="jsonl|csv")
+    # parser.add_argument("--remove_default", action="store_true", default=False)
+    #
+    # args = parser.parse_args()
 
     global remove_default
     remove_default = args.remove_default
 
-    node_maps = get_node_maps(unpersist(join(args.dataset_path, "common_nodes.bz2")))
-    filecontent = get_filecontent_maps(unpersist(join(args.dataset_path, "common_filecontent.bz2")))
-    offsets = group_offsets(unpersist(join(args.dataset_path, "common_offsets.bz2")))
+    node_maps = get_node_maps(unpersist(join(args.dataset_path, "common_nodes.json.bz2")))
+    filecontent = get_filecontent_maps(unpersist(join(args.dataset_path, "common_filecontent.json.bz2")))
+    offsets = group_offsets(unpersist(join(args.dataset_path, "common_offsets.json.bz2")))
 
     data = []
     nlp = create_tokenizer("spacy")
 
     for ind, (f_body, f_offsets) in enumerate(iterate_functions(offsets, node_maps, filecontent)):
-        data.append(process_body(nlp, f_body, replacements=f_offsets))
+        data.append(process_body(nlp, f_body, replacements=f_offsets, require_labels=args.require_labels))
 
     store(data, args)
 
 
-def create_from_environments():
-    from argparse import ArgumentParser
-    parser = ArgumentParser()
-    parser.add_argument("packages", type=str, help="")
-    parser.add_argument("output_path", type=str, help="")
-    parser.add_argument("--format", "-f", dest="format", default="jsonl", help="jsonl|csv")
-    parser.add_argument("--global_nodes", "-g", dest="global_nodes", default=None)
+def create_from_environments(args):
+    # from argparse import ArgumentParser
+    # parser = ArgumentParser()
+    # parser.add_argument("packages", type=str, help="")
+    # parser.add_argument("output_path", type=str, help="")
+    # parser.add_argument("--format", "-f", dest="format", default="jsonl", help="jsonl|csv")
+    # parser.add_argument("--global_nodes", "-g", dest="global_nodes", default=None)
+    # parser.add_argument("--remove_default", default=False, action="store_true")
 
-    args = parser.parse_args()
+    # args = parser.parse_args()
 
     global_names = load_names(args.global_nodes)
 
+    global remove_default
+    remove_default = args.remove_default
+
     data = []
 
-    for package in os.listdir(args.packages):
-        pkg_path = os.path.join(args.packages, package)
+    for package in os.listdir(args.dataset_path):
+        pkg_path = os.path.join(args.dataset_path, package)
         if not os.path.isdir(pkg_path):
             continue
 
-        data.extend(process_package(working_directory=pkg_path, global_names=global_names))
+        data.extend(process_package(working_directory=pkg_path, global_names=global_names, require_labels=args.require_labels))
 
     store(data, args)
 
@@ -608,6 +641,22 @@ def store(data, args):
 
 
 if __name__ == "__main__":
-    # create_from_environments()
-    remove_default = False
-    create_from_dataset()
+    from argparse import ArgumentParser
+
+    parser = ArgumentParser()
+    parser.add_argument("dataset_format", type=str)
+    parser.add_argument("dataset_path", type=str, help="")
+    parser.add_argument("output_path", type=str, help="")
+    parser.add_argument("--format", "-f", dest="format", default="jsonl", help="jsonl|csv")
+    parser.add_argument("--remove_default", action="store_true", default=False)
+    parser.add_argument("--global_nodes", "-g", dest="global_nodes", default=None)
+    parser.add_argument("--require_labels", action="store_true", default=False)
+    args = parser.parse_args()
+
+    if args.dataset_format == "envs":
+        create_from_environments(args)
+    elif args.dataset_format == "dataset":
+        create_from_dataset(args)
+    else:
+        raise ValueError("supperted dataset formats are: envs|dataset")
+    # remove_default = False

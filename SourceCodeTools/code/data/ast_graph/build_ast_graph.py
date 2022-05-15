@@ -5,6 +5,7 @@ import shutil
 import sys
 from os.path import join
 
+import numpy as np
 import pandas as pd
 
 from tqdm import tqdm
@@ -122,7 +123,8 @@ class MentionTokenizer:
         new_edges = []
 
         subwords = list(map(lambda x: GNode(name=x, type="subword"), subwords))
-        instances = list(map(lambda x: GNode(name=x.name + "@" + dst.name, type="subword_instance"), subwords))
+        instances = list(map(lambda x: GNode(
+            name=x.name + "@" + dst.name, type="subword_instance"), subwords))
         for ind, subword in enumerate(subwords):
             subword_instance = instances[ind]
             new_edges.append({
@@ -206,7 +208,8 @@ class NodeIdResolver:
 
     def new_nodes_for_write(self, from_stashed=False):
 
-        new_nodes = pd.DataFrame(self.new_nodes if not from_stashed else self.stashed_nodes)
+        new_nodes = pd.DataFrame(
+            self.new_nodes if not from_stashed else self.stashed_nodes)
         if len(new_nodes) == 0:
             return None
 
@@ -236,7 +239,8 @@ class NodeIdResolver:
         nodes = self.new_nodes if not from_stashed else self.stashed_nodes
 
         for node in nodes:
-            node["mentioned_in"] = mapping.get(node["mentioned_in"], node["mentioned_in"])
+            node["mentioned_in"] = mapping.get(
+                node["mentioned_in"], node["mentioned_in"])
 
 
 class AstProcessor(AstGraphGenerator):
@@ -247,7 +251,8 @@ class AstProcessor(AstGraphGenerator):
 
         if as_dataframe:
             df = pd.DataFrame(edges)
-            df = df.astype({col: "Int32" for col in df.columns if col not in {"src", "dst", "type"}})
+            df = df.astype(
+                {col: "Int32" for col in df.columns if col not in {"src", "dst", "type"}})
 
             body = "\n".join(self.source)
             cum_lens = get_cum_lens(body, as_bytes=True)
@@ -255,7 +260,8 @@ class AstProcessor(AstGraphGenerator):
 
             def format_offsets(edges: pd.DataFrame):
                 edges["start_line__end_line__start_column__end_column"] = list(
-                    zip(edges["line"], edges["end_line"], edges["col_offset"], edges["end_col_offset"])
+                    zip(edges["line"], edges["end_line"],
+                        edges["col_offset"], edges["end_col_offset"])
                 )
 
                 def into_offset(range):
@@ -264,7 +270,8 @@ class AstProcessor(AstGraphGenerator):
                     except:
                         return None
 
-                edges["offsets"] = edges["start_line__end_line__start_column__end_column"].apply(into_offset)
+                edges["offsets"] = edges["start_line__end_line__start_column__end_column"].apply(
+                    into_offset)
                 edges.drop(
                     axis=1,
                     labels=[
@@ -292,7 +299,8 @@ class AstProcessor(AstGraphGenerator):
 
                 if "line" in edge:
                     edge["offsets"] = into_offset(
-                        (edge["line"], edge["end_line"], edge["col_offset"], edge["end_col_offset"])
+                        (edge["line"], edge["end_line"],
+                         edge["col_offset"], edge["end_col_offset"])
                     )
                     edge.pop("line")
                     edge.pop("end_line")
@@ -302,7 +310,8 @@ class AstProcessor(AstGraphGenerator):
                     edge["offsets"] = None
                 if "var_line" in edge:
                     edge["var_offsets"] = into_offset(
-                        (edge["var_line"], edge["var_end_line"], edge["var_col_offset"], edge["var_end_col_offset"])
+                        (edge["var_line"], edge["var_end_line"],
+                         edge["var_col_offset"], edge["var_end_col_offset"])
                     )
                     edge.pop("var_line")
                     edge.pop("var_end_line")
@@ -326,8 +335,8 @@ def standardize_new_edges(edges, node_resolver, mention_tokenizer):
 
     edges = mention_tokenizer.replace_mentions_with_subwords(edges)
 
-    resolve_node_id = lambda node: node_resolver.resolve_node_id(node)
-    extract_id = lambda node: node.id
+    def resolve_node_id(node): return node_resolver.resolve_node_id(node)
+    def extract_id(node): return node.id
 
     for edge in edges:
         edge["src"] = resolve_node_id(edge["src"])
@@ -352,7 +361,7 @@ def process_code_without_index(source_code, node_resolver, mention_tokenizer, tr
         ast_processor = AstProcessor(source_code)
     except:
         return None, None, None
-    try: # TODO recursion error does not appear consistently. The issue is probably with library versions...
+    try:  # TODO recursion error does not appear consistently. The issue is probably with library versions...
         edges = ast_processor.get_edges(as_dataframe=False)
     except RecursionError:
         return None, None, None
@@ -383,7 +392,8 @@ def build_ast_only_graph(
         source_codes, bpe_tokenizer_path, create_subword_instances, connect_subwords, lang, track_offsets=False
 ):
     node_resolver = NodeIdResolver()
-    mention_tokenizer = MentionTokenizer(bpe_tokenizer_path, create_subword_instances, connect_subwords)
+    mention_tokenizer = MentionTokenizer(
+        bpe_tokenizer_path, create_subword_instances, connect_subwords)
     all_ast_edges = []
     all_offsets = []
 
@@ -470,13 +480,15 @@ def build_ast_only_graph(
         for column, dtype in types.items():
             table[column] = table[column].apply(node2id.get).astype(dtype)
 
-    map_columns_to_int(all_ast_nodes, dense_columns=["id"], sparse_columns=["mentioned_in"])
+    map_columns_to_int(all_ast_nodes, dense_columns=[
+                       "id"], sparse_columns=["mentioned_in"])
     map_columns_to_int(
         all_ast_edges,
         dense_columns=["source_node_id", "target_node_id"],
         sparse_columns=["mentioned_in"]
     )
-    map_columns_to_int(all_offsets, dense_columns=["node_id"], sparse_columns=["mentioned_in"])
+    map_columns_to_int(all_offsets, dense_columns=[
+                       "node_id"], sparse_columns=["mentioned_in"])
 
     return all_ast_nodes, all_ast_edges, all_offsets
 
@@ -487,8 +499,10 @@ pd.options.mode.chained_assignment = None  # default='warn'
 def create_test_data(output_dir):
     # [(id, source), (id, source)]
     test_code = pd.DataFrame.from_records([
-        {"id": 1, "filecontent": "import numpy\nnumpy.array([1,2,3])", "package": "any_name_1"},
-        {"id": 2, "filecontent": "from numpy.submodule import fn1 as f1, fn2 as f2\n", "package": "can use the same name here any_name_1"},
+        {"id": 1,
+            "filecontent": "import numpy\nnumpy.array([1,2,3])", "package": "any_name_1"},
+        {"id": 2, "filecontent": "from numpy.submodule import fn1 as f1, fn2 as f2\n",
+            "package": "can use the same name here any_name_1"},
         {"id": 3, "filecontent": """try:
    a = b
 except Exception as e:
@@ -505,11 +519,15 @@ def build_ast_graph_from_modules():
 
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("source_code", type=str, help="Path to DataFrame pickle (written with pandas.to_pickle, use `bz2` format).")
+    parser.add_argument("source_code", type=str,
+                        help="Path to DataFrame pickle (written with pandas.to_pickle, use `bz2` format).")
     parser.add_argument("output_path")
-    parser.add_argument("--bpe_tokenizer", type=str, help="Path to sentencepiece model. When provided, names will be subtokenized.")
-    parser.add_argument("--visualize", action="store_true", help="Visualize graph. Do not use on large graphs.")
-    parser.add_argument("--create_test_data", action="store_true", help="Visualize graph. Do not use on large graphs.")
+    parser.add_argument("--bpe_tokenizer", type=str,
+                        help="Path to sentencepiece model. When provided, names will be subtokenized.")
+    parser.add_argument("--visualize", action="store_true",
+                        help="Visualize graph. Do not use on large graphs.")
+    parser.add_argument("--create_test_data", action="store_true",
+                        help="Visualize graph. Do not use on large graphs.")
     args = parser.parse_args()
 
     if args.create_test_data:
@@ -522,7 +540,8 @@ def build_ast_graph_from_modules():
     output_dir = args.output_path
 
     nodes, edges, offsets = build_ast_only_graph(
-        zip(source_code["package"], source_code["id"], source_code["filecontent"]), args.bpe_tokenizer,
+        zip(source_code["package"], source_code["id"],
+            source_code["filecontent"]), args.bpe_tokenizer,
         create_subword_instances=False, connect_subwords=False, lang="py", track_offsets=True
     )
 
@@ -591,10 +610,11 @@ class AstDatasetCreator(AbstractDatasetCreator):
     def __init__(
             self, path, lang, bpe_tokenizer, create_subword_instances, connect_subwords, only_with_annotations,
             do_extraction=False, visualize=False, track_offsets=False, remove_type_annotations=False,
-            recompute_l2g=False, chunksize=10000, keep_frac=1.0
+            recompute_l2g=False, chunksize=10000, keep_frac=1.0, seed=None
     ):
         self.chunksize = chunksize
         self.keep_frac = keep_frac
+        self.seed = seed
         super().__init__(
             path, lang, bpe_tokenizer, create_subword_instances, connect_subwords, only_with_annotations,
             do_extraction, visualize, track_offsets, remove_type_annotations, recompute_l2g
@@ -614,14 +634,17 @@ class AstDatasetCreator(AbstractDatasetCreator):
             raise FileExistsError(f"Directory exists: {temp_path}")
         os.mkdir(temp_path)
 
+        rnd_state = np.random.RandomState(self.seed)
+        print('path', self.path)
         for ind, chunk in enumerate(pd.read_csv(self.path, chunksize=self.chunksize)):
-            chunk = chunk.sample(frac=self.keep_frac)
+            chunk = chunk.sample(frac=self.keep_frac, random_state=rnd_state)
             chunk_path = os.path.join(temp_path, f"chunk_{ind}")
             os.mkdir(chunk_path)
             persist(chunk, os.path.join(chunk_path, "source_code.bz2"))
 
         paths = (os.path.join(temp_path, dir) for dir in os.listdir(temp_path))
-        self.environments = sorted(list(filter(lambda path: os.path.isdir(path), paths)), key=lambda x: x.lower())
+        self.environments = sorted(
+            list(filter(lambda path: os.path.isdir(path), paths)), key=lambda x: x.lower())
 
     @staticmethod
     def extract_node_names(nodes_path, min_count):
@@ -630,7 +653,8 @@ class AstDatasetCreator(AbstractDatasetCreator):
 
     def filter_type_edges(self, nodes_path, edges_path):
         logging.info("Filter type edges")
-        filter_type_edges_with_chunks(nodes_path, edges_path, kwarg_fn=self.get_writing_mode)
+        filter_type_edges_with_chunks(
+            nodes_path, edges_path, kwarg_fn=self.get_writing_mode)
 
     def do_extraction(self):
         global_nodes_with_ast = set()
@@ -643,13 +667,15 @@ class AstDatasetCreator(AbstractDatasetCreator):
                 source_code = unpersist(join(env_path, "source_code.bz2"))
 
                 nodes_with_ast, edges_with_ast, offsets = build_ast_only_graph(
-                    zip(source_code["package"], source_code["id"], source_code["filecontent"]), self.bpe_tokenizer,
+                    zip(source_code["package"], source_code["id"],
+                        source_code["filecontent"]), self.bpe_tokenizer,
                     create_subword_instances=self.create_subword_instances, connect_subwords=self.connect_subwords,
                     lang=self.lang, track_offsets=self.track_offsets
                 )
 
             else:
-                nodes_with_ast = unpersist_if_present(join(env_path, "nodes_with_ast.bz2"))
+                nodes_with_ast = unpersist_if_present(
+                    join(env_path, "nodes_with_ast.bz2"))
 
                 if nodes_with_ast is None:
                     continue
@@ -671,7 +697,8 @@ class AstDatasetCreator(AbstractDatasetCreator):
                 filecontent_with_package=source_code,
             )
 
-        self.compact_mapping_for_l2g(global_nodes_with_ast, "local2global_with_ast.bz2")
+        self.compact_mapping_for_l2g(
+            global_nodes_with_ast, "local2global_with_ast.bz2")
 
     def create_output_dirs(self, output_path):
         if not os.path.isdir(output_path):
@@ -705,7 +732,8 @@ if __name__ == "__main__":
     if args.recompute_l2g:
         args.do_extraction = True
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s:%(levelname)s:%(message)s")
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s:%(levelname)s:%(message)s")
 
     dataset = AstDatasetCreator(
         args.source_code, args.language, args.bpe_tokenizer, args.create_subword_instances,

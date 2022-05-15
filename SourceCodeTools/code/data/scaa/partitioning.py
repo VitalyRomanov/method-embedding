@@ -73,7 +73,7 @@ def subgraph_partitioning(path_to_dataset, partition_column, train_frac=0.7):
 
 if __name__ == "__main__":
     # not scalable, but works
-    path = './examples/scaa/'
+    path = './examples/one_to_one/with_ast'
     column = 'task'
     subgraph_partitioning(path, column)
     print('Done')

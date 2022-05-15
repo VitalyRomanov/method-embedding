@@ -59,7 +59,7 @@ class Info:
         self.fn_path = self.filepath + "/" + self.info.split(".py")[1].lstrip("/").lstrip(" ").split("/")[0]
 
     def parse_state(self, parts):
-        self.state = "/".join(self.info.split(".py")[1].lstrip("/").lstrip(" ").split("/")[1:])
+        self.state = "/".join(self.info.split(".py ")[1].lstrip("/").lstrip(" ").split("/")[1:])
 
     def parse_package(self, parts):
         self.package = self.filepath.split("/")[0]
@@ -106,8 +106,8 @@ class DatasetAdapter:
     preferred_column_order = ["id", "package", "function", "info", "label", "partition"]
 
     import_order = [
-        # "variable_misuse",
-        "variable_misuse_repair",
+        "variable_misuse",
+        # "variable_misuse_repair",
         # "exception",
         # "function_docstring",
         # "swapped_operands",
@@ -146,11 +146,11 @@ class DatasetAdapter:
             "provenance": [("info", self.fix_info_if_needed)]
         }
 
-        self.db = SQLTable(self.dataset_location.joinpath("cubert_benchmarks.db"))
+        # self.db = SQLTable(self.dataset_location.joinpath("cubert_benchmarks.db"))
 
-    def load_original_functions(self):
-        functions = self.db.query("SELECT DISTINCT original_id, function FROM functions where comment = 'original' AND dataset = 'variable_misuse'")
-        self.original_functions = dict(zip(functions["original_id"], functions["function"]))
+    # def load_original_functions(self):
+    #     functions = self.db.query("SELECT DISTINCT original_id, function FROM functions where comment = 'original' AND dataset = 'variable_misuse'")
+    #     self.original_functions = dict(zip(functions["original_id"], functions["function"]))
 
     def prepare_misuse_repair_record(self, record):
         print(record)
@@ -320,7 +320,7 @@ class DatasetAdapter:
             parsed_successfully = 0
             parsed_with_errors = 0
 
-            dataset_file = open(self.dataset_location.joinpath(f"{dataset_name}.jsonl"), "w")
+            dataset_file = open(self.dataset_location.joinpath(f"{dataset_name}.json"), "w")
 
             for record in tqdm(self.iterate_dataset(dataset_name), desc=f"Processing {dataset_name}"):
                 info = Info(record["info"])
@@ -348,6 +348,9 @@ class DatasetAdapter:
                     "partition": record["partition"],
                     "parsing_error": record["parsing_error"]
                 }
+
+                if dataset_name == "variable_misuse":
+                    assert record_for_writing["comment"].startswith("original") or record_for_writing["comment"].startswith("VarMisuse")
 
                 if record["parsing_error"] is None:
                     parsed_successfully += 1

@@ -2,8 +2,9 @@ from collections import OrderedDict
 from itertools import chain
 
 import torch
+import torch.nn.functional as F
 
-from SourceCodeTools.models.graph.train.objectives.SubgraphClassifierObjective import SubgraphClassifierObjective
+from SourceCodeTools.models.graph.train.objectives.SubgraphEmbedderObjective import SubgraphMatchingObjective
 
 
 class PoolingLayer(torch.nn.Module):
@@ -17,6 +18,11 @@ class PoolingLayer(torch.nn.Module):
     def forward(self, x):
         length = torch.norm(self.learnable_vector)
         y = torch.mm(x, self.learnable_vector)/length
+        if (y.shape[0] < self.k):
+            y = F.pad(input=y, pad=(
+                0, 0, 0, self.k - y.shape[0]), mode='constant', value=0)
+            x = F.pad(input=x, pad=(
+                0, 0, 0, self.k - x.shape[0]), mode='constant', value=0)
         idx = torch.topk(y, self.k, dim=0)
         y = torch.gather(y, 0, idx.indices)
         y = torch.sigmoid(y)
@@ -24,7 +30,7 @@ class PoolingLayer(torch.nn.Module):
         return torch.mul(x_part, y)
 
 
-class SCAAClassifierObjective(SubgraphClassifierObjective):
+class SCAAClassifierObjective(SubgraphMatchingObjective):
 
     def __init__(
         self, name, graph_model, node_embedder, nodes, data_loading_func, device,
@@ -34,31 +40,31 @@ class SCAAClassifierObjective(SubgraphClassifierObjective):
         early_stopping=False, early_stopping_tolerance=20, nn_index="brute",
         ns_groups=None, subgraph_mapping=None, subgraph_partition=None
     ):
-        SubgraphClassifierObjective.__init__(self,
-                                             name, graph_model, node_embedder, nodes, data_loading_func, device,
-                                             sampling_neighbourhood_size, batch_size,
-                                             tokenizer_path, target_emb_size, link_predictor_type,
-                                             masker, measure_scores, dilate_scores, early_stopping, early_stopping_tolerance, nn_index,
-                                             ns_groups, subgraph_mapping, subgraph_partition
-                                             )
-        self.pooler = PoolingLayer(6, (100, 1))
+        SubgraphMatchingObjective.__init__(self,
+                                           name, graph_model, node_embedder, nodes, data_loading_func, device,
+                                           sampling_neighbourhood_size, batch_size,
+                                           tokenizer_path, target_emb_size, link_predictor_type,
+                                           masker, measure_scores, dilate_scores, early_stopping, early_stopping_tolerance, nn_index,
+                                           ns_groups, subgraph_mapping, subgraph_partition
+                                           )
+        self.pooler = PoolingLayer(100, (100, 1))
 
     def parameters(self, recurse: bool = True):
-        return chain(self.classifier.parameters(), self.pooler.parameters())
+        return chain(self.link_predictor.parameters(), self.pooler.parameters())
 
     def pooling_fn(self, node_embeddings):
         return self.pooler(node_embeddings)
 
     def custom_state_dict(self):
         state_dict = OrderedDict()
-        for k, v in self.classifier.state_dict().items():
+        for k, v in self.link_predictor.state_dict().items():
             state_dict[f"classifier.{k}"] = v
         for k, v in self.pooler.state_dict().items():
             state_dict[f"pooler.{k}"] = v
         return state_dict
 
     def custom_load_state_dict(self, state_dicts):
-        self.classifier.load_state_dict(
+        self.link_predictor.load_state_dict(
             self.get_prefix("classifier", state_dicts)
         )
         self.pooler.load_state_dict(
