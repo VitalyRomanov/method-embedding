@@ -13,7 +13,7 @@ class ReplacementDetector:
         self.original = original
         self.modified = modified
 
-        parts = modified["info"].split("`")
+        parts = modified["comment"].split("`")
         # print(parts)
         self.original_var = parts[-4]
         self.replacement_var = parts[-2]
@@ -32,7 +32,7 @@ class ReplacementDetector:
         m = self.modified["function"]
 
         while pos_1 < len(o) or pos_2 < len(m):
-            if o[pos_1] == m[pos_1]:
+            if pos_1 < len(o) and pos_2 < len(m) and o[pos_1] == m[pos_1]:
                 pos_1 += 1
                 pos_2 += 1
             else:
@@ -52,27 +52,31 @@ def detect_misuse(data_path, output_path):
     with open(output_path, "w") as sink:
         for ind, record in enumerate(tqdm(iterate_json(data_path))):
             if ind % 2 == 0:
-                assert record["info"].endswith("original")
+                assert record["comment"].endswith("original")
 
             if ind % 2 == 0:
                 if original is not None:
                     d = ReplacementDetector(original, misuse)
                     o_span, m_span = d.get_spans()
-                    r = {
-                        "info": misuse["info"],
+                    record_for_writing = {
+                        "fn_path": misuse["fn_path"],
+                        "function": misuse["function"],
+                        "comment": misuse["comment"],
+                        "package": misuse["fn_path"].split("/")[1],
+                        "label": "Variable misuse",
+                        "partition": misuse["partition"],
+                        "parsing_error": misuse["parsing_error"],
                         "original_function": original["function"],
                         "original_span": o_span,
-                        "function": misuse["function"],
                         "misuse_span": m_span,
-                        "label": "Variable misuse"
                     }
-                    sink.write(f"{json.dumps(r)}\n")
+                    sink.write(f"{json.dumps(record_for_writing)}\n")
 
                 original = record
             else:
                 misuse = record
-                o_info = original["info"].strip("original")
-                assert misuse["info"][:len(o_info)] == o_info
+                o_info = original["fn_path"]
+                assert misuse["fn_path"] == o_info
 
 
 if __name__ == "__main__":
