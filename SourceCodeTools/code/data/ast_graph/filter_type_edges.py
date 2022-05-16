@@ -9,6 +9,8 @@ def filter_type_edges(nodes, edges, keep_proportion=0.0):
     annotations = edges.query(f"type == 'annotation_for' or type == 'returned_by' or type == 'annotation_for_rev' or type == 'returned_by_rev'")
     no_annotations = edges.query(f"type != 'annotation_for' and type != 'returned_by' and type != 'annotation_for_rev' and type != 'returned_by_rev'")
 
+    annotations = annotations.query("type == 'annotation_for' or type == 'returned_by'")
+
     to_keep = int(len(annotations) * keep_proportion)
     if to_keep == 0:
         annotations_removed = annotations
@@ -30,7 +32,8 @@ def filter_type_edges(nodes, edges, keep_proportion=0.0):
         get_name = lambda id_: node2name[id_]
         annotations["source_node_id"] = annotations["source_node_id"].apply(get_name)
         # rename columns to use as a dataset
-        annotations.rename({"source_node_id": "dst", "target_node_id": "src"}, axis=1, inplace=True)
+        # annotations.rename({"source_node_id": "dst", "target_node_id": "src"}, axis=1, inplace=True)
+        annotations.rename({"target_node_id": "src", "type_string": "dst"}, axis=1, inplace=True)
         annotations = annotations[["src","dst"]]
 
     return no_annotations, annotations

@@ -29,42 +29,45 @@ class SubgraphLoader:
         self.batch_size = batch_size
         self.graph_node_types = graph_node_types
 
+    def load_ids(self, batch_ids):
+        node_ids = dict()
+        subgraphs = dict()
+
+        for id_ in batch_ids:
+            subgraph_nodes = self._get_subgraph(id_)
+            subgraphs[id_] = subgraph_nodes
+
+            for type_ in subgraph_nodes:
+                if type_ not in node_ids:
+                    node_ids[type_] = set()
+                node_ids[type_].update(subgraph_nodes[type_])
+
+        for type_ in node_ids:
+            node_ids[type_] = sorted(list(node_ids[type_]))
+
+        coincidence_matrix = []
+        for id_, subgraph in subgraphs.items():
+            coincidence_matrix.append([])
+            for type_ in self.graph_node_types:
+                subgraph_nodes = subgraph[type_]
+                for node_id in node_ids[type_]:
+                    coincidence_matrix[-1].append(node_id in subgraph_nodes)
+
+        coincidence_matrix = torch.BoolTensor(coincidence_matrix)
+
+        loader = self.loading_fn(node_ids)
+
+        for input_nodes, seeds, blocks in loader:
+            # generator contains only one batch
+            return input_nodes, (coincidence_matrix, torch.LongTensor(batch_ids)), blocks
+
     def __iter__(self):
         # TODO
         # supports only nodes without types
 
         for i in range(0, len(self.ids), self.batch_size):
-
-            node_ids = dict()
-            subgraphs = dict()
-
             batch_ids = self.ids[i: i + self.batch_size]
-            for id_ in batch_ids:
-                subgraph_nodes = self._get_subgraph(id_)
-                subgraphs[id_] = subgraph_nodes
-
-                for type_ in subgraph_nodes:
-                    if type_ not in node_ids:
-                        node_ids[type_] = set()
-                    node_ids[type_].update(subgraph_nodes[type_])
-
-            for type_ in node_ids:
-                node_ids[type_] = sorted(list(node_ids[type_]))
-
-            coincidence_matrix = []
-            for id_, subgraph in subgraphs.items():
-                coincidence_matrix.append([])
-                for type_ in self.graph_node_types:
-                    subgraph_nodes = subgraph[type_]
-                    for node_id in node_ids[type_]:
-                        coincidence_matrix[-1].append(node_id in subgraph_nodes)
-
-            coincidence_matrix = torch.BoolTensor(coincidence_matrix)
-
-            loader = self.loading_fn(node_ids)
-
-            for input_nodes, seeds, blocks in loader:
-                yield input_nodes, (coincidence_matrix, torch.LongTensor(batch_ids)), blocks
+            yield self.load_ids(batch_ids)
 
         # for id_ in self.ids:
         #     idx = self._get_subgraph(id_)
@@ -73,6 +76,8 @@ class SubgraphLoader:
         #         yield input_nodes, torch.LongTensor([id_]), blocks
 
     def _get_subgraph(self, id_):
+        if isinstance(id_, torch.Tensor):
+            id_ = id_.item()
         return self.subgraph_mapping[id_]
 
 
@@ -100,10 +105,10 @@ class SubgraphAbstractObjective(AbstractObjective):
         self.negative_factor = 1
         self.update_embeddings_for_queries = False
 
-    def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
-        self.target_embedder = SubgraphElementEmbedderWithSubwords(
-            data_loading_func(), self.target_emb_size, tokenizer_path
-        )
+    # def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
+    #     self.target_embedder = SubgraphElementEmbedderWithSubwords(
+    #         data_loading_func(), self.target_emb_size, tokenizer_path
+    #     )
 
     def _get_training_targets(self):
 
@@ -155,7 +160,7 @@ class SubgraphAbstractObjective(AbstractObjective):
 
     def _get_loaders(self, train_idx, val_idx, test_idx, batch_size):
 
-        logging.info("Batch size is ignored for subgraphs")
+        # logging.info("Batch size is ignored for subgraphs")
 
         subgraph_mapping = self.subgraph_mapping
 
@@ -374,16 +379,16 @@ class SubgraphElementEmbedderBase(ElementEmbedderBase):
         return train_pool, val_pool, test_pool
 
 
-class SubgraphElementEmbedderWithSubwords(SubgraphElementEmbedderBase, ElementEmbedderWithBpeSubwords):
-    def __init__(self, elements, emb_size, tokenizer_path, num_buckets=100000, max_len=10):
-        self.tokenizer_path = tokenizer_path
-        SubgraphElementEmbedderBase.__init__(self, elements=elements, compact_dst=False)
-        nn.Module.__init__(self)
-        Scorer.__init__(self, num_embs=len(self.elements["dst"].unique()), emb_size=emb_size,
-                        src2dst=self.element_lookup)
-
-        self.emb_size = emb_size
-        self.init_subwords(elements, num_buckets=num_buckets, max_len=max_len)
+# class SubgraphElementEmbedderWithSubwords(SubgraphElementEmbedderBase, ElementEmbedderWithBpeSubwords):
+#     def __init__(self, elements, emb_size, tokenizer_path, num_buckets=100000, max_len=10):
+#         self.tokenizer_path = tokenizer_path
+#         SubgraphElementEmbedderBase.__init__(self, elements=elements, compact_dst=False)
+#         nn.Module.__init__(self)
+#         Scorer.__init__(self, num_embs=len(self.elements["dst"].unique()), emb_size=emb_size,
+#                         src2dst=self.element_lookup)
+#
+#         self.emb_size = emb_size
+#         self.init_subwords(elements, num_buckets=num_buckets, max_len=max_len)
 
 
 class SubgraphClassifierTargetMapper(SubgraphElementEmbedderBase, Scorer):

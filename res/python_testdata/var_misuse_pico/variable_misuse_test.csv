@@ -1,0 +1,989 @@
+id,fn_path,filecontent,comment,package,label,partition
+0,numba/numba/numba/ir.py/Expr.cast,"@classmethod
+def cast(cls, value, loc):
+    '\n        A node for implicit casting at the return statement\n        '
+    op = 'cast'
+    return cls(op=op, value=value, loc=loc)",original,numba,Correct,train
+1,numba/numba/numba/ir.py/Expr.cast,"@classmethod
+def cast(cls, value, loc):
+    '\n        A node for implicit casting at the return statement\n        '
+    op = 'cast'
+    return cls(op=op, value=value, loc=cls)",VarMisuse@36/62 `loc`->`cls`,numba,Variable misuse,train
+2,PyTables/PyTables/tables/utils.py/string_to_classes,"def string_to_classes(s):
+    if (s == '*'):
+        c = sorted(six.iterkeys(tracked_classes))
+        return c
+    else:
+        return s.split()",original,PyTables,Correct,train
+3,PyTables/PyTables/tables/utils.py/string_to_classes,"def string_to_classes(s):
+    if (c == '*'):
+        c = sorted(six.iterkeys(tracked_classes))
+        return c
+    else:
+        return s.split()",VarMisuse@12/15 `s`->`c`,PyTables,Variable misuse,train
+4,openstack/taskflow/taskflow/jobs/base.py/Job.__init__,"def __init__(self, board, name, uuid=None, details=None, backend=None, book=None, book_data=None):
+    if uuid:
+        self._uuid = uuid
+    else:
+        self._uuid = uuidutils.generate_uuid()
+    self._name = name
+    if (not details):
+        details = {
+            
+        }
+    self._details = details
+    self._backend = backend
+    self._board = board
+    self._book = book
+    if (not book_data):
+        book_data = {
+            
+        }
+    self._book_data = book_data",original,openstack,Correct,train
+5,openstack/taskflow/taskflow/jobs/base.py/Job.__init__,"def __init__(self, board, name, uuid=None, details=None, backend=None, book=None, book_data=None):
+    if uuid:
+        self._uuid = uuid
+    else:
+        self._uuid = uuidutils.generate_uuid()
+    self._name = name
+    if (not details):
+        details = {
+            
+        }
+    self._details = details
+    self._backend = backend
+    self._board = board
+    self._book = book
+    if (not book_data):
+        book_data = {
+            
+        }
+    name._book_data = book_data",VarMisuse@123/144 `self`->`name`,openstack,Variable misuse,train
+6,openstack/neutron/neutron/tests/tools.py/get_random_ip_address,"def get_random_ip_address(version=4):
+    if (version == 4):
+        ip_string = ('10.%d.%d.%d' % (random.randint(3, 254), random.randint(3, 254), random.randint(3, 254)))
+        return netaddr.IPAddress(ip_string)
+    else:
+        ip = ipv6_utils.get_ipv6_addr_by_EUI64('2001:db8::/64', get_random_mac())
+        return ip",original,openstack,Correct,train
+7,openstack/neutron/neutron/tests/tools.py/get_random_ip_address,"def get_random_ip_address(version=4):
+    if (ip == 4):
+        ip_string = ('10.%d.%d.%d' % (random.randint(3, 254), random.randint(3, 254), random.randint(3, 254)))
+        return netaddr.IPAddress(ip_string)
+    else:
+        ip = ipv6_utils.get_ipv6_addr_by_EUI64('2001:db8::/64', get_random_mac())
+        return ip",VarMisuse@14/18 `version`->`ip`,openstack,Variable misuse,train
+8,c00w/bitHopper/bitHopper/Configuration/Miners.py/load_from_db,"def load_from_db():
+    '\n    Load miners from database\n    '
+    columns = ['Username TEXT', 'Password TEXT']
+    bitHopper.Database.Commands.Create_Table('Miners', columns)
+    results = bitHopper.Database.execute('SELECT Username, Password FROM Miners')
+    miners = set()
+    for (username, password) in results:
+        miners.add((username, password))
+    return miners",original,c00w,Correct,train
+9,c00w/bitHopper/bitHopper/Configuration/Miners.py/load_from_db,"def load_from_db():
+    '\n    Load miners from database\n    '
+    columns = ['Username TEXT', 'Password TEXT']
+    bitHopper.Database.Commands.Create_Table('Miners', columns)
+    results = bitHopper.Database.execute('SELECT Username, Password FROM Miners')
+    miners = set()
+    for (username, password) in results:
+        miners.add((username, results))
+    return miners",VarMisuse@67/116 `password`->`results`,c00w,Variable misuse,train
+10,sympy/sympy/sympy/core/logic.py/_fuzzy_group,"def _fuzzy_group(args, quick_exit=False):
+    'Return True if all args are True, None if there is any None else False\n    unless ``quick_exit`` is True (then return None as soon as a second False\n    is seen.\n\n     ``_fuzzy_group`` is like ``fuzzy_and`` except that it is more\n    conservative in returning a False, waiting to make sure that all\n    arguments are True or False and returning None if any arguments are\n    None. It also has the capability of permiting only a single False and\n    returning None if more than one is seen. For example, the presence of a\n    single transcendental amongst rationals would indicate that the group is\n    no longer rational; but a second transcendental in the group would make the\n    determination impossible.\n\n\n    Examples\n    ========\n\n    >>> from sympy.core.logic import _fuzzy_group\n\n    By default, multiple Falses mean the group is broken:\n\n    >>> _fuzzy_group([False, False, True])\n    False\n\n    If multiple Falses mean the group status is unknown then set\n    `quick_exit` to True so None can be returned when the 2nd False is seen:\n\n    >>> _fuzzy_group([False, False, True], quick_exit=True)\n\n    But if only a single False is seen then the group is known to\n    be broken:\n\n    >>> _fuzzy_group([False, True, True], quick_exit=True)\n    False\n\n    '
+    saw_other = False
+    for a in args:
+        if (a is True):
+            continue
+        if (a is None):
+            return
+        if (quick_exit and saw_other):
+            return
+        saw_other = True
+    return (not saw_other)",original,sympy,Correct,train
+11,sympy/sympy/sympy/core/logic.py/_fuzzy_group,"def _fuzzy_group(args, quick_exit=False):
+    'Return True if all args are True, None if there is any None else False\n    unless ``quick_exit`` is True (then return None as soon as a second False\n    is seen.\n\n     ``_fuzzy_group`` is like ``fuzzy_and`` except that it is more\n    conservative in returning a False, waiting to make sure that all\n    arguments are True or False and returning None if any arguments are\n    None. It also has the capability of permiting only a single False and\n    returning None if more than one is seen. For example, the presence of a\n    single transcendental amongst rationals would indicate that the group is\n    no longer rational; but a second transcendental in the group would make the\n    determination impossible.\n\n\n    Examples\n    ========\n\n    >>> from sympy.core.logic import _fuzzy_group\n\n    By default, multiple Falses mean the group is broken:\n\n    >>> _fuzzy_group([False, False, True])\n    False\n\n    If multiple Falses mean the group status is unknown then set\n    `quick_exit` to True so None can be returned when the 2nd False is seen:\n\n    >>> _fuzzy_group([False, False, True], quick_exit=True)\n\n    But if only a single False is seen then the group is known to\n    be broken:\n\n    >>> _fuzzy_group([False, True, True], quick_exit=True)\n    False\n\n    '
+    saw_other = False
+    for a in args:
+        if (a is True):
+            continue
+        if (a is None):
+            return
+        if (quick_exit and a):
+            return
+        saw_other = True
+    return (not saw_other)",VarMisuse@55/601 `saw_other`->`a`,sympy,Variable misuse,train
+12,scipy/scipy/scipy/integrate/tests/test_quadpack.py/TestNQuad.test_matching_tplquad,"def test_matching_tplquad(self):
+
+    def func3d(x0, x1, x2, c0, c1):
+        return (((((x0 ** 2) + (c0 * (x1 ** 3))) - (x0 * x1)) + 1) + (c1 * np.sin(x2)))
+    res = tplquad(func3d, (- 1), 2, (lambda x: (- 2)), (lambda x: 2), (lambda x, y: (- np.pi)), (lambda x, y: np.pi), args=(2, 3))
+    res2 = nquad(func3d, [[(- np.pi), np.pi], [(- 2), 2], ((- 1), 2)], args=(2, 3))
+    assert_almost_equal(res, res2)",original,scipy,Correct,train
+13,scipy/scipy/scipy/integrate/tests/test_quadpack.py/TestNQuad.test_matching_tplquad,"def test_matching_tplquad(self):
+
+    def func3d(x0, x1, x2, c0, c1):
+        return (((((x0 ** 2) + (c0 * (x1 ** 3))) - (x0 * x1)) + 1) + (c1 * np.sin(x2)))
+    res = tplquad(func3d, (- 1), 2, (lambda x: (- 2)), (lambda x: 2), (lambda x, y: (- np.pi)), (lambda x, y: np.pi), args=(2, 3))
+    res2 = nquad(func3d, [[(- np.pi), np.pi], [(- 2), 2], ((- 1), 2)], args=(2, 3))
+    assert_almost_equal(res2, res2)",VarMisuse@186/199 `res`->`res2`,scipy,Variable misuse,train
+14,airbnb/airflow/airflow/models.py/DAG.owner,"@property
+def owner(self):
+    return ', '.join(list(set([t.owner for t in self.tasks])))",original,airbnb,Correct,train
+15,airbnb/airflow/airflow/models.py/DAG.owner,"@property
+def owner(self):
+    return ', '.join(list(set([t.owner for t in t.tasks])))",VarMisuse@29/32 `self`->`t`,airbnb,Variable misuse,train
+16,dimagi/commcare-hq/corehq/apps/es/tests/test_aggregations.py/TestAggregations.test_extended_stats_aggregation,"def test_extended_stats_aggregation(self):
+    json_output = {
+        'query': {
+            'filtered': {
+                'filter': {
+                    'and': [{
+                        'match_all': {
+                            
+                        },
+                    }],
+                },
+                'query': {
+                    'match_all': {
+                        
+                    },
+                },
+            },
+        },
+        'aggs': {
+            'name_stats': {
+                'extended_stats': {
+                    'field': 'name',
+                    'script': 'MY weird script',
+                },
+            },
+        },
+        'size': SIZE_LIMIT,
+    }
+    query = HQESQuery('cases').aggregation(ExtendedStatsAggregation('name_stats', 'name', script='MY weird script'))
+    self.checkQuery(query, json_output)",original,dimagi,Correct,train
+17,dimagi/commcare-hq/corehq/apps/es/tests/test_aggregations.py/TestAggregations.test_extended_stats_aggregation,"def test_extended_stats_aggregation(self):
+    json_output = {
+        'query': {
+            'filtered': {
+                'filter': {
+                    'and': [{
+                        'match_all': {
+                            
+                        },
+                    }],
+                },
+                'query': {
+                    'match_all': {
+                        
+                    },
+                },
+            },
+        },
+        'aggs': {
+            'name_stats': {
+                'extended_stats': {
+                    'field': 'name',
+                    'script': 'MY weird script',
+                },
+            },
+        },
+        'size': SIZE_LIMIT,
+    }
+    query = HQESQuery('cases').aggregation(ExtendedStatsAggregation('name_stats', 'name', script='MY weird script'))
+    query.checkQuery(query, json_output)",VarMisuse@126/199 `self`->`query`,dimagi,Variable misuse,train
+18,sympy/sympy/sympy/polys/compatibility.py/IPolys.dmp_irreducible_p,"def dmp_irreducible_p(self, f):
+    return dmp_irreducible_p(self.to_dense(f), (self.ngens - 1), self.domain)",original,sympy,Correct,train
+19,sympy/sympy/sympy/polys/compatibility.py/IPolys.dmp_irreducible_p,"def dmp_irreducible_p(self, f):
+    return dmp_irreducible_p(f.to_dense(f), (self.ngens - 1), self.domain)",VarMisuse@15/28 `self`->`f`,sympy,Variable misuse,train
+20,circus-tent/circus/circus/arbiter.py/Arbiter.reload,"@synchronized('arbiter_reload')
+@gen.coroutine
+@debuglog
+def reload(self, graceful=True, sequential=False):
+    'Reloads everything.\n\n        Run the :func:`prereload_fn` callable if any, then gracefuly\n        reload all watchers.\n        '
+    if self._stopping:
+        return
+    if (self.prereload_fn is not None):
+        self.prereload_fn(self)
+    for handler in logger.handlers:
+        if isinstance(handler, logging.FileHandler):
+            handler.acquire()
+            handler.stream.close()
+            handler.stream = open(handler.baseFilename, handler.mode)
+            handler.release()
+    for watcher in self.iter_watchers():
+        (yield watcher._reload(graceful=graceful, sequential=sequential))
+        tornado_sleep(self.warmup_delay)",original,circus-tent,Correct,train
+21,circus-tent/circus/circus/arbiter.py/Arbiter.reload,"@synchronized('arbiter_reload')
+@gen.coroutine
+@debuglog
+def reload(self, graceful=True, sequential=False):
+    'Reloads everything.\n\n        Run the :func:`prereload_fn` callable if any, then gracefuly\n        reload all watchers.\n        '
+    if self._stopping:
+        return
+    if (self.prereload_fn is not None):
+        self.prereload_fn(self)
+    for handler in logger.handlers:
+        if isinstance(handler, logging.FileHandler):
+            handler.acquire()
+            handler.stream.close()
+            handler.stream = open(handler.baseFilename, handler.mode)
+            handler.release()
+    for watcher in self.iter_watchers():
+        (yield watcher._reload(graceful=self, sequential=sequential))
+        tornado_sleep(self.warmup_delay)",VarMisuse@141/217 `graceful`->`self`,circus-tent,Variable misuse,train
+22,jnrbsn/daemonocle/tests/test_shutdown.py/test_unresponsive_stop,"def test_unresponsive_stop(pyscript):
+    script = pyscript(""\n        import signal\n        import sys\n        import time\n        from daemonocle import Daemon\n\n        def worker():\n            def handle_sigterm(*args, **kwargs):\n                time.sleep(10)\n\n            signal.signal(signal.SIGTERM, handle_sigterm)\n            time.sleep(10)\n\n        daemon = Daemon(worker=worker, prog='foo', pidfile='foo.pid',\n                        stop_timeout=1)\n        daemon.do_action(sys.argv[1])\n    "")
+    pidfile = os.path.realpath(os.path.join(script.dirname, 'foo.pid'))
+    script.run('start')
+    with open(pidfile, 'rb') as f:
+        pid = int(f.read())
+    result = script.run('stop')
+    assert (result.returncode == 1)
+    assert (result.stdout == b'Stopping foo ... FAILED\n')
+    assert (result.stderr == 'ERROR: Timed out while waiting for process (PID {pid}) to terminate\n'.format(pid=pid).encode('utf-8'))
+    assert psutil.pid_exists(pid)
+    os.kill(pid, signal.SIGKILL)
+    try:
+        proc = psutil.Process(pid)
+    except psutil.NoSuchProcess:
+        pass
+    else:
+        proc.wait(timeout=1)",original,jnrbsn,Correct,train
+23,jnrbsn/daemonocle/tests/test_shutdown.py/test_unresponsive_stop,"def test_unresponsive_stop(pyscript):
+    script = result(""\n        import signal\n        import sys\n        import time\n        from daemonocle import Daemon\n\n        def worker():\n            def handle_sigterm(*args, **kwargs):\n                time.sleep(10)\n\n            signal.signal(signal.SIGTERM, handle_sigterm)\n            time.sleep(10)\n\n        daemon = Daemon(worker=worker, prog='foo', pidfile='foo.pid',\n                        stop_timeout=1)\n        daemon.do_action(sys.argv[1])\n    "")
+    pidfile = os.path.realpath(os.path.join(script.dirname, 'foo.pid'))
+    script.run('start')
+    with open(pidfile, 'rb') as f:
+        pid = int(f.read())
+    result = script.run('stop')
+    assert (result.returncode == 1)
+    assert (result.stdout == b'Stopping foo ... FAILED\n')
+    assert (result.stderr == 'ERROR: Timed out while waiting for process (PID {pid}) to terminate\n'.format(pid=pid).encode('utf-8'))
+    assert psutil.pid_exists(pid)
+    os.kill(pid, signal.SIGKILL)
+    try:
+        proc = psutil.Process(pid)
+    except psutil.NoSuchProcess:
+        pass
+    else:
+        proc.wait(timeout=1)",VarMisuse@12/20 `pyscript`->`result`,jnrbsn,Variable misuse,train
+24,openstack/rally/tests/unit/plugins/openstack/context/sahara/test_sahara_output_data_sources.py/SaharaOutputDataSourcesTestCase.setUp,"def setUp(self):
+    super(SaharaOutputDataSourcesTestCase, self).setUp()
+    fake_dict = FakeDict()
+    fake_dict.__dict__['username'] = 'user'
+    fake_dict.__dict__['password'] = 'passwd'
+    self.tenants_num = 2
+    self.users_per_tenant = 2
+    self.users = (self.tenants_num * self.users_per_tenant)
+    self.task = mock.MagicMock()
+    self.tenants = {
+        
+    }
+    self.users_key = []
+    for i in range(self.tenants_num):
+        self.tenants[str(i)] = {
+            'id': str(i),
+            'name': str(i),
+            'sahara': {
+                'image': '42',
+            },
+        }
+        for j in range(self.users_per_tenant):
+            self.users_key.append({
+                'id': ('%s_%s' % (str(i), str(j))),
+                'tenant_id': str(i),
+                'credential': fake_dict,
+            })
+    self.user_key = [{
+        'id': i,
+        'tenant_id': j,
+        'credential': 'credential',
+    } for j in range(self.tenants_num) for i in range(self.users_per_tenant)]
+    self.context.update({
+        'config': {
+            'users': {
+                'tenants': self.tenants_num,
+                'users_per_tenant': self.users_per_tenant,
+            },
+            'sahara_output_data_sources': {
+                'output_type': 'hdfs',
+                'output_url_prefix': 'hdfs://test_host/',
+            },
+        },
+        'admin': {
+            'credential': mock.MagicMock(),
+        },
+        'task': mock.MagicMock(),
+        'users': self.users_key,
+        'tenants': self.tenants,
+    })",original,openstack,Correct,train
+25,openstack/rally/tests/unit/plugins/openstack/context/sahara/test_sahara_output_data_sources.py/SaharaOutputDataSourcesTestCase.setUp,"def setUp(self):
+    super(SaharaOutputDataSourcesTestCase, self).setUp()
+    fake_dict = FakeDict()
+    fake_dict.__dict__['username'] = 'user'
+    fake_dict.__dict__['password'] = 'passwd'
+    self.tenants_num = 2
+    self.users_per_tenant = 2
+    self.users = (self.tenants_num * self.users_per_tenant)
+    self.task = mock.MagicMock()
+    self.tenants = {
+        
+    }
+    self.users_key = []
+    for i in range(self.tenants_num):
+        j.tenants[str(i)] = {
+            'id': str(i),
+            'name': str(i),
+            'sahara': {
+                'image': '42',
+            },
+        }
+        for j in range(self.users_per_tenant):
+            self.users_key.append({
+                'id': ('%s_%s' % (str(i), str(j))),
+                'tenant_id': str(i),
+                'credential': fake_dict,
+            })
+    self.user_key = [{
+        'id': i,
+        'tenant_id': j,
+        'credential': 'credential',
+    } for j in range(self.tenants_num) for i in range(self.users_per_tenant)]
+    self.context.update({
+        'config': {
+            'users': {
+                'tenants': self.tenants_num,
+                'users_per_tenant': self.users_per_tenant,
+            },
+            'sahara_output_data_sources': {
+                'output_type': 'hdfs',
+                'output_url_prefix': 'hdfs://test_host/',
+            },
+        },
+        'admin': {
+            'credential': mock.MagicMock(),
+        },
+        'task': mock.MagicMock(),
+        'users': self.users_key,
+        'tenants': self.tenants,
+    })",VarMisuse@109/149 `self`->`j`,openstack,Variable misuse,train
+26,edgewall/trac/trac/ticket/default_workflow.py/ConfigurableTicketWorkflow.render_ticket_action_control,"def render_ticket_action_control(self, req, ticket, action):
+    self.log.debug('render_ticket_action_control: action ""%s""', action)
+    this_action = self.actions[action]
+    status = this_action['newstate']
+    operations = this_action['operations']
+    current_owner = ticket._old.get('owner', ticket['owner'])
+    author = get_reporter_id(req, 'author')
+    author_info = partial(Chrome(self.env).authorinfo, req, resource=ticket.resource)
+    format_author = partial(Chrome(self.env).format_author, req, resource=ticket.resource)
+    formatted_current_owner = author_info(current_owner)
+    exists = (ticket._old.get('status', ticket['status']) is not None)
+    control = []
+    hints = []
+    if ('reset_workflow' in operations):
+        control.append(_('from invalid state'))
+        hints.append(_('Current state no longer exists'))
+    if ('del_owner' in operations):
+        hints.append(_('The ticket will be disowned'))
+    if (('set_owner' in operations) or ('may_set_owner' in operations)):
+        if ('set_owner' in this_action):
+            owners = self._to_users(this_action['set_owner'], ticket)
+        elif self.config.getbool('ticket', 'restrict_owner'):
+            perm = PermissionSystem(self.env)
+            owners = perm.get_users_with_permission('TICKET_MODIFY')
+            owners = [user for user in owners if ('TICKET_MODIFY' in PermissionCache(self.env, user, ticket.resource))]
+            owners = sorted(owners)
+        else:
+            owners = None
+        if ('set_owner' in operations):
+            default_owner = author
+        elif ('may_set_owner' in operations):
+            if (not exists):
+                default_owner = TicketSystem(self.env).default_owner
+            else:
+                default_owner = ticket._old.get('owner', (ticket['owner'] or None))
+            if ((owners is not None) and (default_owner not in owners)):
+                owners.insert(0, default_owner)
+        else:
+            raise AssertionError(operations)
+        id = ('action_%s_reassign_owner' % action)
+        if (not owners):
+            owner = req.args.get(id, default_owner)
+            control.append(tag_('to %(owner)s', owner=tag.input(type='text', id=id, name=id, value=owner)))
+            if ((not exists) or (current_owner is None)):
+                hints.append(_('The owner will be the specified user'))
+            else:
+                hints.append(tag_('The owner will be changed from %(current_owner)s to the specified user', current_owner=formatted_current_owner))
+        elif (len(owners) == 1):
+            owner = tag.input(type='hidden', id=id, name=id, value=owners[0])
+            formatted_new_owner = author_info(owners[0])
+            control.append(tag_('to %(owner)s', owner=tag(formatted_new_owner, owner)))
+            if ((not exists) or (current_owner is None)):
+                hints.append(tag_('The owner will be %(new_owner)s', new_owner=formatted_new_owner))
+            elif (ticket['owner'] != owners[0]):
+                hints.append(tag_('The owner will be changed from %(current_owner)s to %(new_owner)s', current_owner=formatted_current_owner, new_owner=formatted_new_owner))
+        else:
+            selected_owner = req.args.get(id, default_owner)
+            control.append(tag_('to %(owner)s', owner=tag.select([tag.option(format_author(x), value=(x if (x is not None) else ''), selected=((x == selected_owner) or None)) for x in owners], id=id, name=id)))
+            if ((not exists) or (current_owner is None)):
+                hints.append(_('The owner will be the selected user'))
+            else:
+                hints.append(tag_('The owner will be changed from %(current_owner)s to the selected user', current_owner=formatted_current_owner))
+    elif (('set_owner_to_self' in operations) and (ticket._old.get('owner', ticket['owner']) != author)):
+        formatted_author = author_info(author)
+        if ((not exists) or (current_owner is None)):
+            hints.append(tag_('The owner will be %(new_owner)s', new_owner=formatted_author))
+        else:
+            hints.append(tag_('The owner will be changed from %(current_owner)s to %(new_owner)s', current_owner=formatted_current_owner, new_owner=formatted_author))
+    if ('set_resolution' in operations):
+        if ('set_resolution' in this_action):
+            resolutions = this_action['set_resolution']
+        else:
+            resolutions = [r.name for r in Resolution.select(self.env)]
+        if (not resolutions):
+            raise TracError(_('Your workflow attempts to set a resolution but none is defined (configuration issue, please contact your Trac admin).'))
+        id = ('action_%s_resolve_resolution' % action)
+        if (len(resolutions) == 1):
+            resolution = tag.input(type='hidden', id=id, name=id, value=resolutions[0])
+            control.append(tag_('as %(resolution)s', resolution=tag(resolutions[0], resolution)))
+            hints.append(tag_('The resolution will be set to %(name)s', name=resolutions[0]))
+        else:
+            selected_option = req.args.get(id, TicketSystem(self.env).default_resolution)
+            control.append(tag_('as %(resolution)s', resolution=tag.select([tag.option(x, value=x, selected=((x == selected_option) or None)) for x in resolutions], id=id, name=id)))
+            hints.append(_('The resolution will be set'))
+    if ('del_resolution' in operations):
+        hints.append(_('The resolution will be deleted'))
+    if ('leave_status' in operations):
+        control.append(tag_('as %(status)s', status=ticket._old.get('status', ticket['status'])))
+        if (len(operations) == 1):
+            hints.append((tag_('The owner will remain %(current_owner)s', current_owner=formatted_current_owner) if current_owner else _('The ticket will remain with no owner')))
+    elif (ticket['status'] is None):
+        hints.append(tag_(""The status will be '%(name)s'"", name=status))
+    elif (status != '*'):
+        hints.append(tag_(""Next status will be '%(name)s'"", name=status))
+    return (this_action['label'], tag(separated(control, ' ')), tag((separated(hints, '. ', '.') if hints else '')))",original,edgewall,Correct,train
+27,edgewall/trac/trac/ticket/default_workflow.py/ConfigurableTicketWorkflow.render_ticket_action_control,"def render_ticket_action_control(self, req, ticket, action):
+    self.log.debug('render_ticket_action_control: action ""%s""', action)
+    this_action = self.actions[action]
+    status = this_action['newstate']
+    operations = this_action['operations']
+    current_owner = ticket._old.get('owner', ticket['owner'])
+    author = get_reporter_id(req, 'author')
+    author_info = partial(Chrome(self.env).authorinfo, req, resource=ticket.resource)
+    format_author = partial(Chrome(self.env).format_author, req, resource=ticket.resource)
+    formatted_current_owner = author_info(current_owner)
+    exists = (ticket._old.get('status', ticket['status']) is not None)
+    control = []
+    hints = []
+    if ('reset_workflow' in operations):
+        control.append(_('from invalid state'))
+        hints.append(_('Current state no longer exists'))
+    if ('del_owner' in operations):
+        hints.append(_('The ticket will be disowned'))
+    if (('set_owner' in operations) or ('may_set_owner' in operations)):
+        if ('set_owner' in this_action):
+            owners = self._to_users(this_action['set_owner'], ticket)
+        elif self.config.getbool('ticket', 'restrict_owner'):
+            perm = PermissionSystem(self.env)
+            owners = selected_owner.get_users_with_permission('TICKET_MODIFY')
+            owners = [user for user in owners if ('TICKET_MODIFY' in PermissionCache(self.env, user, ticket.resource))]
+            owners = sorted(owners)
+        else:
+            owners = None
+        if ('set_owner' in operations):
+            default_owner = author
+        elif ('may_set_owner' in operations):
+            if (not exists):
+                default_owner = TicketSystem(self.env).default_owner
+            else:
+                default_owner = ticket._old.get('owner', (ticket['owner'] or None))
+            if ((owners is not None) and (default_owner not in owners)):
+                owners.insert(0, default_owner)
+        else:
+            raise AssertionError(operations)
+        id = ('action_%s_reassign_owner' % action)
+        if (not owners):
+            owner = req.args.get(id, default_owner)
+            control.append(tag_('to %(owner)s', owner=tag.input(type='text', id=id, name=id, value=owner)))
+            if ((not exists) or (current_owner is None)):
+                hints.append(_('The owner will be the specified user'))
+            else:
+                hints.append(tag_('The owner will be changed from %(current_owner)s to the specified user', current_owner=formatted_current_owner))
+        elif (len(owners) == 1):
+            owner = tag.input(type='hidden', id=id, name=id, value=owners[0])
+            formatted_new_owner = author_info(owners[0])
+            control.append(tag_('to %(owner)s', owner=tag(formatted_new_owner, owner)))
+            if ((not exists) or (current_owner is None)):
+                hints.append(tag_('The owner will be %(new_owner)s', new_owner=formatted_new_owner))
+            elif (ticket['owner'] != owners[0]):
+                hints.append(tag_('The owner will be changed from %(current_owner)s to %(new_owner)s', current_owner=formatted_current_owner, new_owner=formatted_new_owner))
+        else:
+            selected_owner = req.args.get(id, default_owner)
+            control.append(tag_('to %(owner)s', owner=tag.select([tag.option(format_author(x), value=(x if (x is not None) else ''), selected=((x == selected_owner) or None)) for x in owners], id=id, name=id)))
+            if ((not exists) or (current_owner is None)):
+                hints.append(_('The owner will be the selected user'))
+            else:
+                hints.append(tag_('The owner will be changed from %(current_owner)s to the selected user', current_owner=formatted_current_owner))
+    elif (('set_owner_to_self' in operations) and (ticket._old.get('owner', ticket['owner']) != author)):
+        formatted_author = author_info(author)
+        if ((not exists) or (current_owner is None)):
+            hints.append(tag_('The owner will be %(new_owner)s', new_owner=formatted_author))
+        else:
+            hints.append(tag_('The owner will be changed from %(current_owner)s to %(new_owner)s', current_owner=formatted_current_owner, new_owner=formatted_author))
+    if ('set_resolution' in operations):
+        if ('set_resolution' in this_action):
+            resolutions = this_action['set_resolution']
+        else:
+            resolutions = [r.name for r in Resolution.select(self.env)]
+        if (not resolutions):
+            raise TracError(_('Your workflow attempts to set a resolution but none is defined (configuration issue, please contact your Trac admin).'))
+        id = ('action_%s_resolve_resolution' % action)
+        if (len(resolutions) == 1):
+            resolution = tag.input(type='hidden', id=id, name=id, value=resolutions[0])
+            control.append(tag_('as %(resolution)s', resolution=tag(resolutions[0], resolution)))
+            hints.append(tag_('The resolution will be set to %(name)s', name=resolutions[0]))
+        else:
+            selected_option = req.args.get(id, TicketSystem(self.env).default_resolution)
+            control.append(tag_('as %(resolution)s', resolution=tag.select([tag.option(x, value=x, selected=((x == selected_option) or None)) for x in resolutions], id=id, name=id)))
+            hints.append(_('The resolution will be set'))
+    if ('del_resolution' in operations):
+        hints.append(_('The resolution will be deleted'))
+    if ('leave_status' in operations):
+        control.append(tag_('as %(status)s', status=ticket._old.get('status', ticket['status'])))
+        if (len(operations) == 1):
+            hints.append((tag_('The owner will remain %(current_owner)s', current_owner=formatted_current_owner) if current_owner else _('The ticket will remain with no owner')))
+    elif (ticket['status'] is None):
+        hints.append(tag_(""The status will be '%(name)s'"", name=status))
+    elif (status != '*'):
+        hints.append(tag_(""Next status will be '%(name)s'"", name=status))
+    return (this_action['label'], tag(separated(control, ' ')), tag((separated(hints, '. ', '.') if hints else '')))",VarMisuse@273/409 `perm`->`selected_owner`,edgewall,Variable misuse,train
+28,sshwsfc/xadmin/xadmin/sites.py/AdminSite.get_urls,"def get_urls(self):
+    from django.conf.urls import url, include
+    from xadmin.views.base import BaseAdminView
+    if settings.DEBUG:
+        self.check_dependencies()
+
+    def wrap(view, cacheable=False):
+
+        def wrapper(*args, **kwargs):
+            return self.admin_view(view, cacheable)(*args, **kwargs)
+        return update_wrapper(wrapper, view)
+    urlpatterns = [url('^jsi18n/$', wrap(self.i18n_javascript, cacheable=True), name='jsi18n')]
+    urlpatterns += [url(path, (wrap(self.create_admin_view(clz_or_func)) if ((type(clz_or_func) == type) and issubclass(clz_or_func, BaseAdminView)) else include(clz_or_func(self))), name=name) for (path, clz_or_func, name) in self._registry_views]
+    for (model, admin_class) in self._registry.iteritems():
+        view_urls = [url(path, wrap(self.create_model_admin_view(clz, model, admin_class)), name=(name % (model._meta.app_label, model._meta.model_name))) for (path, clz, name) in self._registry_modelviews]
+        urlpatterns += [url(('^%s/%s/' % (model._meta.app_label, model._meta.model_name)), include(view_urls))]
+    return urlpatterns",original,sshwsfc,Correct,train
+29,sshwsfc/xadmin/xadmin/sites.py/AdminSite.get_urls,"def get_urls(self):
+    from django.conf.urls import url, include
+    from xadmin.views.base import BaseAdminView
+    if settings.DEBUG:
+        urlpatterns.check_dependencies()
+
+    def wrap(view, cacheable=False):
+
+        def wrapper(*args, **kwargs):
+            return self.admin_view(view, cacheable)(*args, **kwargs)
+        return update_wrapper(wrapper, view)
+    urlpatterns = [url('^jsi18n/$', wrap(self.i18n_javascript, cacheable=True), name='jsi18n')]
+    urlpatterns += [url(path, (wrap(self.create_admin_view(clz_or_func)) if ((type(clz_or_func) == type) and issubclass(clz_or_func, BaseAdminView)) else include(clz_or_func(self))), name=name) for (path, clz_or_func, name) in self._registry_views]
+    for (model, admin_class) in self._registry.iteritems():
+        view_urls = [url(path, wrap(self.create_model_admin_view(clz, model, admin_class)), name=(name % (model._meta.app_label, model._meta.model_name))) for (path, clz, name) in self._registry_modelviews]
+        urlpatterns += [url(('^%s/%s/' % (model._meta.app_label, model._meta.model_name)), include(view_urls))]
+    return urlpatterns",VarMisuse@37/43 `self`->`urlpatterns`,sshwsfc,Variable misuse,train
+30,openworm/PyOpenWorm/PyOpenWorm/dataObject.py/DataObject.ObjectProperty,"@classmethod
+def ObjectProperty(cls, *args, **kwargs):
+    ' Create a SimpleProperty that has a complex DataObject as its value\n\n        Parameters\n        ----------\n        linkName : string\n            The name of this Property.\n        owner : PyOpenWorm.dataObject.DataObject\n            The name of this Property.\n        value_type : type\n            The type of DataObject for values of this property\n        '
+    return cls._create_property(*args, property_type='ObjectProperty', **kwargs)",original,openworm,Correct,train
+31,openworm/PyOpenWorm/PyOpenWorm/dataObject.py/DataObject.ObjectProperty,"@classmethod
+def ObjectProperty(cls, *args, **kwargs):
+    ' Create a SimpleProperty that has a complex DataObject as its value\n\n        Parameters\n        ----------\n        linkName : string\n            The name of this Property.\n        owner : PyOpenWorm.dataObject.DataObject\n            The name of this Property.\n        value_type : type\n            The type of DataObject for values of this property\n        '
+    return cls._create_property(*args, property_type='ObjectProperty', **cls)",VarMisuse@34/161 `kwargs`->`cls`,openworm,Variable misuse,train
+32,scipy/scipy/scipy/fftpack/tests/test_pseudo_diffs.py/direct_diff,"def direct_diff(x, k=1, period=None):
+    fx = fft(x)
+    n = len(fx)
+    if (period is None):
+        period = (2 * pi)
+    w = ((((fftfreq(n) * 2j) * pi) / period) * n)
+    if (k < 0):
+        w = (1 / (w ** k))
+        w[0] = 0.0
+    else:
+        w = (w ** k)
+    if (n > 2000):
+        w[250:(n - 250)] = 0.0
+    return ifft((w * fx)).real",original,scipy,Correct,train
+33,scipy/scipy/scipy/fftpack/tests/test_pseudo_diffs.py/direct_diff,"def direct_diff(x, k=1, period=None):
+    fx = fft(x)
+    n = len(fx)
+    if (period is None):
+        period = (2 * pi)
+    w = ((((fftfreq(n) * 2j) * pi) / period) * n)
+    if (k < 0):
+        w = (1 / (w ** k))
+        fx[0] = 0.0
+    else:
+        w = (w ** k)
+    if (n > 2000):
+        w[250:(n - 250)] = 0.0
+    return ifft((w * fx)).real",VarMisuse@94/100 `w`->`fx`,scipy,Variable misuse,train
+34,cloudera/hue/desktop/core/ext-py/pyopenssl/OpenSSL/crypto.py/X509StoreContext.verify_certificate,"def verify_certificate(self):
+    '\n        Verify a certificate in a context.\n\n        :param store_ctx: The :py:class:`X509StoreContext` to verify.\n        :raises: Error\n        '
+    self._init()
+    ret = _lib.X509_verify_cert(self._store_ctx)
+    self._cleanup()
+    if (ret <= 0):
+        raise self._exception_from_context()",original,cloudera,Correct,train
+35,cloudera/hue/desktop/core/ext-py/pyopenssl/OpenSSL/crypto.py/X509StoreContext.verify_certificate,"def verify_certificate(self):
+    '\n        Verify a certificate in a context.\n\n        :param store_ctx: The :py:class:`X509StoreContext` to verify.\n        :raises: Error\n        '
+    ret._init()
+    ret = _lib.X509_verify_cert(self._store_ctx)
+    self._cleanup()
+    if (ret <= 0):
+        raise self._exception_from_context()",VarMisuse@12/68 `self`->`ret`,cloudera,Variable misuse,train
+36,zzzeek/sqlalchemy/test/orm/inheritance/test_polymorphic_rel.py/_PolymorphicTestBase.test_filter_on_subclass_six,"def test_filter_on_subclass_six(self):
+    sess = create_session()
+    eq_(sess.query(Boss).filter((Boss.person_id == b1.person_id)).one(), Boss(name='pointy haired boss'))",original,zzzeek,Correct,train
+37,zzzeek/sqlalchemy/test/orm/inheritance/test_polymorphic_rel.py/_PolymorphicTestBase.test_filter_on_subclass_six,"def test_filter_on_subclass_six(self):
+    sess = create_session()
+    eq_(self.query(Boss).filter((Boss.person_id == b1.person_id)).one(), Boss(name='pointy haired boss'))",VarMisuse@18/25 `sess`->`self`,zzzeek,Variable misuse,train
+38,anandology/pyjamas/library/gwt/chart/Symbol.py/Symbol.setImageURL,"def setImageURL(self, imageURL):
+    self.imageURL = imageURL",original,anandology,Correct,train
+39,anandology/pyjamas/library/gwt/chart/Symbol.py/Symbol.setImageURL,"def setImageURL(self, imageURL):
+    imageURL.imageURL = imageURL",VarMisuse@12/16 `self`->`imageURL`,anandology,Variable misuse,train
+40,glue-viz/glue/glue/config.py/LinkFunctionRegistry.__call__,"def __call__(self, info='', output_labels=None):
+    out = (output_labels or [])
+
+    def adder(func):
+        self.add(self.item(func, info, out))
+        return func
+    return adder",original,glue-viz,Correct,train
+41,glue-viz/glue/glue/config.py/LinkFunctionRegistry.__call__,"def __call__(self, info='', output_labels=None):
+    out = (out or [])
+
+    def adder(func):
+        self.add(self.item(func, info, out))
+        return func
+    return adder",VarMisuse@21/25 `output_labels`->`out`,glue-viz,Variable misuse,train
+42,openstack/networking-cisco/networking_cisco/plugins/cisco/cfg_agent/cfg_agent.py/CiscoCfgAgent.hosting_devices_removed,"def hosting_devices_removed(self, context, payload):
+    'Deal with hosting device removed RPC message.'
+    try:
+        if payload['hosting_data']:
+            if payload['hosting_data'].keys():
+                self.process_services(removed_devices_info=payload)
+    except KeyError as e:
+        LOG.error(_LE('Invalid payload format for received RPC message `hosting_devices_removed`. Error is %(error)s. Payload is %(payload)s'), {
+            'error': e,
+            'payload': payload,
+        })",original,openstack,Correct,train
+43,openstack/networking-cisco/networking_cisco/plugins/cisco/cfg_agent/cfg_agent.py/CiscoCfgAgent.hosting_devices_removed,"def hosting_devices_removed(self, context, payload):
+    'Deal with hosting device removed RPC message.'
+    try:
+        if payload['hosting_data']:
+            if payload['hosting_data'].keys():
+                self.process_services(removed_devices_info=payload)
+    except KeyError as e:
+        LOG.error(_LE('Invalid payload format for received RPC message `hosting_devices_removed`. Error is %(error)s. Payload is %(payload)s'), {
+            'error': self,
+            'payload': payload,
+        })",VarMisuse@72/155 `e`->`self`,openstack,Variable misuse,train
+44,kuri65536/python-for-android/python-modules/twisted/twisted/web/test/test_web.py/ConditionalTest._modifiedTest,"def _modifiedTest(self, modifiedSince):
+    '\n        Given the value C{modifiedSince} for the I{If-Modified-Since}\n        header, verify that a response with a 200 code and the resource as\n        the body is returned.\n        '
+    self.channel.lineReceived(('If-Modified-Since: ' + modifiedSince))
+    self.channel.lineReceived('')
+    result = self.transport.getvalue()
+    self.failUnlessEqual(httpCode(result), http.OK)
+    self.failUnlessEqual(httpBody(result), 'correct')",original,kuri65536,Correct,train
+45,kuri65536/python-for-android/python-modules/twisted/twisted/web/test/test_web.py/ConditionalTest._modifiedTest,"def _modifiedTest(self, modifiedSince):
+    '\n        Given the value C{modifiedSince} for the I{If-Modified-Since}\n        header, verify that a response with a 200 code and the resource as\n        the body is returned.\n        '
+    self.channel.lineReceived(('If-Modified-Since: ' + modifiedSince))
+    result.channel.lineReceived('')
+    result = self.transport.getvalue()
+    self.failUnlessEqual(httpCode(result), http.OK)
+    self.failUnlessEqual(httpBody(result), 'correct')",VarMisuse@27/113 `self`->`result`,kuri65536,Variable misuse,train
+46,openstack/nova/nova/tests/unit/virt/xenapi/test_vm_utils.py/CheckVDISizeTestCase.test_zero_root_gb_disables_check,"def test_zero_root_gb_disables_check(self):
+    with mock.patch.object(self.instance, 'get_flavor') as get:
+        self.flavor.root_gb = 0
+        get.return_value = self.flavor
+        vm_utils._check_vdi_size(self.context, self.session, self.instance, self.vdi_uuid)",original,openstack,Correct,train
+47,openstack/nova/nova/tests/unit/virt/xenapi/test_vm_utils.py/CheckVDISizeTestCase.test_zero_root_gb_disables_check,"def test_zero_root_gb_disables_check(self):
+    with mock.patch.object(self.instance, 'get_flavor') as get:
+        self.flavor.root_gb = 0
+        get.return_value = get.flavor
+        vm_utils._check_vdi_size(self.context, self.session, self.instance, self.vdi_uuid)",VarMisuse@40/55 `self`->`get`,openstack,Variable misuse,train
+48,zbyte64/django-dockit/dockit/forms/widgets.py/PrimitiveFormsetListWidget.render,"def render(self, name, value, attrs=None):
+    if (not isinstance(value, list)):
+        value = self.decompress(value)
+    final_attrs = self.build_attrs(attrs)
+    formset_class = self.get_formset_class()
+    initial = [{
+        'value': val,
+    } for val in value]
+    formset = formset_class(initial=initial, prefix=name)
+    parts = [('<div class=""list-row form-row""><table>%s</table></div>' % form.as_table()) for form in formset]
+    parts.append(('<div id=""%s-empty"" class=""list-row form-row empty-row""><table>%s</table></div>' % (name, formset.empty_form.as_table())))
+    output = ('<div%s style=""float: left;"" class=""primitiveformsetlistfield"" data-prefix=""%s"">%s %s</div>' % (flatatt(final_attrs), name, formset.management_form, ''.join(parts)))
+    return mark_safe(output)",original,zbyte64,Correct,train
+49,zbyte64/django-dockit/dockit/forms/widgets.py/PrimitiveFormsetListWidget.render,"def render(self, name, value, attrs=None):
+    if (not isinstance(value, list)):
+        value = self.decompress(value)
+    final_attrs = self.build_attrs(attrs)
+    formset_class = self.get_formset_class()
+    initial = [{
+        'value': val,
+    } for val in value]
+    formset = formset_class(initial=initial, prefix=name)
+    parts = [('<div class=""list-row form-row""><table>%s</table></div>' % form.as_table()) for form in formset]
+    parts.append(('<div id=""%s-empty"" class=""list-row form-row empty-row""><table>%s</table></div>' % (name, formset.empty_form.as_table())))
+    output = ('<div%s style=""float: left;"" class=""primitiveformsetlistfield"" data-prefix=""%s"">%s %s</div>' % (flatatt(parts), name, formset.management_form, ''.join(parts)))
+    return mark_safe(output)",VarMisuse@135/241 `final_attrs`->`parts`,zbyte64,Variable misuse,train
+50,ecdavis/pants/pants/http/client.py/HTTPResponse.text,"@property
+def text(self):
+    '\n        The content of the response, after being decoded into unicode with\n        :attr:`encoding`. Be careful when using this with large responses, as\n        it will load the entire response into memory. ``None`` if no data has\n        been received.\n\n        If :attr:`encoding` is ``None``, this will default to ``UTF-8``.\n\n        '
+    raw = self.content
+    if (not raw):
+        return raw
+    encoding = self.encoding
+    if (not encoding):
+        encoding = 'utf-8'
+    return raw.decode(encoding)",original,ecdavis,Correct,train
+51,ecdavis/pants/pants/http/client.py/HTTPResponse.text,"@property
+def text(self):
+    '\n        The content of the response, after being decoded into unicode with\n        :attr:`encoding`. Be careful when using this with large responses, as\n        it will load the entire response into memory. ``None`` if no data has\n        been received.\n\n        If :attr:`encoding` is ``None``, this will default to ``UTF-8``.\n\n        '
+    raw = self.content
+    if (not raw):
+        return raw
+    encoding = self.encoding
+    if (not encoding):
+        encoding = 'utf-8'
+    return raw.decode(raw)",VarMisuse@57/190 `encoding`->`raw`,ecdavis,Variable misuse,train
+52,anhstudios/swganh/data/scripts/templates/object/tangible/loot/misc/shared_corsec_id_badge.py/create,"def create(kernel):
+    result = Tangible()
+    result.template = 'object/tangible/loot/misc/shared_corsec_id_badge.iff'
+    result.attribute_template_id = (- 1)
+    result.stfName('item_n', 'corsec_id_badge')
+    return result",original,anhstudios,Correct,train
+53,anhstudios/swganh/data/scripts/templates/object/tangible/loot/misc/shared_corsec_id_badge.py/create,"def create(kernel):
+    result = Tangible()
+    result.template = 'object/tangible/loot/misc/shared_corsec_id_badge.iff'
+    kernel.attribute_template_id = (- 1)
+    result.stfName('item_n', 'corsec_id_badge')
+    return result",VarMisuse@22/45 `result`->`kernel`,anhstudios,Variable misuse,train
+54,dbcli/pgcli/tests/test_fuzzy_completion.py/test_matching_should_be_case_insensitive,"def test_matching_should_be_case_insensitive(completer):
+    ""Fuzzy matching should keep matches even if letter casing doesn't match.\n\n    This test checks that variations of the text which have different casing\n    are still matched.\n    ""
+    text = 'foo'
+    collection = ['Foo', 'FOO', 'fOO']
+    matches = completer.find_matches(text, collection)
+    assert (len(matches) == 3)",original,dbcli,Correct,train
+55,dbcli/pgcli/tests/test_fuzzy_completion.py/test_matching_should_be_case_insensitive,"def test_matching_should_be_case_insensitive(completer):
+    ""Fuzzy matching should keep matches even if letter casing doesn't match.\n\n    This test checks that variations of the text which have different casing\n    are still matched.\n    ""
+    text = 'foo'
+    collection = ['Foo', 'FOO', 'fOO']
+    matches = completer.find_matches(completer, collection)
+    assert (len(matches) == 3)",VarMisuse@32/116 `text`->`completer`,dbcli,Variable misuse,train
+56,statsmodels/statsmodels/statsmodels/sandbox/panel/panel_short.py/ShortPanelGLS.__init__,"def __init__(self, endog, exog, group, sigma_i=None):
+    self.group = GroupSorted(group)
+    self.n_groups = self.group.n_groups
+    nobs_i = (len(endog) / self.n_groups)
+    if (sigma_i is None):
+        sigma_i = np.eye(int(nobs_i))
+    self.cholsigmainv_i = np.linalg.cholesky(np.linalg.pinv(sigma_i)).T
+    super(self.__class__, self).__init__(endog, exog, sigma=None)",original,statsmodels,Correct,train
+57,statsmodels/statsmodels/statsmodels/sandbox/panel/panel_short.py/ShortPanelGLS.__init__,"def __init__(self, endog, exog, group, sigma_i=None):
+    self.group = GroupSorted(group)
+    self.n_groups = self.group.n_groups
+    nobs_i = (len(endog) / self.n_groups)
+    if (sigma_i is None):
+        sigma_i = np.eye(int(nobs_i))
+    self.cholsigmainv_i = np.linalg.cholesky(np.linalg.pinv(sigma_i)).T
+    super(self.__class__, self).__init__(sigma_i, exog, sigma=None)",VarMisuse@107/141 `endog`->`sigma_i`,statsmodels,Variable misuse,train
+58,jpscaletti/authcode/tests/test_auth.py/test_hash_password,"def test_hash_password():
+    p = 'password'
+    auth = authcode.Auth(SECRET_KEY, hash='pbkdf2_sha512', rounds=345)
+    hashed = auth.hash_password(p)
+    assert hashed.startswith('$pbkdf2-sha512$345$')
+    assert auth.password_is_valid(p, hashed)
+    assert (not auth.password_is_valid(p, 'lalala'))
+    assert (not auth.password_is_valid(p, None))
+    assert (not auth.password_is_valid(None, 'lalala'))
+    assert (not auth.password_is_valid(None, None))",original,jpscaletti,Correct,train
+59,jpscaletti/authcode/tests/test_auth.py/test_hash_password,"def test_hash_password():
+    p = 'password'
+    auth = authcode.Auth(SECRET_KEY, hash='pbkdf2_sha512', rounds=345)
+    hashed = auth.hash_password(p)
+    assert hashed.startswith('$pbkdf2-sha512$345$')
+    assert auth.password_is_valid(p, hashed)
+    assert (not auth.password_is_valid(p, 'lalala'))
+    assert (not auth.password_is_valid(p, None))
+    assert (not p.password_is_valid(None, 'lalala'))
+    assert (not auth.password_is_valid(None, None))",VarMisuse@86/124 `auth`->`p`,jpscaletti,Variable misuse,train
+60,berrange/gerrymander/gerrymander/reports.py/ReportOpenReviewStats.older_than,"@staticmethod
+def older_than(changes, ages, cutoffdays):
+    cutoff = (((cutoffdays * 24) * 60) * 60)
+    older = 0
+    for change in changes:
+        if (ages[change] > cutoff):
+            older = (older + 1)
+    return older",original,berrange,Correct,train
+61,berrange/gerrymander/gerrymander/reports.py/ReportOpenReviewStats.older_than,"@staticmethod
+def older_than(changes, ages, cutoffdays):
+    cutoff = (((cutoffdays * 24) * 60) * 60)
+    older = 0
+    for change in changes:
+        if (cutoffdays[change] > cutoff):
+            older = (older + 1)
+    return older",VarMisuse@46/54 `ages`->`cutoffdays`,berrange,Variable misuse,train
+62,hoytak/treedict/tests/test_setting.py/TestSetting.testFromKeys_03_checking_02,"def testFromKeys_03_checking_02(self):
+    key_iterable = 'alphabet1'
+
+    def f():
+        p = TreeDict.fromkeys(key_iterable)
+    self.assertRaises(NameError, f)",original,hoytak,Correct,train
+63,hoytak/treedict/tests/test_setting.py/TestSetting.testFromKeys_03_checking_02,"def testFromKeys_03_checking_02(self):
+    key_iterable = 'alphabet1'
+
+    def f():
+        p = TreeDict.fromkeys(key_iterable)
+    key_iterable.assertRaises(NameError, f)",VarMisuse@32/52 `self`->`key_iterable`,hoytak,Variable misuse,train
+64,jonaslorander/OctoPiPanel/pygbutton.py/PygButton._propSetVisible,"def _propSetVisible(self, setting):
+    self._visible = setting",original,jonaslorander,Correct,train
+65,jonaslorander/OctoPiPanel/pygbutton.py/PygButton._propSetVisible,"def _propSetVisible(self, setting):
+    self._visible = self",VarMisuse@16/21 `setting`->`self`,jonaslorander,Variable misuse,train
+66,ga4gh/server/ga4gh/backend.py/Backend.runSearchReads,"def runSearchReads(self, request):
+    '\n        Runs the specified SearchReadsRequest.\n        '
+    return self.runSearchRequest(request, protocol.SearchReadsRequest, protocol.SearchReadsResponse, self.readsGenerator)",original,ga4gh,Correct,train
+67,ga4gh/server/ga4gh/backend.py/Backend.runSearchReads,"def runSearchReads(self, request):
+    '\n        Runs the specified SearchReadsRequest.\n        '
+    return self.runSearchRequest(self, protocol.SearchReadsRequest, protocol.SearchReadsResponse, self.readsGenerator)",VarMisuse@19/40 `request`->`self`,ga4gh,Variable misuse,train
+68,AppScale/appscale/AppServer/lib/django-0.96/django/core/cache/backends/db.py/CacheClass.delete,"def delete(self, key):
+    cursor = connection.cursor()
+    cursor.execute(('DELETE FROM %s WHERE cache_key = %%s' % self._table), [key])
+    transaction.commit_unless_managed()",original,AppScale,Correct,train
+69,AppScale/appscale/AppServer/lib/django-0.96/django/core/cache/backends/db.py/CacheClass.delete,"def delete(self, key):
+    cursor = connection.cursor()
+    cursor.execute(('DELETE FROM %s WHERE cache_key = %%s' % self._table), [self])
+    transaction.commit_unless_managed()",VarMisuse@33/53 `key`->`self`,AppScale,Variable misuse,train
+70,openstack/taskflow/taskflow/engines/action_engine/executor.py/ParallelProcessTaskExecutor.__init__,"def __init__(self, executor=None, max_workers=None, dispatch_periodicity=None):
+    super(ParallelProcessTaskExecutor, self).__init__(executor=executor, max_workers=max_workers)
+    self._manager = _ViewableSyncManager()
+    self._dispatcher = _Dispatcher(dispatch_periodicity=dispatch_periodicity)
+    self._worker = None
+    self._queue = None",original,openstack,Correct,train
+71,openstack/taskflow/taskflow/engines/action_engine/executor.py/ParallelProcessTaskExecutor.__init__,"def __init__(self, executor=None, max_workers=None, dispatch_periodicity=None):
+    super(ParallelProcessTaskExecutor, self).__init__(executor=executor, max_workers=max_workers)
+    dispatch_periodicity._manager = _ViewableSyncManager()
+    self._dispatcher = _Dispatcher(dispatch_periodicity=dispatch_periodicity)
+    self._worker = None
+    self._queue = None",VarMisuse@40/56 `self`->`dispatch_periodicity`,openstack,Variable misuse,train
+72,openstack/python-openstacksdk/openstack/telemetry/v2/_proxy.py/Proxy.find_alarm,"def find_alarm(self, name_or_id, ignore_missing=True):
+    'Find a single alarm\n\n        :param name_or_id: The name or ID of a alarm.\n        :param bool ignore_missing: When set to ``False``\n                    :class:`~openstack.exceptions.ResourceNotFound` will be\n                    raised when the resource does not exist.\n                    When set to ``True``, None will be returned when\n                    attempting to find a nonexistent resource.\n        :returns: One :class:`~openstack.telemetry.v2.alarm.Alarm` or None\n        '
+    return self._find(_alarm.Alarm, name_or_id, ignore_missing=ignore_missing)",original,openstack,Correct,train
+73,openstack/python-openstacksdk/openstack/telemetry/v2/_proxy.py/Proxy.find_alarm,"def find_alarm(self, name_or_id, ignore_missing=True):
+    'Find a single alarm\n\n        :param name_or_id: The name or ID of a alarm.\n        :param bool ignore_missing: When set to ``False``\n                    :class:`~openstack.exceptions.ResourceNotFound` will be\n                    raised when the resource does not exist.\n                    When set to ``True``, None will be returned when\n                    attempting to find a nonexistent resource.\n        :returns: One :class:`~openstack.telemetry.v2.alarm.Alarm` or None\n        '
+    return self._find(_alarm.Alarm, name_or_id, ignore_missing=self)",VarMisuse@31/209 `ignore_missing`->`self`,openstack,Variable misuse,train
+74,google/rfmt/formatter/support.py/LayoutElement.NewLineSpace,"@staticmethod
+def NewLineSpace(n):
+    return (lambda console: console.NewLineSpace(n))",original,google,Correct,train
+75,google/rfmt/formatter/support.py/LayoutElement.NewLineSpace,"@staticmethod
+def NewLineSpace(n):
+    return (lambda console: console.NewLineSpace(console))",VarMisuse@22/27 `n`->`console`,google,Variable misuse,train
+76,tkanerva/openmail/OpenMail/openmail/myhtml.py/Input.__init__,"def __init__(self, *args, **kw):
+    HtmlElement.__init__(self, *args, **kw)
+    self.label = (self.attributes['label'] if ('label' in self.attributes) else self.attributes['name'])
+    if ('label' in self.attributes):
+        del self.attributes['label']",original,tkanerva,Correct,train
+77,tkanerva/openmail/OpenMail/openmail/myhtml.py/Input.__init__,"def __init__(self, *args, **kw):
+    HtmlElement.__init__(self, *args, **kw)
+    self.label = (self.attributes['label'] if ('label' in self.attributes) else kw.attributes['name'])
+    if ('label' in self.attributes):
+        del self.attributes['label']",VarMisuse@49/57 `self`->`kw`,tkanerva,Variable misuse,train
+78,zzzeek/sqlalchemy/test/orm/test_eager_relations.py/MixedSelfReferentialEagerTest.setup_mappers,"@classmethod
+def setup_mappers(cls):
+    (b_table, a_table) = (cls.tables.b_table, cls.tables.a_table)
+
+    class A(cls.Comparable):
+        pass
+
+    class B(cls.Comparable):
+        pass
+    mapper(A, a_table)
+    mapper(B, b_table, properties={
+        'parent_b1': relationship(B, remote_side=[b_table.c.id], primaryjoin=(b_table.c.parent_b1_id == b_table.c.id), order_by=b_table.c.id),
+        'parent_z': relationship(A, lazy=True),
+        'parent_b2': relationship(B, remote_side=[b_table.c.id], primaryjoin=(b_table.c.parent_b2_id == b_table.c.id), order_by=b_table.c.id),
+    })",original,zzzeek,Correct,train
+79,zzzeek/sqlalchemy/test/orm/test_eager_relations.py/MixedSelfReferentialEagerTest.setup_mappers,"@classmethod
+def setup_mappers(cls):
+    (b_table, a_table) = (cls.tables.b_table, cls.tables.a_table)
+
+    class A(cls.Comparable):
+        pass
+
+    class B(cls.Comparable):
+        pass
+    mapper(A, a_table)
+    mapper(B, b_table, properties={
+        'parent_b1': relationship(B, remote_side=[b_table.c.id], primaryjoin=(b_table.c.parent_b1_id == b_table.c.id), order_by=cls.c.id),
+        'parent_z': relationship(A, lazy=True),
+        'parent_b2': relationship(B, remote_side=[b_table.c.id], primaryjoin=(b_table.c.parent_b2_id == b_table.c.id), order_by=b_table.c.id),
+    })",VarMisuse@112/148 `b_table`->`cls`,zzzeek,Variable misuse,train
+80,Yelp/fullerite/src/diamond/collectors/icinga_stats/icinga_stats.py/IcingaStatsCollector._trans_svc_state,"def _trans_svc_state(self, state):
+    ' Translate/validate Service state '
+    if (state == 0):
+        return 'ok'
+    elif (state == 1):
+        return 'warning'
+    elif (state == 2):
+        return 'critical'
+    else:
+        return 'unknown'",original,Yelp,Correct,train
+81,Yelp/fullerite/src/diamond/collectors/icinga_stats/icinga_stats.py/IcingaStatsCollector._trans_svc_state,"def _trans_svc_state(self, state):
+    ' Translate/validate Service state '
+    if (state == 0):
+        return 'ok'
+    elif (self == 1):
+        return 'warning'
+    elif (state == 2):
+        return 'critical'
+    else:
+        return 'unknown'",VarMisuse@29/46 `state`->`self`,Yelp,Variable misuse,train
+82,circus-tent/circus/circus/tests/test_watcher.py/TestWatcherInitialization.test_copy_env,"@tornado.testing.gen_test
+def test_copy_env(self):
+    old_environ = os.environ
+    try:
+        os.environ = {
+            'COCONUTS': 'MIGRATE',
+        }
+        watcher = Watcher('foo', 'foobar', copy_env=True)
+        self.assertEqual(watcher.env, os.environ)
+        watcher = Watcher('foo', 'foobar', copy_env=True, env={
+            'AWESOMENESS': 'YES',
+        })
+        self.assertEqual(watcher.env, {
+            'COCONUTS': 'MIGRATE',
+            'AWESOMENESS': 'YES',
+        })
+    finally:
+        os.environ = old_environ",original,circus-tent,Correct,train
+83,circus-tent/circus/circus/tests/test_watcher.py/TestWatcherInitialization.test_copy_env,"@tornado.testing.gen_test
+def test_copy_env(self):
+    old_environ = os.environ
+    try:
+        os.environ = {
+            'COCONUTS': 'MIGRATE',
+        }
+        watcher = Watcher('foo', 'foobar', copy_env=True)
+        old_environ.assertEqual(watcher.env, os.environ)
+        watcher = Watcher('foo', 'foobar', copy_env=True, env={
+            'AWESOMENESS': 'YES',
+        })
+        self.assertEqual(watcher.env, {
+            'COCONUTS': 'MIGRATE',
+            'AWESOMENESS': 'YES',
+        })
+    finally:
+        os.environ = old_environ",VarMisuse@53/74 `self`->`old_environ`,circus-tent,Variable misuse,train

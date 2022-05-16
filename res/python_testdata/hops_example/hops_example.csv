@@ -1,0 +1,5 @@
+id,filecontent,package
+1,"def method2(self) -> str:
+        variable1: int = self.field
+        variable2: str = str(variable1)
+        return variable2",hops

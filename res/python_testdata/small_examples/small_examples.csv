@@ -1,0 +1,80 @@
+id,filecontent,package
+1,"with open(a) as b:
+   do_stuff(b)",small_examples
+2,a: int = 5,small_examples
+3,"def m():
+       pass",small_examples
+4,[i for i in list if i != 5],small_examples
+5,"for i in list:
+   k = fn(i)
+   if k == 4:
+       fn2(k)
+       break
+else:
+   fn2(0)",small_examples
+6,"if d is True:
+   a = b
+else:
+   a = c",small_examples
+7,a = 5 if b is True else 0,small_examples
+8,"try:
+   a = b
+except Exception as e:
+   a = c
+else:
+   a = d
+finally:
+   print(a)",small_examples
+9,"def f(a: int = 5):
+   return a",small_examples
+10,"def __init__(self, argument: int):
+        """"""
+        Initialize. Инициализация
+        :param argument:
+        """"""
+        self.field = argument",small_examples
+11,"def method2(self) -> str:
+        """"""
+        Simple operations.
+        Простые операции.
+        :return:
+        """"""
+        variable1: int = self.field
+        variable2: str = str(variable1)
+        return variable2",small_examples
+12,"def main():
+    a = Number(4)
+    b = Number(5)
+    print(a+b)",small_examples
+13,"class ExampleClass:
+    def __init__(self, argument: int):
+        """"""
+        Initialize. Инициализация
+        :param argument:
+        """"""
+        self.field = argument
+
+    def method1(self) -> str:
+        """"""
+        Call another method. Вызов другого метода.
+        :return:
+        """"""
+        return self.method2()
+
+    def method2(self) -> str:
+        """"""
+        Simple operations.
+        Простые операции.
+        :return:
+        """"""
+        variable1: int = self.field
+        variable2: str = str(variable1)
+        return variable2",small_examples
+14,"from Module import Number
+
+def main():
+    a = Number(4)
+    b = Number(5)
+    print(a+b)
+
+main()",small_examples
