@@ -56,7 +56,9 @@ class SCAAClassifierObjective(SubgraphMatchingObjective):
 
     def pooling_fn(self, node_embeddings):
         node_embeddings = torch.reshape(node_embeddings, (1, -1, 100))
-        return self.pooler(node_embeddings, node_embeddings, node_embeddings, need_weights=False)[0]
+        pool =  self.pooler(node_embeddings, node_embeddings, node_embeddings, need_weights=False)[0]
+        print('ppol', pool.shape)
+        return pool
 
     def custom_state_dict(self):
         state_dict = OrderedDict()
