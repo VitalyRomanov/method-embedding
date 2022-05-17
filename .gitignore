@@ -7,6 +7,7 @@ lda_docstring_embeddings*
 SourceCodeTools.egg-info
 .ipynb_checkpoints
 embedding-models
+examples/
 res/
 spark-SourceGraphAnalysis/.bsp/
 spark-SourceGraphAnalysis/project/
