@@ -1,5 +1,5 @@
 import random
-from collections import Iterable
+from collections import Iterable, defaultdict
 
 import torch
 import torch.nn as nn
@@ -9,6 +9,7 @@ import random as rnd
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
 from SourceCodeTools.models.graph.train.Scorer import Scorer
 from SourceCodeTools.models.nlp.TorchEncoder import LSTMEncoder, Encoder
+from SourceCodeTools.tabular.common import compact_property
 
 
 class GraphLinkSampler(ElementEmbedderBase, Scorer):
@@ -32,6 +33,145 @@ class GraphLinkSampler(ElementEmbedderBase, Scorer):
             negative = Scorer.sample_closest_negative(self, ids, k=size // len(ids))
             assert len(negative) == size
         return negative
+
+
+class SelectiveGraphLinkSampler(ElementEmbedderBase, Scorer):
+    def __init__(
+            self, elements, nodes, compact_dst=True, dst_to_global=True, emb_size=None, device="cpu",
+            method="inner_prod", nn_index="brute", ns_groups=None
+    ):
+        elements, self.prediction_edges = elements
+        assert emb_size is not None
+        ElementEmbedderBase.__init__(
+            self, elements=elements, nodes=nodes, compact_dst=compact_dst, dst_to_global=dst_to_global
+        )
+        Scorer.__init__(
+            self, num_embs=len(self.elements["dst"].unique()), emb_size=emb_size, src2dst=self.element_lookup,
+            device=device, method=method, index_backend=nn_index, ns_groups=ns_groups
+        )
+
+    def preprocess_element_data(self, element_data, nodes, compact_dst, dst_to_global=False):
+        """
+        Takes the mapping from the original ids in the graph to the target embedding, maps dataset ids to graph ids,
+        creates structures that will allow mapping from the global graph id to the desired embedding
+        :param element_data:
+        :param nodes:
+        :param compact_dst:
+        :param dst_to_global:
+        :return:
+        """
+        # if len(element_data) == 0:
+        #     logging.error(f"Not enough data for the embedder: {len(element_data)}. Exiting...")
+        #     sys.exit()
+
+        id2nodeid = dict(zip(nodes['id'].tolist(), nodes['global_graph_id'].tolist()))
+        id2typedid = dict(zip(nodes['id'].tolist(), nodes['typed_id'].tolist()))
+        id2type = dict(zip(nodes['id'].tolist(), nodes['type'].tolist()))
+
+        self.id2nodeid = id2nodeid
+        self.id2typedid = id2typedid
+        self.id2type = id2type
+
+        def get_node_pools(element_data):  # create typed node list for possible use with dgl
+            node_typed_pools = {}
+            for orig_node_id in element_data['src']:
+                global_id = id2nodeid.get(orig_node_id, None)
+
+                if global_id is None:
+                    continue
+
+                src_type = id2type.get(orig_node_id, None)
+                src_typed_id = id2typedid.get(orig_node_id, None)
+
+                if src_type not in node_typed_pools:
+                    node_typed_pools[src_type] = []
+
+                node_typed_pools[src_type].append(src_typed_id)
+
+            return node_typed_pools
+
+        self.node_typed_pools = get_node_pools(self.prediction_edges)
+
+        # map to global graph id
+        element_data['id'] = element_data['src'].apply(lambda x: id2nodeid.get(x, None))
+        # # save type id to allow pooling nodes of certain types
+        # element_data['src_type'] = element_data['src'].apply(lambda x: id2type.get(x, None))
+        # element_data['src_typed_id'] = element_data['src'].apply(lambda x: id2typedid.get(x, None))
+
+        if dst_to_global:
+            element_data['dst'] = element_data['dst'].apply(lambda x: id2nodeid.get(x, None))
+
+        element_data = element_data.astype({
+            'id': 'Int32',
+            # 'src_type': 'category',
+            # 'src_typed_id': 'Int32',
+        })
+
+        if compact_dst is False:  # creating api call embedder
+            # element_data = element_data.rename({'dst': 'dst_orig'}, axis=1)
+            # element_data['dst'] = element_data['dst_orig'].apply(lambda x: id2nodeid.get(x, None))
+            # element_data['dst_type'] = element_data['dst_orig'].apply(lambda x: id2type.get(x, None))
+            # element_data['dst_typed_id'] = element_data['dst_orig'].apply(lambda x: id2typedid.get(x, None))
+            element_data.drop_duplicates(['id', 'dst'], inplace=True,
+                                         ignore_index=True)  # this line apparenly filters parallel edges
+            # element_data = element_data.astype({
+            #     'dst': 'Int32',
+            #     'dst_type': 'category',
+            #     'dst_typed_id': 'Int32',
+            # })
+
+        # element_data = element_data.dropna(axis=0)
+        return element_data
+
+    def sample_negative(self, size, ids=None, strategy="closest"):
+        assert ids is not None
+        negative = []
+        for id_ in ids:
+            group = self.src_group[id_]
+            candidates = self.groups[group]
+            positive = self.positive[id_]
+
+            neg = random.choice(candidates)
+            attempts = 10
+            while neg in positive and attempts > 0:
+                neg = random.choice(candidates)
+                attempts -= 1
+
+            negative.append(neg)
+
+        return np.array(negative, dtype=np.int32)
+
+    def init(self, compact_dst):
+        if compact_dst:
+            elem2id, self.inverse_dst_map = compact_property(self.elements['dst'], return_order=True)
+            self.elements['emb_id'] = self.elements['dst'].apply(lambda x: elem2id.get(x, -1))
+            assert -1 not in self.elements['emb_id'].tolist()
+        else:
+            self.elements['emb_id'] = self.elements['dst']
+
+        self.positive = {}
+        self.groups = defaultdict(list)
+        self.src_group = dict()
+        # for name, group in self.elements.groupby('id'):
+        #     self.element_lookup[name] = group['emb_id'].tolist()
+        for id_, emb_id, mentioned_in in self.elements[["id", "emb_id", "mentioned_in"]].values:
+            if id_ in self.positive:
+                self.positive[id_].append(emb_id)
+            else:
+                self.positive[id_] = [emb_id]
+
+            self.groups[mentioned_in].append(emb_id)
+            self.src_group[id_] = mentioned_in
+
+        self.element_lookup = defaultdict(list)
+        for src, dst in self.prediction_edges[["src", "dst"]].values:
+            self.element_lookup[src].append(dst)
+
+        self.init_neg_sample()
+
+    def init_neg_sample(self, skipgram_sampling_power=0.75):
+        pass
+
 
 
 class ElementEmbedder(ElementEmbedderBase, nn.Module, Scorer):

@@ -108,6 +108,8 @@ class SamplingMultitaskTrainer:
             self.create_subgraph_classifier_objective(dataset, tokenizer_path)
         if "subgraph_match" in objective_list:
             self.create_subgraph_matching_objective(dataset, tokenizer_path)
+        if "var_misuse_link" in objective_list:
+            self.create_var_misuse_edge_objective(dataset, tokenizer_path)
 
     def create_token_pred_objective(self, dataset, tokenizer_path):
         self.objectives.append(
@@ -267,6 +269,27 @@ class SamplingMultitaskTrainer:
             EdgePrediction(
                 self.graph_model, self.node_embedder, dataset.nodes,
                 dataset.load_edge_prediction, self.device,
+                self.sampling_neighbourhood_size, self.batch_size,
+                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type=self.trainer_params["metric"],
+                measure_scores=self.trainer_params["measure_scores"],
+                dilate_scores=self.trainer_params["dilate_scores"], nn_index=self.trainer_params["nn_index"],
+                # ns_groups=dataset.get_negative_sample_groups()
+            )
+        )
+
+    def create_var_misuse_edge_objective(self, dataset, tokenizer_path):
+
+        from SourceCodeTools.code.data.file_utils import unpersist
+        from SourceCodeTools.models.graph.train.objectives.GraphLinkObjective import SelectiveGraphLinkObjective
+        def load_misuse_edges():
+            mentions = set(dataset.nodes.query("type_backup == 'mention'")["id"])
+            elements = dataset.edges.query("src.map(@is_mention)", local_dict={"is_mention": lambda x: x in mentions})
+            return elements, unpersist(os.path.join(dataset.data_path, "misuse_edges.json.bz2"))
+
+        self.objectives.append(
+            SelectiveGraphLinkObjective(
+                "VarMisuseLinks", self.graph_model, self.node_embedder, dataset.nodes,
+                load_misuse_edges, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
                 tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type=self.trainer_params["metric"],
                 measure_scores=self.trainer_params["measure_scores"],

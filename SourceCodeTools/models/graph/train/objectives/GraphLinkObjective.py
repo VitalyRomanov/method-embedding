@@ -1,6 +1,7 @@
 from collections import OrderedDict
 
 from SourceCodeTools.code.data.dataset.SubwordMasker import SubwordMasker
+from SourceCodeTools.models.graph.ElementEmbedder import SelectiveGraphLinkSampler
 from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective
 
 
@@ -40,6 +41,15 @@ class GraphLinkObjective(AbstractObjective):
     def custom_load_state_dict(self, state_dicts):
         self.link_predictor.load_state_dict(
             self.get_prefix("link_predictor", state_dicts)
+        )
+
+
+class SelectiveGraphLinkObjective(GraphLinkObjective):
+    def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
+        self.target_embedder = SelectiveGraphLinkSampler(
+            elements=data_loading_func(), nodes=nodes, compact_dst=False, dst_to_global=True,
+            emb_size=self.target_emb_size, device=self.device, method=self.link_predictor_type, nn_index=self.nn_index,
+            ns_groups=self.ns_groups
         )
 
 
