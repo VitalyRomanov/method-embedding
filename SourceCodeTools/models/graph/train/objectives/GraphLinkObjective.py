@@ -45,12 +45,17 @@ class GraphLinkObjective(AbstractObjective):
 
 
 class SelectiveGraphLinkObjective(GraphLinkObjective):
+    def __init__(self, *args, **kwargs):
+        super(SelectiveGraphLinkObjective, self).__init__(*args, **kwargs)
+        self.update_embeddings_for_queries = False
+
     def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
         self.target_embedder = SelectiveGraphLinkSampler(
             elements=data_loading_func(), nodes=nodes, compact_dst=False, dst_to_global=True,
             emb_size=self.target_emb_size, device=self.device, method=self.link_predictor_type, nn_index=self.nn_index,
             ns_groups=self.ns_groups
         )
+
 
 
 # class GraphLinkTypeObjective(GraphLinkObjective):

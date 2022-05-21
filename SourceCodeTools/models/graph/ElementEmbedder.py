@@ -46,7 +46,7 @@ class SelectiveGraphLinkSampler(ElementEmbedderBase, Scorer):
             self, elements=elements, nodes=nodes, compact_dst=compact_dst, dst_to_global=dst_to_global
         )
         Scorer.__init__(
-            self, num_embs=len(self.elements["dst"].unique()), emb_size=emb_size, src2dst=self.element_lookup,
+            self, num_embs=len(self.prediction_edges["dst"].unique()), emb_size=emb_size, src2dst=self.element_lookup,
             device=device, method=method, index_backend=nn_index, ns_groups=ns_groups
         )
 
@@ -94,12 +94,14 @@ class SelectiveGraphLinkSampler(ElementEmbedderBase, Scorer):
 
         # map to global graph id
         element_data['id'] = element_data['src'].apply(lambda x: id2nodeid.get(x, None))
+        self.prediction_edges['src'] = self.prediction_edges['src'].apply(lambda x: id2nodeid.get(x, None))
         # # save type id to allow pooling nodes of certain types
         # element_data['src_type'] = element_data['src'].apply(lambda x: id2type.get(x, None))
         # element_data['src_typed_id'] = element_data['src'].apply(lambda x: id2typedid.get(x, None))
 
         if dst_to_global:
             element_data['dst'] = element_data['dst'].apply(lambda x: id2nodeid.get(x, None))
+            self.prediction_edges["dst"] = self.prediction_edges["dst"].apply(lambda x: id2nodeid.get(x, None))
 
         element_data = element_data.astype({
             'id': 'Int32',
@@ -127,9 +129,11 @@ class SelectiveGraphLinkSampler(ElementEmbedderBase, Scorer):
         assert ids is not None
         negative = []
         for id_ in ids:
-            group = self.src_group[id_]
-            candidates = self.groups[group]
-            positive = self.positive[id_]
+            # group = self.src_group[id_]
+            # candidates = self.groups[group]
+            # positive = self.positive[id_]
+            candidates = self.positive[id_]
+            positive = self.element_lookup[id_]
 
             neg = random.choice(candidates)
             attempts = 10
