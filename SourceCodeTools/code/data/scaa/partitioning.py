@@ -31,7 +31,8 @@ def add_splits(items, train_frac, restricted_id_pool=None):
 
     if restricted_id_pool is not None:
         # if `restricted_id_pool` is provided, mask all nodes not in `restricted_id_pool` negatively
-        to_keep = items.eval("id in @restricted_ids", local_dict={"restricted_ids": restricted_id_pool})
+        to_keep = items.eval("id in @restricted_ids",
+                             local_dict={"restricted_ids": restricted_id_pool})
         items["train_mask"] = items["train_mask"] & to_keep
         items["test_mask"] = items["test_mask"] & to_keep
         items["val_mask"] = items["val_mask"] & to_keep
@@ -47,17 +48,19 @@ def subgraph_partitioning(path_to_dataset, partition_column, train_frac=0.7):
     edges = read_edges(get_path("common_edges.json.bz2"))
     filecontent = unpersist(get_path("common_filecontent.json.bz2"))
 
-    def random_partition():
-        r = random()
-        if r < train_frac:
+    def task_partition(task):
+        # 9 = 1 + 1 + 5
+        if task < 6:
             return "train"
-        elif r < train_frac + (1 - train_frac) / 2:
+        elif task < 7:
             return "val"
         else:
             return "test"
 
-    task2split = dict(zip(filecontent[partition_column], [random_partition() for task in filecontent[partition_column]]))
-    file_id2split = np.array([task2split[task] for task in filecontent[partition_column]])
+    task2split = dict(zip(filecontent[partition_column], [
+                      task_partition(task) for task in filecontent[partition_column]]))
+    file_id2split = np.array([task2split[task]
+                             for task in filecontent[partition_column]])
 
     subgraph_ids = filecontent[["id"]]
 
@@ -68,13 +71,9 @@ def subgraph_partitioning(path_to_dataset, partition_column, train_frac=0.7):
     persist(subgraph_ids, get_path("subgraph_partition.json"))
 
 
-
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("dataset_path")
-    parser.add_argument("subgraph_column")
-
-    args = parser.parse_args()
-
-    subgraph_partitioning(args.dataset_path, args.subgraph_column)
+    # not scalable, but works
+    path = './examples/one_vs_10/with_ast'
+    column = 'task'
+    subgraph_partitioning(path, column)
+    print('Done')
