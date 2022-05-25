@@ -32,48 +32,6 @@ class SubgraphLoader:
     def load_ids(self, batch_ids):
         node_ids = dict()
         subgraphs = dict()
-<<<<<<< HEAD
-
-        for id_ in batch_ids:
-            subgraph_nodes = self._get_subgraph(id_)
-            subgraphs[id_] = subgraph_nodes
-
-            for type_ in subgraph_nodes:
-                if type_ not in node_ids:
-                    node_ids[type_] = set()
-                node_ids[type_].update(subgraph_nodes[type_])
-
-        for type_ in node_ids:
-            node_ids[type_] = sorted(list(node_ids[type_]))
-
-        coincidence_matrix = []
-        for id_, subgraph in subgraphs.items():
-            coincidence_matrix.append([])
-            for type_ in self.graph_node_types:
-                subgraph_nodes = subgraph[type_]
-                for node_id in node_ids[type_]:
-                    coincidence_matrix[-1].append(node_id in subgraph_nodes)
-
-        coincidence_matrix = torch.BoolTensor(coincidence_matrix)
-
-        coincidence_matrix = []
-        for id_, subgraph in subgraphs.items():
-            coincidence_matrix.append([])
-            for type_ in self.graph_node_types:
-                subgraph_nodes = subgraph[type_]
-                for node_id in node_ids[type_]:
-                    coincidence_matrix[-1].append(
-                        node_id in subgraph_nodes)
-
-        for input_nodes, seeds, blocks in loader:
-            # generator contains only one batch
-            return input_nodes, (coincidence_matrix, torch.LongTensor(batch_ids)), blocks
-
-    def __iter__(self):
-        # TODO
-        # supports only nodes without types
-
-=======
 
         for id_ in batch_ids:
             subgraph_nodes = self._get_subgraph(id_)
@@ -107,7 +65,6 @@ class SubgraphLoader:
         # TODO
         # supports only nodes without types
 
->>>>>>> 2da1c57 (embedding training)
         for i in range(0, len(self.ids), self.batch_size):
             batch_ids = self.ids[i: i + self.batch_size]
             yield self.load_ids(batch_ids)
@@ -441,31 +398,11 @@ class SubgraphElementEmbedderBase(ElementEmbedderBase):
 # class SubgraphElementEmbedderWithSubwords(SubgraphElementEmbedderBase, ElementEmbedderWithBpeSubwords):
 #     def __init__(self, elements, emb_size, tokenizer_path, num_buckets=100000, max_len=10):
 #         self.tokenizer_path = tokenizer_path
-<<<<<<< HEAD
-#         SubgraphElementEmbedderBase.__init__(self, elements=elements, compact_dst=False)
-#         nn.Module.__init__(self)
-#         Scorer.__init__(self, num_embs=len(self.elements["dst"].unique()), emb_size=emb_size,
-#                         src2dst=self.element_lookup)
-#
-#         self.emb_size = emb_size
-#         self.init_subwords(elements, num_buckets=num_buckets, max_len=max_len)
-
-
-class SubgraphElementEmbedderWithSubwords(SubgraphElementEmbedderBase, ElementEmbedderWithBpeSubwords):
-    def __init__(self, elements, emb_size, tokenizer_path, num_buckets=100000, max_len=10):
-        self.tokenizer_path = tokenizer_path
-        SubgraphElementEmbedderBase.__init__(
-            self, elements=elements, compact_dst=False)
-        nn.Module.__init__(self)
-        Scorer.__init__(self, num_embs=len(self.elements["dst"].unique()), emb_size=emb_size,
-                        src2dst=self.element_lookup)
-=======
 #         SubgraphElementEmbedderBase.__init__(
 #             self, elements=elements, compact_dst=False)
 #         nn.Module.__init__(self)
 #         Scorer.__init__(self, num_embs=len(self.elements["dst"].unique()), emb_size=emb_size,
 #                         src2dst=self.element_lookup)
->>>>>>> 2da1c57 (embedding training)
 
 #         self.emb_size = emb_size
 #         self.init_subwords(elements, num_buckets=num_buckets, max_len=max_len)

@@ -8,6 +8,7 @@ __pycache__
 examples/scaa
 examples/new_scaa
 examples/one_to_one
+examples/one_vs_10
 lda_docstring_embeddings*
 .idea
 SourceCodeTools.egg-info

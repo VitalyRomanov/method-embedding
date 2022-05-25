@@ -49,8 +49,8 @@ def subgraph_partitioning(path_to_dataset, partition_column, train_frac=0.7):
     filecontent = unpersist(get_path("common_filecontent.json.bz2"))
 
     def task_partition(task):
-        # 9 = 2 + 2 + 5
-        if task < 5:
+        # 9 = 1 + 1 + 5
+        if task < 6:
             return "train"
         elif task < 7:
             return "val"
@@ -73,7 +73,7 @@ def subgraph_partitioning(path_to_dataset, partition_column, train_frac=0.7):
 
 if __name__ == "__main__":
     # not scalable, but works
-    path = './examples/one_to_one/with_ast'
+    path = './examples/one_vs_10/with_ast'
     column = 'task'
     subgraph_partitioning(path, column)
     print('Done')

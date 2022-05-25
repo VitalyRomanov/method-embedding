@@ -635,11 +635,7 @@ class AstDatasetCreator(AbstractDatasetCreator):
         os.mkdir(temp_path)
 
         rnd_state = np.random.RandomState(self.seed)
-<<<<<<< HEAD
-
-=======
         print('path', self.path)
->>>>>>> 2da1c57 (embedding training)
         for ind, chunk in enumerate(pd.read_csv(self.path, chunksize=self.chunksize)):
             chunk = chunk.sample(frac=self.keep_frac, random_state=rnd_state)
             chunk_path = os.path.join(temp_path, f"chunk_{ind}")
@@ -742,6 +738,6 @@ if __name__ == "__main__":
     dataset = AstDatasetCreator(
         args.source_code, args.language, args.bpe_tokenizer, args.create_subword_instances,
         args.connect_subwords, args.only_with_annotations, args.do_extraction, args.visualize, args.track_offsets,
-        args.remove_type_annotations, args.recompute_l2g, args.chunksize, args.keep_frac, args.seed
+        args.remove_type_annotations, args.recompute_l2g, args.chunksize, args.keep_frac
     )
     dataset.merge(args.output_directory)
