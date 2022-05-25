@@ -47,16 +47,20 @@ class SCAAClassifierObjective(SubgraphMatchingObjective):
                                            masker, measure_scores, dilate_scores, early_stopping, early_stopping_tolerance, nn_index,
                                            ns_groups, subgraph_mapping, subgraph_partition
                                            )
-        # self.pooler = PoolingLayer(100, (100, 1))
-        self.pooler = torch.nn.MultiheadAttention(
-            100, 20, device=device, batch_first=True)
+        self.pooler = PoolingLayer(100, (100, 1))
+        # self.pooler = torch.nn.MultiheadAttention(
+        #     100, 2, device=device, batch_first=True)
 
     def parameters(self, recurse: bool = True):
         return chain(self.link_predictor.parameters(), self.pooler.parameters())
 
     def pooling_fn(self, node_embeddings):
-        node_embeddings = torch.reshape(node_embeddings, (1, -1, 100))
-        return self.pooler(node_embeddings, node_embeddings, node_embeddings, need_weights=False)[0]
+        return self.pooler(node_embeddings)
+
+        # node_embeddings = torch.reshape(node_embeddings, (1, -1, 100))
+        # pool = self.pooler(node_embeddings, node_embeddings,
+        #                    node_embeddings, need_weights=False)[0][0]
+        # return torch.transpose(torch.mean(pool, dim=0, keepdim=True), 0, 1)
 
     def custom_state_dict(self):
         state_dict = OrderedDict()
