@@ -549,9 +549,9 @@ class SourceGraphDataset:
         nodes.loc[test_idx, 'test_mask'] = True
         nodes['train_mask'] = nodes['train_mask'] ^ (nodes['val_mask'] | nodes['test_mask'])
         starts_with = lambda x: x.startswith("##node_type")
-        nodes.loc[
-            nodes.eval("name.map(@starts_with)", local_dict={"starts_with": starts_with}), ['train_mask', 'val_mask',
-                                                                                            'test_mask']] = False
+#         nodes.loc[
+#             nodes.eval("name.map(@starts_with)", local_dict={"starts_with": starts_with}), ['train_mask', 'val_mask',
+#                                                                                             'test_mask']] = False
     @staticmethod
     def get_train_val_test_indices(indices, train_frac=0.6, random_seed=None):
         if random_seed is not None:
