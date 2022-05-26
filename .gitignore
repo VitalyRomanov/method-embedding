@@ -13,3 +13,11 @@ spark-SourceGraphAnalysis/project/
 spark-SourceGraphAnalysis/src/main/scala/META-INF/
 spark-SourceGraphAnalysis/target/
 spark-SourceGraphAnalysis/temp/
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+
+*.bz2
+*v2.zip
