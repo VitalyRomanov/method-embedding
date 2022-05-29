@@ -55,7 +55,7 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
 
 class TransRObjective(GraphLinkClassificationObjective):
     def __init__(self, **kwargs):
-        super().__init__(name="TransR", **kwargs)
+        super().__init__(**kwargs)
 
     def _create_link_predictor(self):
         self.link_predictor = TransRLinkPredictor(
