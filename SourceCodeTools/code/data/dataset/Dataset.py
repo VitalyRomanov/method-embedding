@@ -675,14 +675,14 @@ class SourceGraphDataset:
             #     graph.nodes[ntype].data[col_name] = data
 
             for ntype in graph.ntypes:
-                valid_subset = set(nodes_table.query(f"select id from nodes where type = '{ntype}'")["id"])
-                node_ids_for_ntype = graph.nodes(ntype)
-                valid_mask = torch.tensor(
+                current_type_subset = set(nodes_table.query(f"select id from nodes where type = '{ntype}'")["id"])
+                node_ids_for_ntype = graph.nodes(ntype)  # all ntypes contain all nodes
+                current_type_mask = torch.tensor(
                     # check memory consumption here
-                    [node_id in valid_subset for node_id in node_ids_for_ntype.tolist()],
+                    [node_id in current_type_subset for node_id in node_ids_for_ntype.tolist()],
                     dtype=get_torch_dtype("bool")
                 )
-                graph.nodes[ntype].data["valid"] = valid_mask
+                graph.nodes[ntype].data["current_type_mask"] = current_type_mask
                 for col_name in node_data:
                     graph.nodes[ntype].data[col_name] = node_data[col_name]
 
