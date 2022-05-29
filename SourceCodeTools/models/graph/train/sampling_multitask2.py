@@ -468,26 +468,19 @@ class SamplingMultitaskTrainer:
         Training procedure for the model with node classifier
         :return:
         """
-
-        summary_dict = {}
-        best_val_loss = float("inf")
-        write_best_model = False
+        # best_val_loss = float("inf")
+        # write_best_model = False
 
         for epoch in range(self.epoch, self.epochs):
             self.epoch = epoch
 
             start = time()
-
-            summary_dict = {}
             num_batches = min([objective.num_train_batches for objective in self.objectives])
-
             longterm_metrics = defaultdict(list)
 
             for step in tqdm(range(num_batches), total=num_batches, desc=f"Epoch {self.epoch}"):
 
-                summary = {}
                 batch_summary = {}
-
                 try:
                     loaders = [objective.loader_next("train") for objective in self.objectives]
                 except StopIteration:
@@ -525,50 +518,24 @@ class SamplingMultitaskTrainer:
 
                 self.batch += 1
 
-            summary = self._reduce_metrics(longterm_metrics)
-            self.write_summary(summary, self.batch)
-            summary_dict.update(summary)
+            epoch_summary = self._reduce_metrics(longterm_metrics)
 
-            for objective in self.objectives:
-                objective.reset_iterator("train")
-                objective.reset_iterator("val")
-                objective.reset_iterator("test")
-
-            for objective in self.objectives:
-                objective.eval()
-
-                with torch.set_grad_enabled(False):
-                    val_scores = objective.evaluate("val")
-                    test_scores = objective.evaluate("test")
-                    
-                summary = {}
-                self.add_to_summary(summary, "val_avg", objective.name, self._reduce_metrics(val_scores), postfix="")
-                self.add_to_summary(summary, "test_avg", objective.name, self._reduce_metrics(test_scores), postfix="")
-
-                self.write_summary(summary, self.batch)
-                summary_dict.update(summary)
-
-                val_losses = [item for key, item in summary_dict.items() if key.startswith("Loss/val")]
-                avg_val_loss = sum(val_losses) / len(val_losses)
-                if avg_val_loss < best_val_loss:
-                    best_val_loss = avg_val_loss
-                    write_best_model = True
-
-                if self.do_save:
-                    self.save_checkpoint(self.model_base_path, write_best_model=write_best_model)
-                write_best_model = False
-
-                if objective.early_stopping_trigger is True:
-                    raise EarlyStopping()
-
-                objective.train()
-
-            # self.write_hyperparams({k.replace("vs_batch", "vs_epoch"): v for k, v in summary_dict.items()}, self.epoch)
+            epoch_summary.update(self._do_evaluation())
+            self.write_summary(epoch_summary, self.batch)
 
             end = time()
 
+            if self.do_save:
+                self.save_checkpoint(self.model_base_path, write_best_model=False)  # write_best_model)
+
+            # if objective.early_stopping_trigger is True:
+            #     raise EarlyStopping()
+            # objective.train()
+
+            # self.write_hyperparams({k.replace("vs_batch", "vs_epoch"): v for k, v in summary_dict.items()}, self.epoch)
+
             print(f"Epoch: {self.epoch}, Time: {int(end - start)} s", end="\n")
-            pprint(summary_dict)
+            pprint(epoch_summary)
 
             self.lr_scheduler.step()
 
@@ -619,10 +586,11 @@ class SamplingMultitaskTrainer:
         logging.info(f"Restored from epoch {checkpoint['epoch']}")
         # TODO needs test
 
-    def final_evaluation(self):
-        # TODO deduplicate
-
+    def _do_evaluation(self, evaluate_train_set=False):
         summary_dict = {}
+
+        for objective in self.objectives:
+            objective.eval()
 
         for objective in self.objectives:
             objective.reset_iterator("train")
@@ -636,17 +604,51 @@ class SamplingMultitaskTrainer:
         with torch.set_grad_enabled(False):
 
             for objective in self.objectives:
-
-                # train_scores = objective.evaluate("train")
+                if evaluate_train_set:
+                    train_scores = objective.evaluate("train")
+                    self.add_to_summary(summary_dict, "train_avg", objective.name, self._reduce_metrics(train_scores),
+                                        postfix="")  # "final")
                 val_scores = objective.evaluate("val")
                 test_scores = objective.evaluate("test")
-                
-                summary = {}
-                # self.add_to_summary(summary, "train_avg", objective.name, self._reduce_metrics(val_scores), postfix="final")
-                self.add_to_summary(summary, "val_avg", objective.name, self._reduce_metrics(val_scores), postfix="final")
-                self.add_to_summary(summary, "test_avg", objective.name, self._reduce_metrics(test_scores), postfix="final")
-                
-                summary_dict.update(summary)
+
+                self.add_to_summary(summary_dict, "val_avg", objective.name, self._reduce_metrics(val_scores),
+                                    postfix="")  # "final")
+                self.add_to_summary(summary_dict, "test_avg", objective.name, self._reduce_metrics(test_scores),
+                                    postfix="")  # "final")
+
+        for objective in self.objectives:
+            objective.train()
+
+        return summary_dict
+
+    def final_evaluation(self):
+        summary_dict = self._do_evaluation()
+
+        # summary_dict = {}
+        #
+        # for objective in self.objectives:
+        #     objective.reset_iterator("train")
+        #     objective.reset_iterator("val")
+        #     objective.reset_iterator("test")
+        #     # objective.early_stopping = False
+        #     # self._warm_up_proximity_ns(objective)
+        #     # objective.target_embedder.update_index()
+        #     objective.update_embeddings_for_queries = False
+        #
+        # with torch.set_grad_enabled(False):
+        #
+        #     for objective in self.objectives:
+        #
+        #         # train_scores = objective.evaluate("train")
+        #         val_scores = objective.evaluate("val")
+        #         test_scores = objective.evaluate("test")
+        #
+        #         summary = {}
+        #         # self.add_to_summary(summary, "train_avg", objective.name, self._reduce_metrics(val_scores), postfix="final")
+        #         self.add_to_summary(summary, "val_avg", objective.name, self._reduce_metrics(val_scores), postfix="final")
+        #         self.add_to_summary(summary, "test_avg", objective.name, self._reduce_metrics(test_scores), postfix="final")
+        #
+        #         summary_dict.update(summary)
 
         # self.write_hyperparams(summary_dict, self.epoch)
 

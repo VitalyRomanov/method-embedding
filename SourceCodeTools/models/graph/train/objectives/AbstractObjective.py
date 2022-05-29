@@ -289,9 +289,9 @@ class AbstractObjective(nn.Module):
             n += 1
         return sum(s) / n
 
-    def update_num_batches_for_split(self, data_split, batch_num):
+    def _update_num_batches_for_split(self, data_split, batch_num):
         if batch_num > getattr(self, f"num_{data_split}_batches"):
-            setattr(self, f"num_{data_split}_batches", batch_num)
+            setattr(self, f"num_{data_split}_batches", batch_num + 1)
 
     def _create_scorer(self, target_loader):
         scorer = Scorer(target_loader, self.margin)
@@ -315,7 +315,7 @@ class AbstractObjective(nn.Module):
     def make_step(
             self, batch_ind, batch, partition, longterm_metrics, scorer
     ):
-        self.update_num_batches_for_split(partition, batch_ind)
+        self._update_num_batches_for_split(partition, batch_ind)
 
         node_labels_loader = batch["node_labels_loader"]
         blocks = batch["blocks"]
