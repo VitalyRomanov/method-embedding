@@ -82,7 +82,7 @@ class SubgraphMatchingObjective(SubgraphAbstractObjective):
 
         def prepare(indices):
             indices_c = compactify(indices)
-            embs = get_embeddings(self.train_loader.load_ids(indices_c))
+            embs = get_embeddings(self.train_loader.load_ids(indices_c))  # it does not matter which loader to use
             if len(indices_c) != len(indices):
                 embs = restore(indices, indices_c, embs)
             return embs
