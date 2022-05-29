@@ -661,7 +661,7 @@ class SamplingMultitaskTrainer:
         batch_size = 512  # self.trainer_params["batch_size"]
         dataloader = SGNodesDataLoader(
             dataset=self.dataset, labels_for="nodes", number_of_hops=self.model_params["n_layers"],
-            batch_size=batch_size, preload_for="package", labels=self.dataset.inference_labels,
+            batch_size=batch_size, preload_for="package", labels=None,  # self.dataset.inference_labels,
             masker_fn=None, label_loader_class=TargetLoader, label_loader_params={}, device="cpu",
             negative_sampling_strategy="w2v"
         )
@@ -670,7 +670,7 @@ class SamplingMultitaskTrainer:
         embeddings = []
 
         for batch in tqdm(
-                dataloader.nodes_dataloader("train"),
+                dataloader.nodes_dataloader("any"),
                 total=dataloader.train_num_batches,
                 desc="Computing final embeddings"
         ):
