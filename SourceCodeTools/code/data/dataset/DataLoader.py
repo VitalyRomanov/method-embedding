@@ -6,7 +6,7 @@ from tqdm import tqdm
 
 from SourceCodeTools.code.data.dataset.Dataset import SGPartitionStrategies
 from SourceCodeTools.code.data.dataset.partition_strategies import SGLabelSpec
-from SourceCodeTools.models.graph.TargetLoader import LabelDenseEncoder
+from SourceCodeTools.models.graph.TargetLoader import LabelDenseEncoder, TargetEmbeddingProximity
 
 
 class SGNodesDataLoader:
@@ -31,10 +31,14 @@ class SGNodesDataLoader:
         self.device = device
         self.negative_sampling_strategy = negative_sampling_strategy
         assert negative_sampling_strategy in {"w2v", "closest"}
-        # self.labels = labels
-        # self.label_loader_class = label_loader_class
-        # self.label_loader_params = label_loader_params
+
         self.label_encoder = LabelDenseEncoder(labels)
+        if "emb_size" in label_loader_params:
+            self.target_embedding_proximity = TargetEmbeddingProximity(
+                self.label_encoder.encoded_labels(), label_loader_params["emb_size"]
+            )
+        else:
+            self.target_embedding_proximity = None
 
         for partition_label in ["train", "val", "test"]:
             self._create_loader_for_partition(
@@ -54,7 +58,8 @@ class SGNodesDataLoader:
             label_loader_params["logger_name"] = objective_name
         setattr(
             self, f"{partition_label}_loader", label_loader_class(
-                partition_labels, self.label_encoder, **label_loader_params
+                partition_labels, self.label_encoder, target_embedding_proximity=self.target_embedding_proximity,
+                **label_loader_params
             )
         )
 
@@ -96,7 +101,7 @@ class SGNodesDataLoader:
             partition_mask = node_data[partition]
             with torch.no_grad():
                 if partition_mask.any().item() is True:
-                    nodes_for_batching_mask = node_data["valid"] & partition_mask
+                    nodes_for_batching_mask = node_data["current_type_mask"] & partition_mask  # for current subgraph
                     # labels for subgraphs should be handled differently
                     if "has_label" in node_data and labels_for != SGLabelSpec.subgraphs:
                         nodes_for_batching_mask &= node_data["has_label"]
@@ -114,6 +119,15 @@ class SGNodesDataLoader:
             python_seeds = seeds.tolist()
         return python_seeds
 
+    def _num_nodes_total(self, nodes):
+        if isinstance(nodes, dict):
+            total = 0
+            for n in nodes.values():
+                total += len(n)
+        else:
+            total = len(nodes)
+        return total
+
     def create_batches(self, subgraph_generator, number_of_hops, batch_size, partition, labels_for):
         for group, subgraph, masker, node_labels_loader, edge_labels_loader in subgraph_generator:
 
@@ -121,6 +135,9 @@ class SGNodesDataLoader:
 
             sampler = MultiLayerFullNeighborSampler(number_of_hops)
             nodes_for_batching = self.get_nodes_from_partition(subgraph, partition, labels_for)
+            if self._num_nodes_total(nodes_for_batching) == 0:
+                continue
+
             loader = NodeDataLoader(
                 subgraph, nodes_for_batching, sampler, batch_size=batch_size, shuffle=True, num_workers=0
             )

@@ -112,7 +112,7 @@ class Scorer:
     #     return list(range(len(self.target_loader._inverse_target_map)))
 
     def get_embeddings_for_scoring(self, device, **kwargs):
-        return torch.Tensor(self.target_loader._target_embedding_cache).to(device)
+        return torch.Tensor(self.target_loader.target_embeddings).to(device)
 
     def get_keys_for_scoring(self):
         return list(range(len(self.target_loader._unique_targets)))
@@ -203,7 +203,7 @@ class Scorer:
 
     def score_candidates(self, to_score_ids, to_score_embs, link_predictor=None, at=None, type=None, device="cpu"):
 
-        if self.target_loader._proximity_ns_ready is False:
+        if self.target_loader.embedding_proximity_ready is False:
             logging.warning("Scoring is unreliable")
 
         if at is None:

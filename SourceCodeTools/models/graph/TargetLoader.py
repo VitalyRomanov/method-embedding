@@ -77,6 +77,67 @@ class Brute:
         return dist, ind  # .reshape((-1,1))
 
 
+class TargetEmbeddingProximity:
+    def __init__(
+            self, unique_targets, emb_size, index_backend="brute", scoring_method="inner_prod", device="cpu"
+    ):
+        self._unique_targets = unique_targets
+        self._emb_size = emb_size
+        self._scoring_method = scoring_method
+        self._index_backend = index_backend
+        self._device = device
+
+        self._init_proximity_search()
+
+    def _init_proximity_search(self):
+        self._target2index = dict(zip(self._unique_targets, range(len(self._unique_targets))))
+        self._target_embedding_cache = normalize(np.ones((len(self._unique_targets), self._emb_size)), axis=1)
+        # Track whether all embeddings were updated at least once. After each embedding was initialized,
+        # can start proximity negative sampling
+        self._cold_start_status = list(False for _ in range(len(self._unique_targets)))
+        self._all_embeddings_ready = False
+
+    def update_index(self):
+        if self._scoring_method == "nn":
+            self.scorer_index = None
+            return
+        if self._index_backend == "sklearn":
+            self._scorer_index = NearestNeighbors()
+            self._scorer_index.fit(self._target_embedding_cache)
+        elif self._index_backend == "faiss":
+            self._scorer_index = FaissIndex(self._target_embedding_cache, method=self._scoring_method)
+        elif self._index_backend == "brute":
+            self._scorer_index = Brute(self._target_embedding_cache, method=self._scoring_method, device=self._device)
+        else:
+            raise ValueError(f"Unsupported backend: {self._index_backend}. Supported backends are: sklearn|faiss")
+
+    def set_embed(self, ids, embs):
+        ids = [self._target2index[id_] for id_ in ids]  # all ids here are supposed to be global, so not sure if needed
+        if self._all_embeddings_ready is False:
+            for id_ in ids:
+                self._cold_start_status[id_] = True
+            if all(self._cold_start_status):
+                self._all_embeddings_ready = True
+                self.update_index()
+        self._target_embedding_cache[ids, :] = normalize(embs, axis=1) if self._scoring_method == "inner_prod" else embs
+
+    @property
+    def num_embeddings(self):
+        return self._target_embedding_cache.shape[0]
+
+    @property
+    def all_embeddings_ready(self):
+        return self._all_embeddings_ready
+
+    def query(self, key, k):
+        return self._scorer_index.query(
+            self._target_embedding_cache[key].reshape(1, -1), k=k
+        )
+
+    def __getitem__(self, item):
+        return self._target_embedding_cache[item]
+
+
 class LabelDenseEncoder:
     def __init__(self, labels):
         self._compact_target(labels)
@@ -112,23 +173,29 @@ class LabelDenseEncoder:
 
 class TargetLoader:
     def __init__(
-            self, targets, label_encoder, *, compact_dst=True, ns_index_backend="brute",
-            scoring_method="inner_prod", emb_size=None, device="cpu", logger_path=None, logger_name=None, **kwargs
+            self, targets, label_encoder, *, compact_dst=True, target_embedding_proximity=None, emb_size=None, device="cpu", logger_path=None, logger_name=None, **kwargs
     ):
         self._compact_targets = compact_dst
-        self._ns_index_backend = ns_index_backend
-        self._scoring_method = scoring_method
         self._emb_size = emb_size
         self._label_encoder = label_encoder
         self._unique_targets = self._label_encoder.encoded_labels()
         self.device = device
         self._init(targets)
         self._prepare_logger(logger_path, logger_name)
+        self._target_embedding_proximity = target_embedding_proximity
 
         assert self._unique_targets[-1] == len(self._unique_targets) - 1
         self.num_unique_targets = len(self._unique_targets)
 
         self.extra_args = kwargs
+
+    @property
+    def embedding_proximity_ready(self):
+        return self._target_embedding_proximity.all_embeddings_ready
+
+    @property
+    def target_embeddings(self):
+        return self._target_embedding_proximity._target_embedding_cache
 
     def _prepare_logger(self, logger_path, logger_name):
         if logger_path is not None:
@@ -149,13 +216,6 @@ class TargetLoader:
 
         if len_after != len_before:
             logging.info(f"Elements contain duplicate entries. {len_before - len_after} entries were removed")
-
-    # def _compact_target(self, targets):
-    #     if self._compact_targets:
-    #         self._target2target_id, self._inverse_target_map = compact_property(targets['dst'], return_order=True)
-    #     else:
-    #         self._inverse_target_map = list(range(targets['dst'].max()))
-    #         self._target2target_id = dict(zip(self._inverse_target_map, self._inverse_target_map))
 
     def _init(self, targets):
         if len(targets) == 0:
@@ -178,16 +238,6 @@ class TargetLoader:
                 self._groups[group].append(src)
 
         self._init_w2v_ns(compacted)
-        if self._emb_size is not None:
-            self._init_proximity_ns(compacted)
-
-    def _init_proximity_ns(self, targets):
-        num_targets = self._label_encoder.num_unique_labels()
-        self._target_embedding_cache = normalize(np.ones((num_targets, self._emb_size)), axis=1)
-        # Track whether all embeddings were updated at least once. After each embedding was initialized,
-        # can start proximity negative sampling
-        self._cold_start_status = list(False for _ in range(len(self._unique_targets)))
-        self._proximity_ns_ready = False
 
     def _init_w2v_ns(self, elements, skipgram_sampling_power=0.75):
         # compute distribution of dst elements
@@ -201,24 +251,10 @@ class TargetLoader:
     def __len__(self):
         return len(self._element_lookup)
 
-    def _prepare_ns_index(self):
-        if self._scoring_method == "nn":
-            self.scorer_index = None
-            return
-        if self._ns_index_backend == "sklearn":
-            self._scorer_index = NearestNeighbors()
-            self._scorer_index.fit(self._target_embedding_cache)
-        elif self._ns_index_backend == "faiss":
-            self._scorer_index = FaissIndex(self._target_embedding_cache, method=self._scoring_method)
-        elif self._ns_index_backend == "brute":
-            self._scorer_index = Brute(self._target_embedding_cache, method=self._scoring_method, device=self.device)
-        else:
-            raise ValueError(f"Unsupported backend: {self._ns_index_backend}. Supported backends are: sklearn|faiss")
-
     def _sample_closest_negative(self, ids, k=None):
         assert self._emb_size is not None, "Sampling closest negative is not initialized, try passing `emb_size` to initializer"
         assert ids is not None
-        num_emb = self._target_embedding_cache.shape[0]
+        num_emb = self._target_embedding_proximity.num_embeddings
         if k > num_emb:
             logging.warning("Requested number of negative samples is larger than total number of targets")
             k = num_emb
@@ -234,8 +270,8 @@ class TargetLoader:
         return negative
 
     def _get_closest_to_key(self, key, k=None, exclude=None):
-        _, closest_keys = self._scorer_index.query(
-            self._target_embedding_cache[key].reshape(1, -1), k=k
+        _, closest_keys = self._target_embedding_proximity.query(
+            self._target_embedding_proximity[key].reshape(1, -1), k=k
         )
         try:
             # Try to remove the key itself from the list of neighbours
@@ -274,19 +310,15 @@ class TargetLoader:
         return np.fromiter((rnd.choice(self._element_lookup[id_]) for id_ in ids), dtype=np.int32)
 
     def set_embed(self, ids, embs):
-        if self._proximity_ns_ready is False:
-            for id_ in ids:
-                self._cold_start_status[id_] = True
-            if all(self._cold_start_status):
-                self._proximity_ns_ready = True
-                self.update_index()
-        self._target_embedding_cache[ids, :] = normalize(embs, axis=1) if self._scoring_method == "inner_prod" else embs
+        assert self._target_embedding_proximity is not None
+
+        self._target_embedding_proximity.set_embed(ids, embs)
 
     def sample_negative(self, ids, strategy="w2v"):
         if strategy == "w2v":
             negative = self.sample_negative_w2v(ids)
         elif strategy == "closest":
-            if self._proximity_ns_ready is False:
+            if self._target_embedding_proximity.all_embeddings_ready is False:
                 logging.info("Proximity negative sampling is not ready yet, falling back to w2v")
                 negative = self.sample_negative_w2v(ids)
             else:
@@ -302,7 +334,7 @@ class TargetLoader:
         return negative
 
     def update_index(self):
-        self._prepare_ns_index()
+        self._target_embedding_proximity.update_index()
 
     def has_label_mask(self):
         return {key: True for key in self._element_lookup}
