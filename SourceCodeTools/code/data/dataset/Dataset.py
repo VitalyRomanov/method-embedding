@@ -126,18 +126,23 @@ class PartitionIndex:
             if val_mask is True:
                 self._val_set.add(id_)
 
+        self._any_set = self._train_set | self._test_set | self._val_set
+
     def create_exclusive(self, exclusive_label):
         new_index = self.__class__()
         new_index._index = self._index
-        new_index._exclusive_label = self._partition_label_order.index(exclusive_label)
+        if exclusive_label == "any_mask":
+            new_index._exclusive_label = -1
+        else:
+            new_index._exclusive_label = self._partition_label_order.index(exclusive_label)
         return new_index
 
     def is_partition(self, node_id, partition_label):
         return node_id in self.get_partition_ids(partition_label)
 
     def get_partition_ids(self, partition_label):
-        if partition_label == "any":
-            partition_label_source = {"any": self._train_set | self._test_set | self._val_set}
+        if partition_label == "any_mask":
+            partition_label_source = {"any_mask": self._any_set }  # self._train_set | self._test_set | self._val_set}
         else:
             partition_label_source = {
                 "train_mask": self._train_set,
@@ -169,6 +174,8 @@ class PartitionIndex:
         if self._exclusive_label is None:
             return self._index[item]
         else:
+            if self._exclusive_label == -1:
+                return any(self._index[item])
             return self._index[item][self._exclusive_label]
 
     def get(self, item, default):
@@ -193,7 +200,7 @@ class SourceGraphDataset:
         "train": "train_mask",
         "val": "val_mask",
         "test": "test_mask",
-        "any": "any"
+        "any": "any_mask"
     }
 
     def __init__(
@@ -879,7 +886,7 @@ class SourceGraphDataset:
         iterator = self.dataset_db.iterate_subgraphs(how, groups)
 
         def add_data(table, data_dict):
-            boolean_fields = {"train_mask", "test_mask", "val_mask", "has_label"}
+            boolean_fields = {"train_mask", "test_mask", "val_mask", "has_label", "any_mask"}
             for key in data_dict:
                 table.eval(
                     f"{key} = id.map(@mapper)",

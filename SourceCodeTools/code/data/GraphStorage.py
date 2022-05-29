@@ -322,6 +322,9 @@ class OnDiskGraphStorage:
         package_nodes = self.get_nodes_for_edges(edges)
         return package_nodes, edges
 
+    def get_all_packages(self):
+        return self.database.query("SELECT package_id, package_desc FROM packages")["package_id"]
+
     # def iterate_packages(self, all_packages=None):
     #     if all_packages is None:
     #         all_packages = self.database.query("SELECT package_id, package_desc FROM packages")["package_id"]
@@ -344,6 +347,9 @@ class OnDiskGraphStorage:
 
         file_nodes = self.get_nodes_for_edges(edges)
         return file_nodes, edges
+
+    def get_all_files(self):
+        return self.database.query("SELECT distinct file_id FROM edge_file_id")["file_id"]
 
     # def iterate_files(self, all_files=None):
     #     if all_files is None:
@@ -368,6 +374,9 @@ class OnDiskGraphStorage:
         mention_nodes = self.get_nodes_for_edges(edges)
         return mention_nodes, edges
 
+    def get_all_mentions(self):
+        return self.database.query("SELECT distinct mentioned_in FROM edge_hierarchy")["mentioned_in"]
+
     # def iterate_mentions(self, all_mentions=None):
     #     if all_mentions is None:
     #         all_mentions = self.database.query("SELECT distinct mentioned_in FROM edge_hierarchy")["mentioned_in"]
@@ -379,12 +388,18 @@ class OnDiskGraphStorage:
 
         if how == SGPartitionStrategies.package:
             load_fn = self.get_subgraph_for_package
+            if groups is None:
+                groups = self.get_all_packages()
             # return self.iterate_packages(all_packages=groups)
         elif how == SGPartitionStrategies.file:
             load_fn = self.get_subgraph_for_file
+            if groups is None:
+                groups = self.get_all_files()
             # return self.iterate_files(all_files=groups)
         elif how == SGPartitionStrategies.mention:
             load_fn = self.get_subgraph_for_mention
+            if groups is None:
+                groups = self.get_all_mentions()
             # return self.iterate_mentions(all_mentions=groups)
         else:
             raise ValueError()

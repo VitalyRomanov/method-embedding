@@ -2,7 +2,6 @@ from copy import copy
 
 import torch
 from dgl.dataloading import MultiLayerFullNeighborSampler, NodeDataLoader
-from tqdm import tqdm
 
 from SourceCodeTools.code.data.dataset.Dataset import SGPartitionStrategies
 from SourceCodeTools.code.data.dataset.partition_strategies import SGLabelSpec
@@ -32,36 +31,41 @@ class SGNodesDataLoader:
         self.negative_sampling_strategy = negative_sampling_strategy
         assert negative_sampling_strategy in {"w2v", "closest"}
 
-        self.label_encoder = LabelDenseEncoder(labels)
-        if "emb_size" in label_loader_params:
-            self.target_embedding_proximity = TargetEmbeddingProximity(
-                self.label_encoder.encoded_labels(), label_loader_params["emb_size"]
-            )
-        else:
-            self.target_embedding_proximity = None
+        if labels is not None:
+            self.label_encoder = LabelDenseEncoder(labels)
+            if "emb_size" in label_loader_params:
+                self.target_embedding_proximity = TargetEmbeddingProximity(
+                    self.label_encoder.encoded_labels(), label_loader_params["emb_size"]
+                )
+            else:
+                self.target_embedding_proximity = None
 
-        for partition_label in ["train", "val", "test"]:
-            self._create_loader_for_partition(
+        for partition_label in ["train", "val", "test", "any"]:
+            self._create_label_loader_for_partition(
                 labels, partition_label, label_loader_class, label_loader_params, base_path, objective_name
             )
 
-    def _create_loader_for_partition(
+    def _create_label_loader_for_partition(
             self, labels, partition_label, label_loader_class, label_loader_params, base_path, objective_name
     ):
-        partition_labels = self.dataset.get_labels_for_partition(
-            labels, partition_label, self.labels_for, group_by=self.preload_for
-        )
-        setattr(self, f"{partition_label}_num_batches", len(partition_labels) // self.batch_size + 1)
-        if partition_label == "train":
-            label_loader_params = copy(label_loader_params)
-            label_loader_params["logger_path"] = base_path
-            label_loader_params["logger_name"] = objective_name
-        setattr(
-            self, f"{partition_label}_loader", label_loader_class(
+        if labels is not None:
+            partition_labels = self.dataset.get_labels_for_partition(
+                labels, partition_label, self.labels_for, group_by=self.preload_for
+            )
+            setattr(self, f"{partition_label}_num_batches", len(partition_labels) // self.batch_size + 1)
+            if partition_label == "train":
+                label_loader_params = copy(label_loader_params)
+                label_loader_params["logger_path"] = base_path
+                label_loader_params["logger_name"] = objective_name
+            label_loader = label_loader_class(
                 partition_labels, self.label_encoder, target_embedding_proximity=self.target_embedding_proximity,
                 **label_loader_params
             )
-        )
+        else:
+            label_loader = None
+            partition_set = getattr(self.dataset.partition, f"_{partition_label}_set")
+            setattr(self, f"{partition_label}_num_batches", len(partition_set) // self.batch_size + 1)
+        setattr(self, f"{partition_label}_loader", label_loader)
 
     def subgraph_iterator(self):
         return self.dataset.iterate_packages()
@@ -81,8 +85,13 @@ class SGNodesDataLoader:
         if edge_label_loader is not None:
             edge_data["has_label"] = edge_label_loader.has_label_mask()
 
+        if node_label_loader is not None:
+            groups = node_label_loader.get_groups()
+        else:
+            groups = None
+
         for group, nodes, edges, subgraph in self.dataset.iterate_subgraphs(
-                grouping_strategy, node_label_loader.get_groups(), node_data, edge_data
+                grouping_strategy, groups, node_data, edge_data
         ):
 
             if masker_fn is not None:
@@ -153,8 +162,12 @@ class SGNodesDataLoader:
                 if isinstance(indices, dict):
                     raise NotImplementedError("Using node types is currently not supported. Set use_node_types=False")
 
-                positive_indices = torch.LongTensor(node_labels_loader.sample_positive(indices))
-                negative_indices = torch.LongTensor(node_labels_loader.sample_negative(indices, strategy=self.negative_sampling_strategy))
+                if node_labels_loader is not None:
+                    positive_indices = torch.LongTensor(node_labels_loader.sample_positive(indices)).to(self.device)
+                    negative_indices = torch.LongTensor(node_labels_loader.sample_negative(indices, strategy=self.negative_sampling_strategy)).to(self.device)
+                else:
+                    positive_indices = None
+                    negative_indices = None
 
                 batch = {
                     "group": group,
@@ -163,8 +176,8 @@ class SGNodesDataLoader:
                     "input_mask": input_mask,
                     "indices": indices,
                     "blocks": [block.to(self.device) for block in blocks],
-                    "positive_indices": positive_indices.to(self.device),
-                    "negative_indices": negative_indices.to(self.device),
+                    "positive_indices": positive_indices,
+                    "negative_indices": negative_indices,
                     "node_labels_loader": node_labels_loader,
                     # "edge_labels_loader": edge_labels_loader,
                     # "update_node_negative_sampler_callback": node_labels_loader.set_embed,
@@ -198,7 +211,7 @@ class SGNodesDataLoader:
         node_data = {}
         edge_data = {}
 
-        for partition_key in ["train_mask", "test_mask", "val_mask"]:
+        for partition_key in ["train_mask", "test_mask", "val_mask", "any_mask"]:
             node_data[partition_key] = self.dataset.partition.create_exclusive(partition_key)
         # get name for the partition mask
         current_partition_key = self.dataset.get_proper_partition_column_name(partition_label)
