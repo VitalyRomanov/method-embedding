@@ -18,7 +18,7 @@ from tqdm import tqdm
 from SourceCodeTools.models.Embedder import Embedder
 from SourceCodeTools.models.graph.TargetLoader import TargetLoader
 from SourceCodeTools.models.graph.train.objectives import GraphTextPrediction, GraphTextGeneration, \
-    NodeNameClassifier, NodeClassifierObjective, SubwordEmbedderObjective
+    NodeNameClassifier, NodeClassifierObjective, SubwordEmbedderObjective, GraphLinkObjective
 from SourceCodeTools.models.graph.NodeEmbedder import SimplestNodeEmbedder
 from SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObjective import TransRObjective
 from SourceCodeTools.models.graph.train.objectives.SubgraphClassifierObjective import SubgraphClassifierObjective, \
@@ -103,41 +103,21 @@ class SamplingMultitaskTrainer:
         if "subgraph_clf" in objective_list:
             self.create_subgraph_classifier_objective(dataset, tokenizer_path)
 
-    def create_token_pred_objective(self, dataset, tokenizer_path):
-        self.objectives.append(
-            TokenNamePrediction(
-                self.graph_model, self.node_embedder, dataset.nodes,
-                dataset.load_token_prediction, self.device,
-                self.sampling_neighbourhood_size, self.batch_size,
-                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
-                masker=dataset.create_subword_masker(), measure_scores=self.trainer_params["measure_scores"],
-                dilate_scores=self.trainer_params["dilate_scores"]
-            )
-        )
-
-    def create_node_name_objective(self, dataset, tokenizer_path):
-        self.objectives.append(
-            self._create_node_level_objective(
-                objective_name="NodeNamePrediction",
-                objective_class=SubwordEmbedderObjective,
-                dataset=dataset,
-                labels_fn=dataset.load_node_names,
-                tokenizer_path=tokenizer_path,
-                masker_fn=dataset.create_node_name_masker,
-                preload_for="package"
-            )
-        )
-
     def _create_node_level_objective(
             self, *, objective_name, objective_class, dataset, labels_fn, tokenizer_path,
-            masker_fn=None, preload_for="package"
+            masker_fn=None, preload_for="package", label_loader_class=None, label_loader_params=None
     ):
+        if label_loader_class is None:
+            label_loader_class = TargetLoader
+        if label_loader_params is None:
+            label_loader_params = {"emb_size": self.elem_emb_size, "tokenizer_path": tokenizer_path}
+
         return objective_class(
             name=objective_name, graph_model=self.graph_model, node_embedder=self.node_embedder, dataset=dataset,
             label_load_fn=labels_fn, device=self.device, sampling_neighbourhood_size=self.sampling_neighbourhood_size,
             batch_size=self.batch_size, labels_for="nodes", number_of_hops=self.model_params["n_layers"],
-            preload_for=preload_for, masker_fn=masker_fn, label_loader_class=TargetLoader,
-            label_loader_params={"emb_size": self.elem_emb_size, "tokenizer_path": tokenizer_path},
+            preload_for=preload_for, masker_fn=masker_fn, label_loader_class=label_loader_class,
+            label_loader_params=label_loader_params,
             tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
             measure_scores=self.trainer_params["measure_scores"], dilate_scores=self.trainer_params["dilate_scores"],
             early_stopping=False, early_stopping_tolerance=20, nn_index=self.trainer_params["nn_index"],
@@ -168,6 +148,32 @@ class SamplingMultitaskTrainer:
             subgraph_partition=subgraph_partition
         )
 
+    def create_token_pred_objective(self, dataset, tokenizer_path):
+        self.objectives.append(
+            self._create_node_level_objective(
+                objective_name="TokenNamePrediction",
+                objective_class=SubwordEmbedderObjective,
+                dataset=dataset,
+                labels_fn=dataset.load_token_prediction,
+                tokenizer_path=tokenizer_path,
+                masker_fn=dataset.create_subword_masker,
+                preload_for="package"
+            )
+        )
+
+    def create_node_name_objective(self, dataset, tokenizer_path):
+        self.objectives.append(
+            self._create_node_level_objective(
+                objective_name="NodeNamePrediction",
+                objective_class=SubwordEmbedderObjective,
+                dataset=dataset,
+                labels_fn=dataset.load_node_names,
+                tokenizer_path=tokenizer_path,
+                masker_fn=dataset.create_node_name_masker,
+                preload_for="package"
+            )
+        )
+
     def create_subgraph_name_objective(self, dataset, tokenizer_path):
         self.objectives.append(
             self._create_subgraph_objective(
@@ -192,131 +198,136 @@ class SamplingMultitaskTrainer:
 
     def create_type_ann_objective(self, dataset, tokenizer_path):
         self.objectives.append(
-            TypeAnnPrediction(
-                self.graph_model, self.node_embedder, dataset.nodes,
-                dataset.load_type_prediction, self.device,
-                self.sampling_neighbourhood_size, self.batch_size,
-                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
-                masker=None,
-                measure_scores=self.trainer_params["measure_scores"],
-                dilate_scores=self.trainer_params["dilate_scores"]
+            self._create_node_level_objective(
+                objective_name="TypeAnnPrediction",
+                objective_class=NodeClassifierObjective,
+                dataset=dataset,
+                labels_fn=dataset.load_type_prediction,
+                tokenizer_path=tokenizer_path,
+                masker_fn=None,
+                preload_for="package"
             )
         )
 
     def create_node_name_classifier_objective(self, dataset, tokenizer_path):
         self.objectives.append(
-            NodeNameClassifier(
-                self.graph_model, self.node_embedder, dataset.nodes,
-                dataset.load_node_names, self.device,
-                self.sampling_neighbourhood_size, self.batch_size,
-                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size,
-                masker=dataset.create_node_name_masker(tokenizer_path),
-                measure_scores=self.trainer_params["measure_scores"],
-                dilate_scores=self.trainer_params["dilate_scores"]
+            self._create_node_level_objective(
+                objective_name="NodeNameClassifier",
+                objective_class=NodeClassifierObjective,
+                dataset=dataset,
+                labels_fn=dataset.load_node_names,
+                tokenizer_path=tokenizer_path,
+                masker_fn=dataset.create_node_name_masker,
+                preload_for="package"
             )
         )
 
     def create_var_use_objective(self, dataset, tokenizer_path):
         self.objectives.append(
-            VariableNameUsePrediction(
-                self.graph_model, self.node_embedder, dataset.nodes,
-                dataset.load_var_use, self.device,
-                self.sampling_neighbourhood_size, self.batch_size,
-                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
-                masker=dataset.create_variable_name_masker(tokenizer_path),
-                measure_scores=self.trainer_params["measure_scores"],
-                dilate_scores=self.trainer_params["dilate_scores"]
+            self._create_node_level_objective(
+                objective_name="VariableNameUsePrediction",
+                objective_class=SubwordEmbedderObjective,
+                dataset=dataset,
+                labels_fn=dataset.load_var_use,
+                tokenizer_path=tokenizer_path,
+                masker_fn=dataset.create_variable_name_masker,
+                preload_for="package"
             )
         )
 
     def create_api_call_objective(self, dataset, tokenizer_path):
         self.objectives.append(
-            NextCallPrediction(
-                self.graph_model, self.node_embedder, dataset.nodes,
-                dataset.load_api_call, self.device,
-                self.sampling_neighbourhood_size, self.batch_size,
-                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
-                measure_scores=self.trainer_params["measure_scores"],
-                dilate_scores=self.trainer_params["dilate_scores"]
+            self._create_node_level_objective(
+                objective_name="NextCallPrediction",
+                objective_class=GraphLinkObjective,
+                dataset=dataset,
+                labels_fn=dataset.load_api_call,
+                tokenizer_path=tokenizer_path,
+                masker_fn=None,
+                preload_for="package"
             )
         )
 
     def create_global_link_objective(self, dataset, tokenizer_path):
-        assert dataset.no_global_edges is True
+        assert dataset.no_global_edges is True, "No edges should be in the graph for GlobalLinkPrediction objective"
 
         self.objectives.append(
-            GlobalLinkPrediction(
-                self.graph_model, self.node_embedder, dataset.nodes,
-                dataset.load_global_edges_prediction, self.device,
-                self.sampling_neighbourhood_size, self.batch_size,
-                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="nn",
-                measure_scores=self.trainer_params["measure_scores"],
-                dilate_scores=self.trainer_params["dilate_scores"]
+            self._create_node_level_objective(
+                objective_name="GlobalLinkPrediction",
+                objective_class=GraphLinkObjective,
+                dataset=dataset,
+                labels_fn=dataset.load_global_edges_prediction,
+                tokenizer_path=tokenizer_path,
+                masker_fn=None,
+                preload_for="package"  # "file", "function"
             )
         )
 
     def create_edge_objective(self, dataset, tokenizer_path):
         self.objectives.append(
-            EdgePrediction(
-                self.graph_model, self.node_embedder, dataset.nodes,
-                dataset.load_edge_prediction, self.device,
-                self.sampling_neighbourhood_size, self.batch_size,
-                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type=self.trainer_params["metric"],
-                measure_scores=self.trainer_params["measure_scores"],
-                dilate_scores=self.trainer_params["dilate_scores"], nn_index=self.trainer_params["nn_index"],
-                # ns_groups=dataset.get_negative_sample_groups()
+            self._create_node_level_objective(
+                objective_name="EdgePrediction",
+                objective_class=GraphLinkObjective,
+                dataset=dataset,
+                labels_fn=dataset.load_edge_prediction,
+                tokenizer_path=tokenizer_path,
+                masker_fn=None,
+                preload_for="package" # "file", "function"
             )
         )
 
     def create_transr_objective(self, dataset, tokenizer_path):
         self.objectives.append(
-            TransRObjective(
-                self.graph_model, self.node_embedder, dataset.nodes,
-                dataset.load_edge_prediction, self.device,
-                self.sampling_neighbourhood_size, self.batch_size,
-                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size,
-                link_predictor_type=self.trainer_params["metric"],
-                measure_scores=self.trainer_params["measure_scores"],
-                dilate_scores=self.trainer_params["dilate_scores"],
-                # ns_groups=dataset.get_negative_sample_groups()
+            self._create_node_level_objective(
+                objective_name="TransRObjective",
+                objective_class=TransRObjective,
+                dataset=dataset,
+                labels_fn=dataset.load_edge_prediction,
+                tokenizer_path=tokenizer_path,
+                masker_fn=None,
+                preload_for="package"  # "file", "function"
             )
         )
 
     def create_text_prediction_objective(self, dataset, tokenizer_path):
         self.objectives.append(
-            GraphTextPrediction(
-                self.graph_model, self.node_embedder, dataset.nodes,
-                dataset.load_docstring, self.device,
-                self.sampling_neighbourhood_size, self.batch_size,
-                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
-                measure_scores=self.trainer_params["measure_scores"],
-                dilate_scores=self.trainer_params["dilate_scores"]
+            self._create_node_level_objective(
+                objective_name="GraphTextPrediction",
+                objective_class=GraphTextPrediction,
+                dataset=dataset,
+                labels_fn=dataset.load_docstring,
+                tokenizer_path=tokenizer_path,
+                masker_fn=None,
+                preload_for="package"  # "file", "function"
             )
         )
 
     def create_text_generation_objective(self, dataset, tokenizer_path):
         self.objectives.append(
-            GraphTextGeneration(
-                self.graph_model, self.node_embedder, dataset.nodes,
-                dataset.load_docstring, self.device,
-                self.sampling_neighbourhood_size, self.batch_size,
-                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size,
+            self._create_node_level_objective(
+                objective_name="GraphTextGeneration",
+                objective_class=GraphTextGeneration,
+                dataset=dataset,
+                labels_fn=dataset.load_docstring,
+                tokenizer_path=tokenizer_path,
+                masker_fn=None,
+                preload_for="package"  # "file", "function"
             )
         )
 
     def create_node_classifier_objective(self, dataset, tokenizer_path):
+        from SourceCodeTools.models.graph.train.objectives.NodeClassificationObjective import ClassifierTargetMapper
+
         self.objectives.append(
-            NodeClassifierObjective(
-                "NodeTypeClassifier",
-                self.graph_model, self.node_embedder, dataset.nodes,
-                dataset.load_node_classes, self.device,
-                self.sampling_neighbourhood_size, self.batch_size,
-                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size,
-                masker=dataset.create_node_clf_masker(),
-                measure_scores=self.trainer_params["measure_scores"],
-                dilate_scores=self.trainer_params["dilate_scores"],
-                early_stopping=self.trainer_params["early_stopping"],
-                early_stopping_tolerance=self.trainer_params["early_stopping_tolerance"]
+            self._create_node_level_objective(
+                objective_name="NodeTypeClassifier",
+                objective_class=NodeClassifierObjective,
+                label_loader_class=ClassifierTargetMapper,
+                dataset=dataset,
+                labels_fn=dataset.load_node_classes,
+                tokenizer_path=tokenizer_path,
+                masker_fn=dataset.create_node_clf_masker,
+                preload_for="package"
             )
         )
 
@@ -520,6 +531,8 @@ class SamplingMultitaskTrainer:
 
             for objective in self.objectives:
                 objective.reset_iterator("train")
+                objective.reset_iterator("val")
+                objective.reset_iterator("test")
 
             for objective in self.objectives:
                 objective.eval()
@@ -607,6 +620,7 @@ class SamplingMultitaskTrainer:
         # TODO needs test
 
     def final_evaluation(self):
+        # TODO deduplicate
 
         summary_dict = {}
 
@@ -628,9 +642,9 @@ class SamplingMultitaskTrainer:
                 test_scores = objective.evaluate("test")
                 
                 summary = {}
-                # self.add_to_summary(summary, "train", objective.name, train_scores, postfix="final")
-                self.add_to_summary(summary, "val", objective.name, val_scores, postfix="final")
-                self.add_to_summary(summary, "test", objective.name, test_scores, postfix="final")
+                # self.add_to_summary(summary, "train_avg", objective.name, self._reduce_metrics(val_scores), postfix="final")
+                self.add_to_summary(summary, "val_avg", objective.name, self._reduce_metrics(val_scores), postfix="final")
+                self.add_to_summary(summary, "test_avg", objective.name, self._reduce_metrics(test_scores), postfix="final")
                 
                 summary_dict.update(summary)
 

@@ -1,3 +1,4 @@
+import logging
 from collections import OrderedDict
 from itertools import chain
 
@@ -16,6 +17,14 @@ class SubwordEmbedderObjective(AbstractObjective):
     # def _verify_parameters(self):
     #     if self.link_predictor_type == "inner_prod":
     #         assert self.target_emb_size == self.graph_model.emb_size, "Graph embedding and target embedder dimensionality should match for `inner_prod` type of link predictor."
+
+    def _verify_parameters(self):
+        if self.link_predictor_type == "inner_prod":
+            if self.graph_model.emb_size != self.target_emb_size:
+                self.target_emb_size = self.graph_model.emb_size
+                logging.warning(f"Graph embedding and target embedding sizes do not match. "
+                                f"Fixing...set to {self.graph_model.emb_size}")
+        pass
 
     def _create_target_embedder(self, target_emb_size, tokenizer_path):
         self.target_embedder = TargetEmbedderWithBpeSubwords(

@@ -91,11 +91,6 @@ class AbstractObjective(nn.Module):
         self.test_proximity_ns_warmup_complete = False
 
     def _verify_parameters(self):
-        if self.link_predictor_type == "inner_prod":
-            if self.graph_model.emb_size != self.target_emb_size:
-                self.target_emb_size = self.graph_model.emb_size
-                logging.warning(f"Graph embedding and target embedding sizes do not match. "
-                                f"Fixing...set to {self.graph_model.emb_size}")
         pass
 
     def _create_dataloader(
@@ -112,7 +107,8 @@ class AbstractObjective(nn.Module):
 
     def _create_target_embedder(self, target_emb_size, tokenizer_path):
         self.target_embedder = TargetEmbedder(
-            self.dataloader.label_encoder.get_original_targets(), emb_size=target_emb_size, num_buckets=200000,
+            # self.dataloader.label_encoder.get_original_targets()
+            self.dataloader.label_encoder, emb_size=target_emb_size, num_buckets=200000,
             max_len=20, tokenizer_path=tokenizer_path
         )
 
@@ -249,7 +245,7 @@ class AbstractObjective(nn.Module):
 
         acc = compute_accuracy(logits.argmax(dim=1), labels)
 
-        return acc, loss
+        return logits, acc, loss
 
     @staticmethod
     def _wrap_into_dict(input):
@@ -304,9 +300,17 @@ class AbstractObjective(nn.Module):
     def _warmup_if_needed(self, partition, update_ns_callback):
         warmup_flag_name = f"{partition}_proximity_ns_warmup_complete"
         warmup_complete = getattr(self, warmup_flag_name)
-        if self.update_embeddings_for_queries and warmup_complete is False:
+        if self.update_embeddings_for_queries and warmup_complete is False and self.target_embedder is not None:
             self._warm_up_proximity_ns(update_ns_callback)
             setattr(self, warmup_flag_name, True)
+
+    def _do_score_measurement(self, batch, graph_emb, longterm_metrics, scorer, **kwargs):
+        scores_ = scorer.score_candidates(
+            batch["indices"], graph_emb, self.link_predictor, at=[1, 3, 5, 10],
+            type=self.link_predictor_type, device=self.device
+        )
+        for key, val in scores_.items():
+            longterm_metrics[key].append(val)
 
     def make_step(
             self, batch_ind, batch, partition, longterm_metrics, scorer
@@ -335,7 +339,7 @@ class AbstractObjective(nn.Module):
             return None, None
 
         # try:
-        graph_emb, loss, acc = self(
+        graph_emb, logits, labels, loss, acc = self(
             input_nodes, input_mask, blocks, positive_indices, negative_indices,
             update_ns_callback=update_ns_callback, graph=graph
         )
@@ -354,12 +358,7 @@ class AbstractObjective(nn.Module):
             scores = {}
             if self.measure_scores:
                 if batch_ind % self.dilate_scores == 0:
-                    scores_ = scorer.score_candidates(
-                        batch["indices"], graph_emb, self.link_predictor, at=[1, 3, 5, 10],
-                        type=self.link_predictor_type, device=self.device
-                    )
-                    for key, val in scores_.items():
-                        longterm_metrics[key].append(val)
+                    self._do_score_measurement(batch, graph_emb, longterm_metrics, scorer, y_true=labels, logits=logits)
             longterm_metrics["Loss"].append(loss.item())
             longterm_metrics["Accuracy"].append(acc)
 
@@ -463,9 +462,9 @@ class AbstractObjective(nn.Module):
             graph_emb, positive_indices, negative_indices, self.target_embedding_fn, update_ns_callback, graph
         )
 
-        acc, loss = self._compute_acc_loss(node_embs_, element_embs_, labels)
+        logits, acc, loss  = self._compute_acc_loss(node_embs_, element_embs_, labels)
 
-        return graph_emb, loss, acc
+        return graph_emb, logits, labels, loss, acc
 
     def evaluate(self, data_split, *, neg_sampling_strategy=None, early_stopping=False, early_stopping_tolerance=20):
         scores = self._evaluate_objective(data_split)
