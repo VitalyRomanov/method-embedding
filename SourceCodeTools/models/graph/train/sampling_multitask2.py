@@ -36,6 +36,7 @@ class SamplingMultitaskTrainer:
             self, dataset=None, model_name=None, model_params=None, trainer_params=None, restore=None, device=None,
             pretrained_embeddings_path=None, tokenizer_path=None  #, load_external_dataset=None
     ):
+        self._verify_arguments(model_params, trainer_params)
 
         self.model_params = model_params
         self.trainer_params = trainer_params
@@ -71,6 +72,12 @@ class SamplingMultitaskTrainer:
         self.lr_scheduler = ExponentialLR(self.optimizer, gamma=1.0)
         # self.lr_scheduler = ReduceLROnPlateau(self.optimizer, patience=10, cooldown=20)
         self.summary_writer = SummaryWriter(self.model_base_path)
+
+    def _verify_arguments(self, model_params, trainer_params):
+        if len(trainer_params["objectives"]) > 1 and trainer_params["early_stopping"] is True:
+            print("Early stopping disabled when several objectives are used")
+            trainer_params["early_stopping"] = False
+        model_params["activation"] = resolve_activation_function(model_params["activation"])
 
     def create_objectives(self, dataset, tokenizer_path):
         objective_list = self.trainer_params["objectives"]
@@ -624,34 +631,6 @@ class SamplingMultitaskTrainer:
     def final_evaluation(self):
         summary_dict = self._do_evaluation()
 
-        # summary_dict = {}
-        #
-        # for objective in self.objectives:
-        #     objective.reset_iterator("train")
-        #     objective.reset_iterator("val")
-        #     objective.reset_iterator("test")
-        #     # objective.early_stopping = False
-        #     # self._warm_up_proximity_ns(objective)
-        #     # objective.target_embedder.update_index()
-        #     objective.update_embeddings_for_queries = False
-        #
-        # with torch.set_grad_enabled(False):
-        #
-        #     for objective in self.objectives:
-        #
-        #         # train_scores = objective.evaluate("train")
-        #         val_scores = objective.evaluate("val")
-        #         test_scores = objective.evaluate("test")
-        #
-        #         summary = {}
-        #         # self.add_to_summary(summary, "train_avg", objective.name, self._reduce_metrics(val_scores), postfix="final")
-        #         self.add_to_summary(summary, "val_avg", objective.name, self._reduce_metrics(val_scores), postfix="final")
-        #         self.add_to_summary(summary, "test_avg", objective.name, self._reduce_metrics(test_scores), postfix="final")
-        #
-        #         summary_dict.update(summary)
-
-        # self.write_hyperparams(summary_dict, self.epoch)
-
         scores_str = ", ".join([f"{k}: {v}" for k, v in summary_dict.items()])
 
         print(f"Final eval: {scores_str}")
@@ -755,8 +734,9 @@ def resolve_activation_function(function_name):
     known_functions = {
         "tanh": torch.tanh
     }
-
-    return known_functions.get(function_name, eval(f"nn.functional.{function_name}"))
+    if function_name in known_functions:
+        return known_functions[function_name]
+    return eval(f"nn.functional.{function_name}")
 
 
 def training_procedure(
@@ -771,42 +751,7 @@ def training_procedure(
 
     device = select_device(trainer_params)
 
-    # model_params['num_classes'] = args.node_emb_size
-    # model_params['use_gcn_checkpoint'] = args.use_gcn_checkpoint
-    # model_params['use_att_checkpoint'] = args.use_att_checkpoint
-    # model_params['use_gru_checkpoint'] = args.use_gru_checkpoint
-
-    if len(trainer_params["objectives"].split(",")) > 1 and trainer_params["early_stopping"] is True:
-        print("Early stopping disabled when several objectives are used")
-        trainer_params["early_stopping"] = False
-
     trainer_params['model_base_path'] = model_base_path
-
-    model_params["activation"] = resolve_activation_function(model_params["activation"])
-
-    # trainer_params = {
-    #     'lr': model_params.pop('lr'),
-    #     'batch_size': args.batch_size,
-    #     'sampling_neighbourhood_size': args.num_per_neigh,
-    #     'neg_sampling_factor': args.neg_sampling_factor,
-    #     'epochs': args.epochs,
-    #     'elem_emb_size': args.elem_emb_size,
-    #     'model_base_path': model_base_path,
-    #     'pretraining_phase': args.pretraining_phase,
-    #     'use_layer_scheduling': args.use_layer_scheduling,
-    #     'schedule_layers_every': args.schedule_layers_every,
-    #     'embedding_table_size': args.embedding_table_size,
-    #     'save_checkpoints': args.save_checkpoints,
-    #     'measure_scores': args.measure_scores,
-    #     'dilate_scores': args.dilate_scores,
-    #     "objectives": args.objectives.split(","),
-    #     "early_stopping": args.early_stopping,
-    #     "early_stopping_tolerance": args.early_stopping_tolerance,
-    #     "force_w2v_ns": args.force_w2v_ns,
-    #     "metric": args.metric,
-    #     "nn_index": args.nn_index,
-    #     "save_each_epoch": args.save_each_epoch
-    # }
 
     trainer = trainer(
         dataset=dataset,
@@ -831,61 +776,37 @@ def training_procedure(
 
     trainer.eval()
     scores = trainer.final_evaluation()
-
     trainer.to('cpu')
-
     embedder = trainer.inference()
 
     return trainer, scores, embedder
 
 
 def evaluation_procedure(
-        dataset, model_name, model_params, args, model_base_path, trainer=None
+        dataset, model_name, model_params, trainer_params, model_base_path,
+        tokenizer_path=None, trainer=None, load_external_dataset=None
 ):
     model_params = copy(model_params)
 
     if trainer is None:
         trainer = SamplingMultitaskTrainer
 
-    device = select_device(args)
+    device = select_device(trainer_params)
 
-    model_params['num_classes'] = args.node_emb_size
-    model_params['use_gcn_checkpoint'] = args.use_gcn_checkpoint
-    model_params['use_att_checkpoint'] = args.use_att_checkpoint
-    model_params['use_gru_checkpoint'] = args.use_gru_checkpoint
+    trainer_params['model_base_path'] = model_base_path
 
-    model_params["activation"] = eval(f"nn.functional.{model_params['activation']}")
-
-    trainer_params = {
-        'lr': model_params.pop("lr"),
-        'batch_size': args.batch_size,
-        'sampling_neighbourhood_size': args.num_per_neigh,
-        'neg_sampling_factor': args.neg_sampling_factor,
-        'epochs': args.epochs,
-        'elem_emb_size': args.elem_emb_size,
-        'model_base_path': model_base_path,
-        'pretraining_phase': args.pretraining_phase,
-        'use_layer_scheduling': args.use_layer_scheduling,
-        'schedule_layers_every': args.schedule_layers_every,
-        'embedding_table_size': args.embedding_table_size,
-        'save_checkpoints': args.save_checkpoints,
-        'measure_scores': args.measure_scores,
-        'dilate_scores': args.dilate_scores,
-        'ntypes': args.ntypes,
-        'etypes': args.etypes,
-        'force_w2v': args.force_w2v_ns
-    }
-
-    trainer = trainer( #SamplingMultitaskTrainer(
+    trainer = trainer(
         dataset=dataset,
         model_name=model_name,
         model_params=model_params,
         trainer_params=trainer_params,
-        restore=args.restore_state,
+        restore=trainer_params["restore_state"],
         device=device,
-        pretrained_embeddings_path=args.pretrained,
-        tokenizer_path=args.tokenizer
+        pretrained_embeddings_path=trainer_params["pretrained"],
+        tokenizer_path=tokenizer_path,
+        # load_external_dataset=load_external_dataset
     )
 
     trainer.eval()
     scores = trainer.final_evaluation()
+    return scores
