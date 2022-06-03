@@ -11,7 +11,7 @@ from tqdm import tqdm
 from transformers import RobertaTokenizer, RobertaModel
 
 from SourceCodeTools.models.Embedder import Embedder
-from SourceCodeTools.nlp.codebert.codebert import CodeBertModelTrainer, load_typed_nodes
+from SourceCodeTools.nlp.codebert.codebert_extract import CodeBertModelTrainer, load_typed_nodes
 from SourceCodeTools.nlp.entity.type_prediction import get_type_prediction_arguments, ModelTrainer, load_pkl_emb, \
     scorer, filter_labels
 from SourceCodeTools.nlp.entity.utils.data import read_data
@@ -29,18 +29,22 @@ class CodebertHybridModel(nn.Module):
         self.use_graph = not no_graph
 
         num_emb = padding_idx + 1  # padding id is usually not a real embedding
-        emb_dim = graph_emb.shape[1]
-        self.graph_emb = nn.Embedding(num_embeddings=num_emb, embedding_dim=emb_dim, padding_idx=padding_idx)
 
-        import numpy as np
-        pretrained_embeddings = torch.from_numpy(np.concatenate([graph_emb, np.zeros((1, emb_dim))], axis=0)).float()
-        new_param = torch.nn.Parameter(pretrained_embeddings)
-        assert self.graph_emb.weight.shape == new_param.shape
-        self.graph_emb.weight = new_param
-        self.graph_emb.weight.requires_grad = False
+        if self.use_graph:
+            graph_emb_dim = graph_emb.shape[1]
+            self.graph_emb = nn.Embedding(num_embeddings=num_emb, embedding_dim=graph_emb_dim, padding_idx=padding_idx)
+
+            import numpy as np
+            pretrained_embeddings = torch.from_numpy(np.concatenate([graph_emb, np.zeros((1, graph_emb_dim))], axis=0)).float()
+            new_param = torch.nn.Parameter(pretrained_embeddings)
+            assert self.graph_emb.weight.shape == new_param.shape
+            self.graph_emb.weight = new_param
+            self.graph_emb.weight.requires_grad = False
+        else:
+            graph_emb_dim = 0
 
         self.fc1 = nn.Linear(
-            bert_emb_size + (emb_dim if self.use_graph else 0),
+            bert_emb_size + (graph_emb_dim if self.use_graph else 0),
             dense_hidden
         )
         self.drop = nn.Dropout(dropout)
@@ -105,7 +109,8 @@ def batch_to_torch(batch, device):
         'graph_ids': torch.LongTensor
     }
     for key, tf in key_types.items():
-        batch[key] = tf(batch[key]).to(device)
+        if key in batch:
+            batch[key] = tf(batch[key]).to(device)
 
 
 def to_numpy(tensor):
@@ -280,6 +285,9 @@ class CodeBertModelTrainer2(CodeBertModelTrainer):
             self.use_cuda = True
             self.device = f"cuda:{self.gpu_id}"
 
+    def get_trial_dir(self):
+        return os.path.join(self.output_dir, "codebert_" + str(datetime.now())).replace(":", "-").replace(" ", "_")
+
     def train_model(self):
 
         print(f"\n\n{self.model_params}")
@@ -299,7 +307,7 @@ class CodeBertModelTrainer2(CodeBertModelTrainer):
         if self.use_cuda:
             model.cuda()
 
-        trial_dir = os.path.join(self.output_dir, "codebert_" + str(datetime.now())).replace(":", "-").replace(" ", "_")
+        trial_dir = self.get_trial_dir()
         os.mkdir(trial_dir)
         self.create_summary_writer(trial_dir)
 
