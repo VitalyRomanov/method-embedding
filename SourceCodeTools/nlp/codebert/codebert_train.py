@@ -160,7 +160,8 @@ class CodeBertModelTrainer2(CodeBertModelTrainer):
             self.train_data, self.batch_size, seq_len=self.seq_len,
             graphmap=graph_emb.ind if graph_emb is not None else None,
             wordmap=self.vocab_mapping, tagmap=None,
-            class_weights=False, element_hash_size=suffix_prefix_buckets, no_localization=self.no_localization
+            class_weights=False, element_hash_size=suffix_prefix_buckets, no_localization=self.no_localization,
+            mask_unlabeled_declarations=False
         )
         test_batcher = self.get_batcher(
             self.test_data, self.batch_size, seq_len=self.seq_len,
@@ -168,7 +169,8 @@ class CodeBertModelTrainer2(CodeBertModelTrainer):
             wordmap=self.vocab_mapping,
             tagmap=train_batcher.tagmap,  # use the same mapping
             class_weights=False, element_hash_size=suffix_prefix_buckets,  # class_weights are not used for testing
-            no_localization=self.no_localization
+            no_localization=self.no_localization,
+            mask_unlabeled_declarations=False
         )
         return train_batcher, test_batcher
 

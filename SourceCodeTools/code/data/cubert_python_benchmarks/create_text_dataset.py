@@ -48,7 +48,10 @@ def create_text_dataset(dataset_path):
         assert label == "Variable misuse"
         misuse_span = literal_eval(misuse_span)
         misuse_spans = [(misuse_span[0], misuse_span[1], "misuse")]
-        resolved_offsets = resolve_self_collisions2(offsets[file_id])
+        # resolved_offsets = resolve_self_collisions2(offsets[file_id])
+
+        # There is an issue with cubert tokenizer. It can tokenize in a way that bracket is a part of token.
+        # For example `(var_name`. Need to catch such cases when creating dataset.
 
         entry = {
             "text": filecontent,
