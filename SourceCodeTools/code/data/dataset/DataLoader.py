@@ -1,7 +1,9 @@
+import tempfile
 from copy import copy
 
 import torch
 from dgl.dataloading import MultiLayerFullNeighborSampler, NodeDataLoader
+import diskcache as dc
 
 from SourceCodeTools.code.data.dataset.Dataset import SGPartitionStrategies
 from SourceCodeTools.code.data.dataset.partition_strategies import SGLabelSpec
@@ -30,6 +32,8 @@ class SGNodesDataLoader:
         self.device = device
         self.negative_sampling_strategy = negative_sampling_strategy
         assert negative_sampling_strategy in {"w2v", "closest"}
+        self._masker_cache_path = tempfile.TemporaryDirectory(suffix="MaskerCache")
+        self._masker_cache = dc.Cache(self._masker_cache_path.name)
 
         if labels is not None:
             self.label_encoder = LabelDenseEncoder(labels)
@@ -95,7 +99,11 @@ class SGNodesDataLoader:
         ):
 
             if masker_fn is not None:
-                masker = masker_fn(nodes, edges)
+                cache_key = self.dataset._get_df_hash(nodes) + self.dataset._get_df_hash(edges)
+                if cache_key not in self._masker_cache:
+                    # masker = masker_fn(nodes, edges)
+                    self._masker_cache[cache_key] = masker_fn(nodes, edges)
+                masker = self._masker_cache[cache_key]
             else:
                 masker = None
 

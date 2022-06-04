@@ -1,6 +1,9 @@
 import tempfile
 from functools import partial
 from os.path import join
+from enum import Enum
+from queue import Queue
+from time import sleep
 
 import pandas as pd
 from tqdm import tqdm
@@ -20,6 +23,126 @@ class NodeTypes:
     def __getitem__(self, node_id):
         node_type_id = self.node2type_id[node_id]
         return self.type_id2desc[node_type_id]
+
+
+class Message:
+    def __init__(self, descriptor, content):
+        self.descriptor = descriptor
+        self.content = content
+
+
+class GraphStorageWorker:
+    class InboxTypes(Enum):
+        iterate_subgraphs = 0
+        get_node_type_descriptions = 1
+        get_edge_type_descriptions = 2
+        get_nodes_with_subwords = 3
+        get_nodes = 4
+        get_edges = 5
+        get_node_types = 6
+        get_nodes_for_classification = 7
+        get_info_for_node_ids = 8
+
+    class OutboxTypes(Enum):
+        iterate_subgraphs = 0
+        stop_iteration = 1
+        node_type_descriptions = 1
+        edge_type_descriptions = 2
+        nodes_with_subwords = 3
+        nodes = 4
+        edges = 5
+        node_types = 6
+        nodes_for_classification = 7
+        info_for_node_ids = 8
+
+    def __init__(self, config, inbox_queue, outbox_queue):
+        self.dataset_db = OnDiskGraphStorage(config["path"])
+        self.inbox_queue = inbox_queue
+        self.outbox_queue = outbox_queue
+
+    def send_out(self, message):
+        while self.outbox_queue.full():
+            sleep(0.2)
+        self.outbox_queue.put(message)
+
+    def _iterate_subgraphs(self, kwargs):
+        for subgraph in self.dataset_db.iterate_subgraphs(**kwargs):
+            self.send_out(Message(
+                descriptor=GraphStorageWorker.OutboxTypes.iterate_subgraphs,
+                content=subgraph
+            ))
+        self.send_out(Message(
+            descriptor=GraphStorageWorker.OutboxTypes.stop_iteration,
+            content=None
+        ))
+
+    def _handle_message(self, message):
+        kwargs = message.content
+        if message.descriptor == GraphStorageWorker.InboxTypes.iterate_subgraphs:
+            self._iterate_subgraphs(**kwargs)
+
+        elif message.descriptor == GraphStorageWorker.InboxTypes.get_node_type_descriptions:
+            self.send_out(Message(
+                descriptor=GraphStorageWorker.OutboxTypes.node_type_descriptions,
+                content=self.dataset_db.get_node_type_descriptions()
+            ))
+
+        elif message.descriptor == GraphStorageWorker.InboxTypes.get_edge_type_descriptions:
+            self.send_out(Message(
+                descriptor=GraphStorageWorker.OutboxTypes.edge_type_descriptions,
+                content=self.dataset_db.get_edge_type_descriptions()
+            ))
+        elif message.descriptor == GraphStorageWorker.InboxTypes.get_nodes_with_subwords:
+            self.send_out(Message(
+                descriptor=GraphStorageWorker.OutboxTypes.nodes_with_subwords,
+                content=self.dataset_db.get_nodes_with_subwords()
+            ))
+
+        elif message.descriptor == GraphStorageWorker.InboxTypes.get_nodes:
+            self.send_out(Message(
+                descriptor=GraphStorageWorker.OutboxTypes.nodes,
+                content=self.dataset_db.get_nodes(**kwargs)
+            ))
+
+        elif message.descriptor == GraphStorageWorker.InboxTypes.get_edges:
+            self.send_out(Message(
+                descriptor=GraphStorageWorker.OutboxTypes.edges,
+                content=self.dataset_db.get_edges(**kwargs)
+            ))
+
+        elif message.descriptor == GraphStorageWorker.InboxTypes.get_node_types:
+            self.send_out(Message(
+                descriptor=GraphStorageWorker.OutboxTypes.node_types,
+                content=self.dataset_db.get_node_types()
+            ))
+
+        elif message.descriptor == GraphStorageWorker.InboxTypes.get_nodes_for_classification:
+            self.send_out(Message(
+                descriptor=GraphStorageWorker.OutboxTypes.nodes_for_classification,
+                content=self.dataset_db.get_nodes_for_classification()
+            ))
+
+        elif message.descriptor == GraphStorageWorker.InboxTypes.get_info_for_node_ids:
+            self.send_out(Message(
+                descriptor=GraphStorageWorker.OutboxTypes.info_for_node_ids,
+                content=self.dataset_db.get_info_for_node_ids(**kwargs)
+            ))
+
+        else:
+            raise ValueError("Unrecognized message descriptor")
+
+    def handle_incoming(self):
+        message = self.inbox_queue.get()
+        response = self._handle_message(message)
+        if response is not None:
+            self.outbox_queue.put(response)
+
+
+def start_worker(worker_class, config, inbox_queue: Queue, outbox_queue: Queue, *args, **kwargs):
+    worker = worker_class(config, inbox_queue, outbox_queue, *args, **kwargs)
+
+    while True:
+        worker.handle_incoming()
 
 
 class OnDiskGraphStorage:
@@ -383,6 +506,29 @@ class OnDiskGraphStorage:
     #
     #     for mention in all_mentions:
     #         yield mention, *self.get_subgraph_for_mention(mention)
+
+    # def get_subgraph_ids(self, how):
+    #     if how == SGPartitionStrategies.package:
+    #         groups = self.get_all_packages()
+    #     elif how == SGPartitionStrategies.file:
+    #         groups = self.get_all_files()
+    #     elif how == SGPartitionStrategies.mention:
+    #         groups = self.get_all_mentions()
+    #     else:
+    #         raise ValueError()
+    #     return groups
+    #
+    # def get_subgraph_load_fn(self, how):
+    #     if how == SGPartitionStrategies.package:
+    #         load_fn = self.get_subgraph_for_package
+    #     elif how == SGPartitionStrategies.file:
+    #         load_fn = self.get_subgraph_for_file
+    #     elif how == SGPartitionStrategies.mention:
+    #         load_fn = self.get_subgraph_for_mention
+    #     else:
+    #         raise ValueError()
+    #
+    #     return load_fn
 
     def iterate_subgraphs(self, how, groups):
 
