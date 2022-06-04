@@ -105,8 +105,8 @@ class NodeNameMasker(SubwordMasker):
         # else:
         #     raise Exception("Column `type` or `backup_type` not found")
 
-        from SourceCodeTools.nlp.embed.bpe import load_bpe_model, make_tokenizer
-        tokenize = make_tokenizer(load_bpe_model(kwargs['tokenizer_path']))
+        from SourceCodeTools.nlp import create_tokenizer
+        tokenize = create_tokenizer("bpe", bpe_path=kwargs['tokenizer_path'])
 
         nodes_table = SQLiteStorage(":memory:")
         nodes_table.add_records(nodes, "nodes", create_index=["type_backup"])

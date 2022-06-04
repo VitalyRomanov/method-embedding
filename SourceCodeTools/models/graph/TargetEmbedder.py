@@ -88,8 +88,8 @@ class TargetEmbedderWithBpeSubwords(TargetEmbedderWithCharNGramSubwords, nn.Modu
         )
 
     def _create_target_input_features(self):
-        from SourceCodeTools.nlp.embed.bpe import load_bpe_model, make_tokenizer
-        tokenize = make_tokenizer(load_bpe_model(self.tokenizer_path))
+        from SourceCodeTools.nlp import create_tokenizer
+        tokenize = create_tokenizer("bpe", bpe_path=self.tokenizer_path)
 
         inds = list(self.ind2repr.keys())
         targets = list(self.ind2repr.values())
