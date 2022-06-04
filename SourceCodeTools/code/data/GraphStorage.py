@@ -1,8 +1,7 @@
 import tempfile
 from functools import partial
-from os.path import join
+from os.path import join, isfile
 from enum import Enum
-from queue import Queue
 from time import sleep
 
 import pandas as pd
@@ -45,7 +44,6 @@ class GraphStorageWorker:
 
     class OutboxTypes(Enum):
         iterate_subgraphs = 0
-        stop_iteration = 1
         node_type_descriptions = 1
         edge_type_descriptions = 2
         nodes_with_subwords = 3
@@ -54,9 +52,16 @@ class GraphStorageWorker:
         node_types = 6
         nodes_for_classification = 7
         info_for_node_ids = 8
+        stop_iteration = 9
 
     def __init__(self, config, inbox_queue, outbox_queue):
-        self.dataset_db = OnDiskGraphStorage(config["path"])
+        database_exists = isfile(config["db_path"])
+
+        self.dataset_db = OnDiskGraphStorage(config["db_path"])
+        if not database_exists:
+            self.dataset_db.import_from_files(config["data_path"])
+        #     self.dataset_db.import_from_files(self.data_path)
+        # self.dataset_db = OnDiskGraphStorage(config["path"])
         self.inbox_queue = inbox_queue
         self.outbox_queue = outbox_queue
 
@@ -65,7 +70,7 @@ class GraphStorageWorker:
             sleep(0.2)
         self.outbox_queue.put(message)
 
-    def _iterate_subgraphs(self, kwargs):
+    def _iterate_subgraphs(self, **kwargs):
         for subgraph in self.dataset_db.iterate_subgraphs(**kwargs):
             self.send_out(Message(
                 descriptor=GraphStorageWorker.OutboxTypes.iterate_subgraphs,
@@ -138,8 +143,8 @@ class GraphStorageWorker:
             self.outbox_queue.put(response)
 
 
-def start_worker(worker_class, config, inbox_queue: Queue, outbox_queue: Queue, *args, **kwargs):
-    worker = worker_class(config, inbox_queue, outbox_queue, *args, **kwargs)
+def start_worker(config, inbox_queue, outbox_queue, *args, **kwargs):
+    worker = GraphStorageWorker(config, inbox_queue, outbox_queue)
 
     while True:
         worker.handle_incoming()
