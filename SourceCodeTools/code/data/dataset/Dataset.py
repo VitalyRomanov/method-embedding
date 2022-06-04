@@ -8,6 +8,7 @@ import dgl
 import numpy
 import pandas
 import torch
+import diskcache as dc
 
 from SourceCodeTools.code.ast.python_ast2 import PythonSharedNodes
 from SourceCodeTools.code.data.GraphStorage import OnDiskGraphStorage
@@ -257,6 +258,8 @@ class SourceGraphDataset:
         self.partition = PartitionIndex(unpersist(partition))
         self.n_buckets = 200000
         self._cache = DatasetCache(self.data_path)
+        self._subgraph_cache_path = tempfile.TemporaryDirectory(suffix="SubgraphCache")
+        self._subgraph_cache = dc.Cache(self._subgraph_cache_path.name)
 
         self.use_ns_groups = use_ns_groups
 
@@ -881,6 +884,9 @@ class SourceGraphDataset:
         self.partition = PartitionIndex(nodes)
         self.inference_labels = nodes[["id", "type"]].rename({"id": "src", "type": "dst"}, axis=1)
 
+    def get_cache_key(self, how, group):
+        return f"{how.name}_{group}"
+
     def iterate_subgraphs(self, how, groups, node_data, edge_data):
 
         iterator = self.dataset_db.iterate_subgraphs(how, groups)
@@ -900,30 +906,69 @@ class SourceGraphDataset:
             # if "has_label" in data_dict:
             #     table["has_label"].fillna(False, inplace=True)
 
+        # subgraph_ids = self.dataset_db.get_subgraph_ids(how)
+        # subgraph_load_fn = self.dataset_db.get_subgraph_load_fn(how)
+        #
+        # for subgraph_id in subgraph_ids:
+        #     cache_key = self.dataset_db.get_cache_key(how, subgraph_id)
+        #     if cache_key in self._subgraph_cache:
+        #         nodes, edges, subgraph = self._subgraph_cache[cache_key]
+        #     else:
+        #         nodes, edges = subgraph_load_fn(subgraph_id)
+        #
+        #         self._remove_edges_with_restricted_types(edges)
+        #
+        #         if self.custom_reverse is not None:
+        #             edges = self._add_custom_reverse(edges)
+        #
+        #         self.ensure_connectedness(nodes, edges)
+        #
+        #         node_name_mapping = self._get_embeddable_names(nodes)
+        #         node_data["embedding_id"] = self._get_node_name2bucket_mapping(node_name_mapping)
+        #         # node_type_pool = self._prepare_node_type_pool(nodes)
+        #
+        #         self._adjust_types(nodes, edges)
+        #
+        #         add_data(nodes, node_data)
+        #         add_data(edges, edge_data)
+        #
+        #         if len(edges) > 0:
+        #             subgraph = self._create_hetero_graph(nodes, edges)
+        #         else:
+        #             subgraph = "empty"
+        #
+        #         self._write_to_cache((nodes, edges, subgraph), cache_key)
+        #     if subgraph != "empty":
+        #         yield subgraph_id, nodes, edges, subgraph
+
         for group, nodes, edges in iterator:
-            self._remove_edges_with_restricted_types(edges)
+            cache_key = self.get_cache_key(how, group)
+            if cache_key not in self._subgraph_cache:
+                self._remove_edges_with_restricted_types(edges)
 
-            if self.custom_reverse is not None:
-                edges = self._add_custom_reverse(edges)
-            self.ensure_connectedness(nodes, edges)
+                if self.custom_reverse is not None:
+                    edges = self._add_custom_reverse(edges)
+                self.ensure_connectedness(nodes, edges)
 
-            node_name_mapping = self._get_embeddable_names(nodes)
-            node_data["embedding_id"] = self._get_node_name2bucket_mapping(node_name_mapping)
-            # node_type_pool = self._prepare_node_type_pool(nodes)
+                node_name_mapping = self._get_embeddable_names(nodes)
+                node_data["embedding_id"] = self._get_node_name2bucket_mapping(node_name_mapping)
+                # node_type_pool = self._prepare_node_type_pool(nodes)
 
-            self._adjust_types(nodes, edges)
+                self._adjust_types(nodes, edges)
 
-            add_data(nodes, node_data)
-            add_data(edges, edge_data)
+                add_data(nodes, node_data)
+                add_data(edges, edge_data)
 
-            if len(edges) > 0:
-                cache_key = self._get_df_hash(nodes) + self._get_df_hash(edges)
-                subgraph = self._load_cache_if_exists(cache_key)
-                if subgraph is None:
-                    subgraph = self._create_hetero_graph(nodes, edges)
-                    self._write_to_cache(subgraph, cache_key)
+                if len(edges) > 0:
+                    cache_key = self._get_df_hash(nodes) + self._get_df_hash(edges)
+                    subgraph = self._load_cache_if_exists(cache_key)
+                    if subgraph is None:
+                        subgraph = self._create_hetero_graph(nodes, edges)
+                        self._write_to_cache((nodes, edges, subgraph), cache_key)
+            else:
+                nodes, edges, subgraph = self._subgraph_cache[cache_key]
 
-                yield group, nodes, edges, subgraph
+            yield group, nodes, edges, subgraph
 
     @staticmethod
     def holdout(nodes: pd.DataFrame, edges: pd.DataFrame, holdout_size=10000, random_seed=42):
