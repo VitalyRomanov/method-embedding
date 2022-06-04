@@ -1,6 +1,7 @@
 import pickle
 from collections import Counter
 from functools import partial
+from multiprocessing import Process, Queue
 from os.path import join
 from typing import List, Optional
 
@@ -11,7 +12,7 @@ import torch
 import diskcache as dc
 
 from SourceCodeTools.code.ast.python_ast2 import PythonSharedNodes
-from SourceCodeTools.code.data.GraphStorage import OnDiskGraphStorage
+from SourceCodeTools.code.data.GraphStorage import OnDiskGraphStorage, start_worker, GraphStorageWorker, Message
 from SourceCodeTools.code.data.SQLiteStorage import SQLiteStorage
 from SourceCodeTools.code.data.dataset.SubwordMasker import SubwordMasker, NodeNameMasker, NodeClfMasker
 from SourceCodeTools.code.data.dataset.partition_strategies import SGPartitionStrategies, SGLabelSpec
@@ -313,15 +314,46 @@ class SourceGraphDataset:
             "type not in @restricted_types", local_dict={"restricted_types": self.edge_types_to_remove}, inplace=True
         )
 
+    def _receive_one(self, message):
+        incoming = self.inbox_queue.get()
+        expected_descriptor = message.descriptor.name[4:] if message.descriptor.name.startswith("get_") else message.descriptor.name
+        assert expected_descriptor == incoming.descriptor.name
+        return incoming.content
+
+    def _receive_many(self, message):
+        incoming = self.inbox_queue.get(timeout=30)
+        while incoming.descriptor != GraphStorageWorker.OutboxTypes.stop_iteration:
+            yield incoming.content
+            incoming = self.inbox_queue.get(timeout=30)
+        # print()
+
+    def _make_request(self, message_descriptor, **kwargs):
+        message = Message(descriptor=GraphStorageWorker.InboxTypes[message_descriptor], content=kwargs)
+        self.outbox_queue.put(message)
+        if message.descriptor != GraphStorageWorker.InboxTypes.iterate_subgraphs:
+            return self._receive_one(message)
+        else:
+            return self._receive_many(message)
+
     def _open_dataset_db(self):
         # self.dataset_db = N4jGraphStorage()
+        self.outbox_queue = Queue(10)
+        self.inbox_queue = Queue(10)
         dataset_db_path = join(self.data_path, "dataset.db")
-        if not os.path.isfile(dataset_db_path):
-            self.dataset_db = OnDiskGraphStorage(dataset_db_path)
-            self.dataset_db.import_from_files(self.data_path)
-        else:
-            self.dataset_db = OnDiskGraphStorage(dataset_db_path)
+        self.dataset_worker_proc = Process(
+            target=start_worker,
+            args=(
+                {"data_path": self.data_path, "db_path": dataset_db_path},
+                self.outbox_queue, self.inbox_queue
+            )
+        )
+        self.dataset_worker_proc.start()
+        # if not os.path.isfile(dataset_db_path):
+        #     self.dataset_db = OnDiskGraphStorage(dataset_db_path)
         #     self.dataset_db.import_from_files(self.data_path)
+        # else:
+        #     self.dataset_db = OnDiskGraphStorage(dataset_db_path)
+        # #     self.dataset_db.import_from_files(self.data_path)
 
     def _filter_edges(self, types_to_filter):
         # logging.info(f"Filtering edge types: {types_to_filter}")
@@ -527,7 +559,8 @@ class SourceGraphDataset:
         global_reverse = {key for key, val in special_mapping.items()}
         self.edge_types_to_remove.update(global_reverse)
 
-        all_edge_types = self.dataset_db.get_edge_type_descriptions()
+        # all_edge_types = self.dataset_db.get_edge_type_descriptions()
+        all_edge_types = self._make_request("get_edge_type_descriptions")
         self.edge_types_to_remove.update(filter(lambda edge_type: edge_type.endswith("_rev"), all_edge_types))
 
     def _add_custom_reverse(self, edges):
@@ -822,7 +855,8 @@ class SourceGraphDataset:
 
     def _attach_info_to_label(self, labels, labels_for, group_by):
         if labels_for == SGLabelSpec.nodes:
-            labels, new_col_name = self.dataset_db.get_info_for_node_ids(labels["src"], group_by)
+            # labels, new_col_name = self.dataset_db.get_info_for_node_ids(labels["src"], group_by)
+            labels, new_col_name = self._make_request("get_info_for_node_ids", node_ids=labels["src"], field=group_by)
             labels.rename({new_col_name: "group"}, axis=1, inplace=True)
         elif labels_for == SGLabelSpec.edges:
             raise NotImplementedError("Grouping for labels for edges is currently not supported")
@@ -874,8 +908,11 @@ class SourceGraphDataset:
 
     def inference_mode(self):
         shared_node_types = PythonSharedNodes.shared_node_types
-        type_filter = [ntype for ntype in self.dataset_db.get_node_type_descriptions() if ntype not in shared_node_types]
-        nodes = self.dataset_db.get_nodes(type_filter=type_filter)
+        ntypes = self._make_request("get_node_type_descriptions")
+        type_filter = [ntype for ntype in ntypes if ntype not in shared_node_types]
+        # type_filter = [ntype for ntype in self.dataset_db.get_node_type_descriptions() if ntype not in shared_node_types]
+        # nodes = self.dataset_db.get_nodes(type_filter=type_filter)
+        nodes = self._make_request("get_nodes", type_filter=type_filter)
         nodes["train_mask"] = True
         nodes["test_mask"] = True
         nodes["val_mask"] = True
@@ -889,7 +926,8 @@ class SourceGraphDataset:
 
     def iterate_subgraphs(self, how, groups, node_data, edge_data):
 
-        iterator = self.dataset_db.iterate_subgraphs(how, groups)
+        # iterator = self.dataset_db.iterate_subgraphs(how, groups)
+        iterator = self._make_request("iterate_subgraphs", how=how, groups=groups)
 
         def add_data(table, data_dict):
             boolean_fields = {"train_mask", "test_mask", "val_mask", "has_label", "any_mask"}
@@ -942,30 +980,36 @@ class SourceGraphDataset:
         #         yield subgraph_id, nodes, edges, subgraph
 
         for group, nodes, edges in iterator:
-            # cache_key = self.get_cache_key(how, group)
-            # if cache_key not in self._subgraph_cache:
-            self._remove_edges_with_restricted_types(edges)
+            cache_key = self.get_cache_key(how, group)
+            if cache_key not in self._subgraph_cache:
+                self._remove_edges_with_restricted_types(edges)
 
-            if self.custom_reverse is not None:
-                edges = self._add_custom_reverse(edges)
-            self.ensure_connectedness(nodes, edges)
+                if self.custom_reverse is not None:
+                    edges = self._add_custom_reverse(edges)
+                self.ensure_connectedness(nodes, edges)
 
-            node_name_mapping = self._get_embeddable_names(nodes)
-            node_data["embedding_id"] = self._get_node_name2bucket_mapping(node_name_mapping)
-            # node_type_pool = self._prepare_node_type_pool(nodes)
+                node_name_mapping = self._get_embeddable_names(nodes)
+                node_data["embedding_id"] = self._get_node_name2bucket_mapping(node_name_mapping)
+                # node_type_pool = self._prepare_node_type_pool(nodes)
 
-            self._adjust_types(nodes, edges)
+                self._adjust_types(nodes, edges)
 
-            add_data(nodes, node_data)
-            add_data(edges, edge_data)
+                add_data(nodes, node_data)
+                add_data(edges, edge_data)
 
-            if len(edges) > 0:
-                cache_key = self._get_df_hash(nodes) + self._get_df_hash(edges)
-                subgraph = self._load_cache_if_exists(cache_key)
-                if subgraph is None:
-                    subgraph = self._create_hetero_graph(nodes, edges)
-                    self._write_to_cache((nodes, edges, subgraph), cache_key)
+                if len(edges) > 0:
+                    cache_key = self._get_df_hash(nodes) + self._get_df_hash(edges)
+                    subgraph = self._load_cache_if_exists(cache_key)
+                    if subgraph is None:
+                        subgraph = self._create_hetero_graph(nodes, edges)
+                        self._write_to_cache(subgraph, cache_key)
+                else:
+                    subgraph = "empty"
+                self._subgraph_cache[cache_key] = (nodes, edges, subgraph)
+            else:
+                nodes, edges, subgraph = self._subgraph_cache[cache_key]
 
+            if subgraph != "empty":
                 yield group, nodes, edges, subgraph
 
     @staticmethod
@@ -1126,8 +1170,10 @@ class SourceGraphDataset:
         return types
 
     def get_graph_types(self):
-        ntypes = self.dataset_db.get_node_type_descriptions()
-        etypes = self.dataset_db.get_edge_type_descriptions()
+        # ntypes = self.dataset_db.get_node_type_descriptions()
+        # etypes = self.dataset_db.get_edge_type_descriptions()
+        ntypes = self._make_request("get_node_type_descriptions")
+        etypes = self._make_request("get_edge_type_descriptions")
 
         return list(
             map(
@@ -1221,7 +1267,8 @@ class SourceGraphDataset:
 
         if nodes is None:
             logging.info("Loading node names from database")
-            nodes = self.dataset_db.get_nodes(type_filter=[names_for])
+            # nodes = self.dataset_db.get_nodes(type_filter=[names_for])
+            nodes = self._make_request("get_nodes", type_filter=[names_for])
 
         if "train_mask" in nodes.columns:
             for_training = nodes.query(
@@ -1256,7 +1303,8 @@ class SourceGraphDataset:
         # functions = self.nodes.query(
         #     "id in @functions", local_dict={"functions": set(self.nodes["mentioned_in"])}
         # ).query("type_backup == 'FunctionDef'")
-        functions = self.dataset_db.get_nodes(type_filter=['FunctionDef'])
+        # functions = self.dataset_db.get_nodes(type_filter=['FunctionDef'])
+        functions = self._make_request("get_nodes", type_filter=["FunctionDef"])
 
         cache_key = f"{self._get_df_hash(names)}_{self._get_df_hash(functions)}"
         result = self._load_cache_if_exists(cache_key)
@@ -1294,7 +1342,8 @@ class SourceGraphDataset:
             only to nodes that have subwords and have appeared in a scope (names have `@` in their names)
         """
 
-        target_nodes = self.dataset_db.get_nodes_with_subwords()
+        # target_nodes = self.dataset_db.get_nodes_with_subwords()
+        target_nodes = self._make_request("get_nodes_with_subwords")
 
         cache_key = f"{self._get_df_hash(target_nodes)}_{self.min_count_for_objectives}"
         result = self._load_cache_if_exists(cache_key)
@@ -1325,7 +1374,8 @@ class SourceGraphDataset:
         cache_key = self._get_df_hash(pd.Series(sorted(list(global_edges))))
         result = self._load_cache_if_exists(cache_key)
         if result is None:
-            edges = self.dataset_db.get_edges(type_filter=global_edges)
+            # edges = self.dataset_db.get_edges(type_filter=global_edges)
+            edges = self._make_request("get_edges", type_filter=global_edges)
 
             result = edges[["src", "dst"]]
             self._write_to_cache(result, cache_key)
@@ -1334,7 +1384,8 @@ class SourceGraphDataset:
 
     def load_edge_prediction(self):
 
-        edge_types = self.dataset_db.get_edge_type_descriptions()
+        # edge_types = self.dataset_db.get_edge_type_descriptions()
+        edge_types = self._make_request("get_edge_type_descriptions")
 
         # when using this objective remove following edges
         # defined_in_*, executed_*, prev, next, *global_edges
@@ -1345,7 +1396,8 @@ class SourceGraphDataset:
         cache_key = self._get_df_hash(pd.Series(sorted(list(edge_types_for_prediction))))
         result = self._load_cache_if_exists(cache_key)
         if result is None:
-            edges = self.dataset_db.get_edges(type_filter=edge_types_for_prediction)
+            # edges = self.dataset_db.get_edges(type_filter=edge_types_for_prediction)
+            edges = self._make_request("get_edges", type_filter=edge_types_for_prediction)
 
             # if self.use_ns_groups:
             #     groups = self.get_negative_sample_groups()
@@ -1364,7 +1416,8 @@ class SourceGraphDataset:
         result = self._load_cache_if_exists(cache_key)
 
         if result is None:
-            node2id = self.dataset_db.get_node_types()
+            # node2id = self.dataset_db.get_node_types()
+            node2id = self._make_request("get_node_types")
 
             type_ann["src_type"] = type_ann["src"].apply(lambda x: node2id[x])
 
@@ -1408,7 +1461,8 @@ class SourceGraphDataset:
 
     def load_node_classes(self):
         # TODO
-        labels = self.dataset_db.get_nodes_for_classification()
+        # labels = self.dataset_db.get_nodes_for_classification()
+        labels = self._make_request("get_nodes_for_classification")
         labels.query("src.map(@in_partition)", local_dict={"in_partition": lambda x: x in self.partition}, inplace=True)
 
         return labels
