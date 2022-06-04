@@ -942,33 +942,31 @@ class SourceGraphDataset:
         #         yield subgraph_id, nodes, edges, subgraph
 
         for group, nodes, edges in iterator:
-            cache_key = self.get_cache_key(how, group)
-            if cache_key not in self._subgraph_cache:
-                self._remove_edges_with_restricted_types(edges)
+            # cache_key = self.get_cache_key(how, group)
+            # if cache_key not in self._subgraph_cache:
+            self._remove_edges_with_restricted_types(edges)
 
-                if self.custom_reverse is not None:
-                    edges = self._add_custom_reverse(edges)
-                self.ensure_connectedness(nodes, edges)
+            if self.custom_reverse is not None:
+                edges = self._add_custom_reverse(edges)
+            self.ensure_connectedness(nodes, edges)
 
-                node_name_mapping = self._get_embeddable_names(nodes)
-                node_data["embedding_id"] = self._get_node_name2bucket_mapping(node_name_mapping)
-                # node_type_pool = self._prepare_node_type_pool(nodes)
+            node_name_mapping = self._get_embeddable_names(nodes)
+            node_data["embedding_id"] = self._get_node_name2bucket_mapping(node_name_mapping)
+            # node_type_pool = self._prepare_node_type_pool(nodes)
 
-                self._adjust_types(nodes, edges)
+            self._adjust_types(nodes, edges)
 
-                add_data(nodes, node_data)
-                add_data(edges, edge_data)
+            add_data(nodes, node_data)
+            add_data(edges, edge_data)
 
-                if len(edges) > 0:
-                    cache_key = self._get_df_hash(nodes) + self._get_df_hash(edges)
-                    subgraph = self._load_cache_if_exists(cache_key)
-                    if subgraph is None:
-                        subgraph = self._create_hetero_graph(nodes, edges)
-                        self._write_to_cache((nodes, edges, subgraph), cache_key)
-            else:
-                nodes, edges, subgraph = self._subgraph_cache[cache_key]
+            if len(edges) > 0:
+                cache_key = self._get_df_hash(nodes) + self._get_df_hash(edges)
+                subgraph = self._load_cache_if_exists(cache_key)
+                if subgraph is None:
+                    subgraph = self._create_hetero_graph(nodes, edges)
+                    self._write_to_cache((nodes, edges, subgraph), cache_key)
 
-            yield group, nodes, edges, subgraph
+                yield group, nodes, edges, subgraph
 
     @staticmethod
     def holdout(nodes: pd.DataFrame, edges: pd.DataFrame, holdout_size=10000, random_seed=42):
