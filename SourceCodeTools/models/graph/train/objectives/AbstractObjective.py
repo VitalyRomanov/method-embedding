@@ -50,7 +50,7 @@ class AbstractObjective(nn.Module):
             masker_fn=None, label_loader_class=None, label_loader_params=None,
             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod",
             measure_scores=False, dilate_scores=1, early_stopping=False, early_stopping_tolerance=20, nn_index="brute",
-            model_base_path=None, force_w2v=False
+            model_base_path=None, force_w2v=False, use_ns_groups=False
     ):
         super(AbstractObjective, self).__init__()
 
@@ -69,6 +69,7 @@ class AbstractObjective(nn.Module):
         self.early_stopping_trigger = False
         self.base_path = model_base_path
         self.force_w2v = force_w2v
+        self.use_ns_groups = use_ns_groups
 
         self._verify_parameters()
 
@@ -206,7 +207,7 @@ class AbstractObjective(nn.Module):
     def _create_loader(self, graph, indices):
         sampler = dgl.dataloading.MultiLayerFullNeighborSampler(self.graph_model.num_layers)
         return dgl.dataloading.NodeDataLoader(
-            graph, indices, sampler, batch_size=len(indices), num_workers=0)
+            graph, {"node_": indices}, sampler, batch_size=len(indices), num_workers=0)
 
     def _extract_embed(self, input_nodes, mask=None):
         # emb = {}
@@ -407,7 +408,9 @@ class AbstractObjective(nn.Module):
     def get_targets_from_nodes(
             self, positive_indices, negative_indices=None, update_ns_callback=None, graph=None
     ):
-        negative_indices = torch.tensor(negative_indices, dtype=torch.long) if negative_indices is not None else None
+        # negative_indices = torch.tensor(negative_indices, dtype=torch.long) if negative_indices is not None else None
+        # TODO
+        # try to do this in forward() computing graph embeddings three times is too expensive
 
         def get_embeddings_for_targets(dst):
             unique_dst, slice_map = self._handle_non_unique(dst)

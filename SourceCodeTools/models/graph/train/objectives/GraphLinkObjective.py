@@ -14,8 +14,12 @@ class GraphLinkObjective(AbstractObjective):
     def _verify_parameters(self):
         pass
 
+    def _warmup_if_needed(self, partition, update_ns_callback):
+        pass
+
     def _create_target_embedder(self, data_loading_func, tokenizer_path):
-        raise NotImplementedError()
+        # raise NotImplementedError()
+        pass
         # self.create_graph_link_sampler(data_loading_func, nodes)
 
     def parameters(self, recurse: bool = True):

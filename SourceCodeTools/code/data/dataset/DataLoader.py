@@ -172,7 +172,7 @@ class SGNodesDataLoader:
 
                 if node_labels_loader is not None:
                     positive_indices = torch.LongTensor(node_labels_loader.sample_positive(indices)).to(self.device)
-                    negative_indices = torch.LongTensor(node_labels_loader.sample_negative(indices, strategy=self.negative_sampling_strategy)).to(self.device)
+                    negative_indices = torch.LongTensor(node_labels_loader.sample_negative(indices, strategy=self.negative_sampling_strategy, current_group=group)).to(self.device)
                 else:
                     positive_indices = None
                     negative_indices = None
