@@ -16,7 +16,7 @@ import logging
 from tqdm import tqdm
 
 from SourceCodeTools.models.Embedder import Embedder
-from SourceCodeTools.models.graph.TargetLoader import TargetLoader
+from SourceCodeTools.models.graph.TargetLoader import TargetLoader, GraphLinkTargetLoader
 from SourceCodeTools.models.graph.train.objectives import GraphTextPrediction, GraphTextGeneration, \
     NodeNameClassifier, NodeClassifierObjective, SubwordEmbedderObjective, GraphLinkObjective
 from SourceCodeTools.models.graph.NodeEmbedder import SimplestNodeEmbedder
@@ -89,26 +89,26 @@ class SamplingMultitaskTrainer:
             self.create_node_name_objective(dataset, tokenizer_path)
         if "var_use_pred" in objective_list:
             self.create_var_use_objective(dataset, tokenizer_path)
-        if "next_call_pred" in objective_list:
-            self.create_api_call_objective(dataset, tokenizer_path)
-        if "global_link_pred" in objective_list:
-            self.create_global_link_objective(dataset, tokenizer_path)
+        # if "next_call_pred" in objective_list:
+        #     self.create_api_call_objective(dataset, tokenizer_path)
+        # if "global_link_pred" in objective_list:
+        #     self.create_global_link_objective(dataset, tokenizer_path)
         if "edge_pred" in objective_list:
             self.create_edge_objective(dataset, tokenizer_path)
-        if "transr" in objective_list:
-            self.create_transr_objective(dataset, tokenizer_path)
-        if "doc_pred" in objective_list:
-            self.create_text_prediction_objective(dataset, tokenizer_path)
-        if "doc_gen" in objective_list:
-            self.create_text_generation_objective(dataset, tokenizer_path)
+        # if "transr" in objective_list:
+        #     self.create_transr_objective(dataset, tokenizer_path)
+        # if "doc_pred" in objective_list:
+        #     self.create_text_prediction_objective(dataset, tokenizer_path)
+        # if "doc_gen" in objective_list:
+        #     self.create_text_generation_objective(dataset, tokenizer_path)
         if "node_clf" in objective_list:
             self.create_node_classifier_objective(dataset, tokenizer_path)
-        if "type_ann_pred" in objective_list:
-            self.create_type_ann_objective(dataset, tokenizer_path)
-        if "subgraph_name_clf" in objective_list:
-            self.create_subgraph_name_objective(dataset, tokenizer_path)
-        if "subgraph_clf" in objective_list:
-            self.create_subgraph_classifier_objective(dataset, tokenizer_path)
+        # if "type_ann_pred" in objective_list:
+        #     self.create_type_ann_objective(dataset, tokenizer_path)
+        # if "subgraph_name_clf" in objective_list:
+        #     self.create_subgraph_name_objective(dataset, tokenizer_path)
+        # if "subgraph_clf" in objective_list:
+        #     self.create_subgraph_classifier_objective(dataset, tokenizer_path)
 
     def _create_node_level_objective(
             self, *, objective_name, objective_class, dataset, labels_fn, tokenizer_path,
@@ -116,15 +116,17 @@ class SamplingMultitaskTrainer:
     ):
         if label_loader_class is None:
             label_loader_class = TargetLoader
-        if label_loader_params is None:
-            label_loader_params = {"emb_size": self.elem_emb_size, "tokenizer_path": tokenizer_path}
+
+        label_loader_params_ = {"emb_size": self.elem_emb_size, "tokenizer_path": tokenizer_path, "use_ns_groups": self.trainer_params["use_ns_groups"]}
+        if label_loader_params is not None:
+            label_loader_params_.update(label_loader_params)
 
         return objective_class(
             name=objective_name, graph_model=self.graph_model, node_embedder=self.node_embedder, dataset=dataset,
             label_load_fn=labels_fn, device=self.device, sampling_neighbourhood_size=self.sampling_neighbourhood_size,
             batch_size=self.batch_size, labels_for="nodes", number_of_hops=self.model_params["n_layers"],
             preload_for=preload_for, masker_fn=masker_fn, label_loader_class=label_loader_class,
-            label_loader_params=label_loader_params,
+            label_loader_params=label_loader_params_,
             tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
             measure_scores=self.trainer_params["measure_scores"], dilate_scores=self.trainer_params["dilate_scores"],
             early_stopping=False, early_stopping_tolerance=20, nn_index=self.trainer_params["nn_index"],
@@ -212,7 +214,7 @@ class SamplingMultitaskTrainer:
                 labels_fn=dataset.load_type_prediction,
                 tokenizer_path=tokenizer_path,
                 masker_fn=None,
-                preload_for="package"
+                preload_for="package",
             )
         )
 
@@ -277,6 +279,8 @@ class SamplingMultitaskTrainer:
                 objective_class=GraphLinkObjective,
                 dataset=dataset,
                 labels_fn=dataset.load_edge_prediction,
+                label_loader_class=GraphLinkTargetLoader,
+                label_loader_params={"compact_dst": False},
                 tokenizer_path=tokenizer_path,
                 masker_fn=None,
                 preload_for="package" # "file", "function"
