@@ -5,7 +5,9 @@ __pycache__
 *.json
 *.json.bz2
 *.csv
+90*1000*.png
 examples/scaa
+examples/task
 examples/new_scaa
 examples/one_to_one
 examples/one_vs_10

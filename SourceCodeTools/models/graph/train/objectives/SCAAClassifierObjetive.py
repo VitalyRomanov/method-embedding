@@ -49,7 +49,7 @@ class SCAAClassifierObjective(SubgraphMatchingObjective):
                                            )
         self.pooler = PoolingLayer(100, (100, 1))
         # self.pooler = torch.nn.MultiheadAttention(
-        #     100, 2, device=device, batch_first=True)
+        #     100, 4, device=device, batch_first=True)
 
     def parameters(self, recurse: bool = True):
         return chain(self.link_predictor.parameters(), self.pooler.parameters())

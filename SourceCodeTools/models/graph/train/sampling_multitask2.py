@@ -21,6 +21,7 @@ from SourceCodeTools.models.graph.train.objectives import VariableNameUsePredict
     NodeNameClassifier, EdgePrediction, TypeAnnPrediction, EdgePrediction2, NodeClassifierObjective
 from SourceCodeTools.models.graph.NodeEmbedder import NodeEmbedder
 from SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObjective import TransRObjective
+from SourceCodeTools.models.graph.train.objectives.SCAAClassifierObjetive import SCAAClassifierObjective
 from SourceCodeTools.models.graph.train.objectives.SubgraphClassifierObjective import SubgraphClassifierObjective
 from SourceCodeTools.models.graph.train.objectives.SubgraphEmbedderObjective import SubgraphEmbeddingObjective, \
     SubgraphMatchingObjective
@@ -59,7 +60,8 @@ class SamplingMultitaskTrainer:
             dataset = external_dataset
         self.create_node_embedder(
             dataset, tokenizer_path, n_dims=model_params["h_dim"],
-            pretrained_path=pretrained_embeddings_path, n_buckets=trainer_params["embedding_table_size"]
+            pretrained_path=pretrained_embeddings_path, n_buckets=trainer_params[
+                "embedding_table_size"]
         )
 
         self.create_objectives(dataset, tokenizer_path)
@@ -108,6 +110,8 @@ class SamplingMultitaskTrainer:
             self.create_subgraph_classifier_objective(dataset, tokenizer_path)
         if "subgraph_match" in objective_list:
             self.create_subgraph_matching_objective(dataset, tokenizer_path)
+        if "scaa_match" in objective_list:
+            self.create_scaa_matching_objective(dataset, tokenizer_path)
 
     def create_token_pred_objective(self, dataset, tokenizer_path):
         self.objectives.append(
@@ -197,6 +201,17 @@ class SamplingMultitaskTrainer:
             )
         )
 
+    def create_scaa_matching_objective(self, dataset, tokenizer_path):
+        self.objectives.append(
+            self._create_subgraph_objective(
+                objective_name="SCAAMatching",
+                objective_class=SCAAClassifierObjective,
+                dataset=dataset,
+                tokenizer_path=tokenizer_path,
+                labels_fn=dataset.load_scaa_subgraph_labels,
+            )
+        )
+
     def create_type_ann_objective(self, dataset, tokenizer_path):
         self.objectives.append(
             TypeAnnPrediction(
@@ -268,7 +283,8 @@ class SamplingMultitaskTrainer:
                 self.graph_model, self.node_embedder, dataset.nodes,
                 dataset.load_edge_prediction, self.device,
                 self.sampling_neighbourhood_size, self.batch_size,
-                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type=self.trainer_params["metric"],
+                tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type=self.trainer_params[
+                    "metric"],
                 measure_scores=self.trainer_params["measure_scores"],
                 dilate_scores=self.trainer_params["dilate_scores"], nn_index=self.trainer_params["nn_index"],
                 # ns_groups=dataset.get_negative_sample_groups()
@@ -336,7 +352,8 @@ class SamplingMultitaskTrainer:
             pretrained = None
 
         if pretrained_path is None and n_dims is None:
-            raise ValueError(f"Specify embedding dimensionality or provide pretrained embeddings")
+            raise ValueError(
+                f"Specify embedding dimensionality or provide pretrained embeddings")
         elif pretrained_path is not None and n_dims is not None:
             assert n_dims == pretrained.n_dims, f"Requested embedding size and pretrained embedding " \
                                                 f"size should match: {n_dims} != {pretrained.n_dims}"
@@ -352,7 +369,8 @@ class SamplingMultitaskTrainer:
             emb_size=n_dims,
             # tokenizer_path=tokenizer_path,
             dtype=self.dtype,
-            pretrained=dataset.buckets_from_pretrained_embeddings(pretrained_path, n_buckets)
+            pretrained=dataset.buckets_from_pretrained_embeddings(
+                pretrained_path, n_buckets)
             if pretrained_path is not None else None,
             n_buckets=n_buckets
         )
@@ -422,17 +440,20 @@ class SamplingMultitaskTrainer:
         params = copy(self.model_params)
         params["epoch"] = epoch
         main_name = os.path.basename(self.model_base_path)
-        params = {k: v for k, v in params.items() if type(v) in {int, float, str, bool, torch.Tensor}}
+        params = {k: v for k, v in params.items() if type(
+            v) in {int, float, str, bool, torch.Tensor}}
 
         main_name = os.path.basename(self.model_base_path)
         scores = {f"h_metric/{k}": v for k, v in scores.items()}
-        self.summary_writer.add_hparams(params, scores, run_name=f"h_metric/{epoch}")
+        self.summary_writer.add_hparams(
+            params, scores, run_name=f"h_metric/{epoch}")
 
     def _create_optimizer(self):
         parameters = nn.ParameterList(self.graph_model.parameters())
         nodeembedder_params = list(self.node_embedder.parameters())
         # parameters.extend(self.node_embedder.parameters())
-        [parameters.extend(objective.parameters()) for objective in self.objectives]
+        [parameters.extend(objective.parameters())
+         for objective in self.objectives]
         # AdaHessian  TODO could not run
         # optimizer = Yogi(parameters, lr=self.lr)
         self.optimizer = torch.optim.AdamW(
@@ -448,13 +469,16 @@ class SamplingMultitaskTrainer:
                 for i in range(0, len(lst), n):
                     yield torch.LongTensor(lst[i:i + n])
 
-            batches = chunks(objective.target_embedder.scorer_all_keys, self.trainer_params["batch_size"])
+            batches = chunks(
+                objective.target_embedder.scorer_all_keys, self.trainer_params["batch_size"])
             for batch in tqdm(
                     batches,
-                    total=len(objective.target_embedder.scorer_all_keys) // self.trainer_params["batch_size"] + 1,
+                    total=len(
+                        objective.target_embedder.scorer_all_keys) // self.trainer_params["batch_size"] + 1,
                     desc="Precompute Target Embeddings", leave=True
             ):
-                _ = objective.target_embedding_fn(batch)  # scorer embedding updated inside
+                # scorer embedding updated inside
+                _ = objective.target_embedding_fn(batch)
 
     def train_all(self):
         """
@@ -469,7 +493,8 @@ class SamplingMultitaskTrainer:
         for objective in self.objectives:
             with torch.set_grad_enabled(False):
                 self.compute_embeddings_for_scorer(objective)
-                objective.target_embedder.prepare_index()  # need this to update sampler for the next epoch
+                # need this to update sampler for the next epoch
+                objective.target_embedder.prepare_index()
 
         for epoch in range(self.epoch, self.epochs):
             self.epoch = epoch
@@ -477,7 +502,8 @@ class SamplingMultitaskTrainer:
             start = time()
 
             summary_dict = {}
-            num_batches = min([objective.num_train_batches for objective in self.objectives])
+            num_batches = min(
+                [objective.num_train_batches for objective in self.objectives])
 
             train_losses = defaultdict(list)
             train_accs = defaultdict(list)
@@ -494,7 +520,8 @@ class SamplingMultitaskTrainer:
                 summary = {}
 
                 try:
-                    loaders = [objective.loader_next("train") for objective in self.objectives]
+                    loaders = [objective.loader_next(
+                        "train") for objective in self.objectives]
                 except StopIteration:
                     break
 
@@ -518,21 +545,24 @@ class SamplingMultitaskTrainer:
                         neg_sampling_strategy="w2v" if self.trainer_params["force_w2v_ns"] else None
                     )
 
-                    loss = loss / len(self.objectives)  # assumes the same batch size for all objectives
+                    # assumes the same batch size for all objectives
+                    loss = loss / len(self.objectives)
                     loss_accum += loss.item()
                     # for groups in self.optimizer.param_groups:
                     #     for param in groups["params"]:
                     #         torch.nn.utils.clip_grad_norm_(param, max_norm=1.)
                     loss.backward()  # create_graph = True
-                    
+
                     summary = {}
                     add_to_summary(
                         summary=summary, partition="train", objective_name=objective.name,
                         scores={"Loss": loss.item(), "Accuracy": acc}, postfix=""
                     )
 
-                    train_losses[f"Loss/train_avg/{objective.name}"].append(loss.item())
-                    train_accs[f"Accuracy/train_avg/{objective.name}"].append(acc)
+                    train_losses[f"Loss/train_avg/{objective.name}"].append(
+                        loss.item())
+                    train_accs[f"Accuracy/train_avg/{objective.name}"].append(
+                        acc)
 
                     # except ZeroEdges as e:
                     #     logging.warning(f"Zero edges in loader in step {step}")
@@ -550,8 +580,10 @@ class SamplingMultitaskTrainer:
                 # summary = {
                 #     f"Loss/train": loss_accum,
                 # }
-                summary = {key: sum(val) / len(val) for key, val in train_losses.items()}
-                summary.update({key: sum(val) / len(val) for key, val in train_accs.items()})
+                summary = {key: sum(val) / len(val)
+                           for key, val in train_losses.items()}
+                summary.update({key: sum(val) / len(val)
+                               for key, val in train_accs.items()})
                 self.write_summary(summary, self.batch)
                 summary_dict.update(summary)
 
@@ -562,26 +594,33 @@ class SamplingMultitaskTrainer:
                 objective.eval()
 
                 with torch.set_grad_enabled(False):
-                    objective.target_embedder.prepare_index()  # need this to update sampler for the next epoch
-
+                    # need this to update sampler for the next epoch
+                    objective.target_embedder.prepare_index()
+                    train_scores = objective.evaluate("train")
                     val_scores = objective.evaluate("val")
                     test_scores = objective.evaluate("test")
-                    
+
                 summary = {}
-                add_to_summary(summary, "val", objective.name, val_scores, postfix="")
-                add_to_summary(summary, "test", objective.name, test_scores, postfix="")
+                add_to_summary(summary, "train", objective.name,
+                               train_scores, postfix="")
+                add_to_summary(summary, "val", objective.name,
+                               val_scores, postfix="")
+                add_to_summary(summary, "test", objective.name,
+                               test_scores, postfix="")
 
                 self.write_summary(summary, self.batch)
                 summary_dict.update(summary)
 
-                val_losses = [item for key, item in summary_dict.items() if key.startswith("Loss/val")]
+                val_losses = [
+                    item for key, item in summary_dict.items() if key.startswith("Loss/val")]
                 avg_val_loss = sum(val_losses) / len(val_losses)
                 if avg_val_loss < best_val_loss:
                     best_val_loss = avg_val_loss
                     write_best_model = True
 
                 if self.do_save:
-                    self.save_checkpoint(self.model_base_path, write_best_model=write_best_model)
+                    self.save_checkpoint(
+                        self.model_base_path, write_best_model=write_best_model)
                 write_best_model = False
 
                 if objective.early_stopping_trigger is True:
@@ -617,13 +656,15 @@ class SamplingMultitaskTrainer:
 
         torch.save(param_dict, model_path)
         if self.trainer_params["save_each_epoch"]:
-            torch.save(param_dict, join(checkpoint_path, f"saved_state_{self.epoch}.pt"))
+            torch.save(param_dict, join(checkpoint_path,
+                       f"saved_state_{self.epoch}.pt"))
 
         if write_best_model:
             torch.save(param_dict,  join(checkpoint_path, f"best_model.pt"))
 
     def restore_from_checkpoint(self, checkpoint_path):
-        checkpoint = torch.load(join(checkpoint_path, "saved_state.pt"), map_location=torch.device('cpu'))
+        checkpoint = torch.load(
+            join(checkpoint_path, "saved_state.pt"), map_location=torch.device('cpu'))
         self.graph_model.load_state_dict(checkpoint['graph_model'])
         self.node_embedder.load_state_dict(checkpoint['node_embedder'])
         for objective in self.objectives:
@@ -635,7 +676,7 @@ class SamplingMultitaskTrainer:
         # TODO needs test
 
     def final_evaluation(self):
-
+        print('evaluation')
         summary_dict = {}
 
         for objective in self.objectives:
@@ -650,16 +691,19 @@ class SamplingMultitaskTrainer:
         with torch.set_grad_enabled(False):
 
             for objective in self.objectives:
-
-                # train_scores = objective.evaluate("train")
+                print('train')
+                train_scores = objective.evaluate("train")
                 val_scores = objective.evaluate("val")
                 test_scores = objective.evaluate("test")
-                
+
                 summary = {}
-                # add_to_summary(summary, "train", objective.name, train_scores, postfix="final")
-                add_to_summary(summary, "val", objective.name, val_scores, postfix="final")
-                add_to_summary(summary, "test", objective.name, test_scores, postfix="final")
-                
+                add_to_summary(summary, "train", objective.name,
+                               train_scores, postfix="final")
+                add_to_summary(summary, "val", objective.name,
+                               val_scores, postfix="final")
+                add_to_summary(summary, "test", objective.name,
+                               test_scores, postfix="final")
+
                 summary_dict.update(summary)
 
         # self.write_hyperparams(summary_dict, self.epoch)
@@ -688,16 +732,46 @@ class SamplingMultitaskTrainer:
         for objective in self.objectives:
             objective.to(device)
 
+    def compute_subgraph_embeddings(self, objective):
+        def chunks(lst, n):
+            for i in range(0, len(lst), n):
+                yield torch.LongTensor(lst[i:i + n])
+
+        batches = chunks(list(objective.subgraph_mapping.keys())[:-1],
+                         self.trainer_params["batch_size"])
+
+        ids = []
+        embs = []
+
+        for batch_ids in tqdm(
+                batches,
+                total=len(
+                    objective.target_embedder.scorer_all_keys) // self.trainer_params["batch_size"] + 1,
+                desc="Computer Subgraph Embeddings", leave=True
+        ):
+            with torch.no_grad():
+                embeddings, _ = objective.target_embedding_fn(
+                    batch_ids, train_embeddings=False)
+            ids.append(batch_ids)
+            embs.append(embeddings)
+
+        ids = torch.cat(ids, dim=0)
+        embeddings = torch.cat(embs, dim=0)
+
+        return ids, embeddings
+
     def get_embeddings(self):
         # self.graph_model.g.nodes["function"].data.keys()
         nodes = self.graph_model.g.nodes
         node_embs = {
-            ntype: self.node_embedder(node_type=ntype, node_ids=nodes[ntype].data['typed_id'], train_embeddings=False)
+            ntype: self.node_embedder(
+                node_type=ntype, node_ids=nodes[ntype].data['typed_id'], train_embeddings=False)
             for ntype in self.graph_model.g.ntypes
         }
 
         logging.info("Computing all embeddings")
-        h = self.graph_model.inference(batch_size=2048, device='cpu', num_workers=0, x=node_embs)
+        h = self.graph_model.inference(
+            batch_size=2048, device='cpu', num_workers=0, x=node_embs)
 
         original_id = []
         global_id = []
@@ -752,7 +826,8 @@ def training_procedure(
 
     trainer_params['model_base_path'] = model_base_path
 
-    model_params["activation"] = resolve_activation_function(model_params["activation"])
+    model_params["activation"] = resolve_activation_function(
+        model_params["activation"])
 
     # trainer_params = {
     #     'lr': model_params.pop('lr'),
@@ -822,7 +897,8 @@ def evaluation_procedure(
     model_params['use_att_checkpoint'] = args.use_att_checkpoint
     model_params['use_gru_checkpoint'] = args.use_gru_checkpoint
 
-    model_params["activation"] = eval(f"nn.functional.{model_params['activation']}")
+    model_params["activation"] = eval(
+        f"nn.functional.{model_params['activation']}")
 
     trainer_params = {
         'lr': model_params.pop("lr"),
@@ -841,7 +917,7 @@ def evaluation_procedure(
         'dilate_scores': args.dilate_scores
     }
 
-    trainer = trainer( #SamplingMultitaskTrainer(
+    trainer = trainer(  # SamplingMultitaskTrainer(
         dataset=dataset,
         model_name=model_name,
         model_params=model_params,
