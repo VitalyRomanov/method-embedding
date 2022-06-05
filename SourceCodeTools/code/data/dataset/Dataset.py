@@ -964,7 +964,7 @@ class SourceGraphDataset:
                 subgraph = self._load_cache_if_exists(cache_key)
                 if subgraph is None:
                     subgraph = self._create_hetero_graph(nodes, edges)
-                    self._write_to_cache((nodes, edges, subgraph), cache_key)
+                    self._write_to_cache(subgraph, cache_key)
 
                 yield group, nodes, edges, subgraph
 
@@ -1160,7 +1160,7 @@ class SourceGraphDataset:
         if len(unique_nodes) == num_unique_existing_nodes:
             return
 
-        nodes.query("id not in @unique_nodes", local_dict={"unique_nodes": unique_nodes}, inplace=True)
+        nodes.query("id in @unique_nodes", local_dict={"unique_nodes": unique_nodes}, inplace=True)
 
         # logging.info(
         #     f"Ending up with {nodes.shape[0]} nodes and {edges.shape[0]} edges"
