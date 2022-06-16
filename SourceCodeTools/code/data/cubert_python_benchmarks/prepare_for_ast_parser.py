@@ -1,15 +1,11 @@
 import hashlib
 
-# import pandas as pd
 import ast
 import json
 from pathlib import Path
 from nltk import RegexpTokenizer
-from itertools import chain
 
 from tqdm import tqdm
-
-from SourceCodeTools.code.data.cubert_python_benchmarks.SQLTable import SQLTable
 
 
 class CodeTokenizer:
