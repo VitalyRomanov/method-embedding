@@ -11,4 +11,5 @@ python "$RUN_DIR/../../../SourceCodeTools/code/data/cubert_python_benchmarks/con
 python "$RUN_DIR/../../../SourceCodeTools/code/data/ast_graph/build_ast_graph.py" --bpe_tokenizer $BPE_TOKENIZER --track_offsets $CUBERT_DATA_PATH/variable_misuse.csv $OUTPUT_PATH --chunksize 100000 --keep_frac $KEEP_FRAC --seed 42 --do_extraction &&
 python "$RUN_DIR/../../../SourceCodeTools/code/data/cubert_python_benchmarks/variable_misuse_node_level_labels.py" $OUTPUT_PATH/with_ast &&
 python "$RUN_DIR/../../../SourceCodeTools/code/data/cubert_python_benchmarks/extract_partition.py" $OUTPUT_PATH/with_ast/common_filecontent.json &&
-python "$RUN_DIR/../../../SourceCodeTools/code/data/cubert_python_benchmarks/make_edge_level_labels.py" $OUTPUT_PATH/with_ast/
+python "$RUN_DIR/../../../SourceCodeTools/code/data/cubert_python_benchmarks/make_edge_level_labels.py" $OUTPUT_PATH/with_ast/ &&
+python "$RUN_DIR/../../../SourceCodeTools/code/data/cubert_python_benchmarks/create_text_dataset.py" $OUTPUT_PATH/with_ast/

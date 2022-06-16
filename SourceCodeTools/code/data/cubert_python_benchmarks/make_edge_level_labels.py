@@ -2,6 +2,7 @@ from ast import literal_eval
 from pathlib import Path
 
 import pandas as pd
+from tqdm import tqdm
 
 from SourceCodeTools.code.common import read_nodes, read_edges
 from SourceCodeTools.code.data.cubert_python_benchmarks.partitioning import add_splits
@@ -25,7 +26,15 @@ def create_edge_labels(dataset_directory):
 
     def get_misuse_spans():
         filecontent = unpersist(filecontent_path)
-        return dict(zip(filecontent["id"], filecontent["misuse_span"].map(literal_eval))), dict(zip(filecontent["id"], filecontent["comment"].map(lambda x: x.split("`")[-2])))
+
+        def try_get_misused_name(comment):
+            parts = comment.split("`")
+            try:
+                return parts[-2]
+            except:
+                return None  # this happens when function does not have a misuse
+
+        return dict(zip(filecontent["id"], filecontent["misuse_span"].map(literal_eval))), dict(zip(filecontent["id"], filecontent["comment"].map(try_get_misused_name)))
 
     file_id2misuse_span, file_id2replacement_var = get_misuse_spans()
 
@@ -35,35 +44,37 @@ def create_edge_labels(dataset_directory):
 
     last_file_id = None
     total = 0
-    for chunk_ind, edges in enumerate(read_edges(edges_path, as_chunks=True)):
+    for chunk_ind, edges in tqdm(enumerate(read_edges(edges_path, as_chunks=True)), desc="Extracting misuse edges"):
         edges = edges.astype({"offset_start": "Int32", "offset_end": "Int32"})
-        for ind, edge in edges.iterrows():
-            if last_file_id != edge.file_id:
+        for file_id, source_node_id, target_node_id, type, offset_start, offset_end in \
+                edges[["file_id", "source_node_id", "target_node_id", "type", "offset_start", "offset_end"]].values:
+            if last_file_id != file_id:
                 total += 1
                 if last_file_id is not None and last_file_id not in file_id2incorrect_edge:
                     # print(f"Did not find edge for {last_file_id}")
                     skipped.append(last_file_id)
                     # print(f"Skipped {len(skipped)} files out of {total}")
-                last_file_id = edge.file_id
+                last_file_id = file_id
 
-            if not pd.isna(edge["offset_start"]):
-                file_id = edge["file_id"]
-                src = edge["source_node_id"]
-                dst = edge["target_node_id"]
-                type = edge["type"]
+            if not pd.isna(offset_start):
+                # file_id = edge["file_id"]
+                # src = edge["source_node_id"]
+                # dst = edge["target_node_id"]
+                # type = edge["type"]
                 needed_span = tuple(file_id2misuse_span[file_id])
-                given_span = (edge["offset_start"], edge["offset_end"])
+                given_span = (offset_start, offset_end)
                 if needed_span == given_span:
                     replacement = file_id2replacement_var[file_id]
-                    node_name = id2node_name[src]
-                    assert node_name.startswith(replacement)
-                    file_id2incorrect_edge.add(file_id)
-                    file_id2incorrect_edges.append({
-                        "src": src,
-                        "dst": dst,
-                        "type": type,
-                        "file_id": file_id
-                    })
+                    if replacement is not None:
+                        node_name = id2node_name[source_node_id]
+                        assert node_name.startswith(replacement)
+                        file_id2incorrect_edge.add(file_id)
+                        file_id2incorrect_edges.append({
+                            "src": source_node_id,
+                            "dst": target_node_id,
+                            "type": type,
+                            "file_id": file_id
+                        })
 
     misuse_edges = pd.DataFrame.from_records(file_id2incorrect_edges)
 

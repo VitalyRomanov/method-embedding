@@ -72,6 +72,21 @@ def detect_misuse(data_path, output_path):
                     }
                     sink.write(f"{json.dumps(record_for_writing)}\n")
 
+                    # if misuse["partition"] != "train":
+                    original_record_for_writing = {
+                        "fn_path": original["fn_path"],
+                        "function": original["function"],
+                        "comment": original["comment"],
+                        "package": original["fn_path"].split("/")[1],
+                        "label": "Correct",
+                        "partition": original["partition"],
+                        "parsing_error": original["parsing_error"],
+                        "original_function": original["function"],
+                        "original_span": o_span,
+                        "misuse_span": [],
+                    }
+                    sink.write(f"{json.dumps(original_record_for_writing)}\n")
+
                 original = record
             else:
                 misuse = record
