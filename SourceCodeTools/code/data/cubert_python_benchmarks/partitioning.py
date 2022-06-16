@@ -3,9 +3,12 @@ from functools import partial
 from os.path import join
 from random import random
 
+import pandas
+
 from SourceCodeTools.code.common import read_edges, read_nodes
 from SourceCodeTools.code.data.file_utils import persist
 
+pandas.options.mode.chained_assignment = None
 
 def add_splits(items, train_frac, restricted_id_pool=None):
     items = items.copy()

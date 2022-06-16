@@ -34,7 +34,7 @@ def create_text_dataset(dataset_path):
     val_set = open(get_path("var_misuse_seq_val.json"), "w")
 
     for file_id, filecontent, original_function, partition, misuse_span, label in \
-            tqdm(filecontent[["id", "filecontent", "original_function", "partition", "misuse_span", "label"]].values):
+            tqdm(filecontent[["id", "filecontent", "original_function", "partition", "misuse_span", "label"]].values, desc="Preparing seq dataset"):
         if partition == "train":
             dst = train_set
         elif partition == "eval":
