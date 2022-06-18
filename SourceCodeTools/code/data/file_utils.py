@@ -249,16 +249,30 @@ def persist(df: pd.DataFrame, path: Union[str, Path, bytes], **kwargs):
 
 
 def get_cached_path(path):
-    return path + "__cached.pkl"
+    path = Path(path)
+    parent = path.parent
+    filename = path.name
+    cache_dir = parent.joinpath("__cache__")
+    if not cache_dir.is_dir():
+        cache_dir.mkdir()
+
+    cache_path = cache_dir.joinpath(filename + "__cached.pkl")
+    # cache_path = path + "__cached.pkl"
+    if os.path.isfile(cache_path):
+        file_date = os.path.getmtime(path)
+        cache_date = os.path.getmtime(cache_path)
+        if file_date > cache_date:
+            os.remove(cache_path)
+    return cache_path
 
 
 def unpersist(path: Union[str, Path, bytes], **kwargs) -> pd.DataFrame:
     if isinstance(path, Path):
         path = str(path.absolute())
 
-    # cached_path = get_cached_path(path)
-    # if os.path.isfile(cached_path):
-    #     return read_pickle(cached_path)
+    cached_path = get_cached_path(path)
+    if os.path.isfile(cached_path):
+        return read_pickle(cached_path)
 
     format, kwargs = likely_format(path, kwargs)
     if format == "csv":
@@ -272,9 +286,9 @@ def unpersist(path: Union[str, Path, bytes], **kwargs) -> pd.DataFrame:
     else:
         data = None
 
-    # if isinstance(data, pd.DataFrame):
-    #     if data is not None:
-    #         write_pickle(data, cached_path)
+    if isinstance(data, pd.DataFrame) and format != "pkl":
+        if data is not None:
+            write_pickle(data, cached_path)
 
     return data
 
