@@ -315,7 +315,7 @@ class RGGAN(RGAN):
 
     where :math:`\sigma` is the sigmoid function, and :math:`*` is the Hadamard product."""
     def __init__(self,
-                 g,
+                 ntypes, etypes,
                  h_dim, node_emb_size,
                  num_bases,
                  n_layers=1,
@@ -324,15 +324,15 @@ class RGGAN(RGAN):
                  activation=F.relu,
                  use_gcn_checkpoint=False, use_att_checkpoint=False, use_gru_checkpoint=False):
         super(RGCNSampling, self).__init__()
-        self.g = g
+        # self.g = g
         self.h_dim = h_dim
         self.out_dim = node_emb_size
         self.activation = activation
 
         assert h_dim == node_emb_size, f"Parameter h_dim and num_classes should be equal in {self.__class__.__name__}"
 
-        self.rel_names = list(set(g.etypes))
-        self.ntype_names = list(set(g.ntypes))
+        self.rel_names = list(set(etypes))
+        self.ntype_names = list(set(ntypes))
         self.rel_names.sort()
         self.ntype_names.sort()
         if num_bases < 0 or num_bases > len(self.rel_names):

@@ -9,28 +9,17 @@ from SourceCodeTools.code.data.dataset import SubwordMasker
 from SourceCodeTools.models.graph.ElementEmbedder import DocstringEmbedder, create_fixed_length, \
     ElementEmbedderWithBpeSubwords
 from SourceCodeTools.models.graph.train.objectives import SubwordEmbedderObjective
-from SourceCodeTools.models.graph.train.objectives.AbstractObjective import compute_accuracy, \
-    sum_scores
+from SourceCodeTools.models.graph.train.objectives.AbstractObjective import compute_accuracy
 from SourceCodeTools.models.nlp.TorchDecoder import Decoder
 from SourceCodeTools.models.nlp.Vocabulary import Vocabulary
 import numpy as np
 
 
 class GraphTextPrediction(SubwordEmbedderObjective):
-    def __init__(
-            self, graph_model, node_embedder, nodes, data_loading_func, device,
-            sampling_neighbourhood_size, batch_size,
-            tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
-            measure_scores=False, dilate_scores=1
-    ):
-        super().__init__(
-            "GraphTextPrediction", graph_model, node_embedder, nodes, data_loading_func, device,
-            sampling_neighbourhood_size, batch_size,
-            tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
-            masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores
-        )
+    def __init__(self, **kwargs):
+        super().__init__(name="GraphTextPrediction", **kwargs)
 
-    def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
+    def _create_target_embedder(self, data_loading_func, tokenizer_path):
         self.target_embedder = DocstringEmbedder(
             elements=data_loading_func(), nodes=nodes, emb_size=self.target_emb_size,
             tokenizer_path=tokenizer_path
@@ -52,13 +41,13 @@ class GraphTextGeneration(SubwordEmbedderObjective):
             masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores
         )
 
-    def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
+    def _create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
         self.target_embedder = TextGenerationTargetMapper(
             elements=data_loading_func(), nodes=nodes, emb_size=self.target_emb_size,
             tokenizer_path=tokenizer_path, max_len=self.max_len
         ).to(self.device)
 
-    def create_link_predictor(self):
+    def _create_link_predictor(self):
         # self.decoder = LSTMDecoder(
         #     self.target_embedder.num_buckets, padding=self.target_embedder.pad_id,
         #     encoder_embed_dim=self.target_emb_size, num_layers=2
@@ -75,7 +64,7 @@ class GraphTextGeneration(SubwordEmbedderObjective):
         logits = self.decoder(graph_emb.unsqueeze(1), prev_tokens)[:, :-1, :]
         return logits
 
-    def compute_acc_loss(self, graph_emb, labels, lengths, return_logits=False):
+    def _compute_acc_loss(self, graph_emb, labels, lengths, return_logits=False):
         # prev_tokens = labels
         # logits = self.decoder(prev_tokens, graph_emb)[:, :-1, :]
         logits = self.compute_logits(graph_emb, labels)
@@ -112,7 +101,7 @@ class GraphTextGeneration(SubwordEmbedderObjective):
         labels, lengths = self.target_embedder[indices]
         labels = labels.to(self.device)
         lengths = lengths.to(self.device)
-        acc, loss = self.compute_acc_loss(graph_emb, labels, lengths)
+        acc, loss = self._compute_acc_loss(graph_emb, labels, lengths)
 
         return loss, acc
 
@@ -142,7 +131,7 @@ class GraphTextGeneration(SubwordEmbedderObjective):
             labels, lengths = self.target_embedder[indices]
             labels = labels.to(self.device)
             lengths = lengths.to(self.device)
-            acc, loss, logits = self.compute_acc_loss(src_embs, labels, lengths, return_logits=True)
+            acc, loss, logits = self._compute_acc_loss(src_embs, labels, lengths)
 
             true = self.get_generated(labels[:, 1:])  # first token is <pad>
             pred = self.get_generated(logits.argmax(2))
@@ -159,13 +148,13 @@ class GraphTextGeneration(SubwordEmbedderObjective):
             scores["Accuracy"].append(acc)
             count += 1
 
-        scores = {key: sum_scores(val) for key, val in scores.items()}
+        scores = {key: self._sum_scores(val) for key, val in scores.items()}
         return scores
 
     def evaluate(self, data_split, *, neg_sampling_strategy=None, early_stopping=False, early_stopping_tolerance=20):
         loss, acc, bleu = self.evaluate_generation(data_split)
         if data_split == "val":
-            self.check_early_stopping(acc)
+            self._check_early_stopping(acc)
         return loss, acc, bleu
 
     def parameters(self, recurse: bool = True):

@@ -1,27 +1,31 @@
-from collections import Counter, namedtuple
+import pickle
+from collections import Counter
 from functools import partial
+from os.path import join
 from typing import List, Optional
 
-import pandas
+import dgl
 import numpy
-import pickle
+import pandas
+import torch
+import diskcache as dc
 
-from os.path import join
-
-from tqdm import tqdm
-
+from SourceCodeTools.code.ast.python_ast2 import PythonSharedNodes
 from SourceCodeTools.code.data.GraphStorage import OnDiskGraphStorage
 from SourceCodeTools.code.data.SQLiteStorage import SQLiteStorage
 from SourceCodeTools.code.data.dataset.SubwordMasker import SubwordMasker, NodeNameMasker, NodeClfMasker
-from SourceCodeTools.code.data.dataset.reader import load_data
+from SourceCodeTools.code.data.dataset.partition_strategies import SGPartitionStrategies, SGLabelSpec
 from SourceCodeTools.code.data.file_utils import *
+# from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_extract_node_names import extract_node_names
 # from SourceCodeTools.code.ast.python_ast import PythonSharedNodes
+from SourceCodeTools.models.graph.TargetLoader import TargetLoader
 from SourceCodeTools.nlp import token_hasher
 from SourceCodeTools.nlp.embed.bpe import make_tokenizer, load_bpe_model
 from SourceCodeTools.tabular.common import compact_property
-# from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types
-from SourceCodeTools.code.data.sourcetrail.sourcetrail_extract_node_names import extract_node_names
-import dgl, torch
+
+
+pandas.options.mode.chained_assignment = None
 
 
 def filter_dst_by_freq(elements, freq=1):
@@ -31,27 +35,154 @@ def filter_dst_by_freq(elements, freq=1):
     return target
 
 
-class NodeStringPool:
-    def __init__(self, nodeid2stringid, stringid2string):
-        self.nodeid2stringid = nodeid2stringid
-        self.stringid2string = stringid2string
+class DatasetCache:
+    def __init__(self, cache_path):
+        self.cache_path = Path(cache_path).joinpath("__cache__")
 
-    def __getitem__(self, nodeid):
-        return self.stringid2string[self.nodeid2stringid[nodeid]]
+        if not self.cache_path.is_dir():
+            self.cache_path.mkdir()
+
+        self.warned = False
+
+    def get_path_for_level(self, level):
+        if level is not None:
+            cache_path = self.cache_path.joinpath(level)
+        else:
+            cache_path = self.cache_path
+        return cache_path
+
+    @staticmethod
+    def get_filename(cache_path, cache_key):
+        return cache_path.joinpath(f"{cache_key}.pkl")
+
+    def load_cached(self, cache_key, level=None):
+        cache_path = self.get_path_for_level(level)
+        filename = self.get_filename(cache_path, cache_key)
+
+        if filename.is_file():
+            if not self.warned:
+                logging.warning("Using cached results. Remove cache if you have updated the dataset.")
+                self.warned = True
+            return pickle.load(open(filename, "rb"))
+        else:
+            return None
+
+    def write_to_cache(self, obj, cache_key, level=None):
+        cache_path = self.get_path_for_level(level)
+
+        if not cache_path.is_dir():
+            cache_path.mkdir()
+
+        filename = self.get_filename(cache_path, cache_key)
+        pickle.dump(obj, open(filename, "wb"))
+
+
+class NodeStringPool:
+    def __init__(self, node_id2string_id, string_id2string):
+        self.node_id2string_id = node_id2string_id
+        self.string_id2string = string_id2string
+
+    def __getitem__(self, node_id):
+        return self.string_id2string[self.node_id2string_id[node_id]]
 
     def items(self):
-        for nodeid, nameid in self.nodeid2stringid.items():
-            yield nodeid, self.stringid2string[nameid]
+        for node_id, name_id in self.node_id2string_id.items():
+            yield node_id, self.string_id2string[name_id]
 
 
 class NodeNamePool(NodeStringPool):
-    def __init__(self, nodeid2nameid, nameid2name):
-        super(NodeNamePool, self).__init__(nodeid2nameid, nameid2name)
+    def __init__(self, node_id2name_id, name_id2name):
+        super(NodeNamePool, self).__init__(node_id2name_id, name_id2name)
 
 
 class NodeTypePool(NodeStringPool):
-    def __init__(self, nodeid2typeid, typeid2type):
-        super(NodeTypePool, self).__init__(nodeid2typeid, typeid2type)
+    def __init__(self, node_id2type_id, type_id2type):
+        super(NodeTypePool, self).__init__(node_id2type_id, type_id2type)
+
+
+class PartitionIndex:
+    def __init__(self, partition_table=None):
+        self._partition_label_order = ["train_mask", "test_mask", "val_mask"]
+        self._index = None
+        self._exclusive_label = None
+
+        if partition_table is not None:
+            self.populate_index(partition_table)
+
+    def populate_index(self, partition_table):
+        self._index = dict()
+        self._train_set = set()
+        self._test_set = set()
+        self._val_set = set()
+
+        columns = ["id"] + self._partition_label_order
+        # variable order depends on label order in __init__
+        assert self._partition_label_order == ["train_mask", "test_mask", "val_mask"]
+        for id_, train_mask, test_mask, val_mask in partition_table[columns].values:
+            self._index[id_] = (train_mask, test_mask, val_mask)
+            if train_mask is True:
+                self._train_set.add(id_)
+            if test_mask is True:
+                self._test_set.add(id_)
+            if val_mask is True:
+                self._val_set.add(id_)
+
+        self._any_set = self._train_set | self._test_set | self._val_set
+
+    def create_exclusive(self, exclusive_label):
+        new_index = self.__class__()
+        new_index._index = self._index
+        if exclusive_label == "any_mask":
+            new_index._exclusive_label = -1
+        else:
+            new_index._exclusive_label = self._partition_label_order.index(exclusive_label)
+        return new_index
+
+    def is_partition(self, node_id, partition_label):
+        return node_id in self.get_partition_ids(partition_label)
+
+    def get_partition_ids(self, partition_label):
+        if partition_label == "any_mask":
+            partition_label_source = {"any_mask": self._any_set }  # self._train_set | self._test_set | self._val_set}
+        else:
+            partition_label_source = {
+                "train_mask": self._train_set,
+                "test_mask": self._test_set,
+                "val_mask": self._val_set,
+            }
+        if partition_label in partition_label_source:
+            p = partition_label_source[partition_label]
+        else:
+            raise ValueError(
+                f"Supported partition labels are {list(partition_label_source.keys())}, "
+                f"but {repr(partition_label)} is given"
+            )
+        return p
+
+    def is_validation(self, node_id):
+        return node_id in self._val_set
+
+    def is_test(self, node_id):
+        return node_id in self._test_set
+
+    def all_ids(self):
+        return self._train_set | self._val_set | self._test_set
+
+    def __contains__(self, item):
+        return item in self._index
+
+    def __getitem__(self, item):
+        if self._exclusive_label is None:
+            return self._index[item]
+        else:
+            if self._exclusive_label == -1:
+                return any(self._index[item])
+            return self._index[item][self._exclusive_label]
+
+    def get(self, item, default):
+        if item not in self._index:
+            return default
+        return self[item]
 
 
 class SourceGraphDataset:
@@ -66,10 +197,11 @@ class SourceGraphDataset:
     filter_edges = None
     self_loops = None
 
-    partition_columns = {
+    partition_columns_names = {
         "train": "train_mask",
         "val": "val_mask",
-        "test": "test_mak"
+        "test": "test_mask",
+        "any": "any_mask"
     }
 
     def __init__(
@@ -93,7 +225,7 @@ class SourceGraphDataset:
             3. The default label is assumed to be node type. Node types can be incorporated into the model by setting
                 node_types flag to True.
             4. Graphs require contiguous indexing of nodes. For this reason additional mapping is created that tracks
-                the relationship between the new graph id and the original node id from the training data.
+                the relationship between the new graph id and the original node id from the training data
         :param data_path: path to the directory with dataset files stored in `bz2` format
         :param use_node_types:  whether to use node types in the graph
         :param use_edge_types:  whether to use edge types in the graph
@@ -103,11 +235,10 @@ class SourceGraphDataset:
         :param random_seed: seed for generating random splits
         :param tokenizer_path:  path to bpe tokenizer, needed to process op names correctly
         :param min_count_for_objectives: minimum degree of nodes, after which they are excluded from training data
-        :param no_global_edges: whether to remove global edges from the dataset.
+        :param no_global_edges: whether to remove global edges from the dataset
         :param remove_reverse: whether to remove reverse edges from the dataset
-        :param custom_reverse: list of edges for which reverse types should be added. Used together with `remove_reverse`
-        :param package_names: list of packages that should be used for partitioning into train and test sets. Used to
-            draw a solid distinction between code in train and test sets
+        :param custom_reverse: list of edges for which reverse types should be added.
+            Used together with `remove_reverse`
         :param restricted_id_pool: path to csv file with column `node_id` that stores nodes that should be involved into
             training and testing
         :param use_ns_groups: currently not used
@@ -124,8 +255,11 @@ class SourceGraphDataset:
         self.custom_reverse = custom_reverse
         self.subgraph_id_column = subgraph_id_column
         self.subgraph_partition = subgraph_partition
-        self.partition = unpersist(partition)
+        self.partition = PartitionIndex(unpersist(partition))
         self.n_buckets = 200000
+        self._cache = DatasetCache(self.data_path)
+        self._subgraph_cache_path = tempfile.TemporaryDirectory(suffix="SubgraphCache")
+        self._subgraph_cache = dc.Cache(self._subgraph_cache_path.name)
 
         self.use_ns_groups = use_ns_groups
 
@@ -158,7 +292,7 @@ class SourceGraphDataset:
 
         # self.embeddable_names, self.name_pool = self._get_embeddable_names()
 
-        # # need to do this to avoid issues insode dgl library
+        # # need to do this to avoid issues inside dgl library
         # self.edges['type'] = self.edges['type'].apply(lambda x: f"{x}_")
         # self.edges['type_backup'] = self.edges['type']
         # if not self.edges_have_types:
@@ -175,7 +309,9 @@ class SourceGraphDataset:
         # logging.info(f"Unique edges: {len(self.edges)}, edge types: {len(self.edges['type'].unique())}")
 
     def _remove_edges_with_restricted_types(self, edges):
-        edges.query("type not in @restricted_types", local_dict={"restricted_types": self.edge_types_to_remove}, inplace=True)
+        edges.query(
+            "type not in @restricted_types", local_dict={"restricted_types": self.edge_types_to_remove}, inplace=True
+        )
 
     def _open_dataset_db(self):
         # self.dataset_db = N4jGraphStorage()
@@ -188,7 +324,7 @@ class SourceGraphDataset:
         #     self.dataset_db.import_from_files(self.data_path)
 
     def _filter_edges(self, types_to_filter):
-        logging.info(f"Filtering edge types: {types_to_filter}")
+        # logging.info(f"Filtering edge types: {types_to_filter}")
         self.edge_types_to_remove.update(types_to_filter)
 
     # def _get_all_embeddable_names(self):
@@ -212,7 +348,7 @@ class SourceGraphDataset:
         name_pool_rev = dict()
         for node_id, embeddable_name in zip(
                 nodes["id"],
-                nodes["name"].apply(self.get_embeddable_name)
+                nodes["name"].apply(self._get_embeddable_name)
         ):
             if embeddable_name not in name_pool:
                 name_pool[embeddable_name] = len(name_pool)
@@ -241,7 +377,7 @@ class SourceGraphDataset:
     def _op_tokens(self):
         if self.tokenizer_path is None:
             from SourceCodeTools.code.ast.python_tokens_to_bpe_subwords import python_ops_to_bpe
-            logging.info("Using heuristic tokenization for ops")
+            # logging.info("Using heuristic tokenization for ops")
 
             # def op_tokenize(op_name):
             #     return python_ops_to_bpe[op_name] if op_name in python_ops_to_bpe else None
@@ -474,23 +610,31 @@ class SourceGraphDataset:
             }
             return torch_types[canonical_type]
 
+        # def get_default_value(canonical_type):
+        #     default = {
+        #         "int32": -1,
+        #         "int64": -1,
+        #         "bool": False,
+        #     }
+        #     return default[canonical_type]
+
         def unpack_node_data(nodes):
             node_data = {}
             for col_name, dtype in zip(nodes.columns, nodes.dtypes):
                 if col_name in {"id", "type", "name", "type_backup"}:
                     continue
-                if col_name == "label":
-                    labels = nodes[["id", "label"]].dropna()
-                    mapping = dict(zip(labels["id"], labels[col_name]))
-                    has_label_mask = torch.tensor(
-                        [node_id in mapping for node_id in range(nodes["id"].max() + 1)],
-                        dtype=torch.bool
-                    )
-                    node_data["has_label"] = has_label_mask
-                else:
-                    mapping = dict(zip(nodes["id"], nodes[col_name]))
+                # if col_name == "label":
+                #     labels = nodes[["id", "label"]].dropna()
+                #     mapping = dict(zip(labels["id"], labels[col_name]))
+                #     has_label_mask = torch.tensor(
+                #         [node_id in mapping for node_id in range(nodes["id"].max() + 1)],
+                #         dtype=torch.bool
+                #     )
+                #     node_data["has_label"] = has_label_mask
+                # else:
+                mapping = dict(zip(nodes["id"], nodes[col_name]))
                 node_data[col_name] = torch.tensor(
-                    [mapping.get(node_id, 0) for node_id in range(num_nodes)],
+                    [mapping.get(node_id, -1) for node_id in range(num_nodes)],
                     dtype=get_torch_dtype(get_canonical_type(dtype))
                 )
             return node_data
@@ -511,7 +655,9 @@ class SourceGraphDataset:
         for src_type, type, dst_type in possible_edge_signatures[["src_type", "type", "dst_type"]].values:  #
             subgraph_signature = (src_type, type, dst_type)
 
-            subset = edges_table.query(f"select * from edges where src_type = '{src_type}' and type = '{type}' and dst_type = '{dst_type}'")
+            subset = edges_table.query(
+                f"select * from edges where src_type = '{src_type}' and type = '{type}' and dst_type = '{dst_type}'"
+            )
             # subset = edges.query(
             #     f"src_type == '{src_type}' and type == '{type}' and dst_type == '{dst_type}'"
             # )
@@ -523,10 +669,9 @@ class SourceGraphDataset:
                 )
             )
 
-        logging.info(
-            f"Unique triplet types in the graph: {len(typed_subgraphs.keys())}"
-        )
-
+        # logging.info(
+        #     f"Unique triplet types in the graph: {len(typed_subgraphs.keys())}"
+        # )
 
         num_nodes = nodes["id"].max() + 1
         graph = dgl.heterograph(typed_subgraphs, num_nodes_dict={ntype: num_nodes for ntype in nodes["type"].unique()})
@@ -535,25 +680,24 @@ class SourceGraphDataset:
 
             node_data = unpack_node_data(nodes)
 
-            def add_node_data_to_graph(graph, col_name, data, canonical_type):
-                data = torch.tensor(data, dtype=get_torch_dtype(canonical_type))
-                graph.nodes[ntype].data[col_name] = data
+            # def add_node_data_to_graph(graph, col_name, data, canonical_type):
+            #     data = torch.tensor(data, dtype=get_torch_dtype(canonical_type))
+            #     graph.nodes[ntype].data[col_name] = data
 
             for ntype in graph.ntypes:
-                valid_subset = set(nodes_table.query(f"select id from nodes where type = '{ntype}'")["id"])
-                node_ids_for_ntype = graph.nodes(ntype)
-                valid_mask = torch.tensor(
-                    [node_id in valid_subset for node_id in node_ids_for_ntype.tolist()],
+                current_type_subset = set(nodes_table.query(f"select id from nodes where type = '{ntype}'")["id"])
+                node_ids_for_ntype = graph.nodes(ntype)  # all ntypes contain all nodes
+                current_type_mask = torch.tensor(
+                    # check memory consumption here
+                    [node_id in current_type_subset for node_id in node_ids_for_ntype.tolist()],
                     dtype=get_torch_dtype("bool")
                 )
-                graph.nodes[ntype].data["valid"] = valid_mask
+                graph.nodes[ntype].data["current_type_mask"] = current_type_mask
                 for col_name in node_data:
                     graph.nodes[ntype].data[col_name] = node_data[col_name]
 
         attach_node_data(graph, nodes)
         return graph
-
-
 
         # node_types = dict(zip(self.node_types['str_type'], self.node_types['int_type']))
 
@@ -587,13 +731,250 @@ class SourceGraphDataset:
     #
     #     return nodes, edges
 
+    # def _get_negative_sample_groups(self):
+    #     # TODO
+    #     return self.nodes[["id", "mentioned_in"]].dropna(axis=0)
+
+    @staticmethod
+    def _get_name_group(name):
+        parts = name.split("@")
+        if len(parts) == 1:
+            return pd.NA
+        elif len(parts) == 2:
+            local_name, group = parts
+            return group
+        return pd.NA
+
+    @staticmethod
+    def _get_embeddable_name(name):
+        if "@" in name:
+            return name.split("@")[0]
+        elif "_0x" in name:
+            return name.split("_0x")[0]
+        else:
+            return name
+
+    # @classmethod
+    # def load(cls, path, args):
+    #     dataset = pickle.load(open(path, "rb"))
+    #     dataset.data_path = args["data_path"]
+    #     if dataset.tokenizer_path is not None:
+    #         dataset.tokenizer_path = args["tokenizer"]
+    #     return dataset
+
+    def _get_node_name2bucket_mapping(self, node_id2name):
+        return {key: token_hasher(val, self.n_buckets) for key, val in node_id2name.items()}
+
+    # def _prepare_subgraph(self, seed_nodes, number_of_hops):
+    #     seen_nodes = set(seed_nodes)
+    #     nodes_for_query = seed_nodes
+    #
+    #     for _ in range(number_of_hops):
+    #         inbound_neighbors = set(self.dataset_db.get_inbound_neighbors(nodes_for_query))
+    #         nodes_for_query = inbound_neighbors - seen_nodes
+    #         seen_nodes.update(inbound_neighbors)
+    #
+    #     nodes, edges = self.dataset_db.get_subgraph_from_node_ids(seen_nodes)
+    #
+    #     edges.query("type not in @restricted_types", local_dict={"restricted_types": self.edge_types_to_remove}, inplace=True)
+    #
+    #     if len(edges) == 0:
+    #         return None
+    #
+    #     return self._create_hetero_graph(nodes, edges)
+
+    @staticmethod
+    def _strip_types_if_needed(value, stripping_flag, stripped_type):
+        if not stripping_flag:
+            return stripped_type
+        else:
+            return f"{value}_"
+
+    def _adjust_types(self, nodes, edges):
+        nodes["type_backup"] = nodes["type"]
+        edges["type_backup"] = edges["type"]
+
+        nodes.eval(
+            "type = type.map(@strip)",
+            local_dict={
+                "strip": partial(self._strip_types_if_needed, stripping_flag=self.use_node_types, stripped_type="node_")
+            },
+            inplace=True
+        )
+        edges.eval(
+            "type = type.map(@strip)",
+            local_dict={
+                "strip": partial(self._strip_types_if_needed, stripping_flag=self.use_edge_types, stripped_type="edge_")
+            },
+            inplace=True
+        )
+
+    @staticmethod
+    def _prepare_node_type_pool(nodes):
+        # could be updated gradually to prevent from repeating this every epoch
+        mapping, inv_index = compact_property(nodes["type"], return_order=True)
+        nodeid2typeid = dict(zip(nodes["id"], nodes["type"].map(mapping.get)))
+        return NodeTypePool(nodeid2typeid, inv_index)
+
+    def _get_partition_ids(self, partition_label):
+        partition_label = self.partition_columns_names[partition_label]  # get name for the partition mask
+        return self.partition.get_partition_ids(partition_label)
+
+    def _attach_info_to_label(self, labels, labels_for, group_by):
+        if labels_for == SGLabelSpec.nodes:
+            labels, new_col_name = self.dataset_db.get_info_for_node_ids(labels["src"], group_by)
+            labels.rename({new_col_name: "group"}, axis=1, inplace=True)
+        elif labels_for == SGLabelSpec.edges:
+            raise NotImplementedError("Grouping for labels for edges is currently not supported")
+        elif labels_for == SGLabelSpec.subgraphs:
+            # no grouping
+            pass
+        else:
+            raise ValueError()
+
+        return labels
+
+    @staticmethod
+    def _get_df_hash(table):
+        return str(pandas.util.hash_pandas_object(table).sum())
+
+    def _write_to_cache(self, obj, cache_key, level=None):
+        self._cache.write_to_cache(obj, cache_key, level)
+
+    def _load_cache_if_exists(self, cache_key, level=None):
+        return self._cache.load_cached(cache_key, level)
+
+    def get_proper_partition_column_name(self, partition_label):
+        return self.partition_columns_names[partition_label]
+
+    def get_labels_for_partition(self, labels, partition_label, labels_for, group_by=SGPartitionStrategies.package):
+
+        cache_key = f"{self._get_df_hash(labels)}_{partition_label}_{labels_for}_{group_by.name}"
+        cached_result = self._load_cache_if_exists(cache_key)
+        if cached_result is not None:
+            return cached_result
+
+        # allowed_labels_for = {"nodes", "edges", "subgraphs"}
+        # assert labels_for in allowed_labels_for, f"{labels_for} not in {allowed_labels_for}"
+
+        original_label_map = dict(zip(labels["src"], labels["dst"]))
+
+        partition_ids = self._get_partition_ids(partition_label)
+        labels_from_partition = labels.query("src in @partition_ids", local_dict={"partition_ids": partition_ids})
+
+        labels_ = self._attach_info_to_label(labels_from_partition, labels_for, group_by)
+        labels_.eval(
+            "dst = src.map(@original_label_map.get)",
+            local_dict={"original_label_map": original_label_map},
+            inplace=True
+        )
+
+        self._write_to_cache(labels_, cache_key)
+        return labels_
+
+    def inference_mode(self):
+        shared_node_types = PythonSharedNodes.shared_node_types
+        type_filter = [ntype for ntype in self.dataset_db.get_node_type_descriptions() if ntype not in shared_node_types]
+        nodes = self.dataset_db.get_nodes(type_filter=type_filter)
+        nodes["train_mask"] = True
+        nodes["test_mask"] = True
+        nodes["val_mask"] = True
+
+        self.train_partition = self.partition
+        self.partition = PartitionIndex(nodes)
+        self.inference_labels = nodes[["id", "type"]].rename({"id": "src", "type": "dst"}, axis=1)
+
+    def get_cache_key(self, how, group):
+        return f"{how.name}_{group}"
+
+    def iterate_subgraphs(self, how, groups, node_data, edge_data):
+
+        iterator = self.dataset_db.iterate_subgraphs(how, groups)
+
+        def add_data(table, data_dict):
+            boolean_fields = {"train_mask", "test_mask", "val_mask", "has_label", "any_mask"}
+            for key in data_dict:
+                table.eval(
+                    f"{key} = id.map(@mapper)",
+                    local_dict={"mapper": lambda x: data_dict[key].get(x, pd.NA)},
+                    inplace=True
+                )
+                if key in boolean_fields:
+                    table[key].fillna(False, inplace=True)
+            if "label" in data_dict:
+                table["label"] = table["label"].astype("Int64")
+            # if "has_label" in data_dict:
+            #     table["has_label"].fillna(False, inplace=True)
+
+        # subgraph_ids = self.dataset_db.get_subgraph_ids(how)
+        # subgraph_load_fn = self.dataset_db.get_subgraph_load_fn(how)
+        #
+        # for subgraph_id in subgraph_ids:
+        #     cache_key = self.dataset_db.get_cache_key(how, subgraph_id)
+        #     if cache_key in self._subgraph_cache:
+        #         nodes, edges, subgraph = self._subgraph_cache[cache_key]
+        #     else:
+        #         nodes, edges = subgraph_load_fn(subgraph_id)
+        #
+        #         self._remove_edges_with_restricted_types(edges)
+        #
+        #         if self.custom_reverse is not None:
+        #             edges = self._add_custom_reverse(edges)
+        #
+        #         self.ensure_connectedness(nodes, edges)
+        #
+        #         node_name_mapping = self._get_embeddable_names(nodes)
+        #         node_data["embedding_id"] = self._get_node_name2bucket_mapping(node_name_mapping)
+        #         # node_type_pool = self._prepare_node_type_pool(nodes)
+        #
+        #         self._adjust_types(nodes, edges)
+        #
+        #         add_data(nodes, node_data)
+        #         add_data(edges, edge_data)
+        #
+        #         if len(edges) > 0:
+        #             subgraph = self._create_hetero_graph(nodes, edges)
+        #         else:
+        #             subgraph = "empty"
+        #
+        #         self._write_to_cache((nodes, edges, subgraph), cache_key)
+        #     if subgraph != "empty":
+        #         yield subgraph_id, nodes, edges, subgraph
+
+        for group, nodes, edges in iterator:
+            # cache_key = self.get_cache_key(how, group)
+            # if cache_key not in self._subgraph_cache:
+            self._remove_edges_with_restricted_types(edges)
+
+            if self.custom_reverse is not None:
+                edges = self._add_custom_reverse(edges)
+            self.ensure_connectedness(nodes, edges)
+
+            node_name_mapping = self._get_embeddable_names(nodes)
+            node_data["embedding_id"] = self._get_node_name2bucket_mapping(node_name_mapping)
+            # node_type_pool = self._prepare_node_type_pool(nodes)
+
+            self._adjust_types(nodes, edges)
+
+            add_data(nodes, node_data)
+            add_data(edges, edge_data)
+
+            if len(edges) > 0:
+                cache_key = self._get_df_hash(nodes) + self._get_df_hash(edges)
+                subgraph = self._load_cache_if_exists(cache_key)
+                if subgraph is None:
+                    subgraph = self._create_hetero_graph(nodes, edges)
+                    self._write_to_cache(subgraph, cache_key)
+
+                yield group, nodes, edges, subgraph
+
     @staticmethod
     def holdout(nodes: pd.DataFrame, edges: pd.DataFrame, holdout_size=10000, random_seed=42):
         """
         Create a set of holdout edges, ensure that there are no orphan nodes after these edges are removed.
         :param nodes:
         :param edges:
-        :param holdout_frac:
+        :param holdout_size:
         :param random_seed:
         :return:
         """
@@ -633,16 +1014,6 @@ class SourceGraphDataset:
         assert len(edges) == edges["id"].unique().size
 
         return nodes, train_edges, heldout_edges
-
-    @staticmethod
-    def get_name_group(name):
-        parts = name.split("@")
-        if len(parts) == 1:
-            return pd.NA
-        elif len(parts) == 2:
-            local_name, group = parts
-            return group
-        return pd.NA
 
     # @staticmethod
     # def create_train_val_test_masks(nodes, train_idx, val_idx, test_idx):
@@ -754,14 +1125,21 @@ class SourceGraphDataset:
 
         return types
 
-    @staticmethod
-    def get_embeddable_name(name):
-        if "@" in name:
-            return name.split("@")[0]
-        elif "_0x" in name:
-            return name.split("_0x")[0]
-        else:
-            return name
+    def get_graph_types(self):
+        ntypes = self.dataset_db.get_node_type_descriptions()
+        etypes = self.dataset_db.get_edge_type_descriptions()
+
+        return list(
+            map(
+                partial(self._strip_types_if_needed, stripping_flag=self.use_node_types, stripped_type="node_"),
+                ntypes
+            )
+        ), list(
+            map(
+                partial(self._strip_types_if_needed, stripping_flag=self.use_edge_types, stripped_type="edge_"),
+                etypes
+            )
+        )
 
     @staticmethod
     def ensure_connectedness(nodes: pandas.DataFrame, edges: pandas.DataFrame):
@@ -772,21 +1150,21 @@ class SourceGraphDataset:
         :return:
         """
 
-        logging.info(
-            f"Filtering isolated nodes. "
-            f"Starting from {nodes.shape[0]} nodes and {edges.shape[0]} edges...",
-        )
+        # logging.info(
+        #     f"Filtering isolated nodes. "
+        #     f"Starting from {nodes.shape[0]} nodes and {edges.shape[0]} edges...",
+        # )
         unique_nodes = set(edges['src']) | set(edges['dst'])
         num_unique_existing_nodes = nodes["id"].nunique()
 
         if len(unique_nodes) == num_unique_existing_nodes:
             return
 
-        nodes.query("id not in @unique_nodes", local_dict={"unique_nodes": unique_nodes}, inplace=True)
+        nodes.query("id in @unique_nodes", local_dict={"unique_nodes": unique_nodes}, inplace=True)
 
-        logging.info(
-            f"Ending up with {nodes.shape[0]} nodes and {edges.shape[0]} edges"
-        )
+        # logging.info(
+        #     f"Ending up with {nodes.shape[0]} nodes and {edges.shape[0]} edges"
+        # )
 
     @staticmethod
     def ensure_valid_edges(nodes, edges, ignore_src=False):
@@ -831,54 +1209,68 @@ class SourceGraphDataset:
     # def get_global_node_id(self, node_id, node_type=None):
     #     return self.node_id_to_global_id[node_id]
 
-    def load_node_names(self, nodes, min_count=None):
+    def load_node_names(self, nodes=None, min_count=None):
         """
         :return: DataFrame that contains mappings from nodes to names that appear more than once in the graph
         """
-        for_training = nodes.query(
-            "train_mask == True or test_mask == True or val_mask == True"
-        )[['id', 'type_backup', 'name']]\
-            .rename({"name": "serialized_name", "type_backup": "type"}, axis=1)
-        # for_training = nodes[
-        #     nodes['train_mask'] | nodes['test_mask'] | nodes['val_mask']
-        # ][['id', 'type_backup', 'name']]\
-        #     .rename({"name": "serialized_name", "type_backup": "type"}, axis=1)
 
-        # TODO
-        # check ho this change affects performance
-        for_training.query("type == 'mention'", inplace=True)
-
-        # global_node_types = set(node_types.values())
-        # for_training.query("type not in @global", local_dict={"global": global_node_types}, inplace=True)
-        # # for_training = for_training[
-        # #     for_training["type"].apply(lambda x: x not in global_node_types)
-        # # ]
+        names_for = "mention"
 
         if min_count is None:
             min_count = self.min_count_for_objectives
 
-        node_names = extract_node_names(for_training, 0)
-        node_names = filter_dst_by_freq(node_names, freq=min_count)
+        if nodes is None:
+            logging.info("Loading node names from database")
+            nodes = self.dataset_db.get_nodes(type_filter=[names_for])
 
-        return node_names
-        # path = join(self.data_path, "node_names.bz2")
-        # return unpersist(path)
+        if "train_mask" in nodes.columns:
+            for_training = nodes.query(
+                "train_mask == True or test_mask == True or val_mask == True"
+            )[['id', 'type_backup', 'name']]\
+                .rename({"name": "serialized_name", "type_backup": "type"}, axis=1)
+        else:
+            # assuming all these nodes are in train, test, or validation sets
+            for_training = nodes
+
+        for_training.query(f"type == '{names_for}'", inplace=True)
+
+        cache_key = f"{self._get_df_hash(for_training)}_{min_count}"
+        result = self._load_cache_if_exists(cache_key)
+
+        if result is None:
+
+            node_names = extract_node_names(for_training, 0)
+            node_names = filter_dst_by_freq(node_names, freq=min_count)
+
+            result = node_names
+            self._write_to_cache(result, cache_key)
+
+        return result
 
     def load_subgraph_function_names(self):
         names_path = os.path.join(self.data_path, "common_name_mappings.json.bz2")
         names = unpersist(names_path)
 
-        fname2gname = dict(zip(names["ast_name"], names["proper_names"]))
+        function_name2graph_name = dict(zip(names["ast_name"], names["proper_names"]))
 
-        functions = self.nodes.query(
-            "id in @functions", local_dict={"functions": set(self.nodes["mentioned_in"])}
-        ).query("type_backup == 'FunctionDef'")
+        # functions = self.nodes.query(
+        #     "id in @functions", local_dict={"functions": set(self.nodes["mentioned_in"])}
+        # ).query("type_backup == 'FunctionDef'")
+        functions = self.dataset_db.get_nodes(type_filter=['FunctionDef'])
 
-        functions["gname"] = functions["name"].apply(lambda x: fname2gname.get(x, pd.NA))
-        functions = functions.dropna(axis=0)
-        functions["gname"] = functions["gname"].apply(lambda x: x.split(".")[-1])
+        cache_key = f"{self._get_df_hash(names)}_{self._get_df_hash(functions)}"
+        result = self._load_cache_if_exists(cache_key)
 
-        return functions.rename({"id": "src", "gname": "dst"}, axis=1)[["src", "dst"]]
+        if result is None:
+            functions["gname"] = functions["name"].apply(lambda x: function_name2graph_name.get(x, pd.NA))
+            functions = functions.dropna(axis=0)
+            functions["gname"] = functions["gname"].apply(lambda x: x.split(".")[-1])
+
+            result = functions.rename({"id": "src", "gname": "dst"}, axis=1)[["src", "dst"]]
+
+            self._write_to_cache(result, cache_key)
+
+        return result
 
     def load_var_use(self):
         """
@@ -901,125 +1293,99 @@ class SourceGraphDataset:
         :return: DataFrame that contains mappings from local mentions to names that these mentions represent. Applies
             only to nodes that have subwords and have appeared in a scope (names have `@` in their names)
         """
-        if self.use_edge_types:
-            edges = self.edges.query("type == 'subword_'")
-        else:
-            edges = self.edges.query("type_backup == 'subword_'")
 
-        target_nodes = set(edges["dst"].to_list())
-        target_nodes = self.nodes.query("id in @target_nodes", local_dict={"target_nodes": target_nodes})[["id", "name"]]
+        target_nodes = self.dataset_db.get_nodes_with_subwords()
 
-        name_extr = lambda x: x.split('@')[0]
-        # target_nodes.eval("group = name.map(@get_group)", local_dict={"get_group": get_name_group}, inplace=True)
-        # target_nodes.dropna(axis=0, inplace=True)
-        target_nodes.eval("name = name.map(@name_extr)", local_dict={"name_extr": name_extr}, inplace=True)
-        target_nodes.rename({"id": "src", "name": "dst"}, axis=1, inplace=True)
-        target_nodes = filter_dst_by_freq(target_nodes, freq=self.min_count_for_objectives)
-        # target_nodes.eval("cooccurr = dst.map(@occ)", local_dict={"occ": lambda name: name_cooccurr_freq.get(name, Counter())}, inplace=True)
+        cache_key = f"{self._get_df_hash(target_nodes)}_{self.min_count_for_objectives}"
+        result = self._load_cache_if_exists(cache_key)
 
-        return target_nodes
+        if result is None:
+
+            def name_extr(name):
+                return name.split('@')[0]
+
+            # target_nodes.eval("group = name.map(@get_group)", local_dict={"get_group": self._get_name_group}, inplace=True)
+            # target_nodes.dropna(axis=0, inplace=True)
+            target_nodes.eval("name = name.map(@name_extr)", local_dict={"name_extr": name_extr}, inplace=True)
+            target_nodes.rename({"id": "src", "name": "dst"}, axis=1, inplace=True)
+            target_nodes = filter_dst_by_freq(target_nodes, freq=self.min_count_for_objectives)
+            # target_nodes.eval("cooccurr = dst.map(@occ)", local_dict={"occ": lambda name: name_cooccurr_freq.get(name, Counter())}, inplace=True)
+
+            result = target_nodes
+            self._write_to_cache(result, cache_key)
+
+        return result
 
     def load_global_edges_prediction(self):
 
-        nodes_path = join(self.data_path, "common_nodes.json.bz2")
-        edges_path = join(self.data_path, "common_edges.json.bz2")
-
-        _, edges = load_data(nodes_path, edges_path)
-
         global_edges = self.get_global_edges()
         global_edges = global_edges - {"defines", "defined_in"}  # these edges are already in AST?
-        global_edges.add("global_mention")
+        # global_edges.add("global_mention")
 
-        is_global = lambda type: type in global_edges
-        edges = edges.query("type.map(@is_global)", local_dict={"is_global": is_global})
+        cache_key = self._get_df_hash(pd.Series(sorted(list(global_edges))))
+        result = self._load_cache_if_exists(cache_key)
+        if result is None:
+            edges = self.dataset_db.get_edges(type_filter=global_edges)
 
-        edges.rename(
-            {
-                "source_node_id": "src",
-                "target_node_id": "dst"
-            }, inplace=True, axis=1
-        )
+            result = edges[["src", "dst"]]
+            self._write_to_cache(result, cache_key)
 
-        return edges[["src", "dst"]]
+        return result
 
     def load_edge_prediction(self):
 
-        nodes_path = join(self.data_path, "common_nodes.json.bz2")
-        edges_path = join(self.data_path, "common_edges.json.bz2")
+        edge_types = self.dataset_db.get_edge_type_descriptions()
 
-        _, edges = load_data(nodes_path, edges_path)
+        # when using this objective remove following edges
+        # defined_in_*, executed_*, prev, next, *global_edges
+        edge_types_for_prediction = {
+            "next", "prev", "defined_in_module", "defined_in_class", "defined_in_function"
+        } | {etype for etype in edge_types if etype.startswith("executed_")}
 
-        edges.rename(
-            {
-                "source_node_id": "src",
-                "target_node_id": "dst"
-            }, inplace=True, axis=1
-        )
+        cache_key = self._get_df_hash(pd.Series(sorted(list(edge_types_for_prediction))))
+        result = self._load_cache_if_exists(cache_key)
+        if result is None:
+            edges = self.dataset_db.get_edges(type_filter=edge_types_for_prediction)
 
-        global_edges = {"global_mention", "subword", "next", "prev"}
-        global_edges = global_edges | {"mention_scope", "defined_in_module", "defined_in_class", "defined_in_function"}
+            # if self.use_ns_groups:
+            #     groups = self.get_negative_sample_groups()
+            #     valid_nodes = valid_nodes.intersection(set(groups["id"].tolist()))
 
-        if self.no_global_edges:
-            global_edges = global_edges | self.get_global_edges()
+            result = edges[["src", "dst", "type"]]
+            self._write_to_cache(result, cache_key)
 
-        global_edges = global_edges | set(edge + "_rev" for edge in global_edges)
-        is_ast = lambda type: type not in global_edges
-        edges = edges.query("type.map(@is_ast)", local_dict={"is_ast": is_ast})
-        edges = edges[edges["type"].apply(lambda type_: not type_.endswith("_rev"))]
-
-        valid_nodes = set(edges["src"].tolist())
-        valid_nodes = valid_nodes.intersection(set(edges["dst"].tolist()))
-
-        # if self.use_ns_groups:
-        #     groups = self.get_negative_sample_groups()
-        #     valid_nodes = valid_nodes.intersection(set(groups["id"].tolist()))
-
-        edges = edges[
-            edges["src"].apply(lambda id_: id_ in valid_nodes)
-        ]
-        edges = edges[
-            edges["dst"].apply(lambda id_: id_ in valid_nodes)
-        ]
-
-        return edges[["src", "dst", "type"]]
+        return result
 
     def load_type_prediction(self):
 
         type_ann = unpersist(join(self.data_path, "type_annotations.json.bz2"))
 
-        filter_rule = lambda name: "0x" not in name
+        cache_key = f"{self._get_df_hash(type_ann)}_{self.min_count_for_objectives}"
+        result = self._load_cache_if_exists(cache_key)
 
-        type_ann = type_ann[
-            type_ann["dst"].apply(filter_rule)
-        ]
+        if result is None:
+            node2id = self.dataset_db.get_node_types()
 
-        node2id = dict(zip(self.nodes["id"], self.nodes["type_backup"]))
-        type_ann = type_ann[
-            type_ann["src"].apply(lambda id_: id_ in node2id)
-        ]
+            type_ann["src_type"] = type_ann["src"].apply(lambda x: node2id[x])
 
-        type_ann["src_type"] = type_ann["src"].apply(lambda x: node2id[x])
+            type_ann = type_ann[
+                type_ann["src_type"].apply(lambda type_: type_ in {"mention"})  # FunctionDef {"arg", "AnnAssign"})
+            ]
 
-        type_ann = type_ann[
-            type_ann["src_type"].apply(lambda type_: type_ in {"mention"})  # FunctionDef {"arg", "AnnAssign"})
-        ]
-
-        norm = lambda x: x.strip("\"").strip("'").split("[")[0].split(".")[-1]
-
-        type_ann["dst"] = type_ann["dst"].apply(norm)
-        type_ann = filter_dst_by_freq(type_ann, self.min_count_for_objectives)
-        type_ann = type_ann[["src", "dst"]]
+            type_ann["dst"] = type_ann["dst"].apply(lambda x: x.strip("\"").strip("'").split("[")[0].split(".")[-1])
+            type_ann = filter_dst_by_freq(type_ann, self.min_count_for_objectives)
+            type_ann = type_ann[["src", "dst"]]
+            result = type_ann
+            self._write_to_cache(result, cache_key)
 
         return type_ann
 
     def load_cubert_subgraph_labels(self):
-
         filecontent = unpersist(join(self.data_path, "common_filecontent.json.bz2"))
         return filecontent[["id", "label"]].rename({"id": "src", "label": "dst"}, axis=1)
 
     def load_docstring(self):
-
-        docstrings_path = os.path.join(self.data_path, "common_source_graph_bodies.json.bz2")
+        docstrings_path = os.path.join(self.data_path, "common_bodies.json.bz2")
 
         dosctrings = unpersist(docstrings_path)[["id", "docstring"]]
 
@@ -1041,308 +1407,81 @@ class SourceGraphDataset:
         return dosctrings
 
     def load_node_classes(self):
-        have_inbound = set(self.edges["dst"].tolist())
-        labels = self.nodes.query("train_mask == True or test_mask == True or val_mask == True")[["id", "type_backup"]].rename({
-            "id": "src",
-            "type_backup": "dst"
-        }, axis=1)
+        # TODO
+        labels = self.dataset_db.get_nodes_for_classification()
+        labels.query("src.map(@in_partition)", local_dict={"in_partition": lambda x: x in self.partition}, inplace=True)
 
-        labels = labels[
-            labels["src"].apply(lambda id_: id_ in have_inbound)
-        ]
         return labels
 
-    def buckets_from_pretrained_embeddings(self, pretrained_path, n_buckets):
+    # def buckets_from_pretrained_embeddings(self, pretrained_path, n_buckets):
+    #
+    #     from SourceCodeTools.nlp.embed.fasttext import load_w2v_map
+    #     from SourceCodeTools.nlp import token_hasher
+    #     pretrained = load_w2v_map(pretrained_path)
+    #
+    #     import numpy as np
+    #
+    #     embs_init = np.random.randn(n_buckets, pretrained.n_dims).astype(np.float32)
+    #
+    #     for word in pretrained.keys():
+    #         ind = token_hasher(word, n_buckets)
+    #         embs_init[ind, :] = pretrained[word]
+    #
+    #     def op_embedding(op_tokens):
+    #         embedding = None
+    #         for token in op_tokens:
+    #             token_emb = pretrained.get(token, None)
+    #             if embedding is None:
+    #                 embedding = token_emb
+    #             else:
+    #                 embedding = embedding + token_emb
+    #         return embedding
+    #
+    #     python_ops_to_bpe = self._op_tokens()
+    #     for op, op_tokens in python_ops_to_bpe.items():
+    #         op_emb = op_embedding(op_tokens)
+    #         if op_emb is not None:
+    #             op_ind = token_hasher(op, n_buckets)
+    #             embs_init[op_ind, :] = op_emb
+    #
+    #     return embs_init
 
-        from SourceCodeTools.nlp.embed.fasttext import load_w2v_map
-        from SourceCodeTools.nlp import token_hasher
-        pretrained = load_w2v_map(pretrained_path)
-
-        import numpy as np
-
-        embs_init = np.random.randn(n_buckets, pretrained.n_dims).astype(np.float32)
-
-        for word in pretrained.keys():
-            ind = token_hasher(word, n_buckets)
-            embs_init[ind, :] = pretrained[word]
-
-        def op_embedding(op_tokens):
-            embedding = None
-            for token in op_tokens:
-                token_emb = pretrained.get(token, None)
-                if embedding is None:
-                    embedding = token_emb
-                else:
-                    embedding = embedding + token_emb
-            return embedding
-
-        python_ops_to_bpe = self._op_tokens()
-        for op, op_tokens in python_ops_to_bpe.items():
-            op_emb = op_embedding(op_tokens)
-            if op_emb is not None:
-                op_ind = token_hasher(op, n_buckets)
-                embs_init[op_ind, :] = op_emb
-
-        return embs_init
-
-    def create_subword_masker(self):
+    def create_subword_masker(self, nodes, edges):
         """
         :return: SubwordMasker for all nodes that have subwords. Suitable for token prediction objective.
         """
-        return SubwordMasker(self.nodes, self.edges)
+        # TODO
+        return SubwordMasker(nodes, edges)
 
     def create_variable_name_masker(self, nodes, edges):
         """
-        :param tokenizer_path: path to bpe tokenizer
         :return: SubwordMasker for function nodes. Suitable for variable name use prediction objective
         """
         return NodeNameMasker(nodes, edges, self.load_var_use(), self.tokenizer_path)
 
     def create_node_name_masker(self, nodes, edges):
         """
-        :param tokenizer_path: path to bpe tokenizer
         :return: SubwordMasker for function nodes. Suitable for node name use prediction objective
         """
         return NodeNameMasker(nodes, edges, self.load_node_names(nodes, min_count=0), self.tokenizer_path)
 
     def create_node_clf_masker(self, nodes, edges):
         """
-        :param tokenizer_path: path to bpe tokenizer
         :return: SubwordMasker for function nodes. Suitable for node name use prediction objective
         """
         return NodeClfMasker(nodes, edges)
 
-    def get_negative_sample_groups(self):
-        return self.nodes[["id", "mentioned_in"]].dropna(axis=0)
-
-    @property
-    def subgraph_mapping(self):
-        assert self.subgraph_id_column is not None, "`subgraph_id_column` was not provided"
-
-        id2type = dict(zip(self.nodes["id"], self.nodes["type"]))
-
-        subgraph_mapping = dict()
-
-        def add_item(subgraph_dict, node_id):
-            type_ = id2type[node_id]
-
-            if type_ not in subgraph_dict:
-                subgraph_dict[type_] = set()
-
-            subgraph_dict[type_].add(self.typed_id_map[type_][node_id])
-
-        for src, dst, subgraph_id in self.edges[["src", "dst", self.subgraph_id_column]].values:
-            if subgraph_id not in subgraph_mapping:
-                subgraph_mapping[subgraph_id] = dict()
-
-            subgraph_dict = subgraph_mapping[subgraph_id]
-            add_item(subgraph_dict, src)
-            add_item(subgraph_dict, dst)
-
-        for subgraph_id, subgraph_dict in subgraph_mapping.items():
-            for type_ in subgraph_dict:
-                subgraph_dict[type_] = list(subgraph_dict[type_])
-
-        return subgraph_mapping
-
-    # @classmethod
-    # def load(cls, path, args):
-    #     dataset = pickle.load(open(path, "rb"))
-    #     dataset.data_path = args["data_path"]
-    #     if dataset.tokenizer_path is not None:
-    #         dataset.tokenizer_path = args["tokenizer"]
-    #     return dataset
-
-    def _get_node_name2bucket_mapping(self, node_id2name):
-        return {key: token_hasher(val, self.n_buckets) for key, val in node_id2name.items()}
-
-    # def _prepare_subgraph(self, seed_nodes, number_of_hops):
-    #     seen_nodes = set(seed_nodes)
-    #     nodes_for_query = seed_nodes
-    #
-    #     for _ in range(number_of_hops):
-    #         inbound_neighbors = set(self.dataset_db.get_inbound_neighbors(nodes_for_query))
-    #         nodes_for_query = inbound_neighbors - seen_nodes
-    #         seen_nodes.update(inbound_neighbors)
-    #
-    #     nodes, edges = self.dataset_db.get_subgraph_from_node_ids(seen_nodes)
-    #
-    #     edges.query("type not in @restricted_types", local_dict={"restricted_types": self.edge_types_to_remove}, inplace=True)
-    #
-    #     if len(edges) == 0:
-    #         return None
-    #
-    #     return self._create_hetero_graph(nodes, edges)
-
-    def _adjust_types(self, nodes, edges):
-        def _strip_types_if_needed(value, stripping_flag, stripped_type):
-            if not stripping_flag:
-                return stripped_type
-            else:
-                return f"{value}_"
-
-        nodes["type_backup"] = nodes["type"]
-        edges["type_backup"] = edges["type"]
-
-        nodes.eval(
-            "type = type.map(@strip)",
-            local_dict={"strip":partial(_strip_types_if_needed, stripping_flag=self.use_node_types, stripped_type="node_")},
-            inplace=True
-        )
-        edges.eval(
-            "type = type.map(@strip)",
-            local_dict={"strip": partial(_strip_types_if_needed, stripping_flag=self.use_edge_types, stripped_type="edge_")},
-            inplace=True
-        )
-
-    def prepare_node_type_pool(self, nodes):
-        # could be updated gradually to prevent from repeating this every epoch
-        mapping, inv_index = compact_property(nodes["type"], return_order=True)
-        nodeid2typeid = dict(zip(nodes["id"], nodes["type"].map(mapping.get)))
-        return NodeTypePool(nodeid2typeid, inv_index)
-
-    def subgraph_iterator(self):
-        return self.dataset_db.iterate_packages()
-
-    def _iterate_subgraphs(self, node_data, edge_data, masker_fn=None, node_labels=None, edge_labels=None):
-
-        def add_data(table, data_dict):
-            for key in data_dict:
-                table.eval(f"{key} = id.map(@mapper)", local_dict={"mapper": lambda x: data_dict[key].get(x, pd.NA)}, inplace=True)
-            if "label" in data_dict:
-                table["label"] = table["label"].astype("Int64")
-
-        def prepare_labels(label_pack):
-            return label_pack.label_loader(label_pack.labels, **label_pack.label_loader_params)
-
-        node_labels_loader = None
-        edge_labels_loader = None
-
-        if node_labels is not None:
-            node_labels_loader = prepare_labels(node_labels)
-
-        if edge_labels is not None:
-            edge_labels_loader = prepare_labels(edge_labels)
-
-        for nodes, edges in self.subgraph_iterator():
-            self._remove_edges_with_restricted_types(edges)
-
-            if self.custom_reverse is not None:
-                edges = self._add_custom_reverse(edges)
-            self.ensure_connectedness(nodes, edges)
-
-            node_name_mapping = self._get_embeddable_names(nodes)
-            node_data["embedding_id"] = self._get_node_name2bucket_mapping(node_name_mapping)
-            # node_type_pool = self.prepare_node_type_pool(nodes)
-
-            self._adjust_types(nodes, edges)
-
-            add_data(nodes, node_data)
-            add_data(edges, edge_data)
-
-            if len(edges) > 0:
-                subgraph = self._create_hetero_graph(nodes, edges)
-
-                if masker_fn is not None:
-                    masker = masker_fn(nodes, edges)
-                else:
-                    masker = None
-
-                yield subgraph, masker, node_labels_loader, edge_labels_loader
-
-    def node_level_batch_generator(
-            self, graph, masker, number_of_hops, batch_size, partition
-    ):
-        from dgl.dataloading import MultiLayerFullNeighborSampler
-        from dgl.dataloading import NodeDataLoader
-
-        def get_nodes_from_partition(graph, partition):
-            nodes = {}
-
-            for node_type in graph.ntypes:
-                node_data = graph.nodes[node_type].data
-                partition_mask = node_data[partition]
-                with torch.no_grad():
-                    if partition_mask.any().item() is True:
-                        nodes_for_batching_mask = node_data["valid"] & partition_mask
-                        if "has_label" in node_data:
-                            nodes_for_batching_mask &= node_data["has_label"]
-                        nodes[node_type] = graph.nodes(node_type)[nodes_for_batching_mask]
-
-            return nodes
-
-        sampler = MultiLayerFullNeighborSampler(number_of_hops)
-        nodes_for_batching = get_nodes_from_partition(graph, partition)
-        loader = NodeDataLoader(graph, nodes_for_batching, sampler, batch_size=batch_size, shuffle=False, num_workers=0)
-        # node_types = self.dataset_db.get_node_types()
-
-        for ind, (input_nodes, seeds, blocks) in enumerate(loader):
-            last_block = blocks[-1]
-            # if "label" in last_block.ndata:
-            #     labels = {ntype: last_block.dstnodes[ntype].data["label"] for ntype in set(last_block.ntypes)}
-            # else:
-            #     labels = None
-
-            if masker is not None:
-                input_mask = masker.get_mask(mask_for=seeds, input_nodes=input_nodes)
-            else:
-                input_mask = None
-
-            yield input_nodes, seeds, blocks, input_mask
-
-    def create_batches(self, subgraph_generator, number_of_hops, batch_size, partition):
-        for subgraph, masker, node_labels_loader, edge_labels_loader  in tqdm(subgraph_generator):
-            for input_nodes, seeds, blocks, input_mask in self.node_level_batch_generator(
-                    subgraph, masker, number_of_hops, batch_size, partition
-            ):
-                print()
-                # yield input_nodes, seeds, blocks, input_mask, node_labels_loader, edge_labels_loader
-
-            print()
-
-    def nodes_dataloader(
-            self, partition, number_of_hops, batch_size, labels=None, masker_fn=None, label_loader=None,
-            label_loader_params=None
-    ):
-        partition = self.partition_columns[partition]
-        # current_partition_nodes = set(self.partition.query(f"{partition} == True").sample(frac=1.)["id"])
-        # partition_nodes = partition_nodes.query("id in @node_pool", local_dict={"node_pool": set(labels.keys())})["id"]
-
-        node_data = {}
-        for partition_key in ["train_mask", "test_mask", "val_mask"]:
-            node_data[partition_key] = dict(zip(self.partition["id"], self.partition[partition_key]))
-
-        node_labels_pack = None
-        if labels is not None:
-            labels_pack = namedtuple("LabelPack", ["label_loader", "labels", "label_loader_params"])
-            node_labels_pack = labels_pack(label_loader, labels, label_loader_params)  # dict(zip(labels["src"], labels["dst"]))
-
-        edge_data = {}
-
-        self.create_batches(
-            self._iterate_subgraphs(node_data, edge_data, masker_fn, node_labels=node_labels_pack),
-            number_of_hops, batch_size, partition
-        )
-
-        #     batch.append(node_id)
-        #     if len(batch) >= batch_size:
-        #         subraph = self._prepare_subgraph(batch, number_of_hops)
-        #         batch.clear()
-        #         # yield subraph, batch, [labels[nid] for nid in batch]
-
-
-
-
 
 def read_or_create_gnn_dataset(args, model_base, force_new=False, restore_state=False):
     if restore_state and not force_new:
-        # i'm not happy with this behaviour that differs based on the flag status
-        dataset = SourceGraphDataset.load(join(model_base, "dataset.pkl"), args)
+        raise NotImplementedError()
+        # dataset = SourceGraphDataset.load(join(model_base, "dataset.pkl"), args)
     else:
         dataset = SourceGraphDataset(**args)
 
         # save dataset state for recovery
-        pickle.dump(dataset, open(join(model_base, "dataset.pkl"), "wb"))
+        from SourceCodeTools.models.training_config import save_config
+        save_config(args, join(model_base, "dataset.config"))
 
     return dataset
 
@@ -1362,20 +1501,29 @@ def test_dataset():
         no_global_edges=True,
         remove_reverse=False,
         custom_reverse=["global_mention"],
-        tokenizer_path="/Users/LTV/Dropbox (Personal)/sentencepiece_bpe.model"
+        tokenizer_path="/Users/LTV/Downloads/NitroShare/v2_subsample_no_spacy_v3/with_ast/sentencepiece_bpe.model"
     )
-    node_names = unpersist("/Users/LTV/Downloads/NitroShare/v2_subsample_v4_new_ast2_fixed_distinct_types/with_ast/node_names.json.bz2")
+    # node_names = unpersist("/Users/LTV/Downloads/NitroShare/v2_subsample_v4_new_ast2_fixed_distinct_types/with_ast/node_names.json.bz2")
+    node_names = dataset.load_node_names(min_count=5)
+    # token_names = dataset.load_token_prediction()
+    # global_edges = dataset.load_global_edges_prediction()
+    # type_labels = dataset.load_type_prediction()
+    # node_classes = dataset.load_node_classes()
     # mapping = compact_property(node_names['dst'])
     # node_names['dst'] = node_names['dst'].apply(mapping.get)
-    from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
-    from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedder
-    from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedderWithBpeSubwords
-    dataset.nodes_dataloader(
-        "train", 3, 512,
-        node_names,
+    # from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
+    # from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedder
+    # from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedderWithBpeSubwords
+    from SourceCodeTools.code.data.dataset.DataLoader import SGNodesDataLoader
+    dataloader = SGNodesDataLoader(dataset, labels_for="nodes", number_of_hops=3, batch_size=512, labels=node_names,
         masker_fn=dataset.create_node_name_masker,
-        label_loader=ElementEmbedderWithBpeSubwords,
-        label_loader_params={"emb_size": 100, "tokenizer_path": "/Users/LTV/Dropbox (Personal)/sentencepiece_bpe.model"}
+        label_loader_class=TargetLoader,
+        label_loader_params={
+            "emb_size": 100,
+            "tokenizer_path": "/Users/LTV/Downloads/NitroShare/v2_subsample_no_spacy_v3/with_ast/sentencepiece_bpe.model"
+        })
+    dataloader.nodes_dataloader(
+        partition_label="train",
     )
 
     # sm = dataset.create_subword_masker()
