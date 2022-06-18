@@ -1,5 +1,5 @@
+import shutil
 from collections import defaultdict
-from os.path import join
 from pathlib import Path
 
 import networkx as nx
@@ -74,6 +74,8 @@ def main():
             else:
                 t = types[0]
             sink.write(f"{s}\t{d}\t{t}\n")
+
+    shutil.rmtree(wd.joinpath(f"{args.k_hops}_hop_edges_temp.tsv"))
 
     # def expand_edges(node_id, s, dlist, edge_prefix, level=0):
     #     edges = []
