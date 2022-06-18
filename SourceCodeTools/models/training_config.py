@@ -19,7 +19,8 @@ config_specification = {
         "restricted_id_pool": None,
         "random_seed": None,
         "subgraph_id_column": "mentioned_in",
-        "subgraph_partition": None
+        "subgraph_partition": None,
+        "partition": None
     },
     "TRAINING": {
         "model_output_dir": None,

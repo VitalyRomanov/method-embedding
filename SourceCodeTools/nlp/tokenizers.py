@@ -1,4 +1,5 @@
 import hashlib
+from functools import lru_cache
 
 from SourceCodeTools.nlp.spacy_tools.SpacyPythonBpeTokenizer import SpacyPythonBpe
 
@@ -25,6 +26,7 @@ def _inject_tokenizer(nlp):
     return nlp
 
 
+@lru_cache
 def create_tokenizer(type, bpe_path=None, regex=None):
     """
     Create tokenizer instance. Usage

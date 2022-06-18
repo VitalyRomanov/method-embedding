@@ -1,7 +1,8 @@
 def add_data_arguments(parser):
     parser.add_argument('--data_path', '-d', dest='data_path', default=None, help='Path to folder with dataset')
+    parser.add_argument('--partition', dest='partition', default=None, help='')
     parser.add_argument('--train_frac', dest='train_frac', default=0.9, type=float, help='Fraction of nodes to be used for training')
-    parser.add_argument('--filter_edges', dest='filter_edges', default=None, help='Comma separated list of edges that should be filtered from the graph')
+    parser.add_argument('--filter_edges', dest='filter_edges', nargs='+', default=None, help='Space separated list of edges that should be filtered from the graph')
     parser.add_argument('--min_count_for_objectives', dest='min_count_for_objectives', default=5, type=int, help='Filter all target examples that occurr less than set numbers of times')
     # parser.add_argument('--packages_file', dest='packages_file', default=None, type=str, help='???')
     parser.add_argument('--self_loops', action='store_true', help='Add self loops to the graph')
@@ -39,7 +40,7 @@ def add_training_arguments(parser):
 
     parser.add_argument("--h_dim", dest="h_dim", default=None, type=int, help='Should be the same as `node_emb_size`')
     parser.add_argument("--n_layers", dest="n_layers", default=5, type=int, help='Number of layers')
-    parser.add_argument("--objectives", dest="objectives", default=None, type=str, help='???')
+    parser.add_argument("--objectives", dest="objectives", nargs='+', default=None, type=str, help='???')
 
     parser.add_argument("--save_each_epoch", action="store_true", help='Save checkpoints for each epoch (high disk space utilization)')
     parser.add_argument("--early_stopping", action="store_true", help='???')
@@ -51,6 +52,8 @@ def add_training_arguments(parser):
     parser.add_argument("--nn_index", default="brute", type=str, help='Index backend for generating negative samples???')
 
     parser.add_argument("--external_dataset", default=None, type=str, help='Path to external graph, use for inference')
+
+    parser.add_argument("--learning_rate", default=None, type=float, help='')
 
 
 def add_scoring_arguments(parser):
