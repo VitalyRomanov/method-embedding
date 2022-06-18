@@ -13,20 +13,20 @@ from SourceCodeTools.code.data.dataset.Dataset import load_data, compact_propert
 import argparse
 
 from SourceCodeTools.code.data.file_utils import unpersist, persist
-from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types, special_mapping
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types as global_node_types, special_mapping
 
 
 def get_paths(dataset_path, use_extra_objectives):
-    extra_objectives = ["node_names.json", "common_function_variable_pairs.json", "common_call_seq.json", "type_annotations.json"]
+    extra_objectives = ["node_names.json.bz2", "common_function_variable_pairs.json.bz2", "common_call_seq.json.bz2", "type_annotations.json.bz2"]
 
     largest_component = join(dataset_path, "largest_component")
     if isdir(largest_component):
         logging.info("Using graph from largest_component directory")
-        nodes_path = join(largest_component, "common_nodes.json")
-        edges_path = join(largest_component, "common_edges.json")
+        nodes_path = join(largest_component, "common_nodes.json.bz2")
+        edges_path = join(largest_component, "common_edges.json.bz2")
     else:
-        nodes_path = join(dataset_path, "common_nodes.json")
-        edges_path = join(dataset_path, "common_edges.json")
+        nodes_path = join(dataset_path, "common_nodes.json.bz2")
+        edges_path = join(dataset_path, "common_edges.json.bz2")
 
     extra_paths = list(filter(lambda x: x is not None, map(
         lambda file: file if use_extra_objectives and isfile(file) else None,
@@ -85,7 +85,10 @@ def do_holdout(edges_path, output_path, node_descriptions, holdout_size=10000, m
     counter = count_degrees(edges_path)
     num_valid_candidates = count_with_occurrence(counter, min_count)
 
-    frac = holdout_size / num_valid_candidates
+    expected_holdout = int(num_valid_candidates * 0.05)
+    expected_holdout = min(expected_holdout, 10000)
+
+    frac = expected_holdout / num_valid_candidates
 
     # temp_edges = join(os.path.dirname(edges_path), "temp_" + os.path.basename(edges_path))
     out_edges_path = join(output_path, "edges_train_dglke.tsv")
@@ -187,7 +190,7 @@ def save_eval(output_dir, eval_frac):
 
     total_eval = 0
 
-    for ind, edges in enumerate(read_edges(join(output_dir, "edges_train_dglke.tsv"), as_chunks=True)):
+    for ind, edges in enumerate(pd.read_csv(join(output_dir, "edges_train_dglke.tsv"), chunksize=100000, sep="\t")):
         eval = edges.sample(frac=eval_frac)
         if len(eval) > 0:
             kwargs = get_writing_mode(is_csv=True, first_written=ind != 0)
@@ -198,9 +201,18 @@ def save_eval(output_dir, eval_frac):
     return total_eval
 
 
+def write_node_type_edges(node_type_edges, output_path):
+    out_edges_path = join(output_path, "edges_train_dglke.tsv")
+
+    with open(out_edges_path, "a") as sink:
+        for src, dst, edge_type in node_type_edges:
+            sink.write(f"{src}\t{dst}\t\"{edge_type}\"\n")
+
+
 def get_node_descriptions(nodes_path, distinct_node_types):
 
     description = {}
+    node_types = []
 
     for nodes in read_nodes(nodes_path, as_chunks=True):
         transform_mask = nodes.eval("type in @distinct_node_types", local_dict={"distinct_node_types": distinct_node_types})
@@ -208,10 +220,28 @@ def get_node_descriptions(nodes_path, distinct_node_types):
         nodes.loc[transform_mask, "transformed"] = nodes.loc[transform_mask, "id"].astype("string")
         nodes.loc[~transform_mask, "transformed"] = nodes.loc[~transform_mask, "type"]
 
+        for node_id, node_type in zip(nodes.loc[transform_mask, "id"], nodes.loc[transform_mask, "type"]):
+            if node_type in {"Op", "#attr#", "#keyword#", "subword"}:
+                continue
+            node_types.append((node_id, node_type, "node_type"))
+
         for id, desc in nodes[["id", "transformed"]].values:
             description[id] = desc
 
-    return description
+    return description, node_types
+
+
+def get_node_types(nodes_path):
+
+    node_types = []
+
+    for nodes in read_nodes(nodes_path, as_chunks=True):
+        for node_id, node_type in zip(nodes["id"], nodes["type"]):
+            if node_type in {"Op", "#attr#", "#keyword#", "subword"}:
+                continue
+            node_types.append((node_type, str(node_id), "node_type"))
+
+    return node_types
 
 
 def main():
@@ -221,8 +251,9 @@ def main():
     parser.add_argument("--extra_objectives", action="store_true", default=False)
     parser.add_argument("--eval_frac", dest="eval_frac", default=0.05, type=float)
     parser.add_argument("--only_distinct_mentions", default=False, action="store_true")
+    parser.add_argument("--node_type_edges", default=False, action="store_true")
 
-    distinct_node_types = set(node_types.values()) | {
+    distinct_node_types = set(global_node_types.values()) | {
         "FunctionDef", "mention", "Op", "#attr#", "#keyword#", "subword"
     }
 
@@ -236,15 +267,19 @@ def main():
     )
 
     if args.only_distinct_mentions:
-        node_descriptions = get_node_descriptions(nodes_path, distinct_node_types)
+        node_descriptions, node_type_edges = get_node_descriptions(nodes_path, distinct_node_types)
     else:
         node_descriptions = None
+        node_type_edges = get_node_types(nodes_path)
 
     counter, total_edges, total_holdout = do_holdout(edges_path, args.output_path, node_descriptions)
 
     total_extra = add_extra_objectives(extra_paths, args.output_path, set(counter.keys()))
 
-    temp_edges = join(args.output_path, "temp_common_edges.tsv")
+    if args.node_type_edges:
+        write_node_type_edges(node_type_edges, args.output_path)
+
+    # temp_edges = join(args.output_path, "temp_common_edges.tsv")
 
     total_eval = save_eval(args.output_path, args.eval_frac)
 

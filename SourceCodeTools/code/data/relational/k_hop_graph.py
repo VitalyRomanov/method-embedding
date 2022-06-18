@@ -6,33 +6,19 @@ import networkx as nx
 import pandas as pd
 from tqdm import tqdm
 
-# from SourceCodeTools.code.data.dataset.Dataset import load_data
-
 
 def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("working_directory")
     parser.add_argument("k_hops", type=int)
-    parser.add_argument("output")
+    # parser.add_argument("output")
 
     args = parser.parse_args()
 
-    # nodes, edges = load_data(
-    #     join(args.working_directory, "common_nodes.bz2"), join(args.working_directory, "common_edges.bz2")
-    # )
-
     wd = Path(args.working_directory)
 
-    edges = pd.read_csv(wd.joinpath("edges_train_dglke.tsv"), sep="\t", dtype={"src": "int32", "dst": "int32"})
-
-    # edge_types = {}
-    # edge_lists = {}
-    # for s, d, t in edges[["src", "dst", "type"]].values:
-    #     edge_types[(s,d)] = t
-    #     if s not in edge_lists:
-    #         edge_lists[s] = []
-    #     edge_lists[s].append(d)
+    edges = pd.read_csv(wd.joinpath("edges_train_dglke.tsv"), sep="\t", dtype={"src": "string", "dst": "string"})
 
     g = nx.from_pandas_edgelist(
         edges, source="src", target="dst", create_using=nx.DiGraph, edge_attr="type"
@@ -40,7 +26,6 @@ def main():
 
     from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import special_mapping
     skip_edges = set(special_mapping.keys()) | set(special_mapping.values())
-    # skip_edges = skip_edges | {"subword", "attr", "arg", "value"}
 
     def expand_edges(edges, node_id, view, edge_prefix, level=0):
         # edges = []
@@ -63,7 +48,7 @@ def main():
     with open(wd.joinpath(f"{args.k_hops}_hop_edges_temp.tsv"), "w") as sink:
         sink.write("src\tdst\ttype\n")
         edges = []
-        for node in tqdm(g.nodes):
+        for node in tqdm(g.nodes, desc="Generaitng k-hop edges"):
             expand_edges(edges, node, g[node], "", level=0)
             for s,d,t in edges:
                 sink.write(f"{s}\t{d}\t{t}\n")
@@ -74,16 +59,16 @@ def main():
 
     parallel = defaultdict(list)
     with open(wd.joinpath(f"{args.k_hops}_hop_edges_temp.tsv"), "r") as source:
-        for ind, line in tqdm(enumerate(source)):
+        for ind, line in tqdm(enumerate(source), desc="Looking for parallel paths"):
             if ind == 0:
                 continue
             s,d,t = line.strip().split('\t')
-            parallel[(int(s),int(d))].append(t)
+            parallel[(str(s),str(d))].append(t)
 
     with open(wd.joinpath(f"{args.k_hops}_hop_edges.tsv"), "w") as sink:
         sink.write("src\tdst\ttype\n")
 
-        for (s,d), types in tqdm(parallel.items()):
+        for (s,d), types in tqdm(parallel.items(), desc="Removing for parallel paths"):
             if len(types) > 1:
                 t = sorted(types)[0]
             else:
