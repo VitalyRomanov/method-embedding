@@ -13,13 +13,14 @@ from SourceCodeTools.code.common import read_nodes, read_edges
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("dataset_path")
+    parser.add_argument("embeddings")
     parser.add_argument("output_path")
     parser.add_argument("--max_embs", type=int, default=5000)
     parser.add_argument("--into_groups", action="store_true")
     args = parser.parse_args()
     model_path = args.model_path
 
-    embedders = pickle.load(open(join(args.model_path, "embeddings.pkl"), "rb"))
+    embedders = pickle.load(open(args.embeddings, "rb"))
 
     dataset_path = Path(args.dataset_path)
     nodes = read_nodes(dataset_path.joinpath("common_nodes.json.bz2"))
