@@ -1,11 +1,14 @@
 DATASET_PATH=$(realpath "$1")
 OUTPUT_PATH=$(realpath "$2")
+CREATE_DATA=$3
 RUN_DIR=$(realpath "$(dirname "$0")")
 
 SCRIPTS_PATH=$RUN_DIR/../../../../SourceCodeTools/code/data/relational
 
-python $SCRIPTS_PATH/prepare_dglke_format2.py $DATASET_PATH $DATASET_PATH/dglke2 --eval_frac 0.001 --node_type_edges
-python $SCRIPTS_PATH/k_hop_graph.py $DATASET_PATH/dglke2 2
+if [ ! -z $CREATE_DATA ]; then
+  python $SCRIPTS_PATH/prepare_dglke_format2.py $DATASET_PATH $DATASET_PATH/dglke2 --eval_frac 0.001 --node_type_edges
+  python $SCRIPTS_PATH/k_hop_graph.py $DATASET_PATH/dglke2 2
+fi
 
 remove_if_exists () {
   if [ -d $1 ]; then
