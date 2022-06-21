@@ -94,7 +94,7 @@ def do_holdout(edges_path, output_path, node_descriptions, holdout_size=10000, m
 
     # temp_edges = join(os.path.dirname(edges_path), "temp_" + os.path.basename(edges_path))
     out_edges_path = join(output_path, "edges_train_dglke.tsv")
-    out_holdout_path = join(output_path, "edges_eval_dglke_10000.tsv")
+    out_holdout_path = join(output_path, "edges_eval_dglke_holdout.tsv")
     is_csv = True
 
     first_edges = False
@@ -154,11 +154,11 @@ def do_holdout(edges_path, output_path, node_descriptions, holdout_size=10000, m
 
             seen_mask = np.array(list(map(lambda x: x in seen, reprs)))
 
-            with_description = with_description.loc[~seen_mask].astype({"src": "string", "dst": "string"})
+            with_description = with_description.loc[~seen_mask].astype({"src": "str", "dst": "str"})
             seen.update(reprs)
 
             kwargs = get_writing_mode(is_csv, first_written)
-            persist(with_description, path, sep="\t", header=False, **kwargs)
+            persist(with_description, path, sep="\t", **kwargs)
 
         write_filtered(definitely_keep, out_edges_path, first_edges)
         first_edges = True
@@ -166,6 +166,24 @@ def do_holdout(edges_path, output_path, node_descriptions, holdout_size=10000, m
         if len(definitely_holdout) > 0:
             write_filtered(definitely_holdout, out_holdout_path, first_holdout)
             first_holdout = True
+
+    def remove_header(path):
+        temp_path = path + "_temp"
+        for part in pd.read_csv(path, chunksize=1000000, sep="\t", dtype={"src":"str", "dst":"str", "type": "str"}):
+            kwargs = get_writing_mode(is_csv, first_written=True)
+            persist(part, temp_path, sep="\t", **kwargs)
+
+        os.remove(path)
+        os.rename(temp_path, path)
+
+    remove_header(out_edges_path)
+    remove_header(out_holdout_path)
+
+    with open(join(output_path, "edges_eval_dglke_10000.tsv"), "w") as holdout10000:
+        for ind, line in enumerate(open(out_holdout_path, "r")):
+            if ind >= 10000:
+                break
+            holdout10000.write(line)
 
     return counter, total_edges, total_holdout
 
@@ -182,7 +200,7 @@ def add_extra_objectives(extra_paths, output_path, node_ids):
         data = data[["src", "dst", "type"]]
         raise NotImplementedError()
         kwargs = get_writing_mode(is_csv=True, first_written=True)
-        persist(data, out_edges_path, sep="\t", header=False, **kwargs)  # write_filtered
+        persist(data, out_edges_path, sep="\t", **kwargs)  # write_filtered
 
         total_extra += len(data)
 
@@ -191,14 +209,16 @@ def add_extra_objectives(extra_paths, output_path, node_ids):
 
 def save_eval(output_dir, eval_frac):
     eval_path = join(output_dir, "edges_eval_dglke.tsv")
+    if os.path.isfile(eval_path):
+        os.remove(eval_path)
 
     total_eval = 0
 
     for ind, edges in enumerate(pd.read_csv(join(output_dir, "edges_train_dglke.tsv"), header=None, names=["src", "dst", "type"], chunksize=100000, sep="\t")):
         eval = edges.sample(frac=eval_frac).astype({"src": 'str', "dst": "str", "type": 'str'})
         if len(eval) > 0:
-            kwargs = get_writing_mode(is_csv=True, first_written=ind != 0)
-            persist(eval, eval_path, sep="\t", header=False, **kwargs)
+            kwargs = get_writing_mode(is_csv=True, first_written=True)  # ind != 0)
+            persist(eval, eval_path, sep="\t", **kwargs)
 
             total_eval += len(eval)
 
@@ -221,7 +241,7 @@ def get_node_descriptions(nodes_path, distinct_node_types):
     for nodes in read_nodes(nodes_path, as_chunks=True):
         transform_mask = nodes.eval("type in @distinct_node_types", local_dict={"distinct_node_types": distinct_node_types})
 
-        nodes.loc[transform_mask, "transformed"] = nodes.loc[transform_mask, "id"].astype("string")
+        nodes.loc[transform_mask, "transformed"] = nodes.loc[transform_mask, "id"].astype("str")
         nodes.loc[~transform_mask, "transformed"] = nodes.loc[~transform_mask, "type"]
 
         for node_id, node_type in zip(nodes.loc[transform_mask, "id"], nodes.loc[transform_mask, "type"]):
@@ -283,41 +303,7 @@ def main():
     if args.node_type_edges:
         write_node_type_edges(node_type_edges, args.output_path)
 
-    # temp_edges = join(args.output_path, "temp_common_edges.tsv")
-
     total_eval = save_eval(args.output_path, args.eval_frac)
-
-    # nodes, edges = load_data(nodes_path, edges_path)
-    # nodes, edges, holdout = SourceGraphDataset.holdout(nodes, edges)
-    # edges = edges.astype({"src": 'str', "dst": "str", "type": 'str'})[['src', 'dst', 'type']]
-    # holdout = holdout.astype({"src": 'str', "dst": "str", "type": 'str'})[['src', 'dst', 'type']]
-    #
-    # node2graph_id = compact_property(nodes['id'])
-    # nodes['global_graph_id'] = nodes['id'].apply(lambda x: node2graph_id[x])
-    #
-    # node_ids = set(nodes['id'].unique())
-    #
-    # if args.extra_objectives:
-    #     for objective_path in extra_paths:
-    #         data = unpersist(objective_path)
-    #         data = filter_relevant(data, node_ids)
-    #         data["type"] = objective_path.split(".")[0]
-    #         edges = edges.append(data)
-
-
-
-    # edges = edges[['src','dst','type']]
-    # eval_sample = edges.sample(frac=args.eval_frac)
-    #
-    # persist(nodes, join(args.output_path, "nodes_dglke.csv"))
-    # persist(edges, join(args.output_path, "edges_train_dglke.tsv"), header=False, sep="\t")
-    # persist(edges, join(args.output_path, "edges_train_node2vec.tsv"), header=False, sep=" ")
-    # persist(eval_sample, join(args.output_path, "edges_eval_dglke.tsv"), header=False, sep="\t")
-    # persist(eval_sample, join(args.output_path, "edges_eval_node2vec.tsv"), header=False, sep=" ")
-    # persist(holdout, join(args.output_path, "edges_eval_dglke_10000.tsv"), header=False, sep="\t")
-    # persist(holdout, join(args.output_path, "edges_eval_node2vec_10000.tsv"), header=False, sep=" ")
-
-
 
 
 if __name__ == "__main__":

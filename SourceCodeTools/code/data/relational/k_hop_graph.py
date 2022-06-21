@@ -18,7 +18,7 @@ def main():
 
     wd = Path(args.working_directory)
 
-    edges = pd.read_csv(wd.joinpath("edges_train_dglke.tsv"), header=None, names=["src", "dst", "type"], sep="\t", dtype={"src": "string", "dst": "string"})
+    edges = pd.read_csv(wd.joinpath("edges_train_dglke.tsv"), header=None, names=["src", "dst", "type"], sep="\t", dtype={"src": "str", "dst": "str"})
 
     g = nx.from_pandas_edgelist(
         edges, source="src", target="dst", create_using=nx.DiGraph, edge_attr="type"
