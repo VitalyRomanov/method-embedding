@@ -18,7 +18,6 @@ def main():
     parser.add_argument("--max_embs", type=int, default=5000)
     parser.add_argument("--into_groups", action="store_true")
     args = parser.parse_args()
-    model_path = args.model_path
 
     embedders = pickle.load(open(args.embeddings, "rb"))
 
