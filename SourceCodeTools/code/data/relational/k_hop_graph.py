@@ -77,8 +77,6 @@ def main():
 
     os.remove(wd.joinpath(f"{args.k_hops}_hop_edges_temp.tsv"))
 
-    os.remove(wd.joinpath(f"{args.k_hops}_hop_edges_temp.tsv"))
-
     # def expand_edges(node_id, s, dlist, edge_prefix, level=0):
     #     edges = []
     #     if level <= args.k_hops:
