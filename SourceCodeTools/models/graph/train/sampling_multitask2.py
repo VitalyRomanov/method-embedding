@@ -479,6 +479,26 @@ class SamplingMultitaskTrainer:
             ):
                 _ = objective.target_embedding_fn(batch)  # scorer embedding updated inside
 
+    def _get_grad_norms(self):
+        total_norm = 0.
+
+        def get_all_params():
+            for pg in self.optimizer.param_groups:
+                for param in pg["params"]:
+                    yield param
+
+            for pg in self.sparse_optimizer.param_groups:
+                for param in pg["params"]:
+                    yield param
+
+        for p in get_all_params():
+            if p.grad is not None:
+                param_norm = p.grad.detach().data.norm(2)
+                total_norm += param_norm.item() ** 2
+
+        total_norm = total_norm ** 0.5
+        return total_norm
+
     def train_all(self):
         """
         Training procedure for the model with node classifier
@@ -562,6 +582,8 @@ class SamplingMultitaskTrainer:
                     # except Exception as e:
                     #     raise e
 
+                grad_norms = {"grad_norm": self._get_grad_norms()}
+
                 self.optimizer.step()
                 self.sparse_optimizer.step()
                 step += 1
@@ -575,6 +597,10 @@ class SamplingMultitaskTrainer:
                 # }
                 summary = {key: sum(val) / len(val) for key, val in train_losses.items()}
                 summary.update({key: sum(val) / len(val) for key, val in train_accs.items()})
+                add_to_summary(
+                    summary=summary, partition="train", objective_name="",
+                    scores=grad_norms, postfix=""
+                )
                 self.write_summary(summary, self.batch)
                 summary_dict.update(summary)
 
