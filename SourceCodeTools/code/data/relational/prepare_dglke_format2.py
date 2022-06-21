@@ -8,12 +8,14 @@ import numpy as np
 import pandas as pd
 
 from SourceCodeTools.code.common import read_edges, read_nodes
-from SourceCodeTools.code.data.dataset.Dataset import load_data, compact_property, SourceGraphDataset
 
 import argparse
 
 from SourceCodeTools.code.data.file_utils import unpersist, persist
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types as global_node_types, special_mapping
+
+
+pd.options.mode.chained_assignment = None
 
 
 def get_paths(dataset_path, use_extra_objectives):
@@ -150,11 +152,11 @@ def do_holdout(edges_path, output_path, node_descriptions, holdout_size=10000, m
 
             seen_mask = np.array(list(map(lambda x: x in seen, reprs)))
 
-            with_description = with_description.loc[~seen_mask]
+            with_description = with_description.loc[~seen_mask].astype({"src": "string", "dst": "string"})
             seen.update(reprs)
 
             kwargs = get_writing_mode(is_csv, first_written)
-            persist(with_description, path, sep="\t", **kwargs)
+            persist(with_description, path, sep="\t", header=False, **kwargs)
 
         write_filtered(definitely_keep, out_edges_path, first_edges)
         first_edges = True
@@ -178,7 +180,7 @@ def add_extra_objectives(extra_paths, output_path, node_ids):
         data = data[["src", "dst", "type"]]
         raise NotImplementedError()
         kwargs = get_writing_mode(is_csv=True, first_written=True)
-        persist(data, out_edges_path, sep="\t", **kwargs)  # write_filtered
+        persist(data, out_edges_path, sep="\t", header=False, **kwargs)  # write_filtered
 
         total_extra += len(data)
 
@@ -190,11 +192,11 @@ def save_eval(output_dir, eval_frac):
 
     total_eval = 0
 
-    for ind, edges in enumerate(pd.read_csv(join(output_dir, "edges_train_dglke.tsv"), chunksize=100000, sep="\t")):
-        eval = edges.sample(frac=eval_frac)
+    for ind, edges in enumerate(pd.read_csv(join(output_dir, "edges_train_dglke.tsv"), header=None, names=["src", "dst", "type"], chunksize=100000, sep="\t")):
+        eval = edges.sample(frac=eval_frac).astype({"src": 'str', "dst": "str", "type": 'str'})
         if len(eval) > 0:
             kwargs = get_writing_mode(is_csv=True, first_written=ind != 0)
-            persist(eval, eval_path, sep="\t", **kwargs)
+            persist(eval, eval_path, sep="\t", header=False, **kwargs)
 
             total_eval += len(eval)
 
@@ -206,7 +208,7 @@ def write_node_type_edges(node_type_edges, output_path):
 
     with open(out_edges_path, "a") as sink:
         for src, dst, edge_type in node_type_edges:
-            sink.write(f"{src}\t{dst}\t\"{edge_type}\"\n")
+            sink.write(f"\"{src}\"\t\"{dst}\"\t\"{edge_type}\"\n")
 
 
 def get_node_descriptions(nodes_path, distinct_node_types):
