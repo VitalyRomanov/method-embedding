@@ -1,6 +1,5 @@
 import os
 from collections import defaultdict
-from os.path import join
 from pathlib import Path
 
 import networkx as nx
@@ -75,6 +74,8 @@ def main():
             else:
                 t = types[0]
             sink.write(f"\"{s}\"\t\"{d}\"\t\"{t}\"\n")
+
+    os.remove(wd.joinpath(f"{args.k_hops}_hop_edges_temp.tsv"))
 
     os.remove(wd.joinpath(f"{args.k_hops}_hop_edges_temp.tsv"))
 
