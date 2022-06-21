@@ -107,6 +107,8 @@ def do_holdout(edges_path, output_path, node_descriptions, holdout_size=10000, m
 
     for edges in read_edges(edges_path, as_chunks=True):
         edges = remove_reverse(edges)
+        if len(edges) == 0:
+            continue
         edges.rename({"source_node_id": "src", "target_node_id": "dst"}, axis=1, inplace=True)
         edges = edges[['src', 'dst', 'type']]
 
