@@ -1,3 +1,4 @@
+import os
 from collections import defaultdict
 from os.path import join
 from pathlib import Path
@@ -18,7 +19,7 @@ def main():
 
     wd = Path(args.working_directory)
 
-    edges = pd.read_csv(wd.joinpath("edges_train_dglke.tsv"), sep="\t", dtype={"src": "string", "dst": "string"})
+    edges = pd.read_csv(wd.joinpath("edges_train_dglke.tsv"), header=None, names=["src", "dst", "type"], sep="\t", dtype={"src": "string", "dst": "string"})
 
     g = nx.from_pandas_edgelist(
         edges, source="src", target="dst", create_using=nx.DiGraph, edge_attr="type"
@@ -66,14 +67,16 @@ def main():
             parallel[(str(s),str(d))].append(t)
 
     with open(wd.joinpath(f"{args.k_hops}_hop_edges.tsv"), "w") as sink:
-        sink.write("src\tdst\ttype\n")
+        # sink.write("src\tdst\ttype\n")
 
         for (s,d), types in tqdm(parallel.items(), desc="Removing for parallel paths"):
             if len(types) > 1:
                 t = sorted(types)[0]
             else:
                 t = types[0]
-            sink.write(f"{s}\t{d}\t{t}\n")
+            sink.write(f"\"{s}\"\t\"{d}\"\t\"{t}\"\n")
+
+    os.remove(wd.joinpath(f"{args.k_hops}_hop_edges_temp.tsv"))
 
     # def expand_edges(node_id, s, dlist, edge_prefix, level=0):
     #     edges = []
