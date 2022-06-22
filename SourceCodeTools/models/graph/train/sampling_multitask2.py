@@ -610,13 +610,13 @@ class SamplingMultitaskTrainer:
 
                 self.write_summary(summary, self.batch)
                 summary_dict.update(summary)
-
-                val_losses = [
-                    item for key, item in summary_dict.items() if key.startswith("Loss/val")]
-                avg_val_loss = sum(val_losses) / len(val_losses)
-                if avg_val_loss < best_val_loss:
-                    best_val_loss = avg_val_loss
-                    write_best_model = True
+                # TODO: uncomment
+                # val_losses = [
+                #     item for key, item in summary_dict.items() if key.startswith("Loss/val")]
+                # avg_val_loss = sum(val_losses) / len(val_losses)
+                # if avg_val_loss < best_val_loss:
+                #     best_val_loss = avg_val_loss
+                #     write_best_model = True
 
                 if self.do_save:
                     self.save_checkpoint(

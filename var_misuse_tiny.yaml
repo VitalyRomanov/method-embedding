@@ -1,6 +1,6 @@
 DATASET:
   custom_reverse: null
-  data_path: ./examples/one_vs_10/with_ast/
+  data_path: ./examples/one_vs_10/with_ast
   filter_edges: null
   min_count_for_objectives: 5
   no_global_edges: false
@@ -33,14 +33,14 @@ TRAINING:
   early_stopping_tolerance: 20
   elem_emb_size: 100
   embedding_table_size: 200000
-  epochs: 1000
+  epochs: 100
   external_dataset: null
   force_w2v_ns: false
   gpu: -1
   learning_rate: 0.001
   measure_scores: true
   metric: inner_prod
-  model_output_dir: ./examples/one_vs_10/with_ast/
+  model_output_dir: ./examples/one_vs_10/with_ast
   neg_sampling_factor: 3
   nn_index: brute
   objectives: subgraph_clf

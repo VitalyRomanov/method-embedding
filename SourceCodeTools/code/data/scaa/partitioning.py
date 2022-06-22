@@ -50,9 +50,10 @@ def subgraph_partitioning(path_to_dataset, partition_column, train_frac=0.7):
 
     def task_partition(task):
         # 9 = 1 + 1 + 5
-        if task < 6:
+        num = random()
+        if num < 0.8:
             return "train"
-        elif task < 7:
+        elif task < 0.9:
             return "val"
         else:
             return "test"
@@ -73,7 +74,7 @@ def subgraph_partitioning(path_to_dataset, partition_column, train_frac=0.7):
 
 if __name__ == "__main__":
     # not scalable, but works
-    path = './examples/one_vs_10/with_ast'
-    column = 'task'
+    path = './examples/task/with_ast'
+    column = 'id'
     subgraph_partitioning(path, column)
     print('Done')
