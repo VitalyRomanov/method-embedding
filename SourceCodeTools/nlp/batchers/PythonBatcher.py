@@ -113,7 +113,7 @@ class PythonBatcher:
             shutil.rmtree(self.tmp_dir)
         os.mkdir(self.tmp_dir)
 
-        self.sent_cache = shelve.open(os.path.join(self.tmp_dir, "sent_cache"))
+        self.sent_cache = dict()  # shelve.open(os.path.join(self.tmp_dir, "sent_cache"))
         self.batch_cache = shelve.open(os.path.join(self.tmp_dir, "batch_cache"))
 
     def num_classes(self):
@@ -165,10 +165,12 @@ class PythonBatcher:
             if self.mask_unlabeled_declarations:
                 unlabeled_dec = adjust_offsets(unlabeled_dec, -3)
 
+        # TODO
+        # enable those back
         ents_tags = biluo_tags_from_offsets(doc, ents, self.no_localization)
-        repl_tags = biluo_tags_from_offsets(doc, repl, self.no_localization)
+        repl_tags = ["O"] * len(ents_tags)  # biluo_tags_from_offsets(doc, repl, self.no_localization)
         if self.mask_unlabeled_declarations:
-            unlabeled_dec = biluo_tags_from_offsets(doc, unlabeled_dec, self.no_localization)
+            unlabeled_dec = []  #biluo_tags_from_offsets(doc, unlabeled_dec, self.no_localization)
 
         fix_incorrect_tags(ents_tags)
         fix_incorrect_tags(repl_tags)

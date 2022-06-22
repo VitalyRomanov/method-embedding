@@ -17,12 +17,12 @@ You need to use conda, create virtual environment `SourceCodeTools` with python 
 conda create -n SourceCodeTools python=3.8
 ```
 
-If you plan to use graphviz
+(optional) If you plan to use graphviz 
 ```python
 conda install -c conda-forge pygraphviz graphviz
 ```
 
-Install CUDA 11.1 if needed
+(optional) Install CUDA 11.1 if needed
 ```python
 conda install -c nvidia cudatoolkit=11.1
 ```
@@ -34,7 +34,11 @@ cd method-embedding
 pip install -e .
 # pip install -e .[gpu]
 ```
-
+In case there are errors during installing dgl package install the dependency manually
+```bash
+pip install dgl==0.7.1 -f https://data.dgl.ai/wheels/repo.html
+#pip install dgl-cu111==0.7.1 -f https://data.dgl.ai/wheels/repo.html
+```
 ### Processing Python Code
 
 Source code should be structured in the following way
