@@ -1,6 +1,6 @@
 DATASET:
   custom_reverse: null
-  data_path: v2
+  data_path: 10_percent_v1
   filter_edges: null
   min_count_for_objectives: 5
   no_global_edges: false
@@ -15,7 +15,7 @@ DATASET:
   use_node_types: false
 MODEL:
   activation: tanh
-  dropout: 0.3
+  dropout: 0.2
   h_dim: 30
   n_layers: 3
   node_emb_size: 30
@@ -36,11 +36,11 @@ TRAINING:
   epochs: 2
   external_dataset: null
   force_w2v_ns: true
-  gpu: 0
+  gpu: null
   learning_rate: 0.003
   measure_scores: true
   metric: inner_prod
-  model_output_dir: v2
+  model_output_dir: 10_percent_v1
   neg_sampling_factor: 1
   nn_index: brute
   objectives: node_clf
