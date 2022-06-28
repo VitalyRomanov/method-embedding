@@ -29,6 +29,8 @@ def tag_map_from_sentences(sentences):
 
     # find unique tags
     for s in sentences:
+        if s is None:
+            continue
         tags.update(set(s))
 
     return TagMap(list(tags))
