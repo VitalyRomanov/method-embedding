@@ -10,17 +10,17 @@ from SourceCodeTools.code.common import read_nodes, read_edges
 
 def map_args_to_mention(working_directory, output, dataset_file=None):
     if dataset_file is None:
-        dataset_file = join(working_directory, "function_annotations.jsonl")
+        dataset_file = join(working_directory, "function_annotations.json")
 
     arguments = set()
     mentions = set()
-    for nodes in tqdm(read_nodes(join(working_directory, "common_nodes.json.bz2"), as_chunks=True), desc="Collecting mentions"):
+    for nodes in tqdm(read_nodes(join(working_directory, "common_nodes.json"), as_chunks=True), desc="Collecting mentions"):
         arguments.update(nodes.query("type == 'arg'")["id"])
         mentions.update(nodes.query("type == 'mention'")["id"])
 
     scrutinize_edges = []
 
-    for edges in tqdm(read_edges(join(working_directory, "common_edges.json.bz2"), as_chunks=True), desc="Collecting mentions"):
+    for edges in tqdm(read_edges(join(working_directory, "common_edges.json"), as_chunks=True), desc="Collecting mentions"):
         edges = edges.query("(source_node_id in @mentions) and (target_node_id in @arguments)", local_dict={"arguments": arguments, "mentions": mentions})
         scrutinize_edges.append(edges)
 
