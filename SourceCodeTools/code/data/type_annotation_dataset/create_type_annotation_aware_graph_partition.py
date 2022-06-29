@@ -77,7 +77,7 @@ def main():
 
     all_nodes = []
     shared_nodes = set()
-    for nodes in read_nodes(join(args.working_directory, "common_nodes.json.bz2"), as_chunks=True):
+    for nodes in read_nodes(join(args.working_directory, "common_nodes.json"), as_chunks=True):
         all_nodes.append(nodes[["id"]])
         shared_nodes.update(nodes.query("type in @shared", local_dict={"shared": PythonSharedNodes.shared_node_types})["id"])
 
