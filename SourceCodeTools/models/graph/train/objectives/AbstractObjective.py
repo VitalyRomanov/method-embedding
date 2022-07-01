@@ -102,7 +102,7 @@ class AbstractObjective(nn.Module):
             dataset, labels_for, number_of_hops, batch_size, preload_for=preload_for, labels=labels,
             masker_fn=masker_fn, label_loader_class=label_loader_class, label_loader_params=label_loader_params,
             negative_sampling_strategy="w2v" if self.force_w2v else "closest", base_path=self.base_path,
-            objective_name=self.name
+            objective_name=self.name, device=self.device
         )
         self._create_loaders()
 
@@ -421,10 +421,12 @@ class AbstractObjective(nn.Module):
             blocks = [blk.to(self.device) for blk in blocks]
             assert dst_seeds.shape == unique_dst.shape
             assert dst_seeds.tolist() == unique_dst.tolist()
-            unique_dst_embeddings = self._graph_embeddings(input_nodes, blocks)  # use_types, ntypes)
+            input_ = blocks[0].srcnodes["node_"].data["embedding_id"].to(self.device)
+            assert -1 not in input_.cpu().tolist()
+            unique_dst_embeddings = self._graph_embeddings(input_, blocks)  # use_types, ntypes)
             dst_embeddings = unique_dst_embeddings[slice_map.to(self.device)]
 
-            if self.update_embeddings_for_queries:
+            if self.update_embeddings_for_queries and update_ns_callback is not None:
                 update_ns_callback(unique_dst.detach().cpu().numpy(), unique_dst_embeddings.detach().cpu().numpy())
 
             return dst_embeddings
