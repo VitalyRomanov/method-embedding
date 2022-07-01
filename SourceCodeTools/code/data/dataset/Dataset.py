@@ -322,6 +322,8 @@ class SourceGraphDataset:
         else:
             self.dataset_db = OnDiskGraphStorage(dataset_db_path)
         #     self.dataset_db.import_from_files(self.data_path)
+        self._num_nodes = self.dataset_db.get_num_nodes()
+
 
     def _filter_edges(self, types_to_filter):
         # logging.info(f"Filtering edge types: {types_to_filter}")
@@ -673,7 +675,7 @@ class SourceGraphDataset:
         #     f"Unique triplet types in the graph: {len(typed_subgraphs.keys())}"
         # )
 
-        num_nodes = nodes["id"].max() + 1
+        num_nodes = self._num_nodes  # nodes["id"].max() + 1  # the fact that this is needed probably means that graphs are not loading correctly
         graph = dgl.heterograph(typed_subgraphs, num_nodes_dict={ntype: num_nodes for ntype in nodes["type"].unique()})
 
         def attach_node_data(graph, nodes):
