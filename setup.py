@@ -16,7 +16,9 @@ requirements = [
       'spacy==2.3.2',
       'pytest==6.1.2',
       'faiss-cpu==1.7.0',
-      'tqdm==4.49.0'
+      'tqdm==4.49.0',
+      'diskcache==5.4.0',
+      'transformers==4.10.3'
       # 'pygraphviz'
       # 'javac_parser'
 ]
