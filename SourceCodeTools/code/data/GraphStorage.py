@@ -319,7 +319,7 @@ class OnDiskGraphStorage:
         # self._import_filecontent(get_path("common_filecontent.json.bz2"))
 
     def get_num_nodes(self):
-        return self.database.query("SELECT max(id) FROM nodes").iloc[0,0]
+        return self.database.query("SELECT max(id) FROM nodes").iloc[0,0] + 1
 
     def get_node_type_descriptions(self):
         return self.database.query("SELECT type_desc from node_types")["type_desc"]
@@ -464,6 +464,7 @@ class OnDiskGraphStorage:
     #         yield package_id, *self.get_subgraph_for_package(package_id)
 
     def get_subgraph_for_file(self, file_id):
+        file_id, package = file_id
         edges = self.database.query(
             f"""
                         SELECT
@@ -472,7 +473,7 @@ class OnDiskGraphStorage:
                         edge_file_id
                         LEFT JOIN edges ON edge_file_id.id = edges.id
                         LEFT JOIN edge_types ON edges.type = edge_types.type_id
-                        WHERE edge_file_id.file_id = '{file_id}'
+                        WHERE edge_file_id.file_id = '{file_id}' and edge_file_id.package = '{package}'
                         """
         )
 
@@ -480,7 +481,10 @@ class OnDiskGraphStorage:
         return file_nodes, edges
 
     def get_all_files(self):
-        return self.database.query("SELECT distinct file_id FROM edge_file_id")["file_id"]
+        return [
+            tuple(group) for group in
+            self.database.query("SELECT distinct file_id, package FROM edge_file_id").values
+            ]
 
     # def iterate_files(self, all_files=None):
     #     if all_files is None:
@@ -605,9 +609,7 @@ class OnDiskGraphStorage:
 
         node_ids_table_name = self._create_tmp_node_ids_list(node_ids, )
 
-        # node_id_str = ",".join(map(str, node_ids))
-        query_str = f"""
-        select distinct src, {column_name} from (
+        select_nodes = f"""
             select src, package, file_id, mentioned_in
             from {node_ids_table_name}
             inner join edges on edges.src = {node_ids_table_name}.node_ids
@@ -619,10 +621,24 @@ class OnDiskGraphStorage:
             inner join edges on edges.dst = {node_ids_table_name}.node_ids
             inner join edge_file_id on edges.id = edge_file_id.id
             join edge_hierarchy on edges.id = edge_hierarchy.id
-        ) where {column_name} not null order by {column_name}
         """
+        # node_id_str = ",".join(map(str, node_ids))
+        if column_name == "file_id":
+            query_str = f"""
+            select distinct src, file_id, package from (
+                {select_nodes}
+            ) where {column_name} not null order by package, file_id
+            """  # order by {column_name}
+        else:
+            query_str = f"""
+            select distinct src, {column_name} from (
+                {select_nodes}
+            ) where {column_name} not null order by {column_name}
+            """
 
         results = self.database.query(query_str)
+        if column_name == "file_id":
+            results["file_id"] = list(zip(results["file_id"], results["package"]))
 
         self._drop_tmp_node_ids_list(node_ids_table_name)
         return results, column_name
