@@ -2,6 +2,7 @@ import logging
 import random
 import sys
 from collections import defaultdict
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -174,7 +175,7 @@ class LabelDenseEncoder:
 class TargetLoader:
     def __init__(
             self, targets, label_encoder, *, compact_dst=True, target_embedding_proximity=None, emb_size=None,
-            device="cpu", logger_path=None, logger_name=None, use_ns_groups=False, **kwargs
+            device="cpu", logger_path=None, logger_name=None, use_ns_groups=False, restrict_targets_to_src=False, **kwargs
     ):
         self._compact_targets = compact_dst
         self._emb_size = emb_size
@@ -182,6 +183,7 @@ class TargetLoader:
         self._use_ns_groups = use_ns_groups
         self._unique_targets = self._label_encoder.encoded_labels()
         self.device = device
+        self._restrict_targets_to_src = restrict_targets_to_src
         self._init(targets)
         self._prepare_logger(logger_path, logger_name)
         self._target_embedding_proximity = target_embedding_proximity
@@ -235,11 +237,28 @@ class TargetLoader:
 
         self._groups = None
         if "group" in targets.columns:
-            self._groups = defaultdict(list)
+            self._groups = defaultdict(set)
             for dst, group in zip(compacted, targets["group"]):
-                self._groups[group].append(dst)
+                self._groups[group].add(dst)
+
+        self._prepare_excluded_targets(targets)
 
         self._init_w2v_ns(compacted)
+
+    def _prepare_excluded_targets(self, targets):
+        pass
+        # code below does not work
+        if self._restrict_targets_to_src is True:
+            assert self._compact_targets is False
+            self._excluded_targets = set(
+                self._label_encoder.get(dst, -1) for dst in targets['dst']
+                if dst not in self._element_lookup and self._label_encoder.get(dst, -1) != -1
+            )
+            # compacted_dst = set(targets['dst'].apply(lambda x: self._label_encoder.get(x, -1)))
+            # compacted_src = targets['src'].apply(lambda x: self._label_encoder.get(x, pd.NA)).dropna()
+            # self._excluded_targets = set(compacted_src)
+        else:
+            self._excluded_targets = set()
 
     def _init_w2v_ns(self, elements, skipgram_sampling_power=0.75):
         # compute distribution of dst elements
@@ -248,18 +267,30 @@ class TargetLoader:
         _neg_prob = counts.to_numpy()
         _neg_prob **= skipgram_sampling_power
 
-        _neg_prob /= sum(_neg_prob)
-        self._neg_prob = dict()
+        # _neg_prob /= sum(_neg_prob)
+        # self._neg_prob = dict()
         self._general_sample_group_key = "all"
-        self._neg_prob[self._general_sample_group_key] = _neg_prob
+        self._neg_prob = _neg_prob / sum(_neg_prob)
+        # self._neg_prob[self._general_sample_group_key] = _neg_prob
+        self._id_loc = dict(zip(self._ns_idxs, range(len(self._ns_idxs))))
+        # if self._use_ns_groups:
+        #     self._id_loc = dict(zip(self._ns_idxs, range(len(self._ns_idxs))))
+        #     for group, dsts in self._groups.items():
+        #         positions = np.fromiter((id_loc[loc] for loc in dsts), dtype=np.int32)
+        #         group_probs = np.zeros_like(_neg_prob)
+        #         group_probs[positions] = _neg_prob[positions]
+        #         self._neg_prob[group] = group_probs / np.sum(group_probs)
 
-        if self._use_ns_groups:
-            for group, dsts in self._groups.items():
-                group_probs = []
-                for key, prob in zip(self._ns_idxs, _neg_prob):
-                    group_probs.append(prob if key in dsts else 0.)
-                group_probs = np.array(group_probs)
-                self._neg_prob[group] = group_probs / sum(group_probs)
+    @lru_cache(5)
+    def _get_ns_w2v_weights(self, group):
+        if group == self._general_sample_group_key:
+            return self._neg_prob
+        else:
+            positions = np.fromiter((self._id_loc[loc] for loc in self._groups[group]), dtype=np.int32)
+            group_probs = np.zeros_like(self._neg_prob)
+            group_probs[positions] = self._neg_prob[positions]
+            return group_probs / np.sum(group_probs)
+
 
     def __len__(self):
         return len(self._element_lookup)
@@ -313,7 +344,7 @@ class TargetLoader:
             excluded  = self._element_lookup[id_] + [id_]
 
             def get_negative(group):
-                return np.random.choice(self._ns_idxs, 1, replace=True, p=self._neg_prob[group]).astype(np.int32)[0]
+                return np.random.choice(self._ns_idxs, 1, replace=True, p=self._get_ns_w2v_weights(group)).astype(np.int32)[0]
 
             neg = get_negative(current_group)
             attempt_counter = 10
