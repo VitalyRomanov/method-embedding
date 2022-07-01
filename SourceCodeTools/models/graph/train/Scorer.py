@@ -9,23 +9,13 @@ from sklearn.metrics import ndcg_score, top_k_accuracy_score
 
 class Scorer:
     """
-    Implements sampler for triplet loss. This sampler is useful when the loss is based on the neighbourhood
-    similarity. It becomes less useful when the decision is made by neural network because it does not need to mode
-    points to learn how to make correct decisions.
+    Used for evaluating embeddings. Candidate embeddings are taken from TargetLoader. In TargetLoader the list of
+    unique embeddings is determined by LabelEncoder. LabelEncoder is trained on all partitions simultaneously. For this
+    reason one can assume that evaluation covers the entire graph, ond not only test or val partitions.
     """
     def __init__(
             self, target_loader, margin, device="cpu"
     ):
-        """
-        Creates an embedding table, the embeddings in this table are updated once during an epoch. Embeddings from this
-        table are used for nearest neighbour queries during negative sampling. We avoid keeping track of all possible
-        embeddings by knowing that only part of embeddings are eligible as DST.
-        :param num_embs: number of unique DST
-        :param emb_size: embedding dimensionality
-        :param src2dst: Mapping from SRC to all DST, need this to find the hardest negative example for all DST at once
-        :param neighbours_to_sample: default number of neighbours
-        :param index_backend: Choose between sklearn and faiss
-        """
         self.target_loader = target_loader
         self.device = device
         self.margin = margin
