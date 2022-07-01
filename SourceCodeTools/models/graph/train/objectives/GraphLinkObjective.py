@@ -1,5 +1,7 @@
 from collections import OrderedDict
 
+import torch
+
 from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective
 
 
@@ -21,6 +23,54 @@ class GraphLinkObjective(AbstractObjective):
         # raise NotImplementedError()
         pass
         # self.create_graph_link_sampler(data_loading_func, nodes)
+
+    # def _prepare_for_prediction(
+    #         self, node_embeddings, positive_embeddings, negative_embeddings, *args, **kwargs
+    # ):
+    #     # TODO breaks cache in
+    #     #  SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObjective.TargetLinkMapper.get_labels
+    #     labels_pos = self._create_positive_labels(torch.zeros(positive_embeddings.size(0)))
+    #     labels_neg = self._create_negative_labels(torch.zeros(negative_embeddings.size(0)))
+    #
+    #     src_embs = torch.cat([node_embeddings, node_embeddings], dim=0)
+    #     dst_embs = torch.cat([positive_embeddings, negative_embeddings], dim=0)
+    #     labels = torch.cat([labels_pos, labels_neg], 0).to(self.device)
+    #     return src_embs, dst_embs, labels
+
+    def forward(
+            self, input_nodes, input_mask, blocks, positive_indices, negative_indices,
+            update_ns_callback=None, graph=None
+    ):
+        seeds = blocks[-1].dstnodes["node_"].data["_ID"]
+        all_nodes = torch.cat([seeds, positive_indices, negative_indices])
+        all_embeddigs, _ = self.get_targets_from_nodes(all_nodes, graph=graph)
+
+        graph_embeddings = all_embeddigs[:len(seeds), :]
+        positive_embeddings = all_embeddigs[len(seeds): len(seeds) + len(positive_indices), :]
+        negative_embeddings = all_embeddigs[len(seeds) + len(positive_indices):, :]
+
+        update_ns_callback(all_nodes[len(seeds):].cpu().detach().numpy(), all_embeddigs[len(seeds):].cpu().detach().numpy())
+
+        # node_embs_, element_embs_, labels = self._prepare_for_prediction(
+        #     graph_embeddings, positive_embeddings, negative_embeddings
+        # )
+
+        pos_labels = self._create_positive_labels(positive_indices).to(self.device)
+        neg_labels = self._create_negative_labels(negative_embeddings).to(self.device)
+
+        pos_logits, pos_acc, pos_loss = self._compute_acc_loss(graph_embeddings, positive_embeddings, pos_labels)
+        neg_logits, neg_acc, neg_loss = self._compute_acc_loss(graph_embeddings, negative_embeddings, neg_labels)
+
+        pos_size = positive_indices.size(0)
+        neg_size = negative_embeddings.size(0)
+        loss = (pos_loss * pos_size + neg_loss * neg_size) / (pos_size + neg_size)
+        acc = (pos_acc * pos_size + neg_acc * neg_size) / (pos_size + neg_size)
+        logits = torch.cat([pos_logits, neg_logits], dim=0)
+        labels = torch.cat([pos_labels, neg_labels], dim=0)
+
+        # logits, acc, loss  = self._compute_acc_loss(node_embs_, element_embs_, labels)
+
+        return graph_embeddings, logits, labels, loss, acc
 
     def parameters(self, recurse: bool = True):
         return self.link_predictor.parameters()
