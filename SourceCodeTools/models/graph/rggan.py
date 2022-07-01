@@ -110,7 +110,7 @@ class RGANLayer(RelGraphConvLayer):
         # torch.nn.init.xavier_normal_(attn_basis, gain=1.)
 
         self.conv = dglnn.HeteroGraphConv({
-            rel: NZBiasGraphConv(
+            rel: dglnn.GraphConv(
                 in_feat, out_feat, norm='right', weight=False, bias=True, allow_zero_in_degree=True,# activation=self.activation
             )
             # rel: BasisGATConv(
