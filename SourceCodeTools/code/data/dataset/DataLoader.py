@@ -35,9 +35,13 @@ class SGNodesDataLoader:
         self._masker_cache_path = tempfile.TemporaryDirectory(suffix="MaskerCache")
         self._masker_cache = dc.Cache(self._masker_cache_path.name)
 
+        self.train_num_batches = 0
+        self.val_num_batches = 0
+        self.test_num_batches = 0
+
         if labels is not None:
             self.label_encoder = LabelDenseEncoder(labels)
-            if "emb_size" in label_loader_params:
+            if "emb_size" in label_loader_params:  # if present, need to create an index for distance queries
                 self.target_embedding_proximity = TargetEmbeddingProximity(
                     self.label_encoder.encoded_labels(), label_loader_params["emb_size"]
                 )
@@ -149,6 +153,7 @@ class SGNodesDataLoader:
         for group, subgraph, masker, node_labels_loader, edge_labels_loader in subgraph_generator:
 
             # TODO shuffle subgraphs
+            print(group)
 
             sampler = MultiLayerFullNeighborSampler(number_of_hops)
             nodes_for_batching = self.get_nodes_from_partition(subgraph, partition, labels_for)
@@ -158,6 +163,9 @@ class SGNodesDataLoader:
             loader = NodeDataLoader(
                 subgraph, nodes_for_batching, sampler, batch_size=batch_size, shuffle=True, num_workers=0
             )
+
+            nodes_in_graph = set(subgraph.nodes("node_")[subgraph.nodes["node_"].data["current_type_mask"]].cpu().numpy())
+            # nodes_in_graph = set(nodes_for_batching["node_"].numpy())
 
             for ind, (input_nodes, seeds, blocks) in enumerate(loader):
                 if masker is not None:
@@ -171,21 +179,30 @@ class SGNodesDataLoader:
                     raise NotImplementedError("Using node types is currently not supported. Set use_node_types=False")
 
                 if node_labels_loader is not None:
-                    positive_indices = torch.LongTensor(node_labels_loader.sample_positive(indices)).to(self.device)
-                    negative_indices = torch.LongTensor(node_labels_loader.sample_negative(indices, strategy=self.negative_sampling_strategy, current_group=group)).to(self.device)
+                    positive_indices = torch.LongTensor(node_labels_loader.sample_positive(indices))
+                    negative_indices = torch.LongTensor(node_labels_loader.sample_negative(indices, strategy=self.negative_sampling_strategy, current_group=group))
                 else:
                     positive_indices = None
                     negative_indices = None
 
+                input_nodes = blocks[0].srcnodes["node_"].data["embedding_id"]
+
+                assert len(set(seeds.numpy()) - nodes_in_graph) == 0
+                assert len(set(positive_indices.numpy()) - nodes_in_graph) == 0
+                assert len(set(negative_indices.numpy()) - nodes_in_graph) == 0
+
+                assert -1 not in input_nodes.tolist()
+
                 batch = {
+                    "seeds": seeds,
                     "group": group,
                     "subgraph": subgraph,
-                    "input_nodes": blocks[0].srcnodes["node_"].data["embedding_id"].to(self.device),
+                    "input_nodes": input_nodes.to(self.device),
                     "input_mask": input_mask,
                     "indices": indices,
                     "blocks": [block.to(self.device) for block in blocks],
-                    "positive_indices": positive_indices,
-                    "negative_indices": negative_indices,
+                    "positive_indices": positive_indices.to(self.device),
+                    "negative_indices": negative_indices.to(self.device),
                     "node_labels_loader": node_labels_loader,
                     # "edge_labels_loader": edge_labels_loader,
                     # "update_node_negative_sampler_callback": node_labels_loader.set_embed,
