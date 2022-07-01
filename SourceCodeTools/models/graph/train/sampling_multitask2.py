@@ -273,6 +273,8 @@ class SamplingMultitaskTrainer:
         )
 
     def create_edge_objective(self, dataset, tokenizer_path):
+        assert self.trainer_params["use_ns_groups"] is True, "Parameter `use_ns_groups` should be set to True " \
+                                                             "for edge link prediction"
         self.objectives.append(
             self._create_node_level_objective(
                 objective_name="EdgePrediction",
@@ -283,7 +285,7 @@ class SamplingMultitaskTrainer:
                 label_loader_params={"compact_dst": False},
                 tokenizer_path=tokenizer_path,
                 masker_fn=None,
-                preload_for="package" # "file", "function"
+                preload_for="package" # "file", "mention"
             )
         )
 
@@ -352,7 +354,7 @@ class SamplingMultitaskTrainer:
             emb_size=n_dims,
             dtype=self.dtype,
             n_buckets=n_buckets
-        )
+        ).to(self.device)
 
     @property
     def lr(self):
