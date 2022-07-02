@@ -583,19 +583,23 @@ class OnDiskGraphStorage:
         # # self.database.execute("CREATE INDEX temp.MyIndex ON MyTable(MyField)")
         # return table_name
 
+        self.database.conn.execute(f"DROP TABLE IF EXISTS {table_name}")
         self.database.conn.execute(f"CREATE TEMPORARY TABLE {table_name}(node_ids INTEGER)")
-        self.database.conn.executemany(
-            f"insert into {table_name}(node_ids) values (?)", list(map(lambda x: (x,), node_ids))
-        )
+        list_of_nodes = ",".join(f"({val})" for val in node_ids)
+        insertion_query = f"insert into {table_name}(node_ids) values {list_of_nodes}"
+        self.database.conn.execute(insertion_query)
+        # self.database.conn.executemany(
+        #     f"insert into {table_name}(node_ids) values (?)", list(map(lambda x: (x,), node_ids))
+        # )
         self.database.conn.execute(
-            f"CREATE INDEX IF NOT EXISTS temp.idx_tmp_partition_nodes ON {table_name}(node_ids)"
+            f"CREATE INDEX IF NOT EXISTS idx_tmp_partition_nodes ON {table_name}(node_ids)"
         )
-        self.database.conn.commit()
+        # self.database.conn.commit()  # needed for sqlite
         return table_name
 
     def _drop_tmp_node_ids_list(self, table_name):
         self.database.conn.execute(f"DROP TABLE {table_name}")
-        self.database.conn.commit()
+        # self.database.conn.commit()  # needed for sqlite
 
     def get_info_for_node_ids(self, node_ids, field):
         if field == SGPartitionStrategies.package:
@@ -627,7 +631,7 @@ class OnDiskGraphStorage:
             query_str = f"""
             select distinct src, file_id, package from (
                 {select_nodes}
-            ) where {column_name} not null order by package, file_id
+            ) as node_info where {column_name} is not null order by package, file_id
             """  # order by {column_name}
         else:
             query_str = f"""
