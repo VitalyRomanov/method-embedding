@@ -256,7 +256,6 @@ class SourceGraphDataset:
         self.subgraph_id_column = subgraph_id_column
         self.subgraph_partition = subgraph_partition
         self.partition = PartitionIndex(unpersist(partition))
-        self.n_buckets = 200000
         self._cache = DatasetCache(self.data_path)
         self._subgraph_cache_path = tempfile.TemporaryDirectory(suffix="SubgraphCache")
         self._subgraph_cache = dc.Cache(self._subgraph_cache_path.name)
@@ -315,11 +314,16 @@ class SourceGraphDataset:
 
     def _open_dataset_db(self):
         # self.dataset_db = N4jGraphStorage()
-        dataset_db_path = join(self.data_path, "dataset.db")
+        import_complete_status = "Import complete"
+        dataset_db_path = join(self.data_path, "dataset_imported")  # "dataset.db")
         if not os.path.isfile(dataset_db_path):
+            with open(dataset_db_path, "w") as db_file:
+                db_file.write(import_complete_status)
             self.dataset_db = OnDiskGraphStorage(dataset_db_path)
             self.dataset_db.import_from_files(self.data_path)
         else:
+            with open(dataset_db_path, "r") as db_file:
+                assert db_file.read().startswith(import_complete_status), "Import was interrupted. Delete existing data"
             self.dataset_db = OnDiskGraphStorage(dataset_db_path)
         #     self.dataset_db.import_from_files(self.data_path)
         self._num_nodes = self.dataset_db.get_num_nodes()
@@ -764,8 +768,8 @@ class SourceGraphDataset:
     #         dataset.tokenizer_path = args["tokenizer"]
     #     return dataset
 
-    def _get_node_name2bucket_mapping(self, node_id2name):
-        return {key: token_hasher(val, self.n_buckets) for key, val in node_id2name.items()}
+    def _get_node_name2bucket_mapping(self, node_id2name, n_buckets):
+        return {key: token_hasher(val, n_buckets) for key, val in node_id2name.items()}
 
     # def _prepare_subgraph(self, seed_nodes, number_of_hops):
     #     seen_nodes = set(seed_nodes)
@@ -889,7 +893,7 @@ class SourceGraphDataset:
     def get_cache_key(self, how, group):
         return f"{how.name}_{group}"
 
-    def iterate_subgraphs(self, how, groups, node_data, edge_data):
+    def iterate_subgraphs(self, how, groups, node_data, edge_data, n_buckets):
 
         iterator = self.dataset_db.iterate_subgraphs(how, groups)
 
@@ -953,7 +957,7 @@ class SourceGraphDataset:
             self.ensure_connectedness(nodes, edges)
 
             node_name_mapping = self._get_embeddable_names(nodes)
-            node_data["embedding_id"] = self._get_node_name2bucket_mapping(node_name_mapping)
+            node_data["embedding_id"] = self._get_node_name2bucket_mapping(node_name_mapping, n_buckets)
             # node_type_pool = self._prepare_node_type_pool(nodes)
 
             self._adjust_types(nodes, edges)

@@ -14,7 +14,7 @@ class SGNodesDataLoader:
     def __init__(
             self, dataset, labels_for, number_of_hops, batch_size, preload_for="package", labels=None,
             masker_fn=None, label_loader_class=None, label_loader_params=None, device="cpu",
-            negative_sampling_strategy="w2v", base_path=None, objective_name=None
+            negative_sampling_strategy="w2v", base_path=None, objective_name=None, embedding_table_size=300000
     ):
         preload_for = SGPartitionStrategies[preload_for]
         labels_for = SGLabelSpec[labels_for]
@@ -30,6 +30,7 @@ class SGNodesDataLoader:
         self.preload_for = preload_for
         self.masker_fn = masker_fn
         self.device = device
+        self.n_buckets = embedding_table_size
         self.negative_sampling_strategy = negative_sampling_strategy
         assert negative_sampling_strategy in {"w2v", "closest"}
         self._masker_cache_path = tempfile.TemporaryDirectory(suffix="MaskerCache")
@@ -99,7 +100,7 @@ class SGNodesDataLoader:
             groups = None
 
         for group, nodes, edges, subgraph in self.dataset.iterate_subgraphs(
-                grouping_strategy, groups, node_data, edge_data
+                grouping_strategy, groups, node_data, edge_data, self.n_buckets
         ):
 
             if masker_fn is not None:
