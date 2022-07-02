@@ -9,7 +9,7 @@ from tqdm import tqdm
 import diskcache as dc
 
 from SourceCodeTools.code.common import read_nodes, read_edges
-from SourceCodeTools.code.data.SQLiteStorage import SQLiteStorage
+from SourceCodeTools.code.data.SQLiteStorage import SQLiteStorage, AbstractDBStorage, PostgresStorage
 from SourceCodeTools.code.data.dataset.partition_strategies import SGPartitionStrategies
 from SourceCodeTools.code.data.file_utils import unpersist
 
@@ -153,7 +153,7 @@ def start_worker(config, inbox_queue, outbox_queue, *args, **kwargs):
 class OnDiskGraphStorage:
     def __init__(self, path):
         self.path = path
-        self.database = SQLiteStorage(path)
+        self.database = PostgresStorage("localhost") # SQLiteStorage(path)
         self.cache_path = tempfile.TemporaryDirectory(suffix="OnDiskGraphStorage")
         self._cache = dc.Cache(self.cache_path.name)
 
@@ -218,9 +218,9 @@ class OnDiskGraphStorage:
                 table_name="nodes",
                 create_index=["id", "type"],
                 dtype={
-                    "id": "INT PRIMARY KEY",
-                    "type": "INT NOT NULL",
-                    "name": "TEXT NOT NULL"
+                    "id": AbstractDBStorage.DataTypes.INT_PRIMARY,
+                    "type": AbstractDBStorage.DataTypes.INT_NOT_NULL,
+                    "name": AbstractDBStorage.DataTypes.TEXT_NOT_NULL
                 }
             )
 
@@ -229,18 +229,18 @@ class OnDiskGraphStorage:
                 table_name="node_hierarchy",
                 create_index=["id", "mentioned_in"],
                 dtype={
-                    "id": "INT PRIMARY KEY",
-                    "mentioned_in": "INT NOT NULL",
+                    "id": AbstractDBStorage.DataTypes.INT_PRIMARY,
+                    "mentioned_in": AbstractDBStorage.DataTypes.INT_NOT_NULL,
                 }
             )
 
             self._write_non_empty_table(
                 table=nodes[["id", "string"]].dropna(),
                 table_name="node_strings",
-                create_index=["id", "string"],
+                create_index=["id"],
                 dtype={
-                    "id": "INT PRIMARY KEY",
-                    "string": "TEXT NOT NULL",
+                    "id": AbstractDBStorage.DataTypes.INT_PRIMARY,
+                    "string": AbstractDBStorage.DataTypes.TEXT_NOT_NULL,
                 }
             )
 
@@ -267,10 +267,10 @@ class OnDiskGraphStorage:
                 table_name="edges",
                 create_index=["id", "type", "src", "dst"],
                 dtype={
-                    "id": "INT PRIMARY KEY",
-                    "type": "INT NOT NULL",
-                    "src": "INT NOT NULL",
-                    "dst": "INT NOT NULL"
+                    "id": AbstractDBStorage.DataTypes.INT_PRIMARY,
+                    "type": AbstractDBStorage.DataTypes.INT_NOT_NULL,
+                    "src": AbstractDBStorage.DataTypes.INT_NOT_NULL,
+                    "dst": AbstractDBStorage.DataTypes.INT_NOT_NULL
                 }
             )
 
@@ -279,9 +279,9 @@ class OnDiskGraphStorage:
                 table_name="edge_file_id",
                 create_index=["id", "file_id", "package"],
                 dtype={
-                    "id": "INT PRIMARY KEY",
-                    "file_id": "INT NOT NULL",
-                    "package": "INT NOT NULL",
+                    "id": AbstractDBStorage.DataTypes.INT_PRIMARY,
+                    "file_id": AbstractDBStorage.DataTypes.INT_NOT_NULL,
+                    "package": AbstractDBStorage.DataTypes.INT_NOT_NULL,
                 }
             )
 
@@ -291,8 +291,8 @@ class OnDiskGraphStorage:
                 table_name="edge_hierarchy",
                 create_index=["id", "mentioned_in"],
                 dtype={
-                    "id": "INT PRIMARY KEY",
-                    "mentioned_in": "INT",
+                    "id": AbstractDBStorage.DataTypes.INT_NOT_NULL,
+                    "mentioned_in": AbstractDBStorage.DataTypes.INT,
                 }
             )
 
@@ -306,9 +306,9 @@ class OnDiskGraphStorage:
                 table_name="filecontent",
                 create_index=["id", "package"],
                 dtype={
-                    "id": "INT NOT NULL",
-                    "content": "TEXT NOT NULL",
-                    "package": "INT NOT NULL",
+                    "id": AbstractDBStorage.DataTypes.INT_NOT_NULL,
+                    "content": AbstractDBStorage.DataTypes.TEXT_NOT_NULL,
+                    "package": AbstractDBStorage.DataTypes.INT_NOT_NULL,
                 }
             )
 
@@ -319,7 +319,7 @@ class OnDiskGraphStorage:
         # self._import_filecontent(get_path("common_filecontent.json.bz2"))
 
     def get_num_nodes(self):
-        return self.database.query("SELECT max(id) FROM nodes").iloc[0,0]
+        return self.database.query("SELECT max(id) FROM nodes").iloc[0,0] + 1
 
     def get_node_type_descriptions(self):
         return self.database.query("SELECT type_desc from node_types")["type_desc"]
@@ -579,19 +579,25 @@ class OnDiskGraphStorage:
         # # self.database.execute("CREATE INDEX temp.MyIndex ON MyTable(MyField)")
         # return table_name
 
+        self.database.add_records(node_ids, table_name)
+
+        self.database.conn.execute(f"DROP TABLE IF EXISTS {table_name}")
         self.database.conn.execute(f"CREATE TEMPORARY TABLE {table_name}(node_ids INTEGER)")
-        self.database.conn.executemany(
-            f"insert into {table_name}(node_ids) values (?)", list(map(lambda x: (x,), node_ids))
-        )
+        list_of_nodes = ",".join(f"({val})" for val in node_ids)
+        insertion_query = f"insert into {table_name}(node_ids) values {list_of_nodes}"
+        self.database.conn.execute(insertion_query)
+        # self.database.conn.executemany(
+        #     f"insert into {table_name}(node_ids) values (?)", list(map(lambda x: (x,), node_ids))
+        # )
         self.database.conn.execute(
-            f"CREATE INDEX IF NOT EXISTS temp.idx_tmp_partition_nodes ON {table_name}(node_ids)"
+            f"CREATE INDEX IF NOT EXISTS idx_tmp_partition_nodes ON {table_name}(node_ids)"
         )
-        self.database.conn.commit()
+        # self.database.conn.commit()
         return table_name
 
     def _drop_tmp_node_ids_list(self, table_name):
         self.database.conn.execute(f"DROP TABLE {table_name}")
-        self.database.conn.commit()
+        # self.database.conn.commit()
 
     def get_info_for_node_ids(self, node_ids, field):
         if field == SGPartitionStrategies.package:
@@ -619,7 +625,7 @@ class OnDiskGraphStorage:
             inner join edges on edges.dst = {node_ids_table_name}.node_ids
             inner join edge_file_id on edges.id = edge_file_id.id
             join edge_hierarchy on edges.id = edge_hierarchy.id
-        ) where {column_name} not null order by {column_name}
+        ) as node_info where {column_name} is not null order by {column_name}
         """
 
         results = self.database.query(query_str)

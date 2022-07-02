@@ -50,7 +50,7 @@ class AbstractObjective(nn.Module):
             masker_fn=None, label_loader_class=None, label_loader_params=None,
             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod",
             measure_scores=False, dilate_scores=1, early_stopping=False, early_stopping_tolerance=20, nn_index="brute",
-            model_base_path=None, force_w2v=False, use_ns_groups=False
+            model_base_path=None, force_w2v=False, use_ns_groups=False, embedding_table_size=300000
     ):
         super(AbstractObjective, self).__init__()
 
@@ -70,6 +70,7 @@ class AbstractObjective(nn.Module):
         self.base_path = model_base_path
         self.force_w2v = force_w2v
         self.use_ns_groups = use_ns_groups
+        self.embedding_table_size = embedding_table_size
 
         self._verify_parameters()
 
@@ -102,7 +103,7 @@ class AbstractObjective(nn.Module):
             dataset, labels_for, number_of_hops, batch_size, preload_for=preload_for, labels=labels,
             masker_fn=masker_fn, label_loader_class=label_loader_class, label_loader_params=label_loader_params,
             negative_sampling_strategy="w2v" if self.force_w2v else "closest", base_path=self.base_path,
-            objective_name=self.name, device=self.device
+            objective_name=self.name, device=self.device, embedding_table_size=self.embedding_table_size
         )
         self._create_loaders()
 

@@ -130,7 +130,8 @@ class SamplingMultitaskTrainer:
             tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
             measure_scores=self.trainer_params["measure_scores"], dilate_scores=self.trainer_params["dilate_scores"],
             early_stopping=False, early_stopping_tolerance=20, nn_index=self.trainer_params["nn_index"],
-            model_base_path=self.model_base_path, force_w2v=self.trainer_params["force_w2v_ns"]
+            model_base_path=self.model_base_path, force_w2v=self.trainer_params["force_w2v_ns"],
+            embedding_table_size=self.trainer_params["embedding_table_size"]
         )
 
     def _create_subgraph_objective(
@@ -285,7 +286,7 @@ class SamplingMultitaskTrainer:
                 label_loader_params={"compact_dst": False},
                 tokenizer_path=tokenizer_path,
                 masker_fn=None,
-                preload_for="package" # "file", "mention"
+                preload_for="file" # "package", "mention"
             )
         )
 
