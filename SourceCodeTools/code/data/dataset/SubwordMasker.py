@@ -1,7 +1,7 @@
 import pandas as pd
 import torch
 
-from SourceCodeTools.code.data.SQLiteStorage import SQLiteStorage
+from SourceCodeTools.code.data.DBStorage import SQLiteStorage
 
 # TODO
 # masking using edge weight

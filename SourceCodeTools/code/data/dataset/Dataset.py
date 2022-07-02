@@ -12,7 +12,7 @@ import diskcache as dc
 
 from SourceCodeTools.code.ast.python_ast2 import PythonSharedNodes
 from SourceCodeTools.code.data.GraphStorage import OnDiskGraphStorage
-from SourceCodeTools.code.data.SQLiteStorage import SQLiteStorage
+from SourceCodeTools.code.data.DBStorage import SQLiteStorage
 from SourceCodeTools.code.data.dataset.SubwordMasker import SubwordMasker, NodeNameMasker, NodeClfMasker
 from SourceCodeTools.code.data.dataset.partition_strategies import SGPartitionStrategies, SGLabelSpec
 from SourceCodeTools.code.data.file_utils import *
@@ -313,19 +313,13 @@ class SourceGraphDataset:
         )
 
     def _open_dataset_db(self):
-        # self.dataset_db = N4jGraphStorage()
-        import_complete_status = "Import complete"
-        dataset_db_path = join(self.data_path, "dataset_imported")  # "dataset.db")
-        if not os.path.isfile(dataset_db_path):
-            with open(dataset_db_path, "w") as db_file:
-                db_file.write(import_complete_status)
+        dataset_db_path = OnDiskGraphStorage.get_storage_file_name(self.data_path)
+        if not OnDiskGraphStorage.verify_imported(dataset_db_path):
             self.dataset_db = OnDiskGraphStorage(dataset_db_path)
             self.dataset_db.import_from_files(self.data_path)
+            self.dataset_db.add_import_completed_flag(dataset_db_path)
         else:
-            with open(dataset_db_path, "r") as db_file:
-                assert db_file.read().startswith(import_complete_status), "Import was interrupted. Delete existing data"
             self.dataset_db = OnDiskGraphStorage(dataset_db_path)
-        #     self.dataset_db.import_from_files(self.data_path)
         self._num_nodes = self.dataset_db.get_num_nodes()
 
 
