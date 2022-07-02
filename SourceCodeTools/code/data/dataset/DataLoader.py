@@ -49,7 +49,7 @@ class SGNodesDataLoader:
             else:
                 self.target_embedding_proximity = None
 
-        for partition_label in ["train", "val", "test", "any"]:
+        for partition_label in ["train", "val", "test", "any"]:  # can memory consumption be improved?
             self._create_label_loader_for_partition(
                 labels, partition_label, label_loader_class, label_loader_params, base_path, objective_name
             )
@@ -168,7 +168,7 @@ class SGNodesDataLoader:
             nodes_in_graph = set(subgraph.nodes("node_")[subgraph.nodes["node_"].data["current_type_mask"]].cpu().numpy())
             # nodes_in_graph = set(nodes_for_batching["node_"].numpy())
 
-            for ind, (input_nodes, seeds, blocks) in enumerate(loader):
+            for ind, (input_nodes, seeds, blocks) in enumerate(loader):  # 2-3gb consumed here
                 if masker is not None:
                     input_mask = masker.get_mask(mask_for=seeds, input_nodes=input_nodes).to(self.device)
                 else:
@@ -262,3 +262,85 @@ class SGNodesDataLoader:
                 return self.nodes_dataloader(partition_label)
 
         return SGDLIter()
+
+
+class SGEdgesDataLoader(SGNodesDataLoader):
+
+    def iterate_nodes_for_batches(self, nodes):
+        total_nodes = len(nodes)
+        for i in range(0, total_nodes, self.batch_size):
+            yield nodes[i: min(i + self.batch_size, total_nodes)]
+
+    def create_batches(self, subgraph_generator, number_of_hops, batch_size, partition, labels_for):
+
+        sampler = MultiLayerFullNeighborSampler(number_of_hops)
+
+        for group, subgraph, masker, node_labels_loader, edge_labels_loader in subgraph_generator:
+
+            nodes_in_graph = set(subgraph.nodes("node_")[subgraph.nodes["node_"].data["current_type_mask"]].cpu().numpy())
+            nodes_for_batching = self.get_nodes_from_partition(subgraph, partition, labels_for)
+            if self._num_nodes_total(nodes_for_batching) == 0:
+                continue
+
+            for nodes_in_batch in self.iterate_nodes_for_batches(self.seeds_to_python(nodes_for_batching)):
+
+                if node_labels_loader is not None:
+                    positive_indices = torch.LongTensor(node_labels_loader.sample_positive(nodes_in_batch))
+                    negative_indices = torch.LongTensor(node_labels_loader.sample_negative(nodes_in_batch, strategy=self.negative_sampling_strategy, current_group=group))
+                else:
+                    positive_indices = None
+                    negative_indices = None
+
+                nodes_in_total = len(nodes_in_batch) + len(positive_indices) + len(negative_indices)
+                empty_mask = [False] * nodes_in_total
+
+                src_nodes_mask = torch.BoolTensor(empty_mask)
+                positive_nodes_mask = torch.BoolTensor(empty_mask)
+                negative_nodes_mask = torch.BoolTensor(empty_mask)
+
+                positive_start = len(nodes_in_batch)
+                negative_start = len(nodes_in_batch) + len(positive_indices)
+
+                src_nodes_mask[:positive_start] = True
+                positive_nodes_mask[positive_start: negative_start] = True
+                negative_nodes_mask[negative_start:] = True
+
+                all_nodes = torch.cat([torch.LongTensor(nodes_in_batch), positive_indices, negative_indices])
+
+                loader = NodeDataLoader(
+                    subgraph, {"node_": all_nodes}, sampler, batch_size=len(all_nodes), shuffle=True, num_workers=0
+                )
+
+                input_nodes, seeds, blocks = next(iter(loader))
+
+                if masker is not None:
+                    input_mask = masker.get_mask(mask_for=all_nodes, input_nodes=input_nodes).to(self.device)
+                else:
+                    input_mask = None
+
+                indices = self.seeds_to_python(seeds)  # dgl returns torch tensor
+
+                if isinstance(indices, dict):
+                    raise NotImplementedError("Using node types is currently not supported. Set use_node_types=False")
+
+                input_nodes = blocks[0].srcnodes["node_"].data["embedding_id"]
+
+                assert len(set(seeds.numpy()) - nodes_in_graph) == 0
+                assert -1 not in input_nodes.tolist()
+
+                batch = {
+                    "seeds": seeds,
+                    "group": group,
+                    "subgraph": subgraph,
+                    "input_nodes": input_nodes.to(self.device),
+                    "input_mask": input_mask,
+                    "blocks": [block.to(self.device) for block in blocks],
+                    "positive_indices": positive_indices.to(self.device),
+                    "negative_indices": negative_indices.to(self.device),
+                    "node_labels_loader": node_labels_loader,
+                    "src_nodes_mask": src_nodes_mask,
+                    "positive_nodes_mask": positive_nodes_mask,
+                    "negative_nodes_mask": negative_nodes_mask
+                }
+
+                yield batch

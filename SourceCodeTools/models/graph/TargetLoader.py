@@ -92,7 +92,7 @@ class TargetEmbeddingProximity:
 
     def _init_proximity_search(self):
         self._target2index = dict(zip(self._unique_targets, range(len(self._unique_targets))))
-        self._target_embedding_cache = normalize(np.ones((len(self._unique_targets), self._emb_size)), axis=1)
+        self._target_embedding_cache = normalize(np.ones((len(self._unique_targets), self._emb_size)), axis=1) # large matrix, high memory consumption
         # Track whether all embeddings were updated at least once. After each embedding was initialized,
         # can start proximity negative sampling
         self._cold_start_status = list(False for _ in range(len(self._unique_targets)))
