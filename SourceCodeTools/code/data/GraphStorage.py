@@ -9,7 +9,7 @@ from tqdm import tqdm
 import diskcache as dc
 
 from SourceCodeTools.code.common import read_nodes, read_edges
-from SourceCodeTools.code.data.SQLiteStorage import SQLiteStorage, AbstractDBStorage, PostgresStorage
+from SourceCodeTools.code.data.DBStorage import SQLiteStorage, AbstractDBStorage, PostgresStorage
 from SourceCodeTools.code.data.dataset.partition_strategies import SGPartitionStrategies
 from SourceCodeTools.code.data.file_utils import unpersist
 
@@ -151,11 +151,29 @@ def start_worker(config, inbox_queue, outbox_queue, *args, **kwargs):
 
 
 class OnDiskGraphStorage:
+    storage_class = SQLiteStorage  # can change this between PostgresStorage and SQLiteStorage
+
     def __init__(self, path):
         self.path = path
-        self.database = PostgresStorage("localhost") # SQLiteStorage(path)
+        if self.storage_class == PostgresStorage:
+            self.database = PostgresStorage("localhost")
+        elif self.storage_class == SQLiteStorage:
+            self.database = SQLiteStorage(path)
+
         self.cache_path = tempfile.TemporaryDirectory(suffix="OnDiskGraphStorage")
         self._cache = dc.Cache(self.cache_path.name)
+
+    @classmethod
+    def get_storage_file_name(cls, path):
+        return cls.storage_class.get_storage_file_name(path)
+
+    @classmethod
+    def verify_imported(cls, path):
+        return cls.storage_class.verify_imported(path)
+
+    @classmethod
+    def add_import_completed_flag(cls, path):
+        cls.storage_class.add_import_completed_flag(path)
 
     def write_to_cache(self, key, obj):
         self._cache[key] = obj
@@ -332,13 +350,6 @@ class OnDiskGraphStorage:
         return dict(zip(table["type_id"], table["type_desc"]))
 
     def get_node_types(self):
-        # table = self.database.query("""
-        # SELECT
-        # id as id, type_desc as type
-        # from
-        # nodes
-        # LEFT JOIN node_types on nodes.type = node_types.type_id
-        # """)
         node_id2type_id = self.database.query("SELECT id, type as type_id from nodes")
         if not hasattr(self, "type_id2desc"):
             self.type_id2desc = self.database.query("SELECT type_id, type_desc from node_types")
@@ -456,13 +467,6 @@ class OnDiskGraphStorage:
     def get_all_packages(self):
         return self.database.query("SELECT package_id, package_desc FROM packages")["package_id"]
 
-    # def iterate_packages(self, all_packages=None):
-    #     if all_packages is None:
-    #         all_packages = self.database.query("SELECT package_id, package_desc FROM packages")["package_id"]
-    #
-    #     for package_id in all_packages:
-    #         yield package_id, *self.get_subgraph_for_package(package_id)
-
     def get_subgraph_for_file(self, file_id):
         file_id, package = file_id
         edges = self.database.query(
@@ -486,13 +490,6 @@ class OnDiskGraphStorage:
             self.database.query("SELECT distinct file_id, package FROM edge_file_id").values
             ]
 
-    # def iterate_files(self, all_files=None):
-    #     if all_files is None:
-    #         all_files = self.database.query("SELECT distinct file_id FROM edge_file_id")["file_id"]
-    #
-    #     for file_id in all_files:
-    #         yield file_id, *self.get_subgraph_for_file(file_id)
-
     def get_subgraph_for_mention(self, mention):
         edges = self.database.query(
             f"""
@@ -511,36 +508,6 @@ class OnDiskGraphStorage:
 
     def get_all_mentions(self):
         return self.database.query("SELECT distinct mentioned_in FROM edge_hierarchy")["mentioned_in"]
-
-    # def iterate_mentions(self, all_mentions=None):
-    #     if all_mentions is None:
-    #         all_mentions = self.database.query("SELECT distinct mentioned_in FROM edge_hierarchy")["mentioned_in"]
-    #
-    #     for mention in all_mentions:
-    #         yield mention, *self.get_subgraph_for_mention(mention)
-
-    # def get_subgraph_ids(self, how):
-    #     if how == SGPartitionStrategies.package:
-    #         groups = self.get_all_packages()
-    #     elif how == SGPartitionStrategies.file:
-    #         groups = self.get_all_files()
-    #     elif how == SGPartitionStrategies.mention:
-    #         groups = self.get_all_mentions()
-    #     else:
-    #         raise ValueError()
-    #     return groups
-    #
-    # def get_subgraph_load_fn(self, how):
-    #     if how == SGPartitionStrategies.package:
-    #         load_fn = self.get_subgraph_for_package
-    #     elif how == SGPartitionStrategies.file:
-    #         load_fn = self.get_subgraph_for_file
-    #     elif how == SGPartitionStrategies.mention:
-    #         load_fn = self.get_subgraph_for_mention
-    #     else:
-    #         raise ValueError()
-    #
-    #     return load_fn
 
     def iterate_subgraphs(self, how, groups):
 
@@ -578,28 +545,20 @@ class OnDiskGraphStorage:
 
     def _create_tmp_node_ids_list(self, node_ids):
         table_name = "tmp_partition_nodes"
-        # node_ids = node_ids.to_frame().rename({"src": "node_id"}, axis=1)
-        # self.database.replace_records(node_ids, table_name, schema=self.get_temp_schema(node_ids, table_name))
-        # # self.database.execute("CREATE INDEX temp.MyIndex ON MyTable(MyField)")
-        # return table_name
-
-        self.database.conn.execute(f"DROP TABLE IF EXISTS {table_name}")
-        self.database.conn.execute(f"CREATE TEMPORARY TABLE {table_name}(node_ids INTEGER)")
         list_of_nodes = ",".join(f"({val})" for val in node_ids)
         insertion_query = f"insert into {table_name}(node_ids) values {list_of_nodes}"
-        self.database.conn.execute(insertion_query)
-        # self.database.conn.executemany(
-        #     f"insert into {table_name}(node_ids) values (?)", list(map(lambda x: (x,), node_ids))
-        # )
-        self.database.conn.execute(
-            f"CREATE INDEX IF NOT EXISTS idx_tmp_partition_nodes ON {table_name}(node_ids)"
+
+        self.database.execute(f"DROP TABLE IF EXISTS {table_name}", commit=False)
+        self.database.execute(f"CREATE TEMPORARY TABLE {table_name}(node_ids INTEGER)", commit=False)
+        self.database.execute(insertion_query, commit=False)
+        self.database.execute(
+            f"CREATE INDEX IF NOT EXISTS idx_tmp_partition_nodes ON {table_name}(node_ids)",
+            commit=True
         )
-        # self.database.conn.commit()  # needed for sqlite
         return table_name
 
     def _drop_tmp_node_ids_list(self, table_name):
-        self.database.conn.execute(f"DROP TABLE {table_name}")
-        # self.database.conn.commit()  # needed for sqlite
+        self.database.execute(f"DROP TABLE {table_name}")
 
     def get_info_for_node_ids(self, node_ids, field):
         if field == SGPartitionStrategies.package:
@@ -707,8 +666,3 @@ class OnDiskGraphStorage:
 #         nodes = pd.DataFrame.from_records(nodes, columns=["id", "type"]).drop_duplicates()
 #         edges = pd.DataFrame.from_records(edges, columns=["type", "src", "dst"]).drop_duplicates()
 #         return nodes, edges
-
-
-if __name__ == "__main__":
-    graph_storage = OnDiskGraphStorage("/Users/LTV/Downloads/v2_subsample_v4_new_ast2/with_ast/dataset.db")
-    graph_storage.import_from_files("/Users/LTV/Downloads/v2_subsample_v4_new_ast2/with_ast")
