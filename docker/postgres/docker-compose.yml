@@ -1,0 +1,12 @@
+services:
+
+  db:
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: sct
+      POSTGRES_USER: sct
+    ports:
+      - 5432:5432
+    volumes:
+      - ./data:/var/lib/postgresql/data
