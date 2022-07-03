@@ -15,6 +15,7 @@ import logging
 
 from tqdm import tqdm
 
+from SourceCodeTools.code.data.dataset.DataLoader import SGNodesDataLoader, SGEdgesDataLoader
 from SourceCodeTools.models.Embedder import Embedder
 from SourceCodeTools.models.graph.TargetLoader import TargetLoader, GraphLinkTargetLoader
 from SourceCodeTools.models.graph.train.objectives import GraphTextPrediction, GraphTextGeneration, \
@@ -112,7 +113,8 @@ class SamplingMultitaskTrainer:
 
     def _create_node_level_objective(
             self, *, objective_name, objective_class, dataset, labels_fn, tokenizer_path,
-            masker_fn=None, preload_for="package", label_loader_class=None, label_loader_params=None
+            masker_fn=None, preload_for="package", label_loader_class=None, label_loader_params=None,
+            dataloader_class=SGNodesDataLoader
     ):
         if label_loader_class is None:
             label_loader_class = TargetLoader
@@ -126,7 +128,7 @@ class SamplingMultitaskTrainer:
             label_load_fn=labels_fn, device=self.device, sampling_neighbourhood_size=self.sampling_neighbourhood_size,
             batch_size=self.batch_size, labels_for="nodes", number_of_hops=self.model_params["n_layers"],
             preload_for=preload_for, masker_fn=masker_fn, label_loader_class=label_loader_class,
-            label_loader_params=label_loader_params_,
+            label_loader_params=label_loader_params_, dataloader_class=dataloader_class,
             tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_predictor_type="inner_prod",
             measure_scores=self.trainer_params["measure_scores"], dilate_scores=self.trainer_params["dilate_scores"],
             early_stopping=False, early_stopping_tolerance=20, nn_index=self.trainer_params["nn_index"],
@@ -284,9 +286,10 @@ class SamplingMultitaskTrainer:
                 labels_fn=dataset.load_edge_prediction,
                 label_loader_class=GraphLinkTargetLoader,
                 label_loader_params={"compact_dst": False},
+                dataloader_class=SGEdgesDataLoader,
                 tokenizer_path=tokenizer_path,
                 masker_fn=None,
-                preload_for="file" # "package", "mention"
+                preload_for="package" # "file", "mention"
             )
         )
 
