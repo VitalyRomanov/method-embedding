@@ -47,7 +47,7 @@ class AbstractObjective(nn.Module):
     def __init__(
             self, *, name, graph_model, node_embedder, dataset, label_load_fn, device,
             sampling_neighbourhood_size, batch_size, labels_for, number_of_hops, preload_for="package",
-            masker_fn=None, label_loader_class=None, label_loader_params=None,
+            masker_fn=None, label_loader_class=None, label_loader_params=None, dataloader_class=None,
             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod",
             measure_scores=False, dilate_scores=1, early_stopping=False, early_stopping_tolerance=20, nn_index="brute",
             model_base_path=None, force_w2v=False, use_ns_groups=False, embedding_table_size=300000
@@ -61,6 +61,7 @@ class AbstractObjective(nn.Module):
         self.target_emb_size = target_emb_size
         self.node_embedder = node_embedder
         self.device = device
+        self.dataloader_class = dataloader_class
         self.link_predictor_type = link_predictor_type
         self.measure_scores = measure_scores
         self.dilate_scores = dilate_scores
@@ -99,7 +100,7 @@ class AbstractObjective(nn.Module):
             self, dataset, labels_for, number_of_hops, batch_size, preload_for="package", labels=None,
             masker_fn=None, label_loader_class=None, label_loader_params=None
     ):
-        self.dataloader = SGNodesDataLoader(
+        self.dataloader = self.dataloader_class(
             dataset, labels_for, number_of_hops, batch_size, preload_for=preload_for, labels=labels,
             masker_fn=masker_fn, label_loader_class=label_loader_class, label_loader_params=label_loader_params,
             negative_sampling_strategy="w2v" if self.force_w2v else "closest", base_path=self.base_path,
@@ -320,30 +321,31 @@ class AbstractObjective(nn.Module):
         self._update_num_batches_for_split(partition, batch_ind)
 
         node_labels_loader = batch["node_labels_loader"]
-        blocks = batch["blocks"]
-        input_nodes = batch["input_nodes"]
-        input_mask = batch["input_mask"]
-        positive_indices = batch["positive_indices"]
-        negative_indices = batch["negative_indices"]
+        # blocks = batch["blocks"]
+        # input_nodes = batch["input_nodes"]
+        # input_mask = batch["input_mask"]
+        # positive_indices = batch["positive_indices"]
+        # negative_indices = batch["negative_indices"]
         update_ns_callback = node_labels_loader.set_embed
-        graph = batch["subgraph"]
+        # graph = batch["subgraph"]
 
         self._warmup_if_needed(partition, update_ns_callback)
 
         if batch_ind % 10 == 0:
             node_labels_loader.update_index()
 
-        do_break = False
-        for block in blocks:
-            if block.num_edges() == 0:
-                do_break = True
-        if do_break:
-            return None, None
+        # do_break = False
+        # for block in blocks:
+        #     if block.num_edges() == 0:
+        #         do_break = True
+        # if do_break:
+        #     return None, None
 
         # try:
         graph_emb, logits, labels, loss, acc = self(
-            input_nodes, input_mask, blocks, positive_indices, negative_indices,
-            update_ns_callback=update_ns_callback, graph=graph
+            # input_nodes, input_mask, blocks, positive_indices, negative_indices,
+            # update_ns_callback=update_ns_callback, graph=graph
+            update_ns_callback=update_ns_callback, **batch
         )
 
         # loss = loss / len(self.objectives)  # assumes the same batch size for all objectives
@@ -461,11 +463,11 @@ class AbstractObjective(nn.Module):
 
     def forward(
             self, input_nodes, input_mask, blocks, positive_indices, negative_indices,
-            update_ns_callback=None, graph=None
+            update_ns_callback=None, subgraph=None, **kwargs
     ):
         graph_emb = self._graph_embeddings(input_nodes, blocks, mask=input_mask)
         node_embs_, element_embs_, labels = self._prepare_for_prediction(
-            graph_emb, positive_indices, negative_indices, self.target_embedding_fn, update_ns_callback, graph
+            graph_emb, positive_indices, negative_indices, self.target_embedding_fn, update_ns_callback, subgraph
         )
 
         logits, acc, loss  = self._compute_acc_loss(node_embs_, element_embs_, labels)

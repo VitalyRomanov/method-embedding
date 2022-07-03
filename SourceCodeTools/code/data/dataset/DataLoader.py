@@ -135,7 +135,7 @@ class SGNodesDataLoader:
         if isinstance(seeds, dict):
             python_seeds = {}
             for key, val in seeds.items():
-                if val.size > 0:
+                if len(val) > 0:
                     python_seeds[key] = val.tolist()
         else:
             python_seeds = seeds.tolist()
@@ -267,9 +267,19 @@ class SGNodesDataLoader:
 class SGEdgesDataLoader(SGNodesDataLoader):
 
     def iterate_nodes_for_batches(self, nodes):
+        if isinstance(nodes, dict):
+            nodes = nodes["node_"]
         total_nodes = len(nodes)
         for i in range(0, total_nodes, self.batch_size):
             yield nodes[i: min(i + self.batch_size, total_nodes)]
+
+    @staticmethod
+    def _handle_non_unique(non_unique_ids):
+        id_list = non_unique_ids.tolist()
+        unique_ids = list(set(id_list))
+        new_position = dict(zip(unique_ids, range(len(unique_ids))))
+        slice_map = torch.tensor(list(map(lambda x: new_position[x], id_list)), dtype=torch.long)
+        return torch.tensor(unique_ids, dtype=torch.long), slice_map
 
     def create_batches(self, subgraph_generator, number_of_hops, batch_size, partition, labels_for):
 
@@ -307,21 +317,24 @@ class SGEdgesDataLoader(SGNodesDataLoader):
 
                 all_nodes = torch.cat([torch.LongTensor(nodes_in_batch), positive_indices, negative_indices])
 
+                unique_nodes, slice_map = self._handle_non_unique(all_nodes)
+                assert unique_nodes[slice_map].tolist() == all_nodes.tolist()
+
                 loader = NodeDataLoader(
-                    subgraph, {"node_": all_nodes}, sampler, batch_size=len(all_nodes), shuffle=True, num_workers=0
+                    subgraph, {"node_": unique_nodes}, sampler, batch_size=len(unique_nodes), shuffle=True, num_workers=0
                 )
 
                 input_nodes, seeds, blocks = next(iter(loader))
 
                 if masker is not None:
-                    input_mask = masker.get_mask(mask_for=all_nodes, input_nodes=input_nodes).to(self.device)
+                    input_mask = masker.get_mask(mask_for=unique_nodes, input_nodes=input_nodes).to(self.device)
                 else:
                     input_mask = None
 
-                indices = self.seeds_to_python(seeds)  # dgl returns torch tensor
-
-                if isinstance(indices, dict):
-                    raise NotImplementedError("Using node types is currently not supported. Set use_node_types=False")
+                # indices = self.seeds_to_python(seeds)  # dgl returns torch tensor
+                #
+                # if isinstance(indices, dict):
+                #     raise NotImplementedError("Using node types is currently not supported. Set use_node_types=False")
 
                 input_nodes = blocks[0].srcnodes["node_"].data["embedding_id"]
 
@@ -329,7 +342,9 @@ class SGEdgesDataLoader(SGNodesDataLoader):
                 assert -1 not in input_nodes.tolist()
 
                 batch = {
-                    "seeds": seeds,
+                    "seeds": seeds,  # list of unique nodes
+                    "slice_map": slice_map,  # needed to restore original_nodes
+                    "compute_embeddings_for": all_nodes,
                     "group": group,
                     "subgraph": subgraph,
                     "input_nodes": input_nodes.to(self.device),

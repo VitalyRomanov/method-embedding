@@ -39,21 +39,20 @@ class GraphLinkObjective(AbstractObjective):
 
     def forward(
             self, input_nodes, input_mask, blocks, positive_indices, negative_indices,
-            update_ns_callback=None, graph=None
+            update_ns_callback=None, subgraph=None, **kwargs
     ):
-        seeds = blocks[-1].dstnodes["node_"].data["_ID"]
-        all_nodes = torch.cat([seeds, positive_indices, negative_indices])
-        all_embeddigs, _ = self.get_targets_from_nodes(all_nodes, graph=graph)
+        unique_embeddings = self._graph_embeddings(input_nodes, blocks, mask=input_mask)
 
-        graph_embeddings = all_embeddigs[:len(seeds), :]
-        positive_embeddings = all_embeddigs[len(seeds): len(seeds) + len(positive_indices), :]
-        negative_embeddings = all_embeddigs[len(seeds) + len(positive_indices):, :]
+        all_embeddings = unique_embeddings[kwargs["slice_map"]]
 
-        update_ns_callback(all_nodes[len(seeds):].cpu().detach().numpy(), all_embeddigs[len(seeds):].cpu().detach().numpy())
+        graph_embeddings = all_embeddings[kwargs["src_nodes_mask"]]
+        positive_embeddings = all_embeddings[kwargs["positive_nodes_mask"]]
+        negative_embeddings = all_embeddings[kwargs["negative_nodes_mask"]]
 
-        # node_embs_, element_embs_, labels = self._prepare_for_prediction(
-        #     graph_embeddings, positive_embeddings, negative_embeddings
-        # )
+        non_src_nodes_mask = ~kwargs["src_nodes_mask"]
+        non_src_ids = kwargs["compute_embeddings_for"][non_src_nodes_mask].cpu().detach().numpy()
+        non_src_embeddings = all_embeddings[non_src_nodes_mask].cpu().detach().numpy()
+        update_ns_callback(non_src_ids, non_src_embeddings)
 
         pos_labels = self._create_positive_labels(positive_indices).to(self.device)
         neg_labels = self._create_negative_labels(negative_embeddings).to(self.device)
@@ -67,8 +66,6 @@ class GraphLinkObjective(AbstractObjective):
         acc = (pos_acc * pos_size + neg_acc * neg_size) / (pos_size + neg_size)
         logits = torch.cat([pos_logits, neg_logits], dim=0)
         labels = torch.cat([pos_labels, neg_labels], dim=0)
-
-        # logits, acc, loss  = self._compute_acc_loss(node_embs_, element_embs_, labels)
 
         return graph_embeddings, logits, labels, loss, acc
 
