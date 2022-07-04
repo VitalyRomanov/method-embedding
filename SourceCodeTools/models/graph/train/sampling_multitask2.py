@@ -111,6 +111,9 @@ class SamplingMultitaskTrainer:
         # if "subgraph_clf" in objective_list:
         #     self.create_subgraph_classifier_objective(dataset, tokenizer_path)
 
+        if len(self.objectives) == 0:
+            raise Exception("No valid objectives provided:", objective_list)
+
     def _create_node_level_objective(
             self, *, objective_name, objective_class, dataset, labels_fn, tokenizer_path,
             masker_fn=None, preload_for="package", label_loader_class=None, label_loader_params=None,
