@@ -113,7 +113,7 @@ class AbstractObjective(nn.Module):
             # self.dataloader.label_encoder.get_original_targets()
             self.dataloader.label_encoder, emb_size=target_emb_size, num_buckets=200000,
             max_len=20, tokenizer_path=tokenizer_path
-        )
+        ).to(self.device)
 
     def _create_scorers(self):
         for partition in ["train", "test", "val"]:
