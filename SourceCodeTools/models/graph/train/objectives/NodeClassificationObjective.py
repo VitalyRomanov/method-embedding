@@ -63,7 +63,7 @@ class NodeClassifierObjective(AbstractObjective):
         at = [1, 3, 5, 10]
         count = 0
         scores = defaultdict(list)
-        
+
         print('Opening File to save!!')
         sink = open(f"{data_split}_temp.txt","w")
 
@@ -89,11 +89,15 @@ class NodeClassifierObjective(AbstractObjective):
             y_pred = nn.functional.softmax(logits, dim=-1).to("cpu").numpy()
             y_true = np.zeros(y_pred.shape)
             y_true[np.arange(0, y_true.shape[0]), labels.to("cpu").numpy()] = 1.
-            
-            original_seeds = {ntype: self.graph_model.g.nodes[ntype].data["original_id"][seeds[ntype]] for ntype in seeds}
+
+            if isinstance(seeds, dict):
+                original_seeds = {ntype: self.graph_model.g.nodes[ntype].data["original_id"][seeds[ntype]] for ntype in seeds}
+            else:
+                original_seeds = {"node_": self.graph_model.g.nodes['node_'].data["original_id"][seeds]}
+
             for node_id, label_id in zip(original_seeds["node_"].tolist(), y_pred.argmax(-1).tolist()):
                 sink.write(f"{node_id}\t{self.target_embedder.inverse_dst_map[label_id]}\n")
-            
+
 
             if self.measure_scores:
                 if count % self.dilate_scores == 0:
