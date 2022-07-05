@@ -57,8 +57,14 @@ class GraphLinkObjective(AbstractObjective):
         pos_labels = self._create_positive_labels(positive_indices).to(self.device)
         neg_labels = self._create_negative_labels(negative_embeddings).to(self.device)
 
+        dim_size = graph_embeddings.size(1)
+        num_embs = graph_embeddings.size(0)
         pos_logits, pos_acc, pos_loss = self._compute_acc_loss(graph_embeddings, positive_embeddings, pos_labels)
-        neg_logits, neg_acc, neg_loss = self._compute_acc_loss(graph_embeddings, negative_embeddings, neg_labels)
+        neg_logits, neg_acc, neg_loss = self._compute_acc_loss(
+            graph_embeddings.reshape(num_embs, 1, dim_size),
+            negative_embeddings.reshape(num_embs, -1, dim_size),
+            neg_labels
+        )
 
         pos_size = positive_indices.size(0)
         neg_size = negative_embeddings.size(0)

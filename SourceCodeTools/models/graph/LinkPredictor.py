@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import numpy as np
 import torch.nn.functional as F
 
 
@@ -21,7 +20,7 @@ class LinkPredictor(nn.Module):
     #     return self.logits(x)
 
     def forward(self, x1, x2, **kwargs):
-        x = torch.cat([x1, x2], dim=1)
+        x = torch.cat([x1, x2], dim=-1)
         x = self.norm(x)
         x = F.relu(self.l1(x))
         return self.logits(x)
@@ -39,7 +38,7 @@ class LinkClassifier(nn.Module):
         self.logits = nn.Linear(20, num_classes)
 
     def forward(self, x1, x2, **kwargs):
-        x = torch.cat([x1, x2], dim=1)
+        x = torch.cat([x1, x2], dim=-1)
         x = self.norm(x)
         x = F.relu(self.l1(x))
         return self.logits(x)
@@ -65,15 +64,15 @@ class CosineLinkPredictor(nn.Module):
         """
         super(CosineLinkPredictor, self).__init__()
 
-        self.cos = nn.CosineSimilarity()
+        self.cos = nn.CosineSimilarity(dim=-1)
         self.max_margin = torch.Tensor([margin])[0]
 
     def forward(self, x1, x2):
         if self.max_margin.device != x1.device:
             self.max_margin = self.max_margin.to(x1.device)
         # this will not train
-        logit = (self.cos(x1, x2) > self.max_margin).float().unsqueeze(1)
-        return torch.cat([1 - logit, logit], dim=1)
+        logit = (self.cos(x1, x2) > self.max_margin).float().unsqueeze(-1)
+        return torch.cat([1 - logit, logit], dim=-1)
 
 
 class L2LinkPredictor(nn.Module):
@@ -86,7 +85,7 @@ class L2LinkPredictor(nn.Module):
             self.margin = self.margin.to(x1.device)
         # this will not train
         logit = (torch.norm(x1 - x2, dim=-1, keepdim=True) < self.margin).float()
-        return torch.cat([1 - logit, logit], dim=1)
+        return torch.cat([1 - logit, logit], dim=-1)
 
 
 class TransRLinkPredictor(nn.Module):

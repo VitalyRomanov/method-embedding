@@ -50,7 +50,7 @@ class AbstractObjective(nn.Module):
             masker_fn=None, label_loader_class=None, label_loader_params=None, dataloader_class=None,
             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod",
             measure_scores=False, dilate_scores=1, early_stopping=False, early_stopping_tolerance=20, nn_index="brute",
-            model_base_path=None, force_w2v=False, use_ns_groups=False, embedding_table_size=300000
+            model_base_path=None, force_w2v=False, neg_sampling_factor=1, use_ns_groups=False, embedding_table_size=300000
     ):
         super(AbstractObjective, self).__init__()
 
@@ -72,6 +72,7 @@ class AbstractObjective(nn.Module):
         self.force_w2v = force_w2v
         self.use_ns_groups = use_ns_groups
         self.embedding_table_size = embedding_table_size
+        self.neg_sampling_factor = neg_sampling_factor
 
         self._verify_parameters()
 
@@ -103,8 +104,8 @@ class AbstractObjective(nn.Module):
         self.dataloader = self.dataloader_class(
             dataset, labels_for, number_of_hops, batch_size, preload_for=preload_for, labels=labels,
             masker_fn=masker_fn, label_loader_class=label_loader_class, label_loader_params=label_loader_params,
-            negative_sampling_strategy="w2v" if self.force_w2v else "closest", base_path=self.base_path,
-            objective_name=self.name, device=self.device, embedding_table_size=self.embedding_table_size
+            negative_sampling_strategy="w2v" if self.force_w2v else "closest", neg_sampling_factor=self.neg_sampling_factor,
+            base_path=self.base_path, objective_name=self.name, device=self.device, embedding_table_size=self.embedding_table_size
         )
         self._create_loaders()
 
@@ -135,8 +136,9 @@ class AbstractObjective(nn.Module):
         self.hinge_loss = nn.HingeEmbeddingLoss(margin=1. - self.margin)
 
         def cosine_loss(x1, x2, label):
-            sim = nn.CosineSimilarity()
+            sim = nn.CosineSimilarity(dim=-1)
             dist = 1. - sim(x1, x2)
+            dist = dist.reshape(-1, )
             return self.hinge_loss(dist, label)
 
         # self.cosine_loss = CosineEmbeddingLoss(margin=self.margin)
@@ -220,6 +222,8 @@ class AbstractObjective(nn.Module):
 
     def _compute_acc_loss(self, node_embs_, element_embs_, labels):
         logits = self.link_predictor(node_embs_, element_embs_)
+        if len(logits.shape) == 3:
+            logits = logits.reshape(-1, logits.size(-1))
 
         if self.link_predictor_type == "nn":
             logp = nn.functional.log_softmax(logits, dim=1)
