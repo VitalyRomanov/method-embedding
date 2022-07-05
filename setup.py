@@ -4,12 +4,12 @@ requirements = [
       'nltk==3.6',
       'tensorflow==2.6.0',
       'torch==1.9.0',
-      'pandas==1.1.1',
+      'pandas>=1.1.1',
       'scikit-learn==1.0',
       'sentencepiece==0.1.96',
       'gensim==3.8',
-      'numpy==1.19.5',
-      'scipy==1.4.1',
+      'numpy>=1.19.5',
+      'scipy>=1.4.1',
       'networkx==2.5',
       'sacrebleu==1.5.1',
       'datasets==1.5.0',
@@ -18,7 +18,8 @@ requirements = [
       'faiss-cpu==1.7.0',
       'tqdm==4.49.0',
       'diskcache==5.4.0',
-      'transformers==4.10.3'
+      'transformers==4.10.3',
+      'sqlalchemy==1.4.39'
       # 'pygraphviz'
       # 'javac_parser'
 ]
@@ -50,8 +51,9 @@ setup(name='SourceCodeTools',
             'SourceCodeTools/code/data/sourcetrail/sourcetrail_node_local2global.py',
             'SourceCodeTools/code/data/sourcetrail/sourcetrail_connected_component.py',
             'SourceCodeTools/code/data/sourcetrail/pandas_format_converter.py',
-            'SourceCodeTools/code/data/sourcetrail/sourcetrail_create_type_annotation_dataset.py',
+            # 'SourceCodeTools/code/data/sourcetrail/sourcetrail_create_type_annotation_dataset.py',
             'SourceCodeTools/nlp/embed/converters/convert_fasttext_format_bin_to_vec.py',
-            'SourceCodeTools/models/graph/utils/prepare_dglke_format.py',
+            # 'SourceCodeTools/models/graph/utils/prepare_dglke_format.py',
       ],
       )
+# sudo apt-get install gfortran libopenblas-dev liblapack-dev
