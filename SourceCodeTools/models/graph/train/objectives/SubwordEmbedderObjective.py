@@ -30,7 +30,7 @@ class SubwordEmbedderObjective(AbstractObjective):
         self.target_embedder = TargetEmbedderWithBpeSubwords(
             self.dataloader.label_encoder.get_original_targets(), emb_size=target_emb_size, num_buckets=200000,
             max_len=20, tokenizer_path=tokenizer_path
-        )
+        ).to(self.device)
 
     def parameters(self, recurse: bool = True):
         return chain(self.target_embedder.parameters(), self.link_predictor.parameters())
