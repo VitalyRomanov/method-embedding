@@ -193,8 +193,6 @@ class SGNodesDataLoader:
                 input_nodes = blocks[0].srcnodes["node_"].data["embedding_id"]
 
                 assert len(set(seeds.numpy()) - nodes_in_graph) == 0
-                assert len(set(positive_indices.numpy()) - nodes_in_graph) == 0
-                assert len(set(negative_indices.numpy()) - nodes_in_graph) == 0
 
                 assert -1 not in input_nodes.tolist()
 
