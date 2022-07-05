@@ -67,14 +67,14 @@ class TargetEmbedderWithCharNGramSubwords(TargetEmbedder):
         reprs = names.map(lambda x: char_ngram_window(x, self.gram_size)) \
             .map(lambda grams: (token_hasher(g, self.num_buckets) for g in grams)) \
             .map(lambda int_grams: np.fromiter(int_grams, dtype=np.int32)) \
-            .map(lambda parts: self._create_fixed_length(parts, self.max_len, 0))
+            .map(lambda parts: self._create_fixed_length(parts, self.max_len, self.num_buckets))
 
         self.feature_map = dict()
         for name, repr_ in zip(names, reprs):
             self.feature_map[self._target2target_id[name]] = repr_
 
     def _create_embedding_model(self):
-        self.embedding_model = nn.Embedding(self.num_buckets, self.emb_size, padding_idx=0)
+        self.embedding_model = nn.Embedding(self.num_buckets + 1, self.emb_size, padding_idx=self.num_buckets)
         self.norm = nn.LayerNorm(self.emb_size)
 
 
@@ -98,7 +98,7 @@ class TargetEmbedderWithBpeSubwords(TargetEmbedderWithCharNGramSubwords, nn.Modu
         reprs = names.map(tokenize) \
             .map(lambda tokens: (token_hasher(t, self.num_buckets) for t in tokens)) \
             .map(lambda int_tokens: np.fromiter(int_tokens, dtype=np.int32))\
-            .map(lambda parts: self._create_fixed_length(parts, self.max_len, 0))
+            .map(lambda parts: self._create_fixed_length(parts, self.max_len, self.num_buckets))
 
         self.feature_map = dict()
         for ind, repr_ in zip(inds, reprs):
@@ -115,7 +115,7 @@ class DocstringEmbedder(TargetEmbedderWithBpeSubwords):
         )
 
     def _create_embedding_model(self):
-        self.embedding_model = nn.Embedding(self.num_buckets, self.emb_size, padding_idx=0)
+        self.embedding_model = nn.Embedding(self.num_buckets + 1, self.emb_size, padding_idx=self.num_buckets)
         self.norm = nn.LayerNorm(self.emb_size)
         self.encoder = LSTMEncoder(embed_dim=self.emb_size, num_layers=1, dropout_in=0.1, dropout_out=0.1)
 

@@ -154,7 +154,6 @@ class SGNodesDataLoader:
         for group, subgraph, masker, node_labels_loader, edge_labels_loader in subgraph_generator:
 
             # TODO shuffle subgraphs
-            print(group)
 
             sampler = MultiLayerFullNeighborSampler(number_of_hops)
             nodes_for_batching = self.get_nodes_from_partition(subgraph, partition, labels_for)
@@ -208,10 +207,7 @@ class SGNodesDataLoader:
                     # "update_edge_negative_sampler_callback": None,
                 }
 
-                # print()
                 yield batch
-
-            # print()
 
     def nodes_dataloader(
             self, partition_label
