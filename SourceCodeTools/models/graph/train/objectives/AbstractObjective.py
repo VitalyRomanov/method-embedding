@@ -284,7 +284,11 @@ class AbstractObjective(nn.Module):
         labels_pos = self._create_positive_labels(positive_indices)
         labels_neg = self._create_negative_labels(negative_indices)
 
-        src_embs = torch.cat([node_embeddings, node_embeddings], dim=0)
+        num_positive = positive_indices.size(0)
+        num_negative = negative_indices.size(0)
+        tile_factor = 1 + num_negative // num_positive
+        src_embs = torch.tile(node_embeddings, (tile_factor, 1))
+        # src_embs = torch.cat([node_embeddings, node_embeddings], dim=0)
         dst_embs = torch.cat([positive_dst, negative_dst], dim=0)
         labels = torch.cat([labels_pos, labels_neg], 0).to(self.device)
         return src_embs, dst_embs, labels

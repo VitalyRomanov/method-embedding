@@ -390,8 +390,9 @@ class TargetLoader:
         assert len(negative) == num_ids * k
 
         if self._ns_logger is not None:
-            for i, n in zip(ids, negative):
-                self._ns_logger.write(f"{i}\t{self._label_encoder._inverse_target_map[n]}\n")
+            batch_size = len(ids)
+            for ind, n in enumerate(negative):
+                self._ns_logger.write(f"{ids[ind % batch_size]}\t{self._label_encoder._inverse_target_map[n]}\n")
 
         return negative
 
