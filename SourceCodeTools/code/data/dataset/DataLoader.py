@@ -14,7 +14,7 @@ class SGNodesDataLoader:
     def __init__(
             self, dataset, labels_for, number_of_hops, batch_size, preload_for="package", labels=None,
             masker_fn=None, label_loader_class=None, label_loader_params=None, device="cpu",
-            negative_sampling_strategy="w2v", base_path=None, objective_name=None, embedding_table_size=300000
+            negative_sampling_strategy="w2v", neg_sampling_factor=1, base_path=None, objective_name=None, embedding_table_size=300000
     ):
         preload_for = SGPartitionStrategies[preload_for]
         labels_for = SGLabelSpec[labels_for]
@@ -31,6 +31,7 @@ class SGNodesDataLoader:
         self.masker_fn = masker_fn
         self.device = device
         self.n_buckets = embedding_table_size
+        self.neg_sampling_factor = neg_sampling_factor
         self.negative_sampling_strategy = negative_sampling_strategy
         assert negative_sampling_strategy in {"w2v", "closest"}
         self._masker_cache_path = tempfile.TemporaryDirectory(suffix="MaskerCache")
@@ -181,7 +182,10 @@ class SGNodesDataLoader:
 
                 if node_labels_loader is not None:
                     positive_indices = torch.LongTensor(node_labels_loader.sample_positive(indices))
-                    negative_indices = torch.LongTensor(node_labels_loader.sample_negative(indices, strategy=self.negative_sampling_strategy, current_group=group))
+                    negative_indices = torch.LongTensor(node_labels_loader.sample_negative(
+                        indices, k=self.neg_sampling_factor, strategy=self.negative_sampling_strategy,
+                        current_group=group
+                    ))
                 else:
                     positive_indices = None
                     negative_indices = None
@@ -296,7 +300,10 @@ class SGEdgesDataLoader(SGNodesDataLoader):
 
                 if node_labels_loader is not None:
                     positive_indices = torch.LongTensor(node_labels_loader.sample_positive(nodes_in_batch))
-                    negative_indices = torch.LongTensor(node_labels_loader.sample_negative(nodes_in_batch, strategy=self.negative_sampling_strategy, current_group=group))
+                    negative_indices = torch.LongTensor(node_labels_loader.sample_negative(
+                        nodes_in_batch, k=self.neg_sampling_factor, strategy=self.negative_sampling_strategy,
+                        current_group=group
+                    ))
                 else:
                     positive_indices = None
                     negative_indices = None

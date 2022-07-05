@@ -295,7 +295,7 @@ class TargetLoader:
     def __len__(self):
         return len(self._element_lookup)
 
-    def _sample_closest_negative(self, ids, k=None, current_group=None):
+    def _sample_closest_negative(self, ids, k=1, current_group=None):
         assert self._emb_size is not None, "Sampling closest negative is not initialized, try passing `emb_size` to initializer"
         assert ids is not None
         num_emb = self._target_embedding_proximity.num_embeddings
@@ -304,9 +304,17 @@ class TargetLoader:
             k = num_emb
 
         negative_candidates = []
-        for id_ in ids:
-            positive = set(self._element_lookup[id_])
-            negative_candidates.append(self._get_closest_to_key(id_, k=k + len(positive) + 1, exclude=positive, current_group=current_group))
+        for _ in range(k):
+            for id_ in ids:
+                positive = set(self._element_lookup[id_])
+                negative_candidates.append(self._get_closest_to_key(
+                    id_,
+                    # need to choose candidates so that there are more of them than the number of positive examples
+                    # also need to make sure there are more candidates available in case one node is constantly
+                    # present among candidates
+                    k=10 + len(positive),
+                    exclude=positive, current_group=current_group)
+                )
 
         negative = []
         for neg in negative_candidates:
@@ -334,24 +342,25 @@ class TargetLoader:
                 closest_keys = random.choices(list(set(self._unique_targets)), k=k)
         return closest_keys
 
-    def sample_negative_w2v(self, ids, current_group=None):
+    def sample_negative_w2v(self, ids, k=1, current_group=None):
 
         if not self._use_ns_groups:
             current_group = self._general_sample_group_key
 
         negative = []
-        for id_ in ids:
-            excluded  = self._element_lookup[id_] + [id_]
+        for _ in range(k):
+            for id_ in ids:
+                excluded  = self._element_lookup[id_] + [id_]
 
-            def get_negative(group):
-                return np.random.choice(self._ns_idxs, 1, replace=True, p=self._get_ns_w2v_weights(group)).astype(np.int32)[0]
+                def get_negative(group):
+                    return np.random.choice(self._ns_idxs, 1, replace=True, p=self._get_ns_w2v_weights(group)).astype(np.int32)[0]
 
-            neg = get_negative(current_group)
-            attempt_counter = 10
-            while neg in excluded and attempt_counter > 0:
                 neg = get_negative(current_group)
-                attempt_counter -= 1
-            negative.append(neg)
+                attempt_counter = 10
+                while neg in excluded and attempt_counter > 0:
+                    neg = get_negative(current_group)
+                    attempt_counter -= 1
+                negative.append(neg)
         return np.array(negative, dtype=np.int32)
         # return np.random.choice(self._ns_idxs, size, replace=True, p=self._neg_prob).astype(np.int32)
 
@@ -366,16 +375,19 @@ class TargetLoader:
 
         self._target_embedding_proximity.set_embed(ids, embs)
 
-    def sample_negative(self, ids, strategy="w2v", current_group=None):
+    def sample_negative(self, ids, k=1, strategy="w2v", current_group=None):
+        num_ids = len(ids)
+
         if strategy == "w2v" or self._target_embedding_proximity.all_embeddings_ready is False:
             if strategy == "closest":
                 logging.info("Proximity negative sampling is not ready yet, falling back to w2v")
-            negative = self.sample_negative_w2v(ids, current_group=current_group)
+            negative = self.sample_negative_w2v(ids, k=k, current_group=current_group)
         elif strategy == "closest":
-            negative = self._sample_closest_negative(ids, k=len(ids) // len(ids), current_group=current_group)
-            assert len(negative) == len(ids)
+            negative = self._sample_closest_negative(ids, k=k, current_group=current_group)
         else:
             raise ValueError(f"Unsupported negative sampling strategy: {strategy}. Supported values are w2v|closest")
+
+        assert len(negative) == num_ids * k
 
         if self._ns_logger is not None:
             for i, n in zip(ids, negative):
@@ -412,7 +424,7 @@ class GraphLinkTargetLoader(TargetLoader):
             dtype=np.int32
         )
 
-    def sample_negative(self, ids, strategy="w2v", current_group=None):
-        negative = super().sample_negative(ids, strategy, current_group=current_group)
+    def sample_negative(self, ids, k=1, strategy="w2v", current_group=None):
+        negative = super().sample_negative(ids, k=k, strategy=strategy, current_group=current_group)
 
         return np.fromiter((self._label_encoder._inverse_target_map[neg] for neg in negative), dtype=np.int32)
