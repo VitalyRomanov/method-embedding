@@ -6,6 +6,7 @@ from dgl.dataloading import MultiLayerFullNeighborSampler, NodeDataLoader
 import diskcache as dc
 
 from SourceCodeTools.code.data.dataset.Dataset import SGPartitionStrategies
+from SourceCodeTools.code.data.dataset.NewProcessNodeDataLoader import NewProcessNodeDataLoader
 from SourceCodeTools.code.data.dataset.partition_strategies import SGLabelSpec
 from SourceCodeTools.models.graph.TargetLoader import LabelDenseEncoder, TargetEmbeddingProximity
 
@@ -161,9 +162,11 @@ class SGNodesDataLoader:
             if self._num_nodes_total(nodes_for_batching) == 0:
                 continue
 
-            loader = NodeDataLoader(
-                subgraph, nodes_for_batching, sampler, batch_size=batch_size, shuffle=True, num_workers=0
-            )
+            # loader = NodeDataLoader(
+            #     subgraph, nodes_for_batching, sampler, batch_size=batch_size, shuffle=True, num_workers=0
+            # )
+            loader = NewProcessNodeDataLoader(subgraph, nodes_for_batching, sampler, batch_size=batch_size)
+
 
             nodes_in_graph = set(subgraph.nodes("node_")[subgraph.nodes["node_"].data["current_type_mask"]].cpu().numpy())
             # nodes_in_graph = set(nodes_for_batching["node_"].numpy())
@@ -212,6 +215,7 @@ class SGNodesDataLoader:
                 }
 
                 yield batch
+            loader.terminate()
 
     def nodes_dataloader(
             self, partition_label
