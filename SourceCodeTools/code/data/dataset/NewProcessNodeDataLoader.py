@@ -1,6 +1,7 @@
 from enum import Enum
 from multiprocessing import Queue, Process
-from queue import Empty
+from queue import Empty  # , Queue
+# from threading import Thread
 
 from dgl.dataloading import NodeDataLoader
 
@@ -39,6 +40,11 @@ class NewProcessNodeDataLoader:
             )
         )
         self.process.start()
+        self.ensure_process_started()
+
+    def ensure_process_started(self):
+        message = self.inbox_queue.get()
+        assert message.descriptor == NewProcessNodeDataLoaderProducer.OutboxTypes.process_ready
 
     def terminate_existing(self):
         self.outbox_queue.put(Message(
@@ -87,6 +93,7 @@ class NewProcessNodeDataLoaderProducer:
     class OutboxTypes(Enum):
         batch = 0
         stop_iteration = 1
+        process_ready = 2
 
     def __init__(self, config, inbox_queue, outbox_queue):
         self.graph = config["graph"]
@@ -100,6 +107,24 @@ class NewProcessNodeDataLoaderProducer:
         )
         self.inbox_queue = inbox_queue
         self.outbox_queue = outbox_queue
+        self.outbox_queue.put(Message(
+            descriptor=NewProcessNodeDataLoaderProducer.OutboxTypes.process_ready,
+            content=None
+        ))
+
+    def get_message(self, timeout=None):
+        try:
+            return self.inbox_queue.get(timeout=timeout)
+        except ValueError:
+            self.terminate = True
+        return None
+
+    def send_message(self, message):
+        try:
+            self.outbox_queue.put(message)
+        except ValueError:
+            self.terminate = True
+        return None
 
     def _iterate_subgraphs(self, **kwargs):
         for input_nodes, seeds, blocks in self.loader:
