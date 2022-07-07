@@ -56,6 +56,8 @@ class SGNodesDataLoader:
                 labels, partition_label, label_loader_class, label_loader_params, base_path, objective_name
             )
 
+        self._active_loader = None
+
     def _create_label_loader_for_partition(
             self, labels, partition_label, label_loader_class, label_loader_params, base_path, objective_name
     ):
@@ -152,6 +154,30 @@ class SGNodesDataLoader:
             total = len(nodes)
         return total
 
+    @property
+    def _use_external_process_loader(self):
+        return False  # platform == "linux" or platform == "linux2"
+
+    def _create_batch_iterator(self, subgraph, nodes_for_batching, sampler, batch_size):
+        if self._use_external_process_loader:
+            if self._active_loader is not None:
+                assert isinstance(self._active_loader, NewProcessNodeDataLoader)
+                self._active_loader.terminate()
+            self._active_loader = NewProcessNodeDataLoader(subgraph, nodes_for_batching, sampler, batch_size=batch_size)
+        else:
+            self._active_loader = NodeDataLoader(
+                subgraph, nodes_for_batching, sampler, batch_size=batch_size, shuffle=True, num_workers=0
+            )
+        return self._active_loader
+
+    def _finalize_batch_iterator(self, loader):
+        if self._use_external_process_loader:
+            self._active_loader.terminate()
+        else:
+            pass
+
+        self._active_loader = None
+
     def create_batches(self, subgraph_generator, number_of_hops, batch_size, partition, labels_for):
         for group, subgraph, masker, node_labels_loader, edge_labels_loader in subgraph_generator:
 
@@ -165,8 +191,7 @@ class SGNodesDataLoader:
             # loader = NodeDataLoader(
             #     subgraph, nodes_for_batching, sampler, batch_size=batch_size, shuffle=True, num_workers=0
             # )
-            loader = NewProcessNodeDataLoader(subgraph, nodes_for_batching, sampler, batch_size=batch_size)
-
+            loader = self._create_batch_iterator(subgraph, nodes_for_batching, sampler, batch_size)  # loader = NewProcessNodeDataLoader(subgraph, nodes_for_batching, sampler, batch_size=batch_size)
 
             nodes_in_graph = set(subgraph.nodes("node_")[subgraph.nodes["node_"].data["current_type_mask"]].cpu().numpy())
             # nodes_in_graph = set(nodes_for_batching["node_"].numpy())
@@ -183,11 +208,11 @@ class SGNodesDataLoader:
                     raise NotImplementedError("Using node types is currently not supported. Set use_node_types=False")
 
                 if node_labels_loader is not None:
-                    positive_indices = torch.LongTensor(node_labels_loader.sample_positive(indices))
+                    positive_indices = torch.LongTensor(node_labels_loader.sample_positive(indices)).to(self.device)
                     negative_indices = torch.LongTensor(node_labels_loader.sample_negative(
                         indices, k=self.neg_sampling_factor, strategy=self.negative_sampling_strategy,
                         current_group=group
-                    ))
+                    )).to(self.device)
                 else:
                     positive_indices = None
                     negative_indices = None
@@ -201,13 +226,13 @@ class SGNodesDataLoader:
                 batch = {
                     "seeds": seeds,
                     "group": group,
-                    "subgraph": subgraph,
+                    # "subgraph": subgraph,
                     "input_nodes": input_nodes.to(self.device),
                     "input_mask": input_mask,
                     "indices": indices,
                     "blocks": [block.to(self.device) for block in blocks],
-                    "positive_indices": positive_indices.to(self.device),
-                    "negative_indices": negative_indices.to(self.device),
+                    "positive_indices": positive_indices,
+                    "negative_indices": negative_indices,
                     "node_labels_loader": node_labels_loader,
                     # "edge_labels_loader": edge_labels_loader,
                     # "update_node_negative_sampler_callback": node_labels_loader.set_embed,
@@ -215,7 +240,7 @@ class SGNodesDataLoader:
                 }
 
                 yield batch
-            loader.terminate()
+            self._finalize_batch_iterator(loader)
 
     def nodes_dataloader(
             self, partition_label
@@ -348,10 +373,11 @@ class SGEdgesDataLoader(SGNodesDataLoader):
 
                 batch = {
                     "seeds": seeds,  # list of unique nodes
+                    "indices": nodes_in_batch,
                     "slice_map": slice_map,  # needed to restore original_nodes
                     "compute_embeddings_for": all_nodes,
                     "group": group,
-                    "subgraph": subgraph,
+                    # "subgraph": subgraph,
                     "input_nodes": input_nodes.to(self.device),
                     "input_mask": input_mask,
                     "blocks": [block.to(self.device) for block in blocks],
