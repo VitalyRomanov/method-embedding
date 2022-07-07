@@ -163,7 +163,7 @@ class ModelTrainer:
     #     with self.summary_writer.as_default():
     #         tensorflow.summary.scalar(value_name, value, step=step)
 
-    def get_dataloaders(self, word_emb, graph_emb, suffix_prefix_buckets):
+    def get_dataloaders(self, word_emb, graph_emb, suffix_prefix_buckets, **kwargs):
 
         if self.ckpt_path is not None:
             tagmap = pickle.load(open(os.path.join(self.ckpt_path, "tag_types.pkl"), "rb"))
@@ -174,7 +174,8 @@ class ModelTrainer:
             self.train_data, self.batch_size, seq_len=self.seq_len,
             graphmap=graph_emb.ind if graph_emb is not None else None,
             wordmap=word_emb.ind, tagmap=tagmap,
-            class_weights=False, element_hash_size=suffix_prefix_buckets, no_localization=self.no_localization
+            class_weights=False, element_hash_size=suffix_prefix_buckets, no_localization=self.no_localization,
+            **kwargs
         )
         test_batcher = self.get_batcher(
             self.test_data, self.batch_size, seq_len=self.seq_len,
@@ -182,7 +183,7 @@ class ModelTrainer:
             wordmap=word_emb.ind,
             tagmap=train_batcher.tagmap,  # use the same mapping
             class_weights=False, element_hash_size=suffix_prefix_buckets,  # class_weights are not used for testing
-            no_localization=self.no_localization
+            no_localization=self.no_localization, **kwargs
         )
         return train_batcher, test_batcher
 
