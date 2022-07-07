@@ -1,4 +1,5 @@
 import bz2
+import json
 import logging
 import tempfile
 from csv import QUOTE_NONNUMERIC
@@ -289,6 +290,7 @@ def get_random_name(length=10):
     from random import sample
     return "".join(sample(char_ranges, k=length))
 
+
 def get_temporary_filename():
     tmp_dir = tempfile.gettempdir()
     name_generator = tempfile._get_candidate_names()
@@ -296,3 +298,13 @@ def get_temporary_filename():
     while os.path.isdir(path):
         path = os.path.join(tmp_dir, next(name_generator))
     return path
+
+
+def write_mapping_to_json(mapping, path):
+    json_string = json.dumps(mapping, indent=4)
+    with open(path, "w") as sink:
+        sink.write(json_string)
+
+
+def read_mapping_from_json(path):
+    return json.loads(open(path, "r").read())

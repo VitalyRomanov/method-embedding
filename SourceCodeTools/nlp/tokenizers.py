@@ -1,5 +1,8 @@
 import hashlib
 
+import spacy
+from spacy.tokens import Doc
+
 from SourceCodeTools.nlp.spacy_tools.SpacyPythonBpeTokenizer import SpacyPythonBpe
 
 
@@ -23,6 +26,70 @@ def _custom_tokenizer(nlp):
 def _inject_tokenizer(nlp):
     nlp.tokenizer = _custom_tokenizer(nlp)
     return nlp
+
+
+class AdapterDoc:
+    def __init__(self, tokens):
+        self.tokens = tokens
+        self.adjustment_amount = 0
+        self.tokens_for_biluo_alignment = None
+
+    def __iter__(self):
+        return iter(self.tokens)
+
+    def __repr__(self):
+        return "".join(self.tokens)
+
+
+class CodebertAdapter:
+    def __init__(self):
+        from transformers import RobertaTokenizer
+
+        self.tokenizer = RobertaTokenizer.from_pretrained("microsoft/codebert-base")
+        self.nlp = spacy.blank("en")
+        self.regex_tok = create_tokenizer("regex")
+
+    def primary_tokenization(self, text):
+        return self.tokenizer.tokenize(text)
+
+    def secondary_tokenization(self, tokens):
+        new_tokens = []
+        for token in tokens:
+            new_tokens.extend(self.regex_tok(token))
+        return new_tokens
+
+    def __call__(self, text):
+        tokens = self.primary_tokenization(text)
+        tokens = self.secondary_tokenization(tokens)
+        doc = Doc(self.nlp.vocab, tokens, spaces=[False] * len(tokens))
+
+        backup_tokens = doc
+        fixed_spaces = [False]
+        fixed_words = ["<s>"]
+
+        for ind, t in enumerate(doc):
+            if len(t.text) > 1:
+                fixed_words.append(t.text.strip("Ġ"))
+            else:
+                fixed_words.append(t.text)
+            if ind != 0:
+                fixed_spaces.append(t.text.startswith("Ġ") and len(t.text) > 1)
+        fixed_spaces.append(False)
+        fixed_spaces.append(False)
+        fixed_words.append("</s>")
+
+        assert len(fixed_spaces) == len(fixed_words)
+
+        doc = Doc(self.nlp.vocab, fixed_words, fixed_spaces)
+
+        assert len(doc) - 2 == len(backup_tokens)
+        assert len(doc.text) - 7 == len(backup_tokens.text)
+
+        final_doc = AdapterDoc(["<s>"] + [t.text for t in backup_tokens] + ["</s>"])
+        final_doc.adjustment_amount = -3
+        final_doc.tokens_for_biluo_alignment = doc
+
+        return final_doc
 
 
 def create_tokenizer(type, bpe_path=None, regex=None):
@@ -61,7 +128,7 @@ def create_tokenizer(type, bpe_path=None, regex=None):
     elif type == "regex":
         from nltk import RegexpTokenizer
         if regex is None:
-            regex = "[\w]+|[^\w\s]|[0-9]+"
+            regex = "[\w0-9]+|[^\w\s]|[0-9]+"
         _tokenizer = RegexpTokenizer(regex)
 
         def default_tokenizer(text):
@@ -80,13 +147,14 @@ def create_tokenizer(type, bpe_path=None, regex=None):
         import spacy
         from spacy.tokens import Doc
 
-        tokenizer = RobertaTokenizer.from_pretrained("microsoft/codebert-base")
-        nlp = spacy.blank("en")
+        # tokenizer = RobertaTokenizer.from_pretrained("microsoft/codebert-base")
+        # nlp = spacy.blank("en")
+        adapter = CodebertAdapter()
 
         def tokenize(text):
-            tokens = tokenizer.tokenize(text)
-            doc = Doc(nlp.vocab, tokens, spaces=[False] * len(tokens))
-            return doc
+            # tokens = tokenizer.tokenize(text)
+            # doc = Doc(nlp.vocab, tokens, spaces=[False] * len(tokens))
+            return adapter(text)
 
         return tokenize
     else:
@@ -121,6 +189,7 @@ def codebert_to_spacy(tokens):
     adjustment = -3
     # spans = [adjust_offsets(sp, -3) for sp in spans]
     return doc, adjustment
+
 
 # import tokenize
 # from io import BytesIO

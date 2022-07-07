@@ -1,24 +1,27 @@
+import hashlib
 import json
 import os
 import shelve
 import shutil
 import tempfile
 from collections import defaultdict
+from copy import copy
+from pathlib import Path
 from time import time
 from math import ceil
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Union
 
 import spacy
 
 from SourceCodeTools.code.ast.ast_tools import get_declarations
 from SourceCodeTools.models.ClassWeightNormalizer import ClassWeightNormalizer
-from SourceCodeTools.nlp import create_tokenizer, tag_map_from_sentences, TagMap, token_hasher, try_int
+from SourceCodeTools.nlp import create_tokenizer, tag_map_from_sentences, TagMap, token_hasher, try_int, ValueEncoder
 from SourceCodeTools.nlp.entity import fix_incorrect_tags
 from SourceCodeTools.code.annotator_utils import adjust_offsets, biluo_tags_from_offsets
 from SourceCodeTools.nlp.entity.utils import overlap
 import numpy as np
 
-
+import diskcache as dc
 
 
 def filter_unlabeled(entities, declarations):
@@ -41,6 +44,290 @@ def filter_unlabeled(entities, declarations):
 def print_token_tag(doc, tags):
     for t, tag in zip(doc, tags):
         print(t, "\t", tag)
+
+
+class SampleEntry(object):
+    def __init__(self, id, text, labels=None, category=None, **kwargs):
+        self._storage = dict()
+        self._storage["id"] = id
+        self._storage["text"] = text
+        self._storage["labels"] = labels
+        self._storage["category"] = category
+        self._storage.update(kwargs)
+
+    def __getattr__(self, item):
+        storage = object.__getattribute__(self, "_storage")
+        if item in storage:
+            return storage[item]
+        return super().__getattribute__(item)
+
+    def __repr__(self):
+        return repr(self._storage)
+
+    def __getitem__(self, item):
+        return self._storage[item]
+
+    def keys(self):
+        return list(self._storage.keys())
+
+
+class MapperSpec:
+    def __init__(self, field, target_field, encoder, dtype=np.int32, preproc_fn=None):
+        self.field = field
+        self.target_field = target_field
+        self.encoder = encoder
+        self.preproc_fn = preproc_fn
+        self.dtype = dtype
+
+
+class Batcher:
+    def __init__(
+            self, data, batch_size: int, seq_len: int,
+            wordmap: Dict[str, int], *, tagmap: Optional[TagMap] = None,
+            class_weights=False, element_hash_size=1000, sort_by_length=True, tokenizer="spacy", no_localization=False,
+            cache_dir: Optional[Union[str, Path]] = None, **kwargs
+    ):
+
+        self._batch_size = batch_size
+        self._max_seq_len = seq_len
+        self._tokenizer = tokenizer
+        self._class_weights = None
+        self._no_localization = no_localization
+        self._nlp = create_tokenizer(tokenizer)
+        self._cache_dir = Path(cache_dir)
+        self._valid_sentences = 0
+        self._filtered_sentences = 0
+        self._wordmap = wordmap
+        self.tagmap = tagmap
+        self._sort_by_length = sort_by_length
+
+        self._create_cache()
+        self._prepare_data(data)
+        self._create_mappers(**kwargs)
+
+    def _get_version_code(self):
+        defining_parameters = json.dumps({
+            "tokenizer": self._tokenizer, "max_seq_len": self._max_seq_len
+        })
+        return self._compute_text_id(defining_parameters)
+
+    @staticmethod
+    def _compute_text_id(text):
+        return int(hashlib.md5(text.encode('utf-8')).hexdigest(), 16) % 1152921504606846976
+
+    def _check_cache_dir(self):
+        if not hasattr(self, "_cache_dir") or self._cache_dir is None:
+            raise Exception("Cache directory location has not been specified yet")
+
+    def _get_cache_location_name(self, cache_name):
+        self._check_cache_dir()
+        return str(self._cache_dir.joinpath(cache_name))
+
+    @property
+    def _data_cache_path(self):
+        return self._get_cache_location_name("DataCache")
+
+    # @property
+    # def _sent_cache_path(self):
+    #     return self._get_cache_location_name("SentCache")
+
+    @property
+    def _batch_cache_path(self):
+        return self._get_cache_location_name("BatchCache")
+
+    @property
+    def _tagmap_path(self):
+        return self._cache_dir.joinpath("tagmap.json")
+
+    def _create_cache(self):
+        if self._cache_dir is None:
+            self._tmp_dir = tempfile.TemporaryDirectory()
+            self._cache_dir = Path(self._tmp_dir.name)
+
+        self._cache_dir = self._cache_dir.joinpath(f"PythonBatcher{self._get_version_code()}")
+        self._cache_dir.mkdir(exist_ok=True)
+
+        self._data_cache = dc.Cache(self._data_cache_path)
+        # self._sent_cache = dc.Cache(self._sent_cache_path)
+        self._batch_cache = dc.Cache(self._batch_cache_path)
+
+    def _prepare_data(self, data):
+        self._sent_lenghts = {}
+
+        for text, annotations in data:
+            id_ = self._compute_text_id(text)
+            if id_ not in self._data_cache:
+                extra = copy(annotations)
+                labels = extra.pop("entities")
+                extra.update(self._prepare_tokenized_sent((text, annotations)))
+                entry = SampleEntry(id=id_, text=text, labels=labels, **extra)
+                self._data_cache[id_] = entry
+            else:
+                entry = self._data_cache[id_]
+            self._sent_lenghts[id_] = len(entry.tokens)
+        
+    def _iterate_record_ids(self):
+        return self._data_cache.iterkeys()
+    
+    def _get_record_with_id(self, id):
+        if id not in self._data_cache:
+            raise KeyError("Record with such id is not found")
+        return self._data_cache[id]
+
+    def _iterate_sorted_by_length(self, limit_max_length=False):
+        for id_, length in sorted(self._sent_lenghts.items(), key=lambda x: x[1]):
+            if limit_max_length and length >= self._max_seq_len:
+                continue
+            yield self._get_record_with_id(id_)
+
+    def _iterate_records(self, limit_max_length=False, shuffle=False):
+        for id_ in self._sent_lenghts.keys():
+            if limit_max_length and self._sent_lenghts[id_] >= self._max_seq_len:
+                continue
+            yield self._get_record_with_id(id_)
+
+    def _create_mappers(self, **kwargs):
+        self._mappers = []
+        self._create_wordmap_encoder()
+        self._create_tagmap_encoder()
+
+    def _create_tagmap_encoder(self):
+        if self.tagmap is None:
+            if self._tagmap_path.is_file():
+                tagmap = TagMap.load(self._tagmap_path)
+            else:
+                def iterate_tags():
+                    for record in self._iterate_records():
+                        for label in record.tags:
+                            yield label
+
+                tagmap = tag_map_from_sentences(iterate_tags())
+                tagmap.set_default(tagmap._value_to_code["O"])
+                tagmap.save(self._tagmap_path)
+
+            self.tagmap = tagmap
+
+        self._mappers.append(
+            MapperSpec(field="tags", target_field="tags", encoder=self.tagmap)
+        )
+        # self.tagmap = tagmap
+        # self.tagpad = self.tagmap["O"]
+
+    def _create_wordmap_encoder(self):
+        wordmap_enc = ValueEncoder(value_to_code=self._wordmap)
+        wordmap_enc.set_default(len(self._wordmap))
+        self._mappers.append(
+            MapperSpec(field="tokens", target_field="tok_ids", encoder=wordmap_enc)
+        )
+
+    @property
+    def num_classes(self):
+        return len(self.tagmap)
+
+    def _prepare_tokenized_sent(self, sent):
+        text, annotations = sent
+
+        doc = self._nlp(text)
+        ents = annotations['entities']
+
+        tokens = doc
+        try:
+            tokens = [t.text for t in tokens]
+        except:
+            pass
+
+        if hasattr(doc, "tokens_for_biluo_alignment"):
+            entity_adjustment_amount = doc.adjustment_amount
+            tokens_for_biluo_alignment = doc.tokens_for_biluo_alignment
+        else:
+            entity_adjustment_amount = 0
+            tokens_for_biluo_alignment = doc
+
+        ents_tags = biluo_tags_from_offsets(
+            tokens_for_biluo_alignment, adjust_offsets(ents, entity_adjustment_amount),
+            self._no_localization
+        )
+        fix_incorrect_tags(ents_tags)
+
+        assert len(tokens) == len(ents_tags)
+
+        output = {
+            "tokens": tokens,
+            "tags": ents_tags
+        }
+
+        return output
+
+    # @lru_cache(maxsize=200000)
+    def _encode_for_batch(self, record):
+
+        if record.id in self._batch_cache:
+            return self._batch_cache[record.id]
+
+        def encode(seq, encoder, pad, preproc_fn=None):
+            if preproc_fn is None:
+                def preproc_fn(x):
+                    return x
+            blank = np.ones((self._max_seq_len,), dtype=np.int32) * pad
+            encoded = np.array([encoder[preproc_fn(w)] for w in seq], dtype=np.int32)
+            blank[0:min(encoded.size, self._max_seq_len)] = encoded[0:min(encoded.size, self._max_seq_len)]
+            return blank
+
+        output = {}
+
+        for mapper in self._mappers:
+            output[mapper.target_field] = encode(
+                seq=record[mapper.field], encoder=mapper.encoder, pad=mapper.encoder.default,
+                preproc_fn=mapper.preproc_fn
+            ).astype(mapper.dtype)
+
+        tokens = record.tokens
+        num_tokens = len(tokens)
+
+        # assert len(s) == len(t)
+
+        output["no_loc_mask"] = np.array([tag != self.tagmap.default for tag in output["tags"]]).astype(np.bool)
+        output["lens"] = num_tokens if num_tokens < self._max_seq_len else self._max_seq_len
+
+        self._batch_cache[record.id] = output
+
+        return output
+
+    def format_batch(self, batch):
+        fbatch = defaultdict(list)
+
+        for sent in batch:
+            for key, val in sent.items():
+                fbatch[key].append(val)
+
+        max_len = max(fbatch["lens"])
+
+        return {
+            key: np.stack(val)[:,:max_len] if key != "lens" and key != "replacements" and key != "tokens"
+            else (np.array(val, dtype=np.int32) if key == "lens" else np.array(val)) for key, val in fbatch.items()}
+
+    def generate_batches(self):
+        batch = []
+        if self._sort_by_length:
+            records = self._iterate_sorted_by_length(limit_max_length=True)
+        else:
+            records = self._iterate_records(limit_max_length=True, shuffle=False)
+
+        for sent in records:
+            batch.append(self._encode_for_batch(sent))
+            if len(batch) >= self._batch_size:
+                yield self.format_batch(batch)
+                batch = []
+        if len(batch) > 0:
+            yield self.format_batch(batch)
+        # yield self.format_batch(batch)
+
+    def __iter__(self):
+        return self.generate_batches()
+
+    def __len__(self):
+        total_valid = sum(1 for id_, length in self._sent_lenghts.items() if length < self._max_seq_len)
+        return int(ceil(total_valid / self._batch_size))
 
 
 class PythonBatcher:

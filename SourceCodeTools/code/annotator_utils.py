@@ -91,6 +91,8 @@ def adjust_offsets(offsets, amount):
     :param amount: adjustment amount
     :return: list of adjusted offsets
     """
+    if amount == 0:
+        return offsets
     return [(offset[0] - amount, offset[1] - amount, offset[2]) for offset in offsets]
 
 
