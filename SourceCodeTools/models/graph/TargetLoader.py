@@ -210,8 +210,10 @@ class TargetLoader:
                     s.write(f"{self._label_encoder._inverse_target_map[t]}\n")
 
             self._ns_logger = open(Path(str(_logger_path) + "_ns.txt"), "w")
+            self._ps_logger = open(Path(str(_logger_path) + "_ps.txt"), "w")
         else:
             self._ns_logger = None
+            self._ps_logger = None
 
     def _drop_duplicates(self, targets):
         len_before = len(targets)
@@ -365,7 +367,12 @@ class TargetLoader:
         # return np.random.choice(self._ns_idxs, size, replace=True, p=self._neg_prob).astype(np.int32)
 
     def sample_positive(self, ids):
-        return np.fromiter((rnd.choice(self._element_lookup[id_]) for id_ in ids), dtype=np.int32)
+        positive = np.fromiter((rnd.choice(self._element_lookup[id_]) for id_ in ids), dtype=np.int32)
+
+        if self._ps_logger is not None:
+            for a, n in zip(ids, positive):
+                self._ns_logger.write(f"{a}\t{self._label_encoder._inverse_target_map[n]}\n")
+        return
 
     def set_embed(self, ids, embs):
         assert self._target_embedding_proximity is not None
