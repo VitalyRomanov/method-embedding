@@ -81,7 +81,7 @@ class AbstractDBStorage:
 
 class SQLiteStorage(AbstractDBStorage):
     DataTypesDecoder = {
-        AbstractDBStorage.DataTypes.INT_PRIMARY: "INT PRIMARY",
+        AbstractDBStorage.DataTypes.INT_PRIMARY: "INT PRIMARY KEY",
         AbstractDBStorage.DataTypes.INT_NOT_NULL: "INT NOT NULL",
         AbstractDBStorage.DataTypes.INT: "INT",
         AbstractDBStorage.DataTypes.TEXT: "TEXT",
