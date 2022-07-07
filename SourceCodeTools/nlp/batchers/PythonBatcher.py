@@ -94,7 +94,7 @@ class Batcher:
         self._class_weights = None
         self._no_localization = no_localization
         self._nlp = create_tokenizer(tokenizer)
-        self._cache_dir = Path(cache_dir)
+        self._cache_dir = Path(cache_dir) if cache_dir is not None else cache_dir
         self._valid_sentences = 0
         self._filtered_sentences = 0
         self._wordmap = wordmap
@@ -145,7 +145,7 @@ class Batcher:
             self._cache_dir = Path(self._tmp_dir.name)
 
         self._cache_dir = self._cache_dir.joinpath(f"PythonBatcher{self._get_version_code()}")
-        self._cache_dir.mkdir(exist_ok=True)
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
 
         self._data_cache = dc.Cache(self._data_cache_path)
         # self._sent_cache = dc.Cache(self._sent_cache_path)
@@ -335,7 +335,8 @@ class PythonBatcher:
             self, data, batch_size: int, seq_len: int,
             wordmap: Dict[str, int], *, graphmap: Optional[Dict[str, int]], tagmap: Optional[TagMap] = None,
             mask_unlabeled_declarations=True,
-            class_weights=False, element_hash_size=1000, len_sort=True, tokenizer="spacy", no_localization=False
+            class_weights=False, element_hash_size=1000, len_sort=True, tokenizer="spacy", no_localization=False,
+            **kwargs
     ):
 
         self.create_cache()
@@ -352,7 +353,13 @@ class PythonBatcher:
 
         self.nlp = create_tokenizer(tokenizer)
         if tagmap is None:
-            self.tagmap = tag_map_from_sentences(list(zip(*[self.prepare_sent(sent) for sent in data]))[1])
+            def iterate_tags():
+                for sent in data:
+                    record = self.prepare_sent(sent)
+                    for label in record[1]:
+                        yield label
+            self.tagmap = tag_map_from_sentences(iterate_tags())
+            self.tagmap.set_default(self.tagmap._value_to_code["O"])
         else:
             self.tagmap = tagmap
 
@@ -383,7 +390,7 @@ class PythonBatcher:
             self.classw_func = lambda t: 1.
 
     def __del__(self):
-        self.sent_cache.close()
+        # self.sent_cache.close()
         self.batch_cache.close()
 
         from shutil import rmtree
@@ -403,6 +410,7 @@ class PythonBatcher:
         self.sent_cache = dict()  # shelve.open(os.path.join(self.tmp_dir, "sent_cache"))
         self.batch_cache = shelve.open(os.path.join(self.tmp_dir, "batch_cache"))
 
+    @property
     def num_classes(self):
         return len(self.tagmap)
 
@@ -422,50 +430,72 @@ class PythonBatcher:
         if self.mask_unlabeled_declarations:
             unlabeled_dec = filter_unlabeled(ents, get_declarations(text))
 
-        tokens = [t.text for t in doc]
+        tokens = doc
+        try:
+            tokens = [t.text for t in tokens]
+        except:
+            pass
 
-        if self.tokenizer == "codebert":
-            backup_tokens = doc
-            fixed_spaces = [False]
-            fixed_words = ["<s>"]
+        if hasattr(doc, "tokens_for_biluo_alignment"):
+            entity_adjustment_amount = doc.adjustment_amount
+            tokens_for_biluo_alignment = doc.tokens_for_biluo_alignment
+        else:
+            entity_adjustment_amount = 0
+            tokens_for_biluo_alignment = doc
 
-            for ind, t in enumerate(doc):
-                if len(t.text) > 1:
-                    fixed_words.append(t.text.strip("Ġ"))
-                else:
-                    fixed_words.append(t.text)
-                if ind != 0:
-                    fixed_spaces.append(t.text.startswith("Ġ") and len(t.text) > 1)
-            fixed_spaces.append(False)
-            fixed_spaces.append(False)
-            fixed_words.append("</s>")
+        # if self.tokenizer == "codebert":
+        #     backup_tokens = doc
+        #     fixed_spaces = [False]
+        #     fixed_words = ["<s>"]
+        #
+        #     for ind, t in enumerate(doc):
+        #         if len(t.text) > 1:
+        #             fixed_words.append(t.text.strip("Ġ"))
+        #         else:
+        #             fixed_words.append(t.text)
+        #         if ind != 0:
+        #             fixed_spaces.append(t.text.startswith("Ġ") and len(t.text) > 1)
+        #     fixed_spaces.append(False)
+        #     fixed_spaces.append(False)
+        #     fixed_words.append("</s>")
+        #
+        #     assert len(fixed_spaces) == len(fixed_words)
+        #
+        #     from spacy.tokens import Doc
+        #     doc = Doc(self.vocab, fixed_words, fixed_spaces)
+        #
+        #     assert len(doc) - 2 == len(backup_tokens)
+        #     assert len(doc.text) - 7 == len(backup_tokens.text)
+        #     ents = adjust_offsets(ents, -3)
+        #     repl = adjust_offsets(repl, -3)
+        #     if self.mask_unlabeled_declarations:
+        #         unlabeled_dec = adjust_offsets(unlabeled_dec, -3)
 
-            assert len(fixed_spaces) == len(fixed_words)
-
-            from spacy.tokens import Doc
-            doc = Doc(self.vocab, fixed_words, fixed_spaces)
-
-            assert len(doc) - 2 == len(backup_tokens)
-            assert len(doc.text) - 7 == len(backup_tokens.text)
-            ents = adjust_offsets(ents, -3)
-            repl = adjust_offsets(repl, -3)
-            if self.mask_unlabeled_declarations:
-                unlabeled_dec = adjust_offsets(unlabeled_dec, -3)
-
-        # TODO
-        # enable those back
-        ents_tags = biluo_tags_from_offsets(doc, ents, self.no_localization)
-        repl_tags = ["O"] * len(ents_tags)  # biluo_tags_from_offsets(doc, repl, self.no_localization)
+        ents_tags = biluo_tags_from_offsets(
+            tokens_for_biluo_alignment, adjust_offsets(ents, entity_adjustment_amount),
+            self.no_localization
+        )
+        repl_tags = ["O"] * len(ents_tags)  # biluo_tags_from_offsets(
+            # tokens_for_biluo_alignment, adjust_offsets(repl, entity_adjustment_amount),
+            # self.no_localization
+        # )
         if self.mask_unlabeled_declarations:
-            unlabeled_dec = []  #biluo_tags_from_offsets(doc, unlabeled_dec, self.no_localization)
+            unlabeled_dec = []  # biluo_tags_from_offsets(tokens_for_biluo_alignment, unlabeled_dec, self.no_localization)
+
+        # # TODO
+        # # enable those back
+        # ents_tags = biluo_tags_from_offsets(doc, ents, self.no_localization)
+        # repl_tags = ["O"] * len(ents_tags)  # biluo_tags_from_offsets(doc, repl, self.no_localization)
+        # if self.mask_unlabeled_declarations:
+        #     unlabeled_dec = []  #biluo_tags_from_offsets(doc, unlabeled_dec, self.no_localization)
 
         fix_incorrect_tags(ents_tags)
         fix_incorrect_tags(repl_tags)
         if self.mask_unlabeled_declarations:
             fix_incorrect_tags(unlabeled_dec)
 
-        if self.tokenizer == "codebert":
-            tokens = ["<s>"] + [t.text for t in backup_tokens] + ["</s>"]
+        # if self.tokenizer == "codebert":
+        #     tokens = ["<s>"] + [t.text for t in backup_tokens] + ["</s>"]
 
         assert len(tokens) == len(ents_tags) == len(repl_tags)
         if self.mask_unlabeled_declarations:
