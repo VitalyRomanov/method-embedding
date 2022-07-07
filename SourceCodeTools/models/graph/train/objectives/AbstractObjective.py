@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 from SourceCodeTools.code.data.dataset.DataLoader import SGNodesDataLoader
 from SourceCodeTools.mltools.torch import compute_accuracy
-from SourceCodeTools.models.graph.LinkPredictor import CosineLinkPredictor, BilinearLinkPedictor, L2LinkPredictor
+from SourceCodeTools.models.graph.LinkPredictor import CosineUndirectedLinkPredictor, BilinearLinkPedictor, L2UndirectedLinkPredictor
 
 import torch.nn as nn
 
@@ -125,6 +125,7 @@ class AbstractObjective(nn.Module):
             )
 
     def _create_nn_link_predictor(self):
+        self.margin = None
         self.link_predictor = BilinearLinkPedictor(self.target_emb_size, self.graph_model.emb_size, 2).to(self.device)
         self.positive_label = 1
         self.negative_label = 0
@@ -132,7 +133,7 @@ class AbstractObjective(nn.Module):
 
     def _create_inner_prod_link_predictor(self):
         self.margin = -0.2
-        self.link_predictor = CosineLinkPredictor(margin=self.margin).to(self.device)
+        self.link_predictor = CosineUndirectedLinkPredictor(margin=self.margin).to(self.device)
         self.hinge_loss = nn.HingeEmbeddingLoss(margin=1. - self.margin)
 
         def cosine_loss(x1, x2, label):
@@ -150,7 +151,7 @@ class AbstractObjective(nn.Module):
     def _create_l2_link_predictor(self):
         self.margin = 2.0
         self.target_embedder.set_margin(self.margin)
-        self.link_predictor = L2LinkPredictor().to(self.device)
+        self.link_predictor = L2UndirectedLinkPredictor().to(self.device)
         # self.hinge_loss = nn.HingeEmbeddingLoss(margin=self.margin)
         self.triplet_loss = nn.TripletMarginLoss(margin=self.margin)
 
