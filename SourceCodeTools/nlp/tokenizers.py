@@ -40,6 +40,9 @@ class AdapterDoc:
     def __repr__(self):
         return "".join(self.tokens)
 
+    def __len__(self):
+        return len(self.tokens)
+
 
 class CodebertAdapter:
     def __init__(self):
