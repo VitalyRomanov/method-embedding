@@ -382,7 +382,7 @@ class AbstractObjective(nn.Module):
         scorer = getattr(self, f"{data_split}_scorer")
 
         for batch_ind, batch in enumerate(tqdm(
-                getattr(self, f"{data_split}_loader"), total=getattr(self, f"num_{data_split}_batches")
+                self.get_iterator(data_split), total=getattr(self, f"num_{data_split}_batches")
         )):
 
             _, _ = self.make_step(batch_ind, batch, data_split, longterm_scores, scorer)
@@ -505,12 +505,15 @@ class AbstractObjective(nn.Module):
     def get_prefix(prefix, state_dict):
         return {key.replace(f"{prefix}.", ""): val for key, val in state_dict.items() if key.startswith(prefix)}
 
-    def reset_iterator(self, data_split):
-        iter_name = f"{data_split}_loader_iter"
-        setattr(self, iter_name, iter(getattr(self, f"{data_split}_loader")))
+    # def reset_iterator(self, data_split):
+    #     iter_name = f"{data_split}_loader_iter"
+    #     setattr(self, iter_name, iter(getattr(self, f"{data_split}_loader")))
 
-    def loader_next(self, data_split):
-        iter_name = f"{data_split}_loader_iter"
-        if not hasattr(self, iter_name):
-            setattr(self, iter_name, iter(getattr(self, f"{data_split}_loader")))
-        return next(getattr(self, iter_name))
+    def get_iterator(self, data_split):
+        return iter(getattr(self, f"{data_split}_loader"))
+
+    # def loader_next(self, data_split):
+    #     iter_name = f"{data_split}_loader_iter"
+    #     if not hasattr(self, iter_name):
+    #         setattr(self, iter_name, iter(getattr(self, f"{data_split}_loader")))
+    #     return next(getattr(self, iter_name))
