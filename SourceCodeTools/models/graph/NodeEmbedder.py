@@ -15,7 +15,7 @@ class SimplestNodeEmbedder(nn.Module):
         self.buckets = nn.Embedding(self.n_buckets + 1, self.emb_size, padding_idx=self.n_buckets, sparse=True)
 
     def forward(self, input_nodes, mask=None):
-        input_nodes = input_nodes + 1  # plus make to make zero ind a masked token
+        # input_nodes = input_nodes + 1  # plus make to make zero ind a masked token  # this is handled elsewhere
         if mask is not None:
             input_nodes *= mask
 
