@@ -500,11 +500,15 @@ class SamplingMultitaskTrainer:
             num_batches = min([objective.num_train_batches for objective in self.objectives])
             longterm_metrics = defaultdict(list)
 
-            for step in tqdm(range(num_batches), total=num_batches, desc=f"Epoch {self.epoch}"):
+            objective_iterators = [objective.get_iterator("train") for objective in self.objectives]
+
+            longlongloop = range(num_batches * 4)  # make sure there are more steps than the actual number of steps
+
+            for step in tqdm(longlongloop, total=num_batches, desc=f"Epoch {self.epoch}"):
 
                 batch_summary = {}
                 try:
-                    loaders = [objective.loader_next("train") for objective in self.objectives]
+                    loaders = [next(objective_iterator) for objective_iterator in objective_iterators]
                 except StopIteration:
                     break
 
@@ -615,9 +619,9 @@ class SamplingMultitaskTrainer:
             objective.eval()
 
         for objective in self.objectives:
-            objective.reset_iterator("train")
-            objective.reset_iterator("val")
-            objective.reset_iterator("test")
+            # objective.reset_iterator("train")
+            # objective.reset_iterator("val")
+            # objective.reset_iterator("test")
             # objective.early_stopping = False
             # self._warm_up_proximity_ns(objective)
             # objective.target_embedder.update_index()
@@ -628,7 +632,7 @@ class SamplingMultitaskTrainer:
             for objective in self.objectives:
                 if evaluate_train_set:
                     train_scores = objective.evaluate("train")
-                    self.add_to_summary(summary_dict, "train_avg", objective.name, self._reduce_metrics(train_scores),
+                    self.add_to_summary(summary_dict, "train_avg_eval", objective.name, self._reduce_metrics(train_scores),
                                         postfix="")  # "final")
                 val_scores = objective.evaluate("val")
                 test_scores = objective.evaluate("test")
@@ -678,7 +682,7 @@ class SamplingMultitaskTrainer:
             dataset=self.dataset, labels_for="nodes", number_of_hops=self.model_params["n_layers"],
             batch_size=batch_size, preload_for="package", labels=None,  # self.dataset.inference_labels,
             masker_fn=None, label_loader_class=TargetLoader, label_loader_params={}, device="cpu",
-            negative_sampling_strategy="w2v"
+            negative_sampling_strategy="w2v", embedding_table_size=self.trainer_params["embedding_table_size"]
         )
 
         id_maps = dict()

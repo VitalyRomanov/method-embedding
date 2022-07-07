@@ -1,8 +1,7 @@
-import logging
 from enum import Enum
-# from multiprocessing import Queue, Process
-from queue import Empty, Queue
-from threading import Thread
+from multiprocessing import Queue, Process
+from queue import Empty  # , Queue
+# from threading import Thread
 
 from dgl.dataloading import NodeDataLoader
 
@@ -28,7 +27,7 @@ class NewProcessNodeDataLoader:
         self.outbox_queue = Queue()
         self.inbox_queue = Queue()
 
-        self.process = Thread(
+        self.process = Process(
             target=start_worker, args=(
                 {
                     "graph": self.graph,
@@ -52,11 +51,11 @@ class NewProcessNodeDataLoader:
             descriptor=NewProcessNodeDataLoaderProducer.InboxTypes.terminate,
             content=None
         ))
-        self.outbox_queue.task_done()
-        self.inbox_queue.task_done()
+        self.outbox_queue.close()
+        self.inbox_queue.close()
         self.process.join()
-        # self.process.terminate()
-        # self.process.close()
+        self.process.terminate()
+        self.process.close()
 
     def terminate(self):
         self.terminate_existing()
@@ -67,7 +66,6 @@ class NewProcessNodeDataLoader:
             self.terminate_existing()
 
         self.start_process()
-        # logging.info("Request iteration")
         self.outbox_queue.put(Message(
             descriptor=NewProcessNodeDataLoaderProducer.InboxTypes.start_iteration,
             content=None
@@ -167,8 +165,6 @@ class NewProcessNodeDataLoaderProducer:
 
 def start_worker(config, inbox_queue, outbox_queue, *args, **kwargs):
     worker = NewProcessNodeDataLoaderProducer(config, inbox_queue, outbox_queue)
-    # logging.basicConfig(level=logging.INFO, format="%(asctime)s:%(levelname)s:%(module)s:%(lineno)d:%(message)s")
-    # logging.info("Worker ready")
 
     while True:
         terminate = worker.handle_incoming()
