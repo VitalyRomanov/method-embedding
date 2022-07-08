@@ -32,17 +32,12 @@ class PoolingLayer(torch.nn.Module):
 
     def forward(self, x):
         length = torch.norm(self.learnable_vector)
-        y = torch.mm(x, self.learnable_vector)/length
-        if (y.shape[0] < self.k):
-            y = F.pad(input=y, pad=(
-                0, 0, 0, self.k - y.shape[0]), mode='constant', value=0)
-            x = F.pad(input=x, pad=(
-                0, 0, 0, self.k - x.shape[0]), mode='constant', value=0)
-        idx = torch.topk(y, self.k, dim=0)
-        y = torch.gather(y, 0, idx.indices)
+        y = (x @ self.learnable_vector / length).reshape(-1)
+        top_k = min(self.k, y.shape[0])
+        y, idx = torch.topk(y, top_k, dim=0)
         y = torch.sigmoid(y)
-        x_part = torch.gather(x, 0, idx.indices)
-        return torch.mul(x_part, y)
+        x_part = x[idx]
+        return (x_part * y.reshape(-1, 1)).sum(dim=0, keepdim=True)
 
 class SubgraphLoader:
     def __init__(self, ids, subgraph_mapping, loading_fn, batch_size, graph_node_types):
@@ -317,7 +312,7 @@ class SubgraphClassifierObjective(NodeClassifierObjective, SubgraphAbstractObjec
             ns_groups, subgraph_mapping, subgraph_partition
         )
 
-        # self.pooler = PoolingLayer(100, (100, 1))
+        self.pooler = PoolingLayer(100, (100, 1))
 
     def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
         self.target_embedder = SubgraphClassifierTargetMapper(
@@ -375,8 +370,8 @@ class SubgraphClassifierObjective(NodeClassifierObjective, SubgraphAbstractObjec
         scores = {key: sum_scores(val) for key, val in scores.items()}
         return scores
 
-    # def pooling_fn(self, node_embeddings):
-    #     return self.pooler(node_embeddings)
+    def pooling_fn(self, node_embeddings):
+        return self.pooler(node_embeddings)
 
     def parameters(self, recurse: bool = True):
         return chain(self.classifier.parameters())
