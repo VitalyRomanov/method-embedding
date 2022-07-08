@@ -48,7 +48,7 @@ class NodeClassifierObjective(AbstractObjective):
         return logits, acc, loss
 
     def _prepare_for_prediction(
-            self, node_embeddings, positive_indices, negative_indices, target_embedding_fn, update_ns_callback, graph
+            self, node_embeddings, positive_indices, negative_indices, target_embedding_fn, update_ns_callback
     ):
         return node_embeddings, None, positive_indices
 
