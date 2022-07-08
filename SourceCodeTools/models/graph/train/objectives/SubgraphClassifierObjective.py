@@ -5,6 +5,7 @@ from typing import Optional
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from sklearn.metrics import ndcg_score, top_k_accuracy_score
 from torch import nn
 from tqdm import tqdm
@@ -19,6 +20,29 @@ from SourceCodeTools.models.graph.train.objectives.NodeClassificationObjective i
     NodeClassifierObjective
 from SourceCodeTools.tabular.common import compact_property
 
+
+class PoolingLayer(torch.nn.Module):
+    # From : http://proceedings.mlr.press/v97/gao19a/gao19a.pdf
+
+    def __init__(self, k, shape=1):
+        super().__init__()
+        self.learnable_vector = torch.nn.Parameter(torch.randn(shape))
+        self.learnable_vector.requires_grad = True
+        self.k = k
+
+    def forward(self, x):
+        length = torch.norm(self.learnable_vector)
+        y = torch.mm(x, self.learnable_vector)/length
+        if (y.shape[0] < self.k):
+            y = F.pad(input=y, pad=(
+                0, 0, 0, self.k - y.shape[0]), mode='constant', value=0)
+            x = F.pad(input=x, pad=(
+                0, 0, 0, self.k - x.shape[0]), mode='constant', value=0)
+        idx = torch.topk(y, self.k, dim=0)
+        y = torch.gather(y, 0, idx.indices)
+        y = torch.sigmoid(y)
+        x_part = torch.gather(x, 0, idx.indices)
+        return torch.mul(x_part, y)
 
 class SubgraphLoader:
     def __init__(self, ids, subgraph_mapping, loading_fn, batch_size, graph_node_types):
@@ -88,7 +112,7 @@ class SubgraphAbstractObjective(AbstractObjective):
         assert subgraph_partition is not None, "Provide train/val/test splits with `subgraph_partition` option"
         self.subgraph_mapping = subgraph_mapping
         self.subgraph_partition = unpersist(subgraph_partition)
-        super(SubgraphAbstractObjective, self).__init__(
+        super().__init__(
             name, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
             tokenizer_path, target_emb_size, link_predictor_type, masker,
@@ -293,6 +317,8 @@ class SubgraphClassifierObjective(NodeClassifierObjective, SubgraphAbstractObjec
             ns_groups, subgraph_mapping, subgraph_partition
         )
 
+        # self.pooler = PoolingLayer(100, (100, 1))
+
     def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
         self.target_embedder = SubgraphClassifierTargetMapper(
             elements=data_loading_func()
@@ -349,13 +375,19 @@ class SubgraphClassifierObjective(NodeClassifierObjective, SubgraphAbstractObjec
         scores = {key: sum_scores(val) for key, val in scores.items()}
         return scores
 
+    # def pooling_fn(self, node_embeddings):
+    #     return self.pooler(node_embeddings)
+
     def parameters(self, recurse: bool = True):
         return chain(self.classifier.parameters())
+        # return chain(self.classifier.parameters(), self.pooler.parameters())
 
     def custom_state_dict(self):
         state_dict = OrderedDict()
         for k, v in self.classifier.state_dict().items():
             state_dict[f"classifier.{k}"] = v
+        # for k, v in self.pooler.state_dict().items():
+        #     state_dict[f"pooler.{k}"] = v
         return state_dict
 
 
