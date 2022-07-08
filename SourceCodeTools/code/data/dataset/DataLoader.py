@@ -226,7 +226,6 @@ class SGNodesDataLoader:
                 batch = {
                     "seeds": seeds,
                     "group": group,
-                    # "subgraph": subgraph,
                     "input_nodes": input_nodes.to(self.device),
                     "input_mask": input_mask,
                     "indices": indices,
@@ -377,7 +376,6 @@ class SGEdgesDataLoader(SGNodesDataLoader):
                     "slice_map": slice_map,  # needed to restore original_nodes
                     "compute_embeddings_for": all_nodes,
                     "group": group,
-                    # "subgraph": subgraph,
                     "input_nodes": input_nodes.to(self.device),
                     "input_mask": input_mask,
                     "blocks": [block.to(self.device) for block in blocks],

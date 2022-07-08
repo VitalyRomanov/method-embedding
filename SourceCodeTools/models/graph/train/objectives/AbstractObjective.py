@@ -8,7 +8,8 @@ from tqdm import tqdm
 
 from SourceCodeTools.code.data.dataset.DataLoader import SGNodesDataLoader
 from SourceCodeTools.mltools.torch import compute_accuracy
-from SourceCodeTools.models.graph.LinkPredictor import CosineUndirectedLinkPredictor, BilinearLinkPedictor, L2UndirectedLinkPredictor
+from SourceCodeTools.models.graph.LinkPredictor import CosineUndirectedLinkPredictor, BilinearLinkPedictor, \
+    L2UndirectedLinkPredictor, LinkClassifier
 
 import torch.nn as nn
 
@@ -127,6 +128,7 @@ class AbstractObjective(nn.Module):
     def _create_nn_link_predictor(self):
         self.margin = None
         self.link_predictor = BilinearLinkPedictor(self.target_emb_size, self.graph_model.emb_size, 2).to(self.device)
+        # self.link_predictor = LinkClassifier(self.target_emb_size + self.graph_model.emb_size, 2)
         self.positive_label = 1
         self.negative_label = 0
         self.label_dtype = torch.long
@@ -274,10 +276,10 @@ class AbstractObjective(nn.Module):
         return torch.full((len(ids),), self.negative_label, dtype=self.label_dtype)
 
     def _prepare_for_prediction(
-            self, node_embeddings, positive_indices, negative_indices, target_embedding_fn, update_ns_callback, graph
+            self, node_embeddings, positive_indices, negative_indices, target_embedding_fn, update_ns_callback
     ):
         positive_dst, negative_dst = target_embedding_fn(
-            positive_indices, negative_indices, update_ns_callback, graph
+            positive_indices, negative_indices, update_ns_callback
         )
 
         # TODO breaks cache in
@@ -353,7 +355,7 @@ class AbstractObjective(nn.Module):
         # try:
         graph_emb, logits, labels, loss, acc = self(
             # input_nodes, input_mask, blocks, positive_indices, negative_indices,
-            # update_ns_callback=update_ns_callback, graph=graph
+            # update_ns_callback=update_ns_callback  #, graph=graph  # do not pass graph, possibly increases cache size
             update_ns_callback=update_ns_callback, **batch
         )
 
@@ -472,11 +474,11 @@ class AbstractObjective(nn.Module):
 
     def forward(
             self, input_nodes, input_mask, blocks, positive_indices, negative_indices,
-            update_ns_callback=None, subgraph=None, **kwargs
+            update_ns_callback=None, **kwargs
     ):
         graph_emb = self._graph_embeddings(input_nodes, blocks, mask=input_mask)
         node_embs_, element_embs_, labels = self._prepare_for_prediction(
-            graph_emb, positive_indices, negative_indices, self.target_embedding_fn, update_ns_callback, subgraph
+            graph_emb, positive_indices, negative_indices, self.target_embedding_fn, update_ns_callback  # , subgraph
         )
 
         logits, acc, loss  = self._compute_acc_loss(node_embs_, element_embs_, labels)
