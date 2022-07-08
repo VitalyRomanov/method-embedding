@@ -372,7 +372,7 @@ class TargetLoader:
         if self._ps_logger is not None:
             for a, n in zip(ids, positive):
                 self._ns_logger.write(f"{a}\t{self._label_encoder._inverse_target_map[n]}\n")
-        return
+        return positive
 
     def set_embed(self, ids, embs):
         assert self._target_embedding_proximity is not None
@@ -427,10 +427,16 @@ class GraphLinkTargetLoader(TargetLoader):
         )
 
     def sample_positive(self, ids):
-        return np.fromiter(
+        positive = np.fromiter(
             (self._label_encoder._inverse_target_map[rnd.choice(self._element_lookup[id_])] for id_ in ids),
             dtype=np.int32
         )
+
+        if self._ps_logger is not None:
+            for a, p in zip(ids, positive):
+                self._ns_logger.write(f"{a}\t{p}\n")
+
+        return positive
 
     def sample_negative(self, ids, k=1, strategy="w2v", current_group=None):
         negative = super().sample_negative(ids, k=k, strategy=strategy, current_group=current_group)
