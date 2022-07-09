@@ -59,10 +59,12 @@ class GraphLinkObjective(AbstractObjective):
 
         dim_size = graph_embeddings.size(1)
         num_embs = graph_embeddings.size(0)
+        neg_tile_factor = negative_embeddings.size(0) // graph_embeddings.size(0)
+
         pos_logits, pos_acc, pos_loss = self._compute_acc_loss(graph_embeddings, positive_embeddings, pos_labels)
         neg_logits, neg_acc, neg_loss = self._compute_acc_loss(
-            graph_embeddings.reshape(num_embs, 1, dim_size),
-            negative_embeddings.reshape(num_embs, -1, dim_size),
+            graph_embeddings.tile(neg_tile_factor, 1),
+            negative_embeddings,
             neg_labels
         )
 

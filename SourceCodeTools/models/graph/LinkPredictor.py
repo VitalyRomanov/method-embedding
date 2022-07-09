@@ -3,38 +3,46 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class LinkPredictor(nn.Module):
-    def __init__(self, input_dimensionality):
-        super(LinkPredictor, self).__init__()
-
-        self.norm = nn.BatchNorm1d(input_dimensionality) # LayerNorm
-
-        self.l1 = nn.Linear(input_dimensionality, 20)
-        self.l1_a = nn.Sigmoid()
-
-        self.logits = nn.Linear(20, 2)
-
-    # def forward(self, x, **kwargs):
-    #     x = self.norm(x)
-    #     x = F.relu(self.l1(x))
-    #     return self.logits(x)
+class AbstractLinkClassifier(nn.Module):
+    def __init__(self, input_dim1, input_dim2, num_classes, **kwargs):
+        super(AbstractLinkClassifier, self).__init__()
+        self.input_dim1 = input_dim1
+        self.input_dim2 = input_dim2
+        self.num_classes = num_classes
 
     def forward(self, x1, x2, **kwargs):
-        x = torch.cat([x1, x2], dim=-1)
-        x = self.norm(x)
-        x = F.relu(self.l1(x))
-        return self.logits(x)
+        # Similarity score depends on the type of the metric used
+        #
+        raise NotImplementedError()
 
 
-class LinkClassifier(nn.Module):
-    def __init__(self, input_dimensionality, num_classes):
-        super(LinkClassifier, self).__init__()
+# class LinkPredictor(AbstractLinkClassifier):
+#     def __init__(self, input_dim1, input_dim2, num_classes, **kwargs):
+#         super(LinkPredictor, self).__init__(input_dim1, input_dim2, num_classes)
+#         concat_emb_size = self.input_dim1 + self.input_dim1
+#         self.norm = nn.BatchNorm1d(concat_emb_size) # LayerNorm
+#         self.l1 = nn.Linear(concat_emb_size, 20)
+#         self.logits = nn.Linear(20, 2)
+#
+#     # def forward(self, x, **kwargs):
+#     #     x = self.norm(x)
+#     #     x = F.relu(self.l1(x))
+#     #     return self.logits(x)
+#
+#     def forward(self, x1, x2, **kwargs):
+#         x = torch.cat([x1, x2], dim=-1)
+#         x = self.norm(x)
+#         x = F.relu(self.l1(x))
+#         return self.logits(x)
 
-        self.norm = nn.BatchNorm1d(input_dimensionality) # LayerNorm
 
-        self.l1 = nn.Linear(input_dimensionality, 20)
-        self.l1_a = nn.Sigmoid()
+class LinkClassifier(AbstractLinkClassifier):
+    def __init__(self, input_dim1, input_dim2, num_classes=2, **kwargs):
+        super(LinkClassifier, self).__init__(input_dim1, input_dim2, num_classes)
+        concat_emb_size = self.input_dim1 + self.input_dim1
 
+        self.norm = nn.BatchNorm1d(concat_emb_size) # LayerNorm
+        self.l1 = nn.Linear(concat_emb_size, 20)
         self.logits = nn.Linear(20, num_classes)
 
     def forward(self, x1, x2, **kwargs):
@@ -44,10 +52,9 @@ class LinkClassifier(nn.Module):
         return self.logits(x)
 
 
-class BilinearLinkPedictor(nn.Module):
-    def __init__(self, embedding_dim_1, embedding_dim_2, target_classes=2):
-        super(BilinearLinkPedictor, self).__init__()
-        self.num_target_classes = target_classes
+class BilinearLinkClassifier(AbstractLinkClassifier):
+    def __init__(self, input_dim1, input_dim2, num_classes=2, **kwargs):
+        super(BilinearLinkClassifier, self).__init__(input_dim1, input_dim2, num_classes)
 
         # self.src_l1 = nn.Linear(embedding_dim_1, embedding_dim_1)
         # self.src_l2 = nn.Linear(embedding_dim_1, embedding_dim_1)
@@ -57,25 +64,17 @@ class BilinearLinkPedictor(nn.Module):
         # self.dst_l2 = nn.Linear(embedding_dim_2, embedding_dim_2)
         # self.dst_l3 = nn.Linear(embedding_dim_2, embedding_dim_2)
 
-        self.l1 = nn.Linear(embedding_dim_1, 300, bias=False)
-        self.l2 = nn.Linear(embedding_dim_2, 300, bias=False)
+        self.l1 = nn.Linear(self.input_dim1, 300, bias=False)
+        self.l2 = nn.Linear(self.input_dim2, 300, bias=False)
         self.act = nn.Sigmoid()
-        self.bilinear = nn.Bilinear(300, 300, target_classes)
+        self.bilinear = nn.Bilinear(300, 300, self.num_classes)
 
-    def forward(self, x1, x2):
+    def forward(self, x1, x2, **kwargs):
 
-        # x1 = self.act(self.src_l1(x1))
-        # x1 = self.act(self.src_l2(x1))
-        # x1 = self.act(self.src_l3(x1))
-        #
-        # x2 = self.act(self.dst_l1(x2))
-        # x2 = self.act(self.dst_l2(x2))
-        # x2 = self.act(self.dst_l3(x2))
+        x1_l1 = self.act(self.l1(x1))
+        x2_l2 = self.act(self.l2(x2))
 
-        if len(x1.shape) == 3 and x1.size(1) != x2.size(1):
-            x1 = torch.tile(x1, (1, x2.size(1), 1))
-
-        return self.bilinear(self.act(self.l1(x1)), self.act(self.l2(x2))).reshape(-1, self.num_target_classes)
+        return self.bilinear(x1_l1, x2_l2)
 
 
 class CosineUndirectedLinkPredictor(nn.Module):

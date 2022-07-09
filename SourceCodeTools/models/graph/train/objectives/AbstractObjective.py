@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 from SourceCodeTools.code.data.dataset.DataLoader import SGNodesDataLoader
 from SourceCodeTools.mltools.torch import compute_accuracy
-from SourceCodeTools.models.graph.LinkPredictor import CosineUndirectedLinkPredictor, BilinearLinkPedictor, L2UndirectedLinkPredictor
+from SourceCodeTools.models.graph.LinkPredictor import CosineUndirectedLinkPredictor, BilinearLinkClassifier, L2UndirectedLinkPredictor
 
 import torch.nn as nn
 
@@ -126,7 +126,7 @@ class AbstractObjective(nn.Module):
 
     def _create_nn_link_predictor(self):
         self.margin = None
-        self.link_predictor = BilinearLinkPedictor(self.target_emb_size, self.graph_model.emb_size, 2).to(self.device)
+        self.link_predictor = BilinearLinkClassifier(self.target_emb_size, self.graph_model.emb_size, 2).to(self.device)
         self.positive_label = 1
         self.negative_label = 0
         self.label_dtype = torch.long
