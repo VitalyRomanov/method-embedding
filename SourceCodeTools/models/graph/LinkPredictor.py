@@ -29,19 +29,28 @@ class LinkPredictor(nn.Module):
 class LinkClassifier(nn.Module):
     def __init__(self, input_dimensionality, num_classes):
         super(LinkClassifier, self).__init__()
+        self.num_classes = num_classes
+        self.joint_dim = input_dimensionality
 
         self.norm = nn.BatchNorm1d(input_dimensionality) # LayerNorm
 
-        self.l1 = nn.Linear(input_dimensionality, 20)
-        self.l1_a = nn.Sigmoid()
+        self.l1 = nn.Linear(input_dimensionality, 50)
+        self.l2 = nn.Linear(50, 50)
+        self.l3 = nn.Linear(50, 50)
 
-        self.logits = nn.Linear(20, num_classes)
+        self.logits = nn.Linear(50, num_classes)
 
     def forward(self, x1, x2, **kwargs):
-        x = torch.cat([x1, x2], dim=-1)
+
+        if len(x1.shape) == 3 and x1.size(1) != x2.size(1):
+            x1 = torch.tile(x1, (1, x2.size(1), 1))
+
+        x = torch.cat([x1, x2], dim=-1).reshape(-1, self.joint_dim)
         x = self.norm(x)
         x = F.relu(self.l1(x))
-        return self.logits(x)
+        x = F.relu(self.l2(x))
+        x = F.relu(self.l3(x))
+        return self.logits(x).reshape(-1, self.num_classes)
 
 
 class BilinearLinkPedictor(nn.Module):
@@ -49,13 +58,13 @@ class BilinearLinkPedictor(nn.Module):
         super(BilinearLinkPedictor, self).__init__()
         self.num_target_classes = target_classes
 
-        # self.src_l1 = nn.Linear(embedding_dim_1, embedding_dim_1)
-        # self.src_l2 = nn.Linear(embedding_dim_1, embedding_dim_1)
-        # self.src_l3 = nn.Linear(embedding_dim_1, embedding_dim_1)
-        #
-        # self.dst_l1 = nn.Linear(embedding_dim_2, embedding_dim_2)
-        # self.dst_l2 = nn.Linear(embedding_dim_2, embedding_dim_2)
-        # self.dst_l3 = nn.Linear(embedding_dim_2, embedding_dim_2)
+        self.src_l1 = nn.Linear(embedding_dim_1, embedding_dim_1)
+        self.src_l2 = nn.Linear(embedding_dim_1, embedding_dim_1)
+        self.src_l3 = nn.Linear(embedding_dim_1, embedding_dim_1)
+
+        self.dst_l1 = nn.Linear(embedding_dim_2, embedding_dim_2)
+        self.dst_l2 = nn.Linear(embedding_dim_2, embedding_dim_2)
+        self.dst_l3 = nn.Linear(embedding_dim_2, embedding_dim_2)
 
         self.l1 = nn.Linear(embedding_dim_1, 300, bias=False)
         self.l2 = nn.Linear(embedding_dim_2, 300, bias=False)
@@ -64,13 +73,13 @@ class BilinearLinkPedictor(nn.Module):
 
     def forward(self, x1, x2):
 
-        # x1 = self.act(self.src_l1(x1))
-        # x1 = self.act(self.src_l2(x1))
-        # x1 = self.act(self.src_l3(x1))
-        #
-        # x2 = self.act(self.dst_l1(x2))
-        # x2 = self.act(self.dst_l2(x2))
-        # x2 = self.act(self.dst_l3(x2))
+        x1 = self.act(self.src_l1(x1))
+        x1 = self.act(self.src_l2(x1))
+        x1 = self.act(self.src_l3(x1))
+
+        x2 = self.act(self.dst_l1(x2))
+        x2 = self.act(self.dst_l2(x2))
+        x2 = self.act(self.dst_l3(x2))
 
         if len(x1.shape) == 3 and x1.size(1) != x2.size(1):
             x1 = torch.tile(x1, (1, x2.size(1), 1))
@@ -121,7 +130,7 @@ class TranslationLinkPredictor(nn.Module):
         self.dst_proj = nn.Linear(input_dim, rel_dim, bias=False)
         self.triplet_loss = nn.TripletMarginLoss(margin=margin)
 
-    def forward(self, a, p, n, labels):
+    def forward(self, a, p, n):
 
         transl = self.src_proj(a) + self.rel_emb
         m_p = self.dst_proj(p)
