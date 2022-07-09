@@ -11,7 +11,7 @@ from SourceCodeTools.code.data.dataset.SubwordMasker import SubwordMasker
 from SourceCodeTools.mltools.torch import compute_accuracy
 from SourceCodeTools.models.graph.ElementEmbedder import GraphLinkSampler
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
-from SourceCodeTools.models.graph.LinkPredictor import BilinearLinkPedictor, TransRLinkPredictor
+from SourceCodeTools.models.graph.LinkPredictor import BilinearLinkClassifier, TransRLinkPredictor
 from SourceCodeTools.models.graph.train.Scorer import Scorer
 from SourceCodeTools.models.graph.train.objectives.GraphLinkObjective import GraphLinkObjective
 from SourceCodeTools.tabular.common import compact_property
@@ -31,7 +31,7 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
         # )
 
     def _create_link_predictor(self):
-        self.link_predictor = BilinearLinkPedictor(
+        self.link_predictor = BilinearLinkClassifier(
             self.target_emb_size, self.graph_model.emb_size, self.target_embedder.num_classes
         ).to(self.device)
         # self.positive_label = 1
