@@ -215,6 +215,15 @@ class TargetLoader:
             self._ns_logger = None
             self._ps_logger = None
 
+    def __del__(self):
+        def close_file_if_open(file):
+            if file is not None and file.closed is False:
+                file.close()
+
+        close_file_if_open(self._ps_logger)
+        close_file_if_open(self._ns_logger)
+
+
     def _drop_duplicates(self, targets):
         len_before = len(targets)
         targets.drop_duplicates(inplace=True)
@@ -371,7 +380,8 @@ class TargetLoader:
 
         if self._ps_logger is not None:
             for a, n in zip(ids, positive):
-                self._ns_logger.write(f"{a}\t{self._label_encoder._inverse_target_map[n]}\n")
+                self._ps_logger.write(f"{a}\t{self._label_encoder._inverse_target_map[n]}\n")
+            self._ps_logger.flush()
         return positive
 
     def set_embed(self, ids, embs):
@@ -434,7 +444,8 @@ class GraphLinkTargetLoader(TargetLoader):
 
         if self._ps_logger is not None:
             for a, p in zip(ids, positive):
-                self._ns_logger.write(f"{a}\t{p}\n")
+                self._ps_logger.write(f"{a}\t{p}\n")
+            self._ps_logger.flush()
 
         return positive
 
