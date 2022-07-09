@@ -59,6 +59,14 @@ class GraphLinkObjective(AbstractObjective):
 
         dim_size = graph_embeddings.size(1)
         num_embs = graph_embeddings.size(0)
+        # logits, acc, loss = self._compute_acc_loss(
+        #     graph_embeddings,
+        #     (
+        #         positive_embeddings,
+        #         negative_embeddings.reshape(num_embs, -1, dim_size)
+        #     ),
+        #     (pos_labels, neg_labels)
+        # )
         pos_logits, pos_acc, pos_loss = self._compute_acc_loss(graph_embeddings, positive_embeddings, pos_labels)
         neg_logits, neg_acc, neg_loss = self._compute_acc_loss(
             graph_embeddings.reshape(num_embs, 1, dim_size),
@@ -74,6 +82,52 @@ class GraphLinkObjective(AbstractObjective):
         labels = torch.cat([pos_labels, neg_labels], dim=0)
 
         return graph_embeddings, logits, labels, loss, acc
+    #
+    # def _create_link_predictor(self):
+    #     self.link_predictor = TranslationLinkPredictor(
+    #         input_dim=self.target_emb_size, rel_dim=30,
+    #     ).to(self.device)
+    #     self.positive_label = 1
+    #     self.negative_label = -1
+    #     self.label_dtype = torch.long
+    #
+    #     self.margin = None
+    #
+    # def _compute_acc_loss(self, node_embs_, element_embs_, labels):
+    #
+    #     positive, negative = element_embs_
+    #
+    #     num_embs = node_embs_.size(0)
+    #     dim_size = node_embs_.size(-1)
+    #     tile_factor = negative.size(1)
+    #
+    #     node_embs_ = node_embs_.reshape(num_embs, 1, dim_size)
+    #     node_embs_ = torch.tile(node_embs_, (1, tile_factor, 1))
+    #
+    #     positive = positive.reshape(num_embs, 1, dim_size)
+    #     positive = torch.tile(positive, (1, tile_factor, 1))
+    #
+    #     anchor = node_embs_.reshape(-1, dim_size)
+    #     positive = positive.reshape(-1, dim_size)
+    #     negative = negative.reshape(-1, dim_size)
+    #
+    #     # num_examples = len(labels) // 2
+    #     # anchor = node_embs_[:num_examples, :]
+    #     # positive = element_embs_[:num_examples, :]
+    #     # negative = element_embs_[num_examples:, :]
+    #     # labels_ = labels[:num_examples]
+    #
+    #     loss, sim = self.link_predictor(anchor, positive, negative)
+    #
+    #     neg_start = sim.size(0) // 2
+    #     sim_pos = sim[:num_embs]
+    #     sim_neg = sim[neg_start:]
+    #     sim = torch.cat([sim_pos, sim_neg], dim=0)
+    #     labels = torch.cat(labels, dim=0)
+    #
+    #     acc = compute_accuracy(sim, labels >= 0)
+    #
+    #     return None, acc, loss
 
     def parameters(self, recurse: bool = True):
         return self.link_predictor.parameters()
