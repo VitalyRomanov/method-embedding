@@ -339,6 +339,9 @@ class OnDiskGraphStorage:
     def get_num_nodes(self):
         return self.database.query("SELECT max(id) FROM nodes").iloc[0,0] + 1
 
+    def get_num_edges(self):
+        return self.database.query("SELECT count(id) FROM edges").iloc[0,0]
+
     def get_node_type_descriptions(self):
         return self.database.query("SELECT type_desc from node_types")["type_desc"]
 
