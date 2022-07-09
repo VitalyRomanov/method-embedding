@@ -306,7 +306,7 @@ class TargetLoader:
     def __len__(self):
         return len(self._element_lookup)
 
-    def _sample_closest_negative(self, ids, k=1, current_group=None):
+    def _sample_closest_negative(self, ids, k=1, current_group=None, bloom_filter=None):
         assert self._emb_size is not None, "Sampling closest negative is not initialized, try passing `emb_size` to initializer"
         assert ids is not None
         num_emb = self._target_embedding_proximity.num_embeddings
@@ -324,7 +324,7 @@ class TargetLoader:
                     # also need to make sure there are more candidates available in case one node is constantly
                     # present among candidates
                     k=10 + len(positive),
-                    exclude=positive, current_group=current_group)
+                    exclude=positive, current_group=current_group, bloom_filter=bloom_filter)
                 )
 
         negative = []
@@ -332,7 +332,7 @@ class TargetLoader:
             negative.extend(random.choices(neg, k=k))
         return negative
 
-    def _get_closest_to_key(self, key, k=None, exclude=None, current_group=None):
+    def _get_closest_to_key(self, key, k=None, exclude=None, current_group=None, bloom_filter=None):
         _, closest_keys = self._target_embedding_proximity.query(
             self._target_embedding_proximity[key].reshape(1, -1), k=k
         )
@@ -344,7 +344,7 @@ class TargetLoader:
             pass
 
         if self._use_ns_groups:
-            closest_keys = [key for key in closest_keys if key in self._groups[current_group]]
+            closest_keys = [n_key for n_key in closest_keys if n_key in self._groups[current_group] and (bloom_filter is None or (key, n_key) not in bloom_filter)]
 
         if len(closest_keys) == 0:
             # backup strategy
@@ -353,7 +353,7 @@ class TargetLoader:
                 closest_keys = random.choices(list(set(self._unique_targets)), k=k)
         return closest_keys
 
-    def sample_negative_w2v(self, ids, k=1, current_group=None):
+    def sample_negative_w2v(self, ids, k=1, current_group=None, bloom_filter=None):
 
         if not self._use_ns_groups:
             current_group = self._general_sample_group_key
@@ -368,7 +368,7 @@ class TargetLoader:
 
                 neg = get_negative(current_group)
                 attempt_counter = 10
-                while neg in excluded and attempt_counter > 0:
+                while (neg in excluded or bloom_filter is not None and (id_, neg) in bloom_filter) and attempt_counter > 0:
                     neg = get_negative(current_group)
                     attempt_counter -= 1
                 negative.append(neg)
@@ -392,15 +392,15 @@ class TargetLoader:
 
         self._target_embedding_proximity.set_embed(ids, embs)
 
-    def sample_negative(self, ids, k=1, strategy="w2v", current_group=None):
+    def sample_negative(self, ids, k=1, strategy="w2v", current_group=None, bloom_filter=None):
         num_ids = len(ids)
 
         if strategy == "w2v" or self._target_embedding_proximity.all_embeddings_ready is False:
             if strategy == "closest":
                 logging.info("Proximity negative sampling is not ready yet, falling back to w2v")
-            negative = self.sample_negative_w2v(ids, k=k, current_group=current_group)
+            negative = self.sample_negative_w2v(ids, k=k, current_group=current_group, bloom_filter=bloom_filter)
         elif strategy == "closest":
-            negative = self._sample_closest_negative(ids, k=k, current_group=current_group)
+            negative = self._sample_closest_negative(ids, k=k, current_group=current_group, bloom_filter=bloom_filter)
         else:
             raise ValueError(f"Unsupported negative sampling strategy: {strategy}. Supported values are w2v|closest")
 
@@ -449,7 +449,9 @@ class GraphLinkTargetLoader(TargetLoader):
 
         return positive
 
-    def sample_negative(self, ids, k=1, strategy="w2v", current_group=None):
-        negative = super().sample_negative(ids, k=k, strategy=strategy, current_group=current_group)
+    def sample_negative(self, ids, k=1, strategy="w2v", current_group=None, bloom_filter=None):
+        negative = super().sample_negative(
+            ids, k=k, strategy=strategy, current_group=current_group, bloom_filter=bloom_filter
+        )
 
         return np.fromiter((self._label_encoder._inverse_target_map[neg] for neg in negative), dtype=np.int32)

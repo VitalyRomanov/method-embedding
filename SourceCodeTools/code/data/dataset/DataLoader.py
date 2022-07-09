@@ -103,7 +103,7 @@ class SGNodesDataLoader:
         else:
             groups = None
 
-        for group, nodes, edges, subgraph in self.dataset.iterate_subgraphs(
+        for group, nodes, edges, subgraph, edges_bloom_filter in self.dataset.iterate_subgraphs(
                 grouping_strategy, groups, node_data, edge_data, self.n_buckets
         ):
 
@@ -116,7 +116,7 @@ class SGNodesDataLoader:
             else:
                 masker = None
 
-            yield group, subgraph, masker, node_label_loader, edge_label_loader
+            yield group, subgraph, masker, node_label_loader, edge_label_loader, edges_bloom_filter
 
     @staticmethod
     def get_nodes_from_partition(graph, partition, labels_for):
@@ -179,7 +179,7 @@ class SGNodesDataLoader:
         self._active_loader = None
 
     def create_batches(self, subgraph_generator, number_of_hops, batch_size, partition, labels_for):
-        for group, subgraph, masker, node_labels_loader, edge_labels_loader in subgraph_generator:
+        for group, subgraph, masker, node_labels_loader, edge_labels_loader, edges_bloom_filter in subgraph_generator:
 
             # TODO shuffle subgraphs
 
@@ -211,7 +211,7 @@ class SGNodesDataLoader:
                     positive_indices = torch.LongTensor(node_labels_loader.sample_positive(indices)).to(self.device)
                     negative_indices = torch.LongTensor(node_labels_loader.sample_negative(
                         indices, k=self.neg_sampling_factor, strategy=self.negative_sampling_strategy,
-                        current_group=group
+                        current_group=group, bloom_filter=edges_bloom_filter
                     )).to(self.device)
                 else:
                     positive_indices = None
@@ -311,7 +311,7 @@ class SGEdgesDataLoader(SGNodesDataLoader):
 
         sampler = MultiLayerFullNeighborSampler(number_of_hops)
 
-        for group, subgraph, masker, node_labels_loader, edge_labels_loader in subgraph_generator:
+        for group, subgraph, masker, node_labels_loader, edge_labels_loader, edges_bloom_filter in subgraph_generator:
 
             nodes_in_graph = set(subgraph.nodes("node_")[subgraph.nodes["node_"].data["current_type_mask"]].cpu().numpy())
             nodes_for_batching = self.get_nodes_from_partition(subgraph, partition, labels_for)
@@ -324,7 +324,7 @@ class SGEdgesDataLoader(SGNodesDataLoader):
                     positive_indices = torch.LongTensor(node_labels_loader.sample_positive(nodes_in_batch))
                     negative_indices = torch.LongTensor(node_labels_loader.sample_negative(
                         nodes_in_batch, k=self.neg_sampling_factor, strategy=self.negative_sampling_strategy,
-                        current_group=group
+                        current_group=group, bloom_filter=edges_bloom_filter
                     ))
                 else:
                     positive_indices = None

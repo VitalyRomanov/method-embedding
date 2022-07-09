@@ -266,8 +266,6 @@ class SourceGraphDataset:
 
         self._open_dataset_db()
 
-        self._track_existing_edges()
-
         self.edge_types_to_remove = set()
         if filter_edges is not None:
             self._filter_edges(filter_edges)
@@ -311,18 +309,18 @@ class SourceGraphDataset:
         # logging.info(f"Unique nodes: {len(self.nodes)}, node types: {len(self.nodes['type'].unique())}")
         # logging.info(f"Unique edges: {len(self.edges)}, edge types: {len(self.edges['type'].unique())}")
 
-    def _track_existing_edges(self):
-        cache_key = "bloom_filter"
-        bloom_filter = self._load_cache_if_exists(cache_key)
-        if bloom_filter is None:
-            num_edges = self.dataset_db.get_num_edges()
-            self.bloom_filter = BloomFilter(max_elements=num_edges, error_rate=0.0001)
-            for edges in tqdm(self.dataset_db.get_edges(chunksize=100000), desc="Creating bloom filter for edges"):
-                for edge in zip(edges['src'], edges['dst']):
-                    self.bloom_filter.add(edge)
-            self._write_to_cache(self.bloom_filter, cache_key)
-        else:
-            self.bloom_filter = bloom_filter
+    # def _track_existing_edges(self):
+    #     cache_key = "bloom_filter"
+    #     bloom_filter = self._load_cache_if_exists(cache_key)
+    #     if bloom_filter is None:
+    #         num_edges = self.dataset_db.get_num_edges()
+    #         self.bloom_filter = BloomFilter(max_elements=num_edges, error_rate=0.0001)
+    #         for edges in tqdm(self.dataset_db.get_edges(chunksize=100000), desc="Creating bloom filter for edges"):
+    #             for edge in zip(edges['src'], edges['dst']):
+    #                 self.bloom_filter.add(edge)
+    #         self._write_to_cache(self.bloom_filter, cache_key)
+    #     else:
+    #         self.bloom_filter = bloom_filter
 
     def _remove_edges_with_restricted_types(self, edges):
         edges.query(
@@ -961,6 +959,11 @@ class SourceGraphDataset:
         for group, nodes, edges in iterator:
             # cache_key = self.get_cache_key(how, group)
             # if cache_key not in self._subgraph_cache:
+
+            edges_bloom_filter = set()  # BloomFilter(max_elements=len(edges), error_rate=0.01)
+            for src, dst in zip(edges["src"], edges["dst"]):
+                edges_bloom_filter.add((src, dst))
+
             self._remove_edges_with_restricted_types(edges)
 
             if self.custom_reverse is not None:
@@ -983,7 +986,7 @@ class SourceGraphDataset:
                     subgraph = self._create_hetero_graph(nodes, edges)
                     self._write_to_cache(subgraph, cache_key)
 
-                yield group, nodes, edges, subgraph
+                yield group, nodes, edges, subgraph, edges_bloom_filter
 
     @staticmethod
     def holdout(nodes: pd.DataFrame, edges: pd.DataFrame, holdout_size=10000, random_seed=42):
