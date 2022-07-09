@@ -3,7 +3,7 @@ from collections import OrderedDict
 from itertools import chain
 
 from SourceCodeTools.models.graph.TargetEmbedder import TargetEmbedderWithBpeSubwords
-from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective
+from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective, ScoringMethods
 
 
 class SubwordEmbedderObjective(AbstractObjective):
@@ -15,11 +15,11 @@ class SubwordEmbedderObjective(AbstractObjective):
         self.update_embeddings_for_queries = True
 
     # def _verify_parameters(self):
-    #     if self.link_predictor_type == "inner_prod":
+    #     if self.link_scorer_type == "inner_prod":
     #         assert self.target_emb_size == self.graph_model.emb_size, "Graph embedding and target embedder dimensionality should match for `inner_prod` type of link predictor."
 
     def _verify_parameters(self):
-        if self.link_predictor_type == "inner_prod":
+        if self.link_scorer_type == ScoringMethods.inner_prod:
             if self.graph_model.emb_size != self.target_emb_size:
                 self.target_emb_size = self.graph_model.emb_size
                 logging.warning(f"Graph embedding and target embedding sizes do not match. "
@@ -33,20 +33,20 @@ class SubwordEmbedderObjective(AbstractObjective):
         ).to(self.device)
 
     def parameters(self, recurse: bool = True):
-        return chain(self.target_embedder.parameters(), self.link_predictor.parameters())
+        return chain(self.target_embedder.parameters(), self.link_scorer.parameters())
 
     def custom_state_dict(self):
         state_dict = OrderedDict()
         for k, v in self.target_embedder.state_dict().items():
             state_dict[f"target_embedder.{k}"] = v
-        for k, v in self.link_predictor.state_dict().items():
-            state_dict[f"link_predictor.{k}"] = v
+        for k, v in self.link_scorer.state_dict().items():
+            state_dict[f"link_scorer.{k}"] = v
         return state_dict
 
     def custom_load_state_dict(self, state_dicts):
         self.target_embedder.load_state_dict(
             self.get_prefix("target_embedder", state_dicts)
         )
-        self.link_predictor.load_state_dict(
-            self.get_prefix("link_predictor", state_dicts)
+        self.link_scorer.load_state_dict(
+            self.get_prefix("link_scorer", state_dicts)
         )

@@ -1,6 +1,5 @@
 from collections import OrderedDict
 
-import torch
 
 from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective
 
@@ -20,22 +19,11 @@ class GraphLinkObjective(AbstractObjective):
         pass
 
     def _create_target_embedder(self, data_loading_func, tokenizer_path):
-        # raise NotImplementedError()
         pass
-        # self.create_graph_link_sampler(data_loading_func, nodes)
 
-    # def _prepare_for_prediction(
-    #         self, node_embeddings, positive_embeddings, negative_embeddings, *args, **kwargs
-    # ):
-    #     # TODO breaks cache in
-    #     #  SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObjective.TargetLinkMapper.get_labels
-    #     labels_pos = self._create_positive_labels(torch.zeros(positive_embeddings.size(0)))
-    #     labels_neg = self._create_negative_labels(torch.zeros(negative_embeddings.size(0)))
-    #
-    #     src_embs = torch.cat([node_embeddings, node_embeddings], dim=0)
-    #     dst_embs = torch.cat([positive_embeddings, negative_embeddings], dim=0)
-    #     labels = torch.cat([labels_pos, labels_neg], 0).to(self.device)
-    #     return src_embs, dst_embs, labels
+    def get_inner_prod_link_scorer_class(self):
+        from SourceCodeTools.models.graph.LinkPredictor import DirectedCosineLinkScorer
+        return DirectedCosineLinkScorer
 
     def forward(
             self, input_nodes, input_mask, blocks, positive_indices, negative_indices,
@@ -57,92 +45,23 @@ class GraphLinkObjective(AbstractObjective):
         pos_labels = self._create_positive_labels(positive_indices).to(self.device)
         neg_labels = self._create_negative_labels(negative_embeddings).to(self.device)
 
-        dim_size = graph_embeddings.size(1)
-        num_embs = graph_embeddings.size(0)
-        neg_tile_factor = negative_embeddings.size(0) // graph_embeddings.size(0)
-
-        # logits, acc, loss = self._compute_acc_loss(
-        #     graph_embeddings,
-        #     (
-        #         positive_embeddings,
-        #         negative_embeddings.reshape(num_embs, -1, dim_size)
-        #     ),
-        #     (pos_labels, neg_labels)
-        # )
-
-        pos_logits, pos_acc, pos_loss = self._compute_acc_loss(graph_embeddings, positive_embeddings, pos_labels)
-        neg_logits, neg_acc, neg_loss = self._compute_acc_loss(
-            graph_embeddings.tile(neg_tile_factor, 1),
-            negative_embeddings,
-            neg_labels
+        pos_neg_scores, avg_scores, loss = self._compute_scores_loss(
+            graph_embeddings, positive_embeddings, negative_embeddings, pos_labels, neg_labels
         )
 
-        pos_size = positive_indices.size(0)
-        neg_size = negative_embeddings.size(0)
-        loss = (pos_loss * pos_size + neg_loss * neg_size) / (pos_size + neg_size)
-        acc = (pos_acc * pos_size + neg_acc * neg_size) / (pos_size + neg_size)
-        logits = torch.cat([pos_logits, neg_logits], dim=0)
-        labels = torch.cat([pos_labels, neg_labels], dim=0)
-
-        return graph_embeddings, logits, labels, loss, acc
-    #
-    # def _create_link_predictor(self):
-    #     self.link_predictor = TranslationLinkPredictor(
-    #         input_dim=self.target_emb_size, rel_dim=30,
-    #     ).to(self.device)
-    #     self.positive_label = 1
-    #     self.negative_label = -1
-    #     self.label_dtype = torch.long
-    #
-    #     self.margin = None
-    #
-    # def _compute_acc_loss(self, node_embs_, element_embs_, labels):
-    #
-    #     positive, negative = element_embs_
-    #
-    #     num_embs = node_embs_.size(0)
-    #     dim_size = node_embs_.size(-1)
-    #     tile_factor = negative.size(1)
-    #
-    #     node_embs_ = node_embs_.reshape(num_embs, 1, dim_size)
-    #     node_embs_ = torch.tile(node_embs_, (1, tile_factor, 1))
-    #
-    #     positive = positive.reshape(num_embs, 1, dim_size)
-    #     positive = torch.tile(positive, (1, tile_factor, 1))
-    #
-    #     anchor = node_embs_.reshape(-1, dim_size)
-    #     positive = positive.reshape(-1, dim_size)
-    #     negative = negative.reshape(-1, dim_size)
-    #
-    #     # num_examples = len(labels) // 2
-    #     # anchor = node_embs_[:num_examples, :]
-    #     # positive = element_embs_[:num_examples, :]
-    #     # negative = element_embs_[num_examples:, :]
-    #     # labels_ = labels[:num_examples]
-    #
-    #     loss, sim = self.link_predictor(anchor, positive, negative)
-    #
-    #     neg_start = sim.size(0) // 2
-    #     sim_pos = sim[:num_embs]
-    #     sim_neg = sim[neg_start:]
-    #     sim = torch.cat([sim_pos, sim_neg], dim=0)
-    #     labels = torch.cat(labels, dim=0)
-    #
-    #     acc = compute_accuracy(sim, labels >= 0)
-    #
-    #     return None, acc, loss
+        return graph_embeddings, pos_neg_scores, (pos_labels, neg_labels), loss, avg_scores
 
     def parameters(self, recurse: bool = True):
-        return self.link_predictor.parameters()
+        return self.link_scorer.parameters()
 
     def custom_state_dict(self):
         state_dict = OrderedDict()
-        for k, v in self.link_predictor.state_dict().items():
-            state_dict[f"link_predictor.{k}"] = v
+        for k, v in self.link_scorer.state_dict().items():
+            state_dict[f"link_scorer.{k}"] = v
         return state_dict
 
     def custom_load_state_dict(self, state_dicts):
-        self.link_predictor.load_state_dict(
+        self.link_scorer.load_state_dict(
             self.get_prefix("link_predictor", state_dicts)
         )
 
@@ -151,7 +70,7 @@ class GraphLinkObjective(AbstractObjective):
 #     def __init__(
 #             self, name, graph_model, node_embedder, nodes, data_loading_func, device,
 #             sampling_neighbourhood_size, batch_size,
-#             tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
+#             tokenizer_path=None, target_emb_size=None, link_scorer_type="inner_prod", masker: SubwordMasker = None,
 #             measure_scores=False, dilate_scores=1
 #     ):
 #         self.set_num_classes(data_loading_func)
@@ -159,7 +78,7 @@ class GraphLinkObjective(AbstractObjective):
 #         super(GraphLinkObjective, self).__init__(
 #             name, graph_model, node_embedder, nodes, data_loading_func, device,
 #             sampling_neighbourhood_size, batch_size,
-#             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
+#             tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_scorer_type=link_scorer_type,
 #             masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores
 #         )
 #
@@ -173,9 +92,9 @@ class GraphLinkObjective(AbstractObjective):
 #         self.label_dtype = torch.long
 #
 #     def create_link_predictor(self):
-#         if self.link_predictor_type == "nn":
-#             self.create_nn_link_predictor()
-#         elif self.link_predictor_type == "inner_prod":
+#         if self.link_scorer_type == "nn":
+#             self.create_nn_link_scorer()
+#         elif self.link_scorer_type == "inner_prod":
 #             self.create_inner_prod_link_predictor()
 #         else:
 #             raise NotImplementedError()

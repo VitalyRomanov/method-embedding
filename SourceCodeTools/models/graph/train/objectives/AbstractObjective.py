@@ -1,14 +1,14 @@
 import logging
 from abc import abstractmethod
 from collections import defaultdict
+from enum import Enum
 
 import dgl
 import torch
 from tqdm import tqdm
 
-from SourceCodeTools.code.data.dataset.DataLoader import SGNodesDataLoader
-from SourceCodeTools.mltools.torch import compute_accuracy
-from SourceCodeTools.models.graph.LinkPredictor import CosineUndirectedLinkPredictor, BilinearLinkClassifier, L2UndirectedLinkPredictor
+from SourceCodeTools.models.graph.LinkPredictor import UndirectedCosineLinkScorer, BilinearLinkClassifier, \
+    UndirectedL2LinkScorer, ScorerObjectiveOptimizationDirection
 
 import torch.nn as nn
 
@@ -43,12 +43,18 @@ class EarlyStoppingTracker:
         self.early_stopping_value = 0.
 
 
+class ScoringMethods(Enum):
+    nn = 0
+    l2 = 1
+    inner_prod = 3
+
+
 class AbstractObjective(nn.Module):
     def __init__(
             self, *, name, graph_model, node_embedder, dataset, label_load_fn, device,
             sampling_neighbourhood_size, batch_size, labels_for, number_of_hops, preload_for="package",
             masker_fn=None, label_loader_class=None, label_loader_params=None, dataloader_class=None,
-            tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod",
+            tokenizer_path=None, target_emb_size=None, link_scorer_type="inner_prod",
             measure_scores=False, dilate_scores=1, early_stopping=False, early_stopping_tolerance=20, nn_index="brute",
             model_base_path=None, force_w2v=False, neg_sampling_factor=1, use_ns_groups=False, embedding_table_size=300000
     ):
@@ -62,7 +68,7 @@ class AbstractObjective(nn.Module):
         self.node_embedder = node_embedder
         self.device = device
         self.dataloader_class = dataloader_class
-        self.link_predictor_type = link_predictor_type
+        self.link_scorer_type = ScoringMethods[link_scorer_type]
         self.measure_scores = measure_scores
         self.dilate_scores = dilate_scores
         self.nn_index = nn_index
@@ -83,8 +89,8 @@ class AbstractObjective(nn.Module):
         )
         self._create_target_embedder(target_emb_size, tokenizer_path)
 
-        self._create_link_predictor()
-        self._create_scorers()
+        self._create_link_scorer()
+        self._create_global_scorers()
 
         self.target_embedding_fn = self.get_targets_from_embedder
         self.negative_factor = 1
@@ -116,67 +122,130 @@ class AbstractObjective(nn.Module):
             max_len=20, tokenizer_path=tokenizer_path
         ).to(self.device)
 
-    def _create_scorers(self):
+    def _create_global_scorers(self):
         for partition in ["train", "test", "val"]:
             setattr(
                 self,
                 f"{partition}_scorer",
-                Scorer(getattr(self.dataloader, f"{partition}_loader"), self.margin)
+                Scorer(getattr(self.dataloader, f"{partition}_loader"))
             )
 
-    def _create_nn_link_predictor(self):
-        self.margin = None
-        self.link_predictor = BilinearLinkClassifier(self.target_emb_size, self.graph_model.emb_size, 2).to(self.device)
-        # self.link_predictor = LinkClassifier(self.target_emb_size + self.graph_model.emb_size, 2)
-        self.positive_label = 1
-        self.negative_label = 0
-        self.label_dtype = torch.long
+    @property
+    def positive_label(self):
+        return self.link_scorer.positive_label
 
-    def _create_inner_prod_link_predictor(self):
-        self.margin = -0.2
-        self.link_predictor = CosineUndirectedLinkPredictor(margin=self.margin).to(self.device)
-        self.hinge_loss = nn.HingeEmbeddingLoss(margin=1. - self.margin)
+    @property
+    def negative_label(self):
+        return self.link_scorer.negative_label
 
-        def cosine_loss(x1, x2, label):
-            sim = nn.CosineSimilarity(dim=-1)
-            dist = 1. - sim(x1, x2)
-            dist = dist.reshape(-1, )
-            return self.hinge_loss(dist, label)
+    @property
+    def label_dtype(self):
+        return self.link_scorer.label_dtype
 
-        # self.cosine_loss = CosineEmbeddingLoss(margin=self.margin)
-        self.cosine_loss = cosine_loss
-        self.positive_label = 1.
-        self.negative_label = -1.
-        self.label_dtype = torch.float32
+    def _adapt_scores_to_minimization_objective(self, scores):
+        if self.link_scorer.optimization_direction == ScorerObjectiveOptimizationDirection.maximize:
+            return 1. - scores
+        else:
+            return scores
 
-    def _create_l2_link_predictor(self):
-        self.margin = 2.0
-        self.target_embedder.set_margin(self.margin)
-        self.link_predictor = L2UndirectedLinkPredictor().to(self.device)
-        # self.hinge_loss = nn.HingeEmbeddingLoss(margin=self.margin)
-        self.triplet_loss = nn.TripletMarginLoss(margin=self.margin)
+    def get_nn_link_scorer_class(self):
+        return BilinearLinkClassifier
 
-        def l2_loss(x1, x2, label):
-            half = x1.shape[0] // 2
-            pos = x2[:half, :]
-            neg = x2[half:, :]
+    def get_inner_prod_link_scorer_class(self):
+        return UndirectedCosineLinkScorer
 
-            return self.triplet_loss(x1[:half, :], pos, neg)
-            # dist = torch.norm(x1 - x2, dim=-1)
-            # return self.hinge_loss(dist, label)
+    def get_l2_link_scorer_class(self):
+        return UndirectedL2LinkScorer
 
-        self.l2_loss = l2_loss
-        self.positive_label = 1.
-        self.negative_label = -1.
-        self.label_dtype = torch.float32
+    def _create_link_scorer_class(self, scorer_class, **kwargs):
+        self.link_scorer = scorer_class(
+            input_dim1=self.target_emb_size,
+            input_dim2=self.graph_model.emb_size,
+            num_classes=2, **kwargs
+        ).to(self.device)
 
-    def _create_link_predictor(self):
-        if self.link_predictor_type == "nn":
-            self._create_nn_link_predictor()
-        elif self.link_predictor_type == "inner_prod":
-            self._create_inner_prod_link_predictor()
-        elif self.link_predictor_type == "l2":
-            self._create_l2_link_predictor()
+    def _create_nn_link_scorer(self):
+        self._create_link_scorer_class(self.get_nn_link_scorer_class())
+        self._loss_op = nn.CrossEntropyLoss()
+
+        def compute_loss(positive_scores, positive_labels, negative_scores, negative_labels):
+            scores = torch.cat([positive_scores, negative_scores], dim=0)
+            labels = torch.cat([positive_labels, negative_labels], dim=0)
+
+            scores = self._adapt_scores_to_minimization_objective(scores)
+
+            return self._loss_op(scores, labels)
+
+        def compute_average_score(scores, labels=None):
+            assert len(scores.shape) > 1 and scores.shape[1] > 1
+            sm = nn.Softmax(dim=-1)
+            return sm(scores)[torch.full(scores.shape, False).scatter_(1, labels.reshape(-1, 1), True)].mean().item()
+            # return compute_accuracy(scores.argmax(dim=-1), labels)
+
+        self._compute_loss = compute_loss
+        self._compute_average_score = compute_average_score
+
+    def _create_inner_prod_link_scorer(self):
+        self._create_link_scorer_class(self.get_inner_prod_link_scorer_class())
+
+        margin_value = 0.2
+
+        self._loss_op = nn.HingeEmbeddingLoss(margin=margin_value)
+
+        def compute_loss(positive_scores, positive_labels, negative_scores, negative_labels):
+            scores = torch.cat([positive_scores, negative_scores], dim=0)
+            labels = torch.cat([positive_labels, negative_labels], dim=0)
+
+            scores = self._adapt_scores_to_minimization_objective(scores)
+
+            return self._loss_op(scores, labels)
+
+        # self._loss_op = nn.TripletMarginWithDistanceLoss(
+        #     distance_function=lambda anchor, candidate: candidate,
+        #     margin=margin_value
+        # )
+        #
+        # def compute_loss(positive_scores, positive_labels, negative_scores, negative_labels):
+        #     return self._loss_op(None, positive_scores, negative_scores)
+
+        def compute_average_score(scores, labels=None):
+            return scores.mean().item()
+
+        self._compute_loss = compute_loss
+        self._compute_average_score = compute_average_score
+
+    def _create_l2_link_scorer(self):
+        self._create_link_scorer_class(self.get_l2_link_scorer_class())
+
+        margin_value = 0.2
+        self._loss_op = nn.HingeEmbeddingLoss(margin=margin_value)
+        # self._loss_op = nn.MSELoss()
+        # self._loss_op = nn.TripletMarginWithDistanceLoss(
+        #     distance_function=lambda anchor, candidate: candidate,
+        #     margin=margin_value
+        # )
+
+        def compute_loss(positive_scores, positive_labels, negative_scores, negative_labels):
+            scores = torch.cat([positive_scores, negative_scores], dim=0)
+            labels = torch.cat([positive_labels, negative_labels], dim=0)
+
+            scores = self._adapt_scores_to_minimization_objective(scores)
+
+            return self._loss_op(scores, labels)
+
+        def compute_average_score(scores, labels=None):
+            return scores.mean().item()
+
+        self._compute_loss = compute_loss
+        self._compute_average_score = compute_average_score
+
+    def _create_link_scorer(self):
+        if self.link_scorer_type == ScoringMethods.nn:
+            self._create_nn_link_scorer()
+        elif self.link_scorer_type == ScoringMethods.inner_prod:
+            self._create_inner_prod_link_scorer()
+        elif self.link_scorer_type == ScoringMethods.l2:
+            self._create_l2_link_scorer()
         else:
             raise NotImplementedError()
 
@@ -222,39 +291,24 @@ class AbstractObjective(nn.Module):
         # return emb
         return self.node_embedder(input_nodes, mask).to(self.device)
 
-    def _compute_acc_loss(self, node_embs_, element_embs_, labels):
-        logits = self.link_predictor(node_embs_, element_embs_)
-        if len(logits.shape) == 3:
-            logits = logits.reshape(-1, logits.size(-1))
+    def _compute_scores_loss(self, node_embs, positive_embs, negative_embs, positive_labels, negative_labels):
 
-        if self.link_predictor_type == "nn":
-            logp = nn.functional.log_softmax(logits, dim=1)
-            loss = nn.functional.nll_loss(logp, labels)
-        elif self.link_predictor_type == "inner_prod":
-            loss = self.cosine_loss(node_embs_, element_embs_, labels)
-            labels[labels < 0] = 0
-        elif self.link_predictor_type == "l2":
-            loss = self.l2_loss(node_embs_, element_embs_, labels)
-            labels[labels < 0] = 0
-            # num_examples = len(labels) // 2
-            # anchor = node_embs_[:num_examples, :]
-            # positive = element_embs_[:num_examples, :]
-            # negative = element_embs_[num_examples:, :]
-            # # pos_labels_ = labels[:num_examples]
-            # # neg_labels_ = labels[num_examples:]
-            # margin = 1.
-            # triplet = nn.TripletMarginLoss(margin=margin)
-            # self.target_embedder.set_margin(margin)
-            # loss = triplet(anchor, positive, negative)
-            # logits = (torch.norm(node_embs_ - element_embs_, keepdim=True) < 1.).float()
-            # logits = torch.cat([1 - logits, logits], dim=1)
-            # labels[labels < 0] = 0
-        else:
-            raise NotImplementedError()
+        positive_scores = self.link_scorer(node_embs, positive_embs, labels=positive_labels)
 
-        acc = compute_accuracy(logits.argmax(dim=1), labels)
+        negative_scores = self.link_scorer(
+            node_embs.tile(negative_embs.size(0) // node_embs.size(0), 1),
+            negative_embs, labels=negative_labels
+        )
 
-        return logits, acc, loss
+        loss = self._compute_loss(positive_scores, positive_labels, negative_scores, negative_labels)
+
+        with torch.no_grad():
+            scores = {
+                f"positive_score/{self.link_scorer_type.name}": self._compute_average_score(positive_scores, positive_labels),
+                f"negative_score/{self.link_scorer_type.name}": self._compute_average_score(negative_scores, negative_labels)
+            }
+
+        return (positive_scores, negative_scores), scores, loss
 
     @staticmethod
     def _wrap_into_dict(input):
@@ -268,10 +322,10 @@ class AbstractObjective(nn.Module):
         graph_emb = self.graph_model(self._wrap_into_dict(emb), blocks)
         return graph_emb["node_"]
 
-    def _create_positive_labels(self, ids):
+    def _create_positive_labels(self, ids, positive_targets=None):
         return torch.full((len(ids),), self.positive_label, dtype=self.label_dtype)
 
-    def _create_negative_labels(self, ids):
+    def _create_negative_labels(self, ids, negative_targets=None):
         return torch.full((len(ids),), self.negative_label, dtype=self.label_dtype)
 
     def _prepare_for_prediction(
@@ -286,14 +340,16 @@ class AbstractObjective(nn.Module):
         labels_pos = self._create_positive_labels(positive_indices)
         labels_neg = self._create_negative_labels(negative_indices)
 
-        num_positive = positive_indices.size(0)
-        num_negative = negative_indices.size(0)
-        tile_factor = 1 + num_negative // num_positive
-        src_embs = torch.tile(node_embeddings, (tile_factor, 1))
-        # src_embs = torch.cat([node_embeddings, node_embeddings], dim=0)
-        dst_embs = torch.cat([positive_dst, negative_dst], dim=0)
-        labels = torch.cat([labels_pos, labels_neg], 0).to(self.device)
-        return src_embs, dst_embs, labels
+        return node_embeddings, positive_dst, negative_dst, labels_pos, labels_neg
+
+        # num_positive = positive_indices.size(0)
+        # num_negative = negative_indices.size(0)
+        # tile_factor = 1 + num_negative // num_positive
+        # src_embs = torch.tile(node_embeddings, (tile_factor, 1)) # src_embs = torch.cat([node_embeddings, node_embeddings], dim=0)
+
+        # dst_embs = torch.cat([positive_dst, negative_dst], dim=0)
+        # labels = torch.cat([labels_pos, labels_neg], 0).to(self.device)
+        # return src_embs, dst_embs, labels
 
     @staticmethod
     def _sum_scores(s):
@@ -306,9 +362,9 @@ class AbstractObjective(nn.Module):
         if batch_num > getattr(self, f"num_{data_split}_batches"):
             setattr(self, f"num_{data_split}_batches", batch_num + 1)
 
-    def _create_scorer(self, target_loader):
-        scorer = Scorer(target_loader, self.margin)
-        return scorer
+    # def _create_scorer(self, target_loader):
+    #     scorer = Scorer(target_loader)
+    #     return scorer
 
     def _warmup_if_needed(self, partition, update_ns_callback):
         warmup_flag_name = f"{partition}_proximity_ns_warmup_complete"
@@ -319,8 +375,8 @@ class AbstractObjective(nn.Module):
 
     def _do_score_measurement(self, batch, graph_emb, longterm_metrics, scorer, **kwargs):
         scores_ = scorer.score_candidates(
-            batch["indices"], graph_emb, self.link_predictor, at=[1, 3, 5, 10],
-            type=self.link_predictor_type, device=self.device
+            batch["indices"], graph_emb, self.link_scorer, at=[1, 3, 5, 10],
+            type=self.link_scorer_type.name, device=self.device
         )
         for key, val in scores_.items():
             longterm_metrics[key].append(val)
@@ -352,7 +408,7 @@ class AbstractObjective(nn.Module):
         #     return None, None
 
         # try:
-        graph_emb, logits, labels, loss, acc = self(
+        graph_emb, logits, labels, loss, scores_ = self(
             # input_nodes, input_mask, blocks, positive_indices, negative_indices,
             # update_ns_callback=update_ns_callback  #, graph=graph  # do not pass graph, possibly increases cache size
             update_ns_callback=update_ns_callback, **batch
@@ -365,16 +421,20 @@ class AbstractObjective(nn.Module):
         # loss.backward()  # create_graph = True
 
         if partition == "train":
-            scores = {"Loss": loss.item(), "Accuracy": acc}
+            scores = {"Loss": loss.item()} #, "Accuracy": acc}
+            scores.update(scores_)
             longterm_metrics[f"Loss/{partition}_avg/{self.name}"].append(loss.item())
-            longterm_metrics[f"Accuracy/{partition}_avg/{self.name}"].append(acc)
+            for key, val in scores_.items():
+                longterm_metrics[f"{key}/{partition}_avg/{self.name}"].append(val)
         else:
             scores = {}
             if self.measure_scores:
                 if batch_ind % self.dilate_scores == 0:
                     self._do_score_measurement(batch, graph_emb, longterm_metrics, scorer, y_true=labels, logits=logits)
             longterm_metrics["Loss"].append(loss.item())
-            longterm_metrics["Accuracy"].append(acc)
+            for key, val in scores_.items():
+                longterm_metrics[f"{key}"].append(val)
+            # longterm_metrics["Accuracy"].append(acc)
 
         return loss, scores
 
@@ -476,13 +536,15 @@ class AbstractObjective(nn.Module):
             update_ns_callback=None, **kwargs
     ):
         graph_emb = self._graph_embeddings(input_nodes, blocks, mask=input_mask)
-        node_embs_, element_embs_, labels = self._prepare_for_prediction(
+        _, positive_emb, negative_emb, labels_pos, labels_neg = self._prepare_for_prediction(
             graph_emb, positive_indices, negative_indices, self.target_embedding_fn, update_ns_callback  # , subgraph
         )
 
-        logits, acc, loss  = self._compute_acc_loss(node_embs_, element_embs_, labels)
+        pos_neg_scores, avg_scores, loss  = self._compute_scores_loss(
+            graph_emb, positive_emb, negative_emb, labels_pos, labels_neg
+        )
 
-        return graph_emb, logits, labels, loss, acc
+        return graph_emb, pos_neg_scores, (labels_pos, labels_neg), loss, avg_scores
 
     def evaluate(self, data_split, *, neg_sampling_strategy=None, early_stopping=False, early_stopping_tolerance=20):
         scores = self._evaluate_objective(data_split)
