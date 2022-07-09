@@ -14,11 +14,10 @@ class Scorer:
     reason one can assume that evaluation covers the entire graph, ond not only test or val partitions.
     """
     def __init__(
-            self, target_loader, margin, device="cpu"
+            self, target_loader, device="cpu"
     ):
         self.target_loader = target_loader
         self.device = device
-        self.margin = margin
 
     def score_candidates_cosine(self, to_score_ids, to_score_embs, keys_to_score_against, embs_to_score_against, at=None):
 
@@ -27,14 +26,9 @@ class Scorer:
 
         score_matr = (to_score_embs @ embs_to_score_against.t())
         score_matr = (score_matr + 1.) / 2.
-        # score_matr = score_matr - self.margin
-        # score_matr[score_matr < 0.] = 0.
         y_pred = score_matr.cpu().tolist()
 
         return y_pred
-
-    # def set_margin(self, margin):
-    #     self.margin = margin
 
     def score_candidates_l2(self, to_score_ids, to_score_embs, keys_to_score_against, embs_to_score_against, at=None):
 
@@ -43,17 +37,7 @@ class Scorer:
             input_embs = to_score_embs[i, :].reshape(1, -1)
             score_matr = torch.norm(embs_to_score_against - input_embs, dim=-1)
             score_matr = 1. / (1. + score_matr)
-            # score_matr = score_matr + self.margin
-            # score_matr[score_matr < 0.] = 0
             y_pred.append(score_matr.cpu().tolist())
-
-        # embs_to_score_against = embs_to_score_against.unsqueeze(0)
-        # to_score_embs = to_score_embs.unsqueeze(1)
-        #
-        # score_matr = -torch.norm(embs_to_score_against - to_score_embs, dim=-1)
-        # score_matr = score_matr + self.margin
-        # score_matr[score_matr < 0.] = 0
-        # y_pred = score_matr.cpu().tolist()
 
         return y_pred
 
@@ -66,7 +50,6 @@ class Scorer:
             y_pred = []
             for i in range(len(to_score_ids)):
                 input_embs = to_score_embs[i, :].repeat((embs_to_score_against.shape[0], 1))
-                # predictor_input = torch.cat([input_embs, all_emb], dim=1)
                 y_pred.append(
                     torch.nn.functional.softmax(link_predictor(input_embs, embs_to_score_against), dim=1)[:, 1].tolist()
                 )  # 0 - negative, 1 - positive

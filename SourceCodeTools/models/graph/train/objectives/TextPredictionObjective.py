@@ -9,7 +9,6 @@ from SourceCodeTools.code.data.dataset import SubwordMasker
 from SourceCodeTools.models.graph.ElementEmbedder import DocstringEmbedder, create_fixed_length, \
     ElementEmbedderWithBpeSubwords
 from SourceCodeTools.models.graph.train.objectives import SubwordEmbedderObjective
-from SourceCodeTools.models.graph.train.objectives.AbstractObjective import compute_accuracy
 from SourceCodeTools.models.nlp.TorchDecoder import Decoder
 from SourceCodeTools.models.nlp.Vocabulary import Vocabulary
 import numpy as np
@@ -30,14 +29,14 @@ class GraphTextGeneration(SubwordEmbedderObjective):
     def __init__(
             self, graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
-            tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
+            tokenizer_path=None, target_emb_size=None, link_scorer_type="inner_prod", masker: SubwordMasker = None,
             measure_scores=False, dilate_scores=1, max_len=20
     ):
         self.max_len = max_len + 2  # add pad and eos
         super().__init__(
             "GraphTextGeneration", graph_model, node_embedder, nodes, data_loading_func, device,
             sampling_neighbourhood_size, batch_size,
-            tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
+            tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_scorer_type=link_scorer_type,
             masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores
         )
 
@@ -64,7 +63,7 @@ class GraphTextGeneration(SubwordEmbedderObjective):
         logits = self.decoder(graph_emb.unsqueeze(1), prev_tokens)[:, :-1, :]
         return logits
 
-    def _compute_acc_loss(self, graph_emb, labels, lengths, return_logits=False):
+    def _compute_scores_loss(self, graph_emb, labels, lengths, return_logits=False):
         # prev_tokens = labels
         # logits = self.decoder(prev_tokens, graph_emb)[:, :-1, :]
         logits = self.compute_logits(graph_emb, labels)

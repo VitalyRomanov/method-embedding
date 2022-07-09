@@ -11,7 +11,7 @@ from SourceCodeTools.code.data.dataset.SubwordMasker import SubwordMasker
 from SourceCodeTools.mltools.torch import compute_accuracy
 from SourceCodeTools.models.graph.ElementEmbedder import GraphLinkSampler
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
-from SourceCodeTools.models.graph.LinkPredictor import BilinearLinkClassifier, TransRLinkPredictor
+from SourceCodeTools.models.graph.LinkPredictor import BilinearLinkClassifier, TransRLinkScorer
 from SourceCodeTools.models.graph.train.Scorer import Scorer
 from SourceCodeTools.models.graph.train.objectives.GraphLinkObjective import GraphLinkObjective
 from SourceCodeTools.tabular.common import compact_property
@@ -41,7 +41,7 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
     def _create_positive_labels(self, ids):
         return torch.LongTensor(self.target_embedder.get_labels(ids))
 
-    def _compute_acc_loss(self, node_embs_, element_embs_, labels):
+    def _compute_scores_loss(self, node_embs_, element_embs_, labels):
         logits = self.link_predictor(node_embs_, element_embs_)
 
         loss_fct = CrossEntropyLoss(ignore_index=-100)
@@ -58,7 +58,7 @@ class TransRObjective(GraphLinkClassificationObjective):
         super().__init__(**kwargs)
 
     def _create_link_predictor(self):
-        self.link_predictor = TransRLinkPredictor(
+        self.link_predictor = TransRLinkScorer(
             input_dim=self.target_emb_size, rel_dim=30,
             num_relations=self.target_embedder.num_classes
         ).to(self.device)
@@ -66,7 +66,7 @@ class TransRObjective(GraphLinkClassificationObjective):
         self.negative_label = -1
         self.label_dtype = torch.long
 
-    def _compute_acc_loss(self, node_embs_, element_embs_, labels):
+    def _compute_scores_loss(self, node_embs_, element_embs_, labels):
 
         num_examples = len(labels) // 2
         anchor = node_embs_[:num_examples, :]

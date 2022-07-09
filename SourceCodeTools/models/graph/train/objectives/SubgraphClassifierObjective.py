@@ -81,7 +81,7 @@ class SubgraphAbstractObjective(AbstractObjective):
             self, name, graph_model, node_embedder, dataset, label_load_fn, device,
             sampling_neighbourhood_size, batch_size, labels_for, number_of_hops, preload_for="package",
             masker_fn=None, label_loader_class=None, label_loader_params=None,
-            tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
+            tokenizer_path=None, target_emb_size=None, link_scorer_type="inner_prod", masker: SubwordMasker = None,
             measure_scores=False, dilate_scores=1, early_stopping=False, early_stopping_tolerance=20, nn_index="brute",
             subgraph_mapping=None, subgraph_partition=None
     ):
@@ -93,7 +93,7 @@ class SubgraphAbstractObjective(AbstractObjective):
             sampling_neighbourhood_size, batch_size, labels_for=labels_for, number_of_hops=number_of_hops,
             preload_for=preload_for, masker_fn=masker_fn, label_loader_class=label_loader_class,
             label_loader_params=label_loader_params,
-            tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
+            tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_scorer_type=link_scorer_type,
             masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores,
             early_stopping=False, early_stopping_tolerance=20, nn_index=nn_index
         )
@@ -243,7 +243,7 @@ class SubgraphAbstractObjective(AbstractObjective):
                 if count % self.dilate_scores == 0:
                     scores_ = self.target_embedder.score_candidates(self.seeds_to_global(seeds), src_embs,
                                                                  self.link_predictor, at=at,
-                                                                 type=self.link_predictor_type, device=self.device)
+                                                                 type=self.link_scorer_type, device=self.device)
                     for key, val in scores_.items():
                         scores[key].append(val)
 
@@ -265,7 +265,7 @@ class SubgraphEmbeddingObjective(SubgraphAbstractObjective):
             self, name, graph_model, node_embedder, dataset, label_load_fn, device,
             sampling_neighbourhood_size, batch_size, labels_for, number_of_hops, preload_for="package",
             masker_fn=None, label_loader_class=None, label_loader_params=None,
-            tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
+            tokenizer_path=None, target_emb_size=None, link_scorer_type="inner_prod", masker: SubwordMasker = None,
             measure_scores=False, dilate_scores=1, early_stopping=False, early_stopping_tolerance=20, nn_index="brute",
             subgraph_mapping=None, subgraph_partition=None
     ):
@@ -274,7 +274,7 @@ class SubgraphEmbeddingObjective(SubgraphAbstractObjective):
             sampling_neighbourhood_size, batch_size, labels_for=labels_for, number_of_hops=number_of_hops,
             preload_for=preload_for, masker_fn=masker_fn, label_loader_class=label_loader_class,
             label_loader_params=label_loader_params,
-            tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
+            tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_scorer_type=link_scorer_type,
             masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores,
             early_stopping=False, early_stopping_tolerance=20, nn_index=nn_index
         )
@@ -285,7 +285,7 @@ class SubgraphClassifierObjective(NodeClassifierObjective, SubgraphAbstractObjec
             self, name, graph_model, node_embedder, dataset, label_load_fn, device,
             sampling_neighbourhood_size, batch_size, labels_for, number_of_hops, preload_for="package",
             masker_fn=None, label_loader_class=None, label_loader_params=None,
-            tokenizer_path=None, target_emb_size=None, link_predictor_type="inner_prod", masker: SubwordMasker = None,
+            tokenizer_path=None, target_emb_size=None, link_scorer_type="inner_prod", masker: SubwordMasker = None,
             measure_scores=False, dilate_scores=1, early_stopping=False, early_stopping_tolerance=20, nn_index="brute",
             subgraph_mapping=None, subgraph_partition=None
     ):
@@ -294,7 +294,7 @@ class SubgraphClassifierObjective(NodeClassifierObjective, SubgraphAbstractObjec
             sampling_neighbourhood_size, batch_size, labels_for=labels_for, number_of_hops=number_of_hops,
             preload_for=preload_for, masker_fn=masker_fn, label_loader_class=label_loader_class,
             label_loader_params=label_loader_params,
-            tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_predictor_type=link_predictor_type,
+            tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_scorer_type=link_scorer_type,
             masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores,
             early_stopping=False, early_stopping_tolerance=20, nn_index=nn_index
         )
