@@ -151,7 +151,7 @@ class CodeBertModelTrainer2(CodeBertModelTrainer):
         super().__init__(*args, **kwargs)
         self.set_gpu()
 
-    def get_dataloaders(self, word_emb, graph_emb, suffix_prefix_buckets):
+    def get_dataloaders(self, word_emb, graph_emb, suffix_prefix_buckets, **kwargs):
         decoder_mapping = RobertaTokenizer.from_pretrained("microsoft/codebert-base").decoder
         tok_ids, words = zip(*decoder_mapping.items())
         self.vocab_mapping = dict(zip(words, tok_ids))
@@ -161,7 +161,7 @@ class CodeBertModelTrainer2(CodeBertModelTrainer):
             graphmap=graph_emb.ind if graph_emb is not None else None,
             wordmap=self.vocab_mapping, tagmap=None,
             class_weights=False, element_hash_size=suffix_prefix_buckets, no_localization=self.no_localization,
-            mask_unlabeled_declarations=False
+            mask_unlabeled_declarations=False, **kwargs
         )
         test_batcher = self.get_batcher(
             self.test_data, self.batch_size, seq_len=self.seq_len,
@@ -170,7 +170,7 @@ class CodeBertModelTrainer2(CodeBertModelTrainer):
             tagmap=train_batcher.tagmap,  # use the same mapping
             class_weights=False, element_hash_size=suffix_prefix_buckets,  # class_weights are not used for testing
             no_localization=self.no_localization,
-            mask_unlabeled_declarations=False
+            mask_unlabeled_declarations=False, **kwargs
         )
         return train_batcher, test_batcher
 

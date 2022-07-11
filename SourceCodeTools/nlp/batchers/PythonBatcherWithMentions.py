@@ -62,7 +62,7 @@ class PythonBatcherMentions(PythonBatcher):
             self, data, batch_size: int, seq_len: int,
             graphmap: Dict[str, int], wordmap: Dict[str, int], tagmap: Optional[TagMap] = None,
             mask_unlabeled_declarations=True,
-            class_weights=False, element_hash_size=1000
+            class_weights=False, element_hash_size=1000, **kwargs
     ):
         super(PythonBatcherMentions, self).__init__(
             data, batch_size, seq_len=seq_len,
