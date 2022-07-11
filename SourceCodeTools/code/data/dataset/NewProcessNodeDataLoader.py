@@ -1,5 +1,6 @@
+from copy import deepcopy
 from enum import Enum
-from multiprocessing import Queue, Process
+from torch.multiprocessing import Queue, Process, get_context, set_sharing_strategy
 from queue import Empty  # , Queue
 # from threading import Thread
 
@@ -11,6 +12,7 @@ class Message:
         self.descriptor = descriptor
         self.content = content
 
+set_sharing_strategy("file_system")
 
 class NewProcessNodeDataLoader:
     def __init__(self, graph, nodes_for_batching, sampler, batch_size):
@@ -24,10 +26,12 @@ class NewProcessNodeDataLoader:
         self.outbox_queue = None
 
     def start_process(self):
-        self.outbox_queue = Queue()
-        self.inbox_queue = Queue()
 
-        self.process = Process(
+        ctx = get_context("spawn")
+        self.outbox_queue = ctx.Queue()
+        self.inbox_queue = ctx.Queue()
+
+        self.process = ctx.Process(
             target=start_worker, args=(
                 {
                     "graph": self.graph,
@@ -78,7 +82,15 @@ class NewProcessNodeDataLoader:
         # assert message.descriptor == NewProcessNodeDataLoaderProducer.OutboxTypes.batch
         if message.descriptor == NewProcessNodeDataLoaderProducer.OutboxTypes.batch:
             content = message.content
-            return content["input_nodes"], content["seeds"], content["blocks"]
+            input_nodes = deepcopy(content["input_nodes"])
+            seeds = deepcopy(content["seeds"])
+            blocks = deepcopy(content["blocks"])
+
+            del content["input_nodes"]
+            del content["seeds"]
+            for _ in range(len(content["blocks"])):
+                del content["blocks"][0]
+            return input_nodes, seeds, blocks
         elif message.descriptor == NewProcessNodeDataLoaderProducer.OutboxTypes.stop_iteration:
             raise StopIteration()
         else:
