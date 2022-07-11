@@ -156,6 +156,7 @@ class SGNodesDataLoader:
 
     @property
     def _use_external_process_loader(self):
+        from sys import platform
         return False  # platform == "linux" or platform == "linux2"
 
     def _create_batch_iterator(self, subgraph, nodes_for_batching, sampler, batch_size):
@@ -174,7 +175,7 @@ class SGNodesDataLoader:
         if self._use_external_process_loader:
             self._active_loader.terminate()
         else:
-            pass
+            del loader
 
         self._active_loader = None
 
@@ -239,6 +240,12 @@ class SGNodesDataLoader:
                 }
 
                 yield batch
+
+                for key in list(batch.keys()):
+                    if key in ["blocks"]:
+                        for ind in range(len(batch[key])):
+                            del batch[key][0]
+                    del batch[key]
             self._finalize_batch_iterator(loader)
 
     def nodes_dataloader(
