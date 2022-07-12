@@ -499,6 +499,19 @@ class SamplingMultitaskTrainer:
     def _reduce_metrics(self, metrics):
         return {key: sum(val) / len(val) for key, val in metrics.items()}
 
+    def train_step_for_objective(self, step, objective, objective_iterator, longterm_metrics):
+        batch = next(objective_iterator)
+
+        loss, scores = objective.make_step(
+            step, batch, "train", longterm_metrics, scorer=None
+        )
+
+        if scores is None:
+            return None
+
+        loss.backward()
+        return scores
+
     def train_all(self):
         """
         Training procedure for the model with node classifier
@@ -521,30 +534,41 @@ class SamplingMultitaskTrainer:
             for step in tqdm(longlongloop, total=num_batches, desc=f"Epoch {self.epoch}"):
 
                 batch_summary = {}
+                self.optimizer.zero_grad()
+                self.sparse_optimizer.zero_grad()
+
                 try:
-                    loaders = [next(objective_iterator) for objective_iterator in objective_iterators]
+                    for objective, objective_iterator in zip(self.objectives, objective_iterators):
+                        scores = self.train_step_for_objective(step, objective, objective_iterator, longterm_metrics)
+                        self.add_to_summary(
+                            summary=batch_summary, partition="train", objective_name=objective.name,
+                            scores=scores, postfix=""
+                        )
+                    # loaders = [next(objective_iterator) for objective_iterator in objective_iterators]
                 except StopIteration:
                     break
 
-                self.optimizer.zero_grad()
-                self.sparse_optimizer.zero_grad()
-                for ind, (objective, batch) in enumerate(zip(self.objectives, loaders)):
-                    loss, scores = objective.make_step(
-                        ind, batch, "train", longterm_metrics, scorer=None
-                    )
+                for groups in self.optimizer.param_groups:
+                    for param in groups["params"]:
+                        torch.nn.utils.clip_grad_norm_(param, max_norm=1.)
 
-                    if scores is None:
-                        continue
-
-                    loss.backward()
-                    for groups in self.optimizer.param_groups:
-                        for param in groups["params"]:
-                            torch.nn.utils.clip_grad_norm_(param, max_norm=1.)
-
-                    self.add_to_summary(
-                        summary=batch_summary, partition="train", objective_name=objective.name,
-                        scores=scores, postfix=""
-                    )
+                # for ind, (objective, batch) in enumerate(zip(self.objectives, loaders)):
+                #     loss, scores = objective.make_step(
+                #         self.batch, batch, "train", longterm_metrics, scorer=None
+                #     )
+                #
+                #     if scores is None:
+                #         continue
+                #
+                #     loss.backward()
+                #     for groups in self.optimizer.param_groups:
+                #         for param in groups["params"]:
+                #             torch.nn.utils.clip_grad_norm_(param, max_norm=1.)
+                #
+                #     self.add_to_summary(
+                #         summary=batch_summary, partition="train", objective_name=objective.name,
+                #         scores=scores, postfix=""
+                #     )
 
                 self.add_to_summary(
                     summary=batch_summary, partition="train", objective_name="",
