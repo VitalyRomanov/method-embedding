@@ -188,7 +188,7 @@ class AbstractObjective(nn.Module):
     def _create_inner_prod_link_scorer(self):
         self._create_link_scorer_class(self.get_inner_prod_link_scorer_class())
 
-        margin_value = 0.2
+        margin_value = 0.8
 
         self._loss_op = nn.HingeEmbeddingLoss(margin=margin_value)
 
@@ -248,6 +248,8 @@ class AbstractObjective(nn.Module):
             self._create_l2_link_scorer()
         else:
             raise NotImplementedError()
+
+        self._loss_op.to(self.device)
 
     def _create_loaders(self):
         self.train_loader = self.dataloader.partition_iterator("train")
@@ -323,10 +325,10 @@ class AbstractObjective(nn.Module):
         return graph_emb["node_"]
 
     def _create_positive_labels(self, ids, positive_targets=None):
-        return torch.full((len(ids),), self.positive_label, dtype=self.label_dtype)
+        return torch.full((len(ids),), self.positive_label, dtype=self.label_dtype).to(self.device)
 
     def _create_negative_labels(self, ids, negative_targets=None):
-        return torch.full((len(ids),), self.negative_label, dtype=self.label_dtype)
+        return torch.full((len(ids),), self.negative_label, dtype=self.label_dtype).to(self.device)
 
     def _prepare_for_prediction(
             self, node_embeddings, positive_indices, negative_indices, target_embedding_fn, update_ns_callback
