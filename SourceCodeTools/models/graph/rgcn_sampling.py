@@ -320,7 +320,7 @@ class RGCNSampling(nn.Module):
         return {key: layer(val) for key, val in h.items()}
         # return {key: val / torch.linalg.norm(val, dim=1, keepdim=True) for key, val in h.items()}
 
-    def forward(self, h, blocks=None,
+    def forward(self, h, blocks=None, graph=None,
                 return_all=False): # added this as an experimental feature for intermediate supervision
         # if h is None:
         #     # full graph training
@@ -328,19 +328,21 @@ class RGCNSampling(nn.Module):
 
         all_layers = [] # added this as an experimental feature for intermediate supervision
 
-        # if blocks is None:
-        #     # full graph training
-        #     for layer in self.layers:
-        #         h = layer(self.g, h)
-        #         all_layers.append(h) # added this as an experimental feature for intermediate supervision
-        # else:
-        # minibatch training
-        h0 = h
-        for layer, norm, block in zip(self.layers, self.layer_norm, blocks):
-            # h = checkpoint.checkpoint(self.custom(layer), block, h)
-            h = layer(block, h, h0)
-            h = self.normalize(h, norm)
-            all_layers.append(h) # added this as an experimental feature for intermediate supervision
+        if blocks is None:
+            # full graph training
+            h0 = h
+            for layer, norm in zip(self.layers, self.layer_norm):
+                h = layer(graph, h, h0)
+                h = self.normalize(h, norm)
+                all_layers.append(h) # added this as an experimental feature for intermediate supervision
+        else:
+            # minibatch training
+            h0 = h
+            for layer, norm, block in zip(self.layers, self.layer_norm, blocks):
+                # h = checkpoint.checkpoint(self.custom(layer), block, h)
+                h = layer(block, h, h0)
+                h = self.normalize(h, norm)
+                all_layers.append(h) # added this as an experimental feature for intermediate supervision
 
         if return_all: # added this as an experimental feature for intermediate supervision
             return all_layers
