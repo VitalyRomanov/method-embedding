@@ -386,19 +386,19 @@ class AbstractObjective(nn.Module):
     ):
         self._update_num_batches_for_split(partition, batch_ind)
 
-        node_labels_loader = batch["node_labels_loader"]
+        labels_loader = batch["labels_loader"]
         # blocks = batch["blocks"]
         # input_nodes = batch["input_nodes"]
         # input_mask = batch["input_mask"]
         # positive_indices = batch["positive_indices"]
         # negative_indices = batch["negative_indices"]
-        update_ns_callback = node_labels_loader.set_embed
+        update_ns_callback = labels_loader.set_embed
         # graph = batch["subgraph"]
 
         self._warmup_if_needed(partition, update_ns_callback)
 
         if batch_ind % 10 == 0:
-            node_labels_loader.update_index()
+            labels_loader.update_index()
 
         # do_break = False
         # for block in blocks:

@@ -9,8 +9,6 @@ import numpy
 import pandas
 import torch
 import diskcache as dc
-from bloom_filter2 import BloomFilter
-from datasets import tqdm
 
 from SourceCodeTools.code.ast.python_ast2 import PythonSharedNodes
 from SourceCodeTools.code.data.GraphStorage import OnDiskGraphStorage
@@ -654,6 +652,15 @@ class SourceGraphDataset:
                 )
             return node_data
 
+        def assign_dense_ids(nodes, edges):
+            nodes["original_id"] = nodes["id"].copy()
+            compact_node_ids = compact_property(nodes["id"])
+            nodes["id"] = nodes["id"].apply(compact_node_ids.get)
+            edges["src"] = edges["src"].apply(compact_node_ids.get)
+            edges["dst"] = edges["dst"].apply(compact_node_ids.get)
+
+        assign_dense_ids(nodes, edges)
+
         edges = self._add_node_types_to_edges(nodes, edges)
 
         possible_edge_signatures = edges[['src_type', 'type', 'dst_type']].drop_duplicates(
@@ -684,11 +691,17 @@ class SourceGraphDataset:
                 )
             )
 
+        # need to make metagraphs the same for all graphs. lines below assume node types is set to false always
+        assert self.use_node_types is False
+        _, all_edge_types = self.get_graph_types()
+        for etype in set(all_edge_types) - set(possible_edge_signatures["type"]):
+            typed_subgraphs[("node_", etype, "node_")] = list()
+
         # logging.info(
         #     f"Unique triplet types in the graph: {len(typed_subgraphs.keys())}"
         # )
 
-        num_nodes = self._num_nodes  # nodes["id"].max() + 1  # the fact that this is needed probably means that graphs are not loading correctly
+        num_nodes = len(nodes)  # self._num_nodes  # nodes["id"].max() + 1  # the fact that this is needed probably means that graphs are not loading correctly
         graph = dgl.heterograph(typed_subgraphs, num_nodes_dict={ntype: num_nodes for ntype in nodes["type"].unique()})
 
         def attach_node_data(graph, nodes):
@@ -872,17 +885,22 @@ class SourceGraphDataset:
         # allowed_labels_for = {"nodes", "edges", "subgraphs"}
         # assert labels_for in allowed_labels_for, f"{labels_for} not in {allowed_labels_for}"
 
-        original_label_map = dict(zip(labels["src"], labels["dst"]))
+        original_label_map = {}
+        for col in labels.columns:
+            if col == "src":
+                continue
+            original_label_map[col] = dict(zip(labels["src"], labels[col]))
 
         partition_ids = self._get_partition_ids(partition_label)
         labels_from_partition = labels.query("src in @partition_ids", local_dict={"partition_ids": partition_ids})
 
         labels_ = self._attach_info_to_label(labels_from_partition, labels_for, group_by)
-        labels_.eval(
-            "dst = src.map(@original_label_map.get)",
-            local_dict={"original_label_map": original_label_map},
-            inplace=True
-        )
+        for col in original_label_map:
+            labels_.eval(
+                f"{col} = src.map(@original_label_map.get)",
+                local_dict={"original_label_map": original_label_map[col]},
+                inplace=True
+            )
 
         self._write_to_cache(labels_, cache_key)
         return labels_
@@ -902,7 +920,7 @@ class SourceGraphDataset:
     def get_cache_key(self, how, group):
         return f"{how.name}_{group}"
 
-    def iterate_subgraphs(self, how, groups, node_data, edge_data, n_buckets):
+    def iterate_subgraphs(self, how, groups, node_data, edge_data, subgraph_data, n_buckets):
 
         iterator = self.dataset_db.iterate_subgraphs(how, groups)
 
@@ -918,47 +936,8 @@ class SourceGraphDataset:
                     table[key].fillna(False, inplace=True)
             if "label" in data_dict:
                 table["label"] = table["label"].astype("Int64")
-            # if "has_label" in data_dict:
-            #     table["has_label"].fillna(False, inplace=True)
-
-        # subgraph_ids = self.dataset_db.get_subgraph_ids(how)
-        # subgraph_load_fn = self.dataset_db.get_subgraph_load_fn(how)
-        #
-        # for subgraph_id in subgraph_ids:
-        #     cache_key = self.dataset_db.get_cache_key(how, subgraph_id)
-        #     if cache_key in self._subgraph_cache:
-        #         nodes, edges, subgraph = self._subgraph_cache[cache_key]
-        #     else:
-        #         nodes, edges = subgraph_load_fn(subgraph_id)
-        #
-        #         self._remove_edges_with_restricted_types(edges)
-        #
-        #         if self.custom_reverse is not None:
-        #             edges = self._add_custom_reverse(edges)
-        #
-        #         self.ensure_connectedness(nodes, edges)
-        #
-        #         node_name_mapping = self._get_embeddable_names(nodes)
-        #         node_data["embedding_id"] = self._get_node_name2bucket_mapping(node_name_mapping)
-        #         # node_type_pool = self._prepare_node_type_pool(nodes)
-        #
-        #         self._adjust_types(nodes, edges)
-        #
-        #         add_data(nodes, node_data)
-        #         add_data(edges, edge_data)
-        #
-        #         if len(edges) > 0:
-        #             subgraph = self._create_hetero_graph(nodes, edges)
-        #         else:
-        #             subgraph = "empty"
-        #
-        #         self._write_to_cache((nodes, edges, subgraph), cache_key)
-        #     if subgraph != "empty":
-        #         yield subgraph_id, nodes, edges, subgraph
 
         for group, nodes, edges in iterator:
-            # cache_key = self.get_cache_key(how, group)
-            # if cache_key not in self._subgraph_cache:
 
             edges_bloom_filter = set()  # BloomFilter(max_elements=len(edges), error_rate=0.01)
             for src, dst in zip(edges["src"], edges["dst"]):
@@ -986,7 +965,14 @@ class SourceGraphDataset:
                     subgraph = self._create_hetero_graph(nodes, edges)
                     self._write_to_cache(subgraph, cache_key)
 
-                yield group, nodes, edges, subgraph, edges_bloom_filter
+                yield {
+                    "group": group,
+                    "nodes": nodes,
+                    "edges": edges,
+                    "subgraph": subgraph,
+                    "edges_bloom_filter": edges_bloom_filter,
+                    "subgraph_data": subgraph_data
+                }
 
     @staticmethod
     def holdout(nodes: pd.DataFrame, edges: pd.DataFrame, holdout_size=10000, random_seed=42):
@@ -1542,7 +1528,7 @@ def test_dataset():
             "emb_size": 100,
             "tokenizer_path": "/Users/LTV/Downloads/NitroShare/v2_subsample_no_spacy_v3/with_ast/sentencepiece_bpe.model"
         })
-    dataloader.nodes_dataloader(
+    dataloader.get_dataloader(
         partition_label="train",
     )
 
