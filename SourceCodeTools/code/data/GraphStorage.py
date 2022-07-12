@@ -275,6 +275,8 @@ class OnDiskGraphStorage:
 
         for edges in tqdm(read_edges(path, as_chunks=True), desc="Importing edges"):
             update_mapping(edges["type"], type_map)
+            if "package" not in edges.columns:
+                edges["package"] = edges["file_id"]
             update_mapping(edges["package"].dropna(), package_map)
             edges["type"] = edges["type"].apply(type_map.get)
             edges["package"] = edges["package"].apply(package_map.get)
