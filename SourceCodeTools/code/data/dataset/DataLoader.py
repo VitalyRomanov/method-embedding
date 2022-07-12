@@ -1,6 +1,8 @@
 import tempfile
 from copy import copy
 
+import dgl
+import numpy as np
 import torch
 from dgl.dataloading import MultiLayerFullNeighborSampler, NodeDataLoader
 import diskcache as dc
@@ -15,7 +17,8 @@ class SGNodesDataLoader:
     def __init__(
             self, dataset, labels_for, number_of_hops, batch_size, preload_for="package", labels=None,
             masker_fn=None, label_loader_class=None, label_loader_params=None, device="cpu",
-            negative_sampling_strategy="w2v", neg_sampling_factor=1, base_path=None, objective_name=None, embedding_table_size=300000
+            negative_sampling_strategy="w2v", neg_sampling_factor=1, base_path=None, objective_name=None,
+            embedding_table_size=300000
     ):
         preload_for = SGPartitionStrategies[preload_for]
         labels_for = SGLabelSpec[labels_for]
@@ -44,7 +47,7 @@ class SGNodesDataLoader:
 
         if labels is not None:
             self.label_encoder = LabelDenseEncoder(labels)
-            if "emb_size" in label_loader_params:  # if present, need to create an index for distance queries
+            if "emb_size" in label_loader_params and label_loader_params["emb_size"] is not None:  # if present, need to create an index for distance queries
                 self.target_embedding_proximity = TargetEmbeddingProximity(
                     self.label_encoder.encoded_labels(), label_loader_params["emb_size"]
                 )
@@ -87,36 +90,48 @@ class SGNodesDataLoader:
     #     return self.node_label_loader.get_original_targets()
 
     def _iterate_subgraphs(
-            self, node_data, edge_data, masker_fn=None, node_label_loader=None, edge_label_loader=None,
-            grouping_strategy=None
+            self, *, node_data=None, edge_data=None, subgraph_data=None, masker_fn=None, node_label_loader=None,
+            edge_label_loader=None, subgraph_label_loader=None, grouping_strategy=None
     ):
         assert grouping_strategy is not None
 
+        labels_loader = None
         if node_label_loader is not None:
             node_data["has_label"] = node_label_loader.has_label_mask()
-
-        if edge_label_loader is not None:
-            edge_data["has_label"] = edge_label_loader.has_label_mask()
-
-        if node_label_loader is not None:
             groups = node_label_loader.get_groups()
+            labels_loader = node_label_loader
+        elif edge_label_loader is not None:
+            edge_data["has_label"] = edge_label_loader.has_label_mask()
+            groups = edge_label_loader.get_groups()
+            labels_loader = edge_label_loader
+        elif subgraph_label_loader is not None:
+            subgraph_data["has_label"] = subgraph_label_loader.has_label_mask()
+            groups = subgraph_label_loader.get_groups()
+            labels_loader = subgraph_label_loader
         else:
             groups = None
 
-        for group, nodes, edges, subgraph, edges_bloom_filter in self.dataset.iterate_subgraphs(
-                grouping_strategy, groups, node_data, edge_data, self.n_buckets
+        for subgraph in self.dataset.iterate_subgraphs(
+                grouping_strategy, groups, node_data, edge_data, subgraph_data, self.n_buckets
         ):
 
             if masker_fn is not None:
-                cache_key = self.dataset._get_df_hash(nodes) + self.dataset._get_df_hash(edges)
+                cache_key = self.dataset._get_df_hash(subgraph["nodes"]) + self.dataset._get_df_hash(subgraph["edges"])
                 if cache_key not in self._masker_cache:
                     # masker = masker_fn(nodes, edges)
-                    self._masker_cache[cache_key] = masker_fn(nodes, edges)
+                    self._masker_cache[cache_key] = masker_fn(subgraph["nodes"], subgraph["edges"])
                 masker = self._masker_cache[cache_key]
             else:
                 masker = None
 
-            yield group, subgraph, masker, node_label_loader, edge_label_loader, edges_bloom_filter
+            subgraph["masker"] = masker
+            subgraph["labels_loader"] = labels_loader
+            # subgraph["node_label_loader"] = node_label_loader
+            # subgraph["edge_label_loader"] = edge_label_loader
+            # subgraph["subgraph_label_loader"] = subgraph_label_loader
+
+            yield subgraph
+            # yield group, subgraph, masker, node_label_loader, edge_label_loader, edges_bloom_filter
 
     @staticmethod
     def get_nodes_from_partition(graph, partition, labels_for):
@@ -179,7 +194,11 @@ class SGNodesDataLoader:
         self._active_loader = None
 
     def create_batches(self, subgraph_generator, number_of_hops, batch_size, partition, labels_for):
-        for group, subgraph, masker, node_labels_loader, edge_labels_loader, edges_bloom_filter in subgraph_generator:
+        for subgraph_ in subgraph_generator:
+            group = subgraph_["group"]
+            subgraph = subgraph_["subgraph"]
+            masker = subgraph_["masker"]
+            labels_loader = subgraph_["labels_loader"]
 
             # TODO shuffle subgraphs
 
@@ -202,16 +221,17 @@ class SGNodesDataLoader:
                 else:
                     input_mask = None
 
-                indices = self.seeds_to_python(seeds)  # dgl returns torch tensor
+                # indices = self.seeds_to_python(seeds)  # dgl returns torch tensor
+                indices = blocks[-1].dstnodes["node_"].data["original_id"].tolist()
 
                 if isinstance(indices, dict):
                     raise NotImplementedError("Using node types is currently not supported. Set use_node_types=False")
 
-                if node_labels_loader is not None:
-                    positive_indices = torch.LongTensor(node_labels_loader.sample_positive(indices)).to(self.device)
-                    negative_indices = torch.LongTensor(node_labels_loader.sample_negative(
+                if labels_loader is not None:
+                    positive_indices = torch.LongTensor(labels_loader.sample_positive(indices)).to(self.device)
+                    negative_indices = torch.LongTensor(labels_loader.sample_negative(
                         indices, k=self.neg_sampling_factor, strategy=self.negative_sampling_strategy,
-                        current_group=group, bloom_filter=edges_bloom_filter
+                        current_group=group
                     )).to(self.device)
                 else:
                     positive_indices = None
@@ -224,7 +244,7 @@ class SGNodesDataLoader:
                 assert -1 not in input_nodes.tolist()
 
                 batch = {
-                    "seeds": seeds,
+                    # "seeds": seeds,
                     "group": group,
                     "input_nodes": input_nodes.to(self.device),
                     "input_mask": input_mask,
@@ -232,60 +252,61 @@ class SGNodesDataLoader:
                     "blocks": [block.to(self.device) for block in blocks],
                     "positive_indices": positive_indices,
                     "negative_indices": negative_indices,
-                    "node_labels_loader": node_labels_loader,
+                    "labels_loader": labels_loader,
                     # "edge_labels_loader": edge_labels_loader,
-                    # "update_node_negative_sampler_callback": node_labels_loader.set_embed,
+                    # "update_node_negative_sampler_callback": labels_loader.set_embed,
                     # "update_edge_negative_sampler_callback": None,
                 }
 
                 yield batch
             self._finalize_batch_iterator(loader)
 
-    def nodes_dataloader(
+    def get_dataloader(
             self, partition_label
     ):
-        """
-        Returns generator with batches for node-level prediction
-        :param partition_label: one of train|val|test
-        :param labels_for:
-        :param number_of_hops: GNN depth
-        :param batch_size: number of examples without negative
-        :param preload_for:
-        :param labels: DataFrame with labels
-        :param masker_fn: function that takes nodes and edges as input and returns an instance of SubwordMasker
-        :param label_loader_class: an instance of ElementEmbedder
-        :param label_loader_params: dictionary with parameters to be passed to `label_loader_class`
-        :return:
-        """
+        label_loader = getattr(self, f"{partition_label}_loader")
 
-        node_label_loader = getattr(self, f"{partition_label}_loader")
+        data = {}
+        kwargs = {}
 
-        node_data = {}
-        edge_data = {}
+        if self.labels_for == SGLabelSpec.nodes:
+            kwargs["node_label_loader"] = label_loader
+            kwargs["node_data"] = data
+            kwargs["edge_data"] = {}
+        elif self.labels_for == SGLabelSpec.edges:
+            kwargs["edge_label_loader"] = label_loader
+            kwargs["node_data"] = {}
+            kwargs["edge_data"] = data
+        elif self.labels_for == SGLabelSpec.subgraphs:
+            kwargs["subgraph_label_loader"] = label_loader
+            kwargs["node_data"] = {}
+            kwargs["edge_data"] = {}
+            kwargs["subgraph_data"] = data
+        else:
+            raise ValueError()
 
         for partition_key in ["train_mask", "test_mask", "val_mask", "any_mask"]:
-            node_data[partition_key] = self.dataset.partition.create_exclusive(partition_key)
+            data[partition_key] = self.dataset.partition.create_exclusive(partition_key)
         # get name for the partition mask
         current_partition_key = self.dataset.get_proper_partition_column_name(partition_label)
 
         return self.create_batches(
             self._iterate_subgraphs(
-                node_data, edge_data, self.masker_fn, node_label_loader=node_label_loader,
-                grouping_strategy=self.preload_for
+                masker_fn=self.masker_fn, grouping_strategy=self.preload_for, **kwargs
             ),
             self.number_of_hops, self.batch_size, current_partition_key, self.labels_for
         )
 
     def partition_iterator(self, partition_label):
         class SGDLIter:
-            iter_fn = self.nodes_dataloader
+            iter_fn = self.get_dataloader
 
             def __init__(self):
                 self.partition_label = partition_label
 
-            @staticmethod
-            def __iter__():
-                return self.nodes_dataloader(partition_label)
+            @classmethod
+            def __iter__(cls):
+                return cls.iter_fn(partition_label)
 
         return SGDLIter()
 
@@ -302,7 +323,7 @@ class SGEdgesDataLoader(SGNodesDataLoader):
     @staticmethod
     def _handle_non_unique(non_unique_ids):
         id_list = non_unique_ids.tolist()
-        unique_ids = list(set(id_list))
+        unique_ids = sorted(list(set(id_list)))
         new_position = dict(zip(unique_ids, range(len(unique_ids))))
         slice_map = torch.tensor(list(map(lambda x: new_position[x], id_list)), dtype=torch.long)
         return torch.tensor(unique_ids, dtype=torch.long), slice_map
@@ -311,24 +332,45 @@ class SGEdgesDataLoader(SGNodesDataLoader):
 
         sampler = MultiLayerFullNeighborSampler(number_of_hops)
 
-        for group, subgraph, masker, node_labels_loader, edge_labels_loader, edges_bloom_filter in subgraph_generator:
+        # for group, subgraph, masker, labels_loader, edge_labels_loader, edges_bloom_filter in subgraph_generator:
+        for subgraph_ in subgraph_generator:
+            group = subgraph_["group"]
+            subgraph = subgraph_["subgraph"]
+            masker = subgraph_["masker"]
+            labels_loader = subgraph_["labels_loader"]
+            edges_bloom_filter = subgraph_["edges_bloom_filter"]
 
             nodes_in_graph = set(subgraph.nodes("node_")[subgraph.nodes["node_"].data["current_type_mask"]].cpu().numpy())
             nodes_for_batching = self.get_nodes_from_partition(subgraph, partition, labels_for)
             if self._num_nodes_total(nodes_for_batching) == 0:
                 continue
 
-            for nodes_in_batch in self.iterate_nodes_for_batches(self.seeds_to_python(nodes_for_batching)):
+            graph_id_to_original_id = dict(zip(
+                subgraph.nodes("node_").numpy(),
+                subgraph.nodes["node_"].data["original_id"].numpy(),
+            ))
+            original_id_to_graph_id = dict(zip(
+                subgraph.nodes["node_"].data["original_id"].numpy(),
+                subgraph.nodes("node_").numpy()
+            ))
 
-                if node_labels_loader is not None:
-                    positive_indices = torch.LongTensor(node_labels_loader.sample_positive(nodes_in_batch))
-                    negative_indices = torch.LongTensor(node_labels_loader.sample_negative(
+
+            for nodes_in_batch_g in self.iterate_nodes_for_batches(self.seeds_to_python(nodes_for_batching)):
+                nodes_in_batch = np.array(list(map(graph_id_to_original_id.get, nodes_in_batch_g)))
+
+                if labels_loader is not None:
+                    positive_indices = labels_loader.sample_positive(nodes_in_batch)
+                    negative_indices = labels_loader.sample_negative(
                         nodes_in_batch, k=self.neg_sampling_factor, strategy=self.negative_sampling_strategy,
                         current_group=group, bloom_filter=edges_bloom_filter
-                    ))
+                    )
+                    positive_indices_g = torch.LongTensor(list(map(original_id_to_graph_id.get, positive_indices)))
+                    negative_indices_g = torch.LongTensor(list(map(original_id_to_graph_id.get, negative_indices)))
                 else:
                     positive_indices = None
                     negative_indices = None
+                    positive_indices_g = None
+                    negative_indices_g = None
 
                 nodes_in_total = len(nodes_in_batch) + len(positive_indices) + len(negative_indices)
                 empty_mask = [False] * nodes_in_total
@@ -344,7 +386,7 @@ class SGEdgesDataLoader(SGNodesDataLoader):
                 positive_nodes_mask[positive_start: negative_start] = True
                 negative_nodes_mask[negative_start:] = True
 
-                all_nodes = torch.cat([torch.LongTensor(nodes_in_batch), positive_indices, negative_indices])
+                all_nodes = torch.cat([torch.LongTensor(nodes_in_batch_g), positive_indices_g, negative_indices_g])
 
                 unique_nodes, slice_map = self._handle_non_unique(all_nodes)
                 assert unique_nodes[slice_map].tolist() == all_nodes.tolist()
@@ -371,20 +413,109 @@ class SGEdgesDataLoader(SGNodesDataLoader):
                 assert -1 not in input_nodes.tolist()
 
                 batch = {
-                    "seeds": seeds,  # list of unique nodes
+                    # "seeds": seeds,  # list of unique nodes
                     "indices": nodes_in_batch,
                     "slice_map": slice_map,  # needed to restore original_nodes
-                    "compute_embeddings_for": all_nodes,
+                    "compute_embeddings_for": np.concatenate([nodes_in_batch, positive_indices, negative_indices]),  # all_nodes,
                     "group": group,
                     "input_nodes": input_nodes.to(self.device),
                     "input_mask": input_mask,
                     "blocks": [block.to(self.device) for block in blocks],
-                    "positive_indices": positive_indices.to(self.device),
-                    "negative_indices": negative_indices.to(self.device),
-                    "node_labels_loader": node_labels_loader,
+                    "positive_indices": positive_indices,  # .to(self.device),
+                    "negative_indices": negative_indices,  # .to(self.device),
+                    "labels_loader": labels_loader,
                     "src_nodes_mask": src_nodes_mask,
                     "positive_nodes_mask": positive_nodes_mask,
                     "negative_nodes_mask": negative_nodes_mask
                 }
 
                 yield batch
+
+
+class SGSubgraphDataLoader(SGNodesDataLoader):
+
+    def _prepare_batch(self, subgraph_ids, subgraphs, labels_loader, number_of_hops):
+        if labels_loader is not None:
+            positive_labels = torch.LongTensor(labels_loader.sample_positive(subgraph_ids)).to(self.device)
+        else:
+            positive_labels = None
+
+        subgraph_nodes = []
+        for subg in subgraphs:
+            subg.nodes["node_"].data["original_id"] = subg.nodes("node_")
+            subgraph_nodes.append(set(subg.nodes("node_")[subg.nodes["node_"].data["current_type_mask"]].tolist()))
+
+        batched_subgraphs = dgl.batch(subgraphs)
+        input_nodes = batched_subgraphs.srcnodes["node_"].data["embedding_id"]
+
+        # sampler = MultiLayerFullNeighborSampler(number_of_hops)
+        # all_nodes = batched_subgraphs.nodes("node_")[batched_subgraphs.nodes["node_"].data["current_type_mask"]]
+        # loader = NewProcessNodeDataLoader(
+        #     batched_subgraphs, {"node_": all_nodes}, sampler, batch_size=len(all_nodes)
+        # )
+        #
+        # input_nodes, seeds, blocks = next(iter(loader))
+        # input_nodes = blocks[0].srcnodes["node_"].data["embedding_id"]
+        #
+        # assert -1 not in input_nodes[blocks[0].srcnodes["node_"].data["current_type_mask"]].tolist()
+        #
+        # original_nodes = blocks[-1].dstnodes["node_"].data["original_id"].tolist()
+        # subgraph_masks = [
+        #     torch.BoolTensor([node_id in subg_nodes for node_id in original_nodes]).to(self.device)
+        #     for subg_nodes in subgraph_nodes
+        # ]
+
+        batch = {
+            # input_nodes, input_mask, blocks, positive_indices, negative_indices
+            "indices": subgraph_ids,
+            "input_nodes": input_nodes.to(self.device),
+            "input_mask": None,
+            "blocks": batched_subgraphs,
+            "positive_indices": positive_labels,
+            "negative_indices": None,
+            # "subgraph_masks": subgraph_masks,
+            # "blocks": [block.to(self.device) for block in blocks],
+            # "labels": positive_labels,
+            "labels_loader": labels_loader
+        }
+
+        return batch
+
+
+    def create_batches(self, subgraph_generator, number_of_hops, batch_size, partition, labels_for):
+
+
+
+        batch_subgrap_id = []
+        batch_subgraphs = []
+
+        labels_loader = None
+
+        def in_partition(subgraph_id):
+            in_p = subgraph_data[partition][subgraph_id]
+            if "has_label" in subgraph_data:
+                in_p &= subgraph_id in subgraph_data["has_label"] and subgraph_data["has_label"][subgraph_id]
+            return in_p
+
+        for subgraph_ in subgraph_generator:
+            group = subgraph_["group"][0]
+            subgraph = subgraph_["subgraph"]
+            masker = subgraph_["masker"]
+            labels_loader = subgraph_["label_loader"]
+            subgraph_data = subgraph_["subgraph_data"]
+
+            if not in_partition(group):
+                continue
+
+            batch_subgrap_id.append(group)
+            batch_subgraphs.append(subgraph)
+
+            if len(batch_subgrap_id) == batch_size:
+                yield self._prepare_batch(batch_subgrap_id, batch_subgraphs, labels_loader, number_of_hops)
+                batch_subgrap_id.clear()
+                batch_subgraphs.clear()
+
+        if len(batch_subgrap_id) > 0:
+            yield self._prepare_batch(batch_subgrap_id, batch_subgraphs, labels_loader, number_of_hops)
+            batch_subgrap_id.clear()
+            batch_subgraphs.clear()

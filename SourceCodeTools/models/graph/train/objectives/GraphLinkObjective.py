@@ -38,7 +38,7 @@ class GraphLinkObjective(AbstractObjective):
         negative_embeddings = all_embeddings[kwargs["negative_nodes_mask"]]
 
         non_src_nodes_mask = ~kwargs["src_nodes_mask"]
-        non_src_ids = kwargs["compute_embeddings_for"][non_src_nodes_mask].cpu().detach().numpy()
+        non_src_ids = kwargs["compute_embeddings_for"][non_src_nodes_mask]
         non_src_embeddings = all_embeddings[non_src_nodes_mask].cpu().detach().numpy()
         update_ns_callback(non_src_ids, non_src_embeddings)
 

@@ -1,6 +1,7 @@
 import os
 from collections import defaultdict
 from copy import copy
+from pathlib import Path
 from pprint import pprint
 from typing import Tuple
 
@@ -15,7 +16,8 @@ import logging
 
 from tqdm import tqdm
 
-from SourceCodeTools.code.data.dataset.DataLoader import SGNodesDataLoader, SGEdgesDataLoader
+from SourceCodeTools.code.data.dataset.DataLoader import SGNodesDataLoader, SGEdgesDataLoader, SGSubgraphDataLoader
+from SourceCodeTools.code.data.file_utils import unpersist
 from SourceCodeTools.models.Embedder import Embedder
 from SourceCodeTools.models.graph.TargetLoader import TargetLoader, GraphLinkTargetLoader
 from SourceCodeTools.models.graph.train.objectives import GraphTextPrediction, GraphTextGeneration, \
@@ -108,8 +110,8 @@ class SamplingMultitaskTrainer:
         #     self.create_type_ann_objective(dataset, tokenizer_path)
         # if "subgraph_name_clf" in objective_list:
         #     self.create_subgraph_name_objective(dataset, tokenizer_path)
-        # if "subgraph_clf" in objective_list:
-        #     self.create_subgraph_classifier_objective(dataset, tokenizer_path)
+        if "subgraph_clf" in objective_list:
+            self.create_subgraph_classifier_objective(dataset, tokenizer_path)
 
         if len(self.objectives) == 0:
             raise Exception("No valid objectives provided:", objective_list)
@@ -142,27 +144,30 @@ class SamplingMultitaskTrainer:
         )
 
     def _create_subgraph_objective(
-            self, *, objective_name, objective_class, dataset, labels_fn, tokenizer_path, subgraph_mapping=None,
-            subgraph_partition=None,
-            masker=None
+            self, *, objective_name, objective_class, dataset, labels_fn, tokenizer_path,
+            masker_fn=None, preload_for="file", label_loader_class=None, label_loader_params=None,
+            dataloader_class=SGSubgraphDataLoader
     ):
-        if subgraph_mapping is None:
-            subgraph_mapping = dataset.subgraph_mapping
+        if label_loader_class is None:
+            label_loader_class = TargetLoader
 
-        if subgraph_partition is None:
-            subgraph_partition = dataset.subgraph_partition
+        label_loader_params_ = {"emb_size": self.elem_emb_size, "tokenizer_path": tokenizer_path, "use_ns_groups": self.trainer_params["use_ns_groups"]}
+        if label_loader_params is not None:
+            label_loader_params_.update(label_loader_params)
 
         return objective_class(
-            objective_name,
-            self.graph_model, self.node_embedder, dataset.nodes,
-            labels_fn, self.device,
-            self.sampling_neighbourhood_size, self.batch_size,
-            tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size, link_scorer_type="inner_prod",
-            masker=masker,  # dataset.create_node_name_masker(tokenizer_path),
-            measure_scores=self.trainer_params["measure_scores"],
-            dilate_scores=self.trainer_params["dilate_scores"], nn_index=self.trainer_params["nn_index"],
-            subgraph_mapping=subgraph_mapping,
-            subgraph_partition=subgraph_partition
+            name=objective_name, graph_model=self.graph_model, node_embedder=self.node_embedder, dataset=dataset,
+            label_load_fn=labels_fn, device=self.device, sampling_neighbourhood_size=self.sampling_neighbourhood_size,
+            batch_size=self.batch_size, labels_for="subgraphs", number_of_hops=self.model_params["n_layers"],
+            preload_for=preload_for, masker_fn=masker_fn, label_loader_class=label_loader_class,
+            label_loader_params=label_loader_params_, dataloader_class=dataloader_class,
+            tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size,
+            link_scorer_type=self.trainer_params["metric"],
+            measure_scores=self.trainer_params["measure_scores"], dilate_scores=self.trainer_params["dilate_scores"],
+            early_stopping=False, early_stopping_tolerance=20, nn_index=self.trainer_params["nn_index"],
+            model_base_path=self.model_base_path, force_w2v=self.trainer_params["force_w2v_ns"],
+            neg_sampling_factor=self.neg_sampling_factor,
+            embedding_table_size=self.trainer_params["embedding_table_size"]
         )
 
     def create_token_pred_objective(self, dataset, tokenizer_path):
@@ -203,13 +208,22 @@ class SamplingMultitaskTrainer:
         )
 
     def create_subgraph_classifier_objective(self, dataset, tokenizer_path):
+        from SourceCodeTools.models.graph.train.objectives.NodeClassificationObjective import ClassifierTargetMapper
+
+        def load_labels():
+            filecontent_path = Path(dataset.data_path).joinpath("common_filecontent.json.bz2")
+            filecontent = unpersist(filecontent_path)
+            return filecontent[["id", "label"]].rename({"id": "src", "label": "dst"}, axis=1)
+
         self.objectives.append(
             self._create_subgraph_objective(
                 objective_name="SubgraphClassifierObjective",
                 objective_class=SubgraphClassifierObjective,
                 dataset=dataset,
                 tokenizer_path=tokenizer_path,
-                labels_fn=dataset.load_cubert_subgraph_labels,
+                labels_fn=load_labels,
+                label_loader_class=ClassifierTargetMapper,
+                label_loader_params={"emb_size": None, "tokenizer_path": None, "use_ns_groups": False}
             )
         )
 
@@ -689,7 +703,7 @@ class SamplingMultitaskTrainer:
         embeddings = []
 
         for batch in tqdm(
-                dataloader.nodes_dataloader("any"),
+                dataloader.get_dataloader("any"),
                 total=dataloader.train_num_batches,
                 desc="Computing final embeddings"
         ):
