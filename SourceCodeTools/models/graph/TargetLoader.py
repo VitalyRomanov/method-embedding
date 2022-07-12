@@ -414,7 +414,8 @@ class TargetLoader:
         return negative
 
     def update_index(self):
-        self._target_embedding_proximity.update_index()
+        if self._target_embedding_proximity is not None:
+            self._target_embedding_proximity.update_index()
 
     def has_label_mask(self):
         return {key: True for key in self._element_lookup}
@@ -427,6 +428,37 @@ class TargetLoader:
 
 
 class GraphLinkTargetLoader(TargetLoader):
+    def __init__(
+            self, *args, **kwargs
+    ):
+        # assert emb_size is not None
+        # assert compact_dst is False
+        TargetLoader.__init__(
+            self, *args, **kwargs
+        )
+
+    def sample_positive(self, ids):
+        positive = np.fromiter(
+            (self._label_encoder._inverse_target_map[rnd.choice(self._element_lookup[id_])] for id_ in ids),
+            dtype=np.int32
+        )
+
+        if self._ps_logger is not None:
+            for a, p in zip(ids, positive):
+                self._ps_logger.write(f"{a}\t{p}\n")
+            self._ps_logger.flush()
+
+        return positive
+
+    def sample_negative(self, ids, k=1, strategy="w2v", current_group=None, bloom_filter=None):
+        negative = super().sample_negative(
+            ids, k=k, strategy=strategy, current_group=current_group, bloom_filter=bloom_filter
+        )
+
+        return np.fromiter((self._label_encoder._inverse_target_map[neg] for neg in negative), dtype=np.int32)
+
+
+class GraphLinkWithTypeTargetLoader(GraphLinkTargetLoader):
     def __init__(
             self, *args, **kwargs
     ):
