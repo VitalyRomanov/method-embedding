@@ -348,11 +348,18 @@ class RGGAN(RGAN):
             dropout=self.dropout, weight=True, use_gcn_checkpoint=use_gcn_checkpoint, # : )
             use_att_checkpoint=use_att_checkpoint, use_gru_checkpoint=use_gru_checkpoint
         )
+
+        self.layers = nn.ModuleList([RGGANLayer(
+            self.h_dim, self.h_dim, self.rel_names, self.ntype_names,
+            self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
+            dropout=self.dropout, weight=True, use_gcn_checkpoint=use_gcn_checkpoint,  # : )
+            use_att_checkpoint=use_att_checkpoint, use_gru_checkpoint=use_gru_checkpoint
+        ) for _ in range(n_layers)])
         # TODO
         # think of possibility switching to GAT
         # weight=False
 
         self.emb_size = node_emb_size
         self.num_layers = n_layers
-        self.layers = [self.layer] * n_layers
+        # self.layers = [self.layer] * n_layers
         self.layer_norm = nn.ModuleList([nn.LayerNorm([self.h_dim]) for _ in range(self.num_layers)])

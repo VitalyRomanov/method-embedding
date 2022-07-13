@@ -24,7 +24,7 @@ requirements = [
 setup(name='SourceCodeTools',
       version='0.0.3',
       py_modules=['SourceCodeTools'],
-      install_requires=requirements + ["dgl==0.7.1"],
+      install_requires=requirements + ["dgl==0.6.1"],
       extras_require={
             "gpu": requirements + ["dgl-cu111==0.7.1"]
       },

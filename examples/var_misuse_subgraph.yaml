@@ -1,6 +1,6 @@
 DATASET:
   custom_reverse: null
-  data_path: 10_percent_v1
+  data_path: 2_percent_v1
   filter_edges: null
   min_count_for_objectives: 5
   no_global_edges: false
@@ -9,7 +9,7 @@ DATASET:
   restricted_id_pool: null
   self_loops: false
   subgraph_id_column: file_id
-  subgraph_partition: 10_percent_v1\partition.json.bz2
+  subgraph_partition: 2_percent_v1\partition.json.bz2
   train_frac: 0.8
   use_edge_types: false
   use_node_types: false
@@ -40,7 +40,7 @@ TRAINING:
   learning_rate: 0.001
   measure_scores: false
   metric: inner_prod
-  model_output_dir: 10_percent_v1
+  model_output_dir: 2_percent_v1
   neg_sampling_factor: 3
   nn_index: brute
   objectives: subgraph_clf

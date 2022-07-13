@@ -312,7 +312,7 @@ class SubgraphClassifierObjective(NodeClassifierObjective, SubgraphAbstractObjec
             ns_groups, subgraph_mapping, subgraph_partition
         )
 
-        self.pooler = PoolingLayer(100, (100, 1))
+        self.pooler = PoolingLayer(100, (300, 1))
 
     def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
         self.target_embedder = SubgraphClassifierTargetMapper(
@@ -374,15 +374,15 @@ class SubgraphClassifierObjective(NodeClassifierObjective, SubgraphAbstractObjec
         return self.pooler(node_embeddings)
 
     def parameters(self, recurse: bool = True):
-        return chain(self.classifier.parameters())
-        # return chain(self.classifier.parameters(), self.pooler.parameters())
+        # return chain(self.classifier.parameters())
+        return chain(self.classifier.parameters(), self.pooler.parameters())
 
     def custom_state_dict(self):
         state_dict = OrderedDict()
         for k, v in self.classifier.state_dict().items():
             state_dict[f"classifier.{k}"] = v
-        # for k, v in self.pooler.state_dict().items():
-        #     state_dict[f"pooler.{k}"] = v
+        for k, v in self.pooler.state_dict().items():
+            state_dict[f"pooler.{k}"] = v
         return state_dict
 
 
