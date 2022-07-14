@@ -988,10 +988,14 @@ def process_code(source_file_content, offsets, node_resolver, mention_tokenizer,
         def attach_offsets_to_edges(edges, offsets_edge_mapping):
             for edge in edges:
                 repr = (edge["src"], edge["dst"], edge["type"])
+                offset_start = pd.NA
+                offset_end = pd.NA
                 if repr in offsets_edge_mapping:
                     offset = offsets_edge_mapping[repr]
-                    edge["offset_start"] = offset[0]
-                    edge["offset_end"] = offset[1]
+                    offset_start = offset[0]
+                    offset_end = offset[1]
+                edge["offset_start"] = offset_start
+                edge["offset_end"] = offset_end
 
         # recover ast offsets for the current file
         valid_offsets = replacer.recover_offsets_with_edits2(get_valid_offsets(edges))
