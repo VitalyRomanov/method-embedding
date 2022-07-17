@@ -36,7 +36,7 @@ class MentionTokenizer:
 
         if self.create_subword_instances:
             def produce_subw_edges(subwords, dst, scope=None):
-                return self.produce_subword_edges_with_instances(subwords, dst, scope=scope)
+                return self.produce_subword_edges_with_instances(subwords, dst, self.connect_subwords, scope=scope)
         else:
             def produce_subw_edges(subwords, dst, scope=None):
                 return self.produce_subword_edges(subwords, dst, self.connect_subwords, scope=scope)
@@ -129,7 +129,7 @@ class MentionTokenizer:
                 'offsets': None
             })
             if scope is not None:
-                scope[-1]["scope"] = scope
+                edges[-1]["scope"] = scope
 
     def produce_subword_edges(self, subwords, dst, connect_subwords=False, scope=None):
         new_edges = []

@@ -5,6 +5,7 @@ import shutil
 import sys
 from os.path import join
 
+import numpy as np
 import pandas as pd
 
 from tqdm import tqdm
@@ -369,10 +370,27 @@ def process_code_without_index(source_code, node_resolver, mention_tokenizer, tr
             :param edges: Dictionary that represents edge. Information is tored in edges but is related to source node
             :return: Information about location of this edge (offset) in the source file in fromat (start, end, node_id)
             """
-            return [(edge["offsets"][0], edge["offsets"][1], edge["src"], edge["scope"]) for edge in edges if edge["offsets"] is not None]
+            return [(edge["offsets"][0], edge["offsets"][1], (edge["src"], edge["dst"], edge["type"]), edge["scope"]) for edge in edges
+                    if edge["offsets"] is not None]
+
+        def get_node_offsets(offsets):
+            return [(offset[0], offset[1], offset[2][0], offset[3]) for offset in offsets]
+
+        def offsets_to_edge_mapping(offsets):
+            return {offset[2]: (offset[0], offset[1]) for offset in offsets}
+
+        def attach_offsets_to_edges(edges, offsets_edge_mapping):
+            for edge in edges:
+                repr = (edge["src"], edge["dst"], edge["type"])
+                if repr in offsets_edge_mapping:
+                    offset = offsets_edge_mapping[repr]
+                    edge["offset_start"] = offset[0]
+                    edge["offset_end"] = offset[1]
 
         # recover ast offsets for the current file
-        ast_offsets = get_valid_offsets(edges)
+        valid_offsets = get_valid_offsets(edges)
+        ast_offsets = get_node_offsets(valid_offsets)
+        attach_offsets_to_edges(edges, offsets_to_edge_mapping(valid_offsets))
     else:
         ast_offsets = None
 
@@ -447,7 +465,7 @@ def build_ast_only_graph(
         all_ast_edges = all_ast_edges.query("src != dst")
         all_ast_edges["id"] = 0
 
-        all_ast_edges = all_ast_edges[["id", "type", "src", "dst", "file_id", "scope"]] \
+        all_ast_edges = all_ast_edges[["id", "type", "src", "dst", "file_id", "scope", "offset_start", "offset_end"]] \
             .rename({'src': 'source_node_id', 'dst': 'target_node_id', 'scope': 'mentioned_in'}, axis=1) \
             .astype({'file_id': 'Int32', "mentioned_in": 'string'})
 
@@ -591,10 +609,11 @@ class AstDatasetCreator(AbstractDatasetCreator):
     def __init__(
             self, path, lang, bpe_tokenizer, create_subword_instances, connect_subwords, only_with_annotations,
             do_extraction=False, visualize=False, track_offsets=False, remove_type_annotations=False,
-            recompute_l2g=False, chunksize=10000, keep_frac=1.0
+            recompute_l2g=False, chunksize=10000, keep_frac=1.0, seed=None
     ):
         self.chunksize = chunksize
         self.keep_frac = keep_frac
+        self.seed = seed
         super().__init__(
             path, lang, bpe_tokenizer, create_subword_instances, connect_subwords, only_with_annotations,
             do_extraction, visualize, track_offsets, remove_type_annotations, recompute_l2g
@@ -614,8 +633,10 @@ class AstDatasetCreator(AbstractDatasetCreator):
             raise FileExistsError(f"Directory exists: {temp_path}")
         os.mkdir(temp_path)
 
+        rnd_state = np.random.RandomState(self.seed)
+
         for ind, chunk in enumerate(pd.read_csv(self.path, chunksize=self.chunksize)):
-            chunk = chunk.sample(frac=self.keep_frac)
+            chunk = chunk.sample(frac=self.keep_frac, random_state=rnd_state)
             chunk_path = os.path.join(temp_path, f"chunk_{ind}")
             os.mkdir(chunk_path)
             persist(chunk, os.path.join(chunk_path, "source_code.bz2"))
@@ -710,6 +731,6 @@ if __name__ == "__main__":
     dataset = AstDatasetCreator(
         args.source_code, args.language, args.bpe_tokenizer, args.create_subword_instances,
         args.connect_subwords, args.only_with_annotations, args.do_extraction, args.visualize, args.track_offsets,
-        args.remove_type_annotations, args.recompute_l2g, args.chunksize, args.keep_frac
+        args.remove_type_annotations, args.recompute_l2g, args.chunksize, args.keep_frac, args.seed
     )
     dataset.merge(args.output_directory)

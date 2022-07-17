@@ -1,7 +1,10 @@
 import os.path
 
+import pandas
+
 from SourceCodeTools.code.data.file_utils import unpersist, persist
 
+pandas.options.mode.chained_assignment = None
 
 def extract_partitions(path):
     filecontent = unpersist(path)
