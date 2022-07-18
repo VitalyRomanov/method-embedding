@@ -28,7 +28,7 @@ process_if_exists () {
   VECTORS=$1;
   EMBEDDER=$2;
   TB_OUT=$3;
-  if [ -d $DATASET_PATH/dglke2/transr_u ]; then
+  if [ -d $TB_OUT ]; then
     python $RUN_DIR/../../../../SourceCodeTools/models/graph/utils/dglke_to_embedder2.py $DATASET_PATH/dglke2/entities.tsv $VECTORS $EMBEDDER
     python $RUN_DIR/../../../../SourceCodeTools/models/graph/utils/export4visualization2.py $DATASET_PATH $EMBEDDER $TB_OUT --into_groups
 #    python $RUN_DIR/../../../../SourceCodeTools/models/graph/utils/dglke_to_embedder2.py $DATASET_PATH/dglke2/entities.tsv $DATASET_PATH/dglke2/transr_u/TransR_code_0/code_TransR_entity.npy $DATASET_PATH/dglke2/transr_u/TransR_code_0/embedder.pkl
