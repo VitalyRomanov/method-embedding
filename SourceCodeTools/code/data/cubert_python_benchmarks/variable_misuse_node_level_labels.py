@@ -9,10 +9,10 @@ from SourceCodeTools.code.data.cubert_python_benchmarks.partitioning import add_
 
 
 def get_node_labels(dataset_path):
-    filecontent = unpersist(join(dataset_path, "common_filecontent.json.bz2"))
-    nodes = unpersist(join(dataset_path, "common_nodes.json.bz2"))
+    filecontent = unpersist(join(dataset_path, "common_filecontent.json"))
+    nodes = unpersist(join(dataset_path, "common_nodes.json"))
     # edges = unpersist(join(dataset_path, "common_edges.json"))
-    edges_path = join(dataset_path, "common_edges.json.bz2")
+    edges_path = join(dataset_path, "common_edges.json")
 
     id2comment = dict(zip(filecontent["id"], filecontent["comment"]))
     nodeid2name = dict(zip(nodes["id"], nodes["serialized_name"]))
