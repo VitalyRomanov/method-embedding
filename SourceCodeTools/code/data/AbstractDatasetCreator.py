@@ -218,7 +218,7 @@ class AbstractDatasetCreator:
             persist(table, path)
 
     def write_type_annotation_flag(self, edges, output_dir):
-        if len(self.type_annotation_edge_types) > 0:
+        if len(self.type_annotation_edge_types) > 0 and edges is not None:
             query_str = " or ".join(f"type == '{edge_type}'" for edge_type in self.type_annotation_edge_types)
             if len(edges.query(query_str)) > 0:
                 with open(os.path.join(output_dir, "has_annotations"), "w") as has_annotations:
