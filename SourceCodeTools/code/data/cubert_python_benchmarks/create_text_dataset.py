@@ -71,9 +71,9 @@ def create_text_dataset(dataset_path):
         }
         dst.write(f"{json.dumps(entry)}\n")
 
-        entry["text"] = original_function
-        entry["entities"] = []
-        dst.write(f"{json.dumps(entry)}\n")
+        # entry["text"] = original_function
+        # entry["entities"] = []
+        # dst.write(f"{json.dumps(entry)}\n")
 
     train_set.close()
     test_set.close()
