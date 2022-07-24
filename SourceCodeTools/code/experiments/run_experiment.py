@@ -73,7 +73,7 @@ class Tracker:
         assert self.inv_index is not None, "Cannot export for tensorboard without metadata"
         np.savetxt(f"{save_name}_embeddings.tsv", self.embeddings, delimiter="\t")
         with open(f"{save_name}_meta.tsv", "w") as meta_sink:
-            for label in list(map(lambda x: self.inv_index[x], self.pred_labels)):
+            for label in list(map(lambda x: self.inv_index[x], self.true_labels)):
                 meta_sink.write(f"{label}\n")
 
     def save_umap(self, save_name):
@@ -91,14 +91,15 @@ class Tracker:
         }
         from umap import UMAP
         import matplotlib.pyplot as plt
-        plt.rcParams.update({'font.size': 5})
+        # plt.rcParams.update({'font.size': 5})
         reducer = UMAP(50)
         embedding = reducer.fit_transform(self.embeddings)
 
-        labels = list(map(lambda x: self.inv_index[x], self.pred_labels))
+        labels = list(map(lambda x: self.inv_index[x], self.true_labels))
         unique_labels = sorted(list(set(labels)))
 
-        plt.figure(figsize=(4,4))
+        plt.figure(figsize=(6,6))
+        legend = []
         for label in unique_labels:
             if label not in type_freq:
                 continue
@@ -109,8 +110,9 @@ class Tracker:
                     xs.append(x)
                     ys.append(y)
             plt.scatter(xs, ys, 1.)
+            legend.append(label)
         plt.axis('off')
-        plt.legend(unique_labels)
+        plt.legend(legend)
         plt.savefig(f"{save_name}_umap.pdf")
         plt.close()
         # plt.show()
@@ -141,7 +143,10 @@ def estimate_confusion(pred, true, save_path):
     true_filtered = true
 
     import matplotlib.pyplot as plt
-    plt.rcParams.update({'font.size': 50})
+    import matplotlib.pyplot as plt
+    from matplotlib.pyplot import cm
+
+    # plt.rcParams.update({'font.size': 50})
 
     labels = sorted(list(set(true_filtered + pred_filtered)))
     label2ind = dict(zip(labels, range(len(labels))))
@@ -154,10 +159,8 @@ def estimate_confusion(pred, true, save_path):
     norm = np.array([x if x != 0 else 1. for x in np.sum(confusion, axis=1)]).reshape(-1,1)
     confusion /= norm
 
-    import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots(figsize=(45,45))
-    from matplotlib.pyplot import cm
+    fig, ax = plt.subplots(figsize=(6,6))
     im = ax.imshow(confusion, interpolation='nearest', cmap=cm.Blues)
 
     # We want to show all ticks...
@@ -175,12 +178,12 @@ def estimate_confusion(pred, true, save_path):
     for i in range(len(labels)):
         for j in range(len(labels)):
             text = ax.text(j, i, f"{confusion[i, j]: .2f}",
-                           ha="center", va="center", color="w")
+                           ha="center", va="center", color="w", fontsize="xx-small")
 
-    ax.set_title("Confusion matrix for Python type prediction")
+    # ax.set_title("Confusion matrix for Python type prediction")
     fig.tight_layout()
     # plt.show()
-    plt.savefig(save_path)
+    plt.savefig(os.path.join(save_path, "confusion.pdf"))
     plt.close()
 
 
@@ -347,6 +350,8 @@ if __name__ == "__main__":
     # parser.add_argument("--confusion_out_path", default=None, type=str, help="")
     parser.add_argument("--trials", default=1, type=int, help="")
     parser.add_argument("--emb_out", default=False, action="store_true", help="")
+    parser.add_argument("--only_popular_types", default=False, action="store_true", help="")
+    parser.add_argument("--popular_types", default="str,Optional,int,Any,Union,bool,Other,Callable,Dict,bytes,float,Description,List,Sequence,Namespace,T,Type,object,HTTPServerRequest,Future,Matcher", help="")
     # parser.add_argument("--emb_out", default=None, type=str, help="")
     parser.add_argument("--embeddings", default=None)
     parser.add_argument('--random', action='store_true')
@@ -356,19 +361,19 @@ if __name__ == "__main__":
     if args.out_path is None:
         args.out_path = os.path.dirname(args.embeddings)
 
+    if args.popular_types is not None:
+        args.popular_types = args.popular_types.split(",")
+
     print(args.__dict__)
 
-    e = Experiments(base_path=args.base_path,
-                    api_seq_path=args.api_seq,
-                    type_link_path=args.type_link,
-                    type_link_train_path=args.type_link_train,
-                    type_link_test_path=args.type_link_test,
-                    variable_use_path=args.var_use,  # not needed
-                    function_name_path=None,
-                    type_ann=args.type_ann,
-                    gnn_layer=-1,
-                    embeddings_path=args.embeddings
-                    )
+    e = Experiments(
+        base_path=args.base_path, api_seq_path=args.api_seq, type_link_path=args.type_link,
+        type_link_train_path=args.type_link_train, type_link_test_path=args.type_link_test,
+        variable_use_path=args.var_use,  # not needed
+        function_name_path=None,
+        type_ann=args.type_ann, gnn_layer=-1, embeddings_path=args.embeddings,
+        only_popular_types=args.only_popular_types, popular_types=args.popular_types
+    )
 
     experiments = args.experiment.split(",")
 

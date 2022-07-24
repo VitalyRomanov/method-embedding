@@ -48,19 +48,11 @@ class Experiments:
     typeann -
     """
 
-    def __init__(self,
-                 base_path=None,
-                 api_seq_path=None,
-                 type_use_path=None,
-                 type_link_path=None,
-                 type_link_train_path=None,
-                 type_link_test_path=None,
-                 node_type_path=None,
-                 variable_use_path=None,
-                 function_name_path=None,
-                 type_ann=None,
-                 gnn_layer=-1,
-                 embeddings_path=None):
+    def __init__(
+            self, base_path=None,api_seq_path=None, type_use_path=None, type_link_path=None, type_link_train_path=None,
+            type_link_test_path=None, node_type_path=None, variable_use_path=None, function_name_path=None,
+            type_ann=None, gnn_layer=-1, embeddings_path=None, **kwargs
+    ):
         """
 
         :param base_path: path tp trained gnn model
@@ -71,6 +63,7 @@ class Experiments:
         :param function_name_path: path to function name edges
         :param gnn_layer: which gnn layer is used for node embeddings
         """
+        self.kwargs = kwargs
 
         self.experiments = {
             'fcall': function_name_path,
@@ -219,6 +212,10 @@ class Experiments:
             random_seed = 42
             min_entity_count = 3
 
+            type_annotations_path = self.experiments['typeann']
+            from pathlib import Path
+            dataset_dir = Path(type_annotations_path).parent
+
             type_ann = unpersist(self.experiments['typeann'])
 
             # node_names = dict(zip(nodes["id"], nodes["serialized_name"]))
@@ -248,55 +245,28 @@ class Experiments:
                 type_ann["src"].apply(filter_rule)
             ]
 
-            # allowed = {'str', 'bool', 'Optional', 'None', 'int', 'Any', 'Union', 'List', 'Dict', 'Callable', 'ndarray',
-            #            'FrameOrSeries', 'bytes', 'DataFrame', 'Matcher', 'float', 'Tuple', 'bool_t', 'Description',
-            #            'Type'}
-            test_only_popular_types = False
+            test_only_popular_types = self.kwargs["only_popular_types"]
             if test_only_popular_types:
-                allowed = {
-                    # 'str', 'Optional', 'int', 'Any', 'Union', 'bool', 'Other', 'Callable', 'Dict', 'bytes', 'float',
-                    # 'Description',
-                    # 'List', 'Sequence', 'Namespace', 'T', 'Type', 'object', 'HTTPServerRequest', 'Future'
-                    "str",
-                    "Optional",
-                    "int",
-                    "Any",
-                    "Union",
-                    "bool",
-                    "Other",
-                    "Callable",
-                    "Dict",
-                    "bytes",
-                    "float",
-                    "Description",
-                    "List",
-                    "Sequence",
-                    "Namespace",
-                    "T",
-                    "Type",
-                    "object",
-                    "HTTPServerRequest",
-                    "Future",
-                    "Matcher",
-                }
+                allowed = set(self.kwargs["popular_types"])
+
                 type_ann = type_ann[
                     type_ann["dst"].apply(lambda type_: type_ in allowed)
                 ]
             else:
                 allowed = None
 
-            from pathlib import Path
-            dataset_dir = Path(self.experiments['typeann']).parent
             from SourceCodeTools.nlp.entity.type_prediction import filter_labels
             def read_dataset_file(path):
                 with open(path, "r") as source:
                     return [json.loads(line) for line in source]
 
             train_data = filter_labels(
+                # pickle.load(open(dataset_dir.joinpath("type_prediction_dataset_no_defaults_train.pkl"), "rb")),
                 read_dataset_file(dataset_dir.joinpath("type_prediction_dataset_no_default_args_mapped_train.json")),
                 allowed=allowed
             )
             test_data = filter_labels(
+                # pickle.load(open(dataset_dir.joinpath("type_prediction_dataset_no_defaults_test.pkl"), "rb")),
                 read_dataset_file(dataset_dir.joinpath("type_prediction_dataset_no_default_args_mapped_test.json")),
                 allowed=allowed
             )
