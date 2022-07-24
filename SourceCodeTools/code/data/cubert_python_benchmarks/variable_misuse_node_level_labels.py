@@ -3,20 +3,27 @@ from os.path import join
 import pandas as pd
 from tqdm import tqdm
 
-from SourceCodeTools.code.common import read_edges
+from SourceCodeTools.code.common import read_edges, read_nodes
 from SourceCodeTools.code.data.file_utils import unpersist, persist
 from SourceCodeTools.code.data.cubert_python_benchmarks.partitioning import add_splits
 
 
 def get_node_labels(dataset_path):
-    filecontent = unpersist(join(dataset_path, "common_filecontent.json.bz2"))
-    nodes = unpersist(join(dataset_path, "common_nodes.json.bz2"))
+    # nodes = unpersist(join(dataset_path, "common_nodes.json"))
     # edges = unpersist(join(dataset_path, "common_edges.json"))
-    edges_path = join(dataset_path, "common_edges.json.bz2")
+    edges_path = join(dataset_path, "common_edges.json")
+    nodes_path = join(dataset_path, "common_nodes.json")
 
+    print("Reading comments")
+    filecontent = unpersist(join(dataset_path, "common_filecontent.json"))
     id2comment = dict(zip(filecontent["id"], filecontent["comment"]))
-    nodeid2name = dict(zip(nodes["id"], nodes["serialized_name"]))
-    nodeid2type = dict(zip(nodes["id"], nodes["type"]))
+    print("done")
+
+    nodeid2name = {}
+    nodeid2type = {}
+    for nodes in tqdm(read_nodes(nodes_path, as_chunks=True), desc="Reading node info"):
+        nodeid2name.update(dict(zip(nodes["id"], nodes["serialized_name"])))
+        nodeid2type.update(dict(zip(nodes["id"], nodes["type"])))
 
     # edges.sort_values("file_id", inplace=True)
 
