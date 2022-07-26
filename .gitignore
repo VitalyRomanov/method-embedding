@@ -18,6 +18,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+2_percent_v1/
 10_percent_v1/
 
 *.bz2

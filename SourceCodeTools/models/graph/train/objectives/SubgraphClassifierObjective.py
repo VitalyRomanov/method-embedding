@@ -38,6 +38,23 @@ class PoolingLayer(torch.nn.Module):
         y = torch.sigmoid(y)
         x_part = x[idx]
         return (x_part * y.reshape(-1, 1)).sum(dim=0, keepdim=True)
+    
+class PoolingLayerWithTrans(torch.nn.Module):
+    # From : http://proceedings.mlr.press/v97/gao19a/gao19a.pdf
+
+    def __init__(self, emb_size):
+        super().__init__()
+        # self.trans_layer = nn.Transformer(nhead=8, num_encoder_layers=2)
+        self.multihead_attn = nn.MultiheadAttention(emb_size, 10)
+        self.multihead_attn2 = nn.MultiheadAttention(emb_size, 10)
+
+    def forward(self, x):
+        x = x.unsqueeze(1)
+        x = torch.tanh(self.multihead_attn(x,x,x)[0])
+        x = torch.tanh(self.multihead_attn2(x,x,x)[0])
+        x = x.squeeze(1)
+        assert len(x.shape) == 2
+        return torch.max(x,dim=0,keepdim=True)[0]
 
 class SubgraphLoader:
     def __init__(self, ids, subgraph_mapping, loading_fn, batch_size, graph_node_types):
@@ -118,6 +135,10 @@ class SubgraphAbstractObjective(AbstractObjective):
         self.target_embedding_fn = self.get_targets_from_embedder
         self.negative_factor = 1
         self.update_embeddings_for_queries = False
+        self.create_pooling_layer()
+
+    def create_pooling_layer(self):
+        pass
 
     def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
         self.target_embedder = SubgraphElementEmbedderWithSubwords(
@@ -312,7 +333,6 @@ class SubgraphClassifierObjective(NodeClassifierObjective, SubgraphAbstractObjec
             ns_groups, subgraph_mapping, subgraph_partition
         )
 
-        self.pooler = PoolingLayer(100, (300, 1))
 
     def create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
         self.target_embedder = SubgraphClassifierTargetMapper(
@@ -370,11 +390,27 @@ class SubgraphClassifierObjective(NodeClassifierObjective, SubgraphAbstractObjec
         scores = {key: sum_scores(val) for key, val in scores.items()}
         return scores
 
+    def parameters(self, recurse: bool = True):
+        return chain(self.classifier.parameters())
+
+    def custom_state_dict(self):
+        state_dict = OrderedDict()
+        for k, v in self.classifier.state_dict().items():
+            state_dict[f"classifier.{k}"] = v
+        return state_dict
+    
+    
+class SubgraphClassifierObjectiveWithAttentionPooling(SubgraphClassifierObjective):
+    def __init__(self,*args, **kwargs):
+        super(SubgraphClassifierObjectiveWithAttentionPooling,self).__init__(*args, **kwargs)
+        
+    def create_pooling_layer(self):
+        self.pooler = PoolingLayerWithTrans(self.target_emb_size).to(self.device)
+    
     def pooling_fn(self, node_embeddings):
         return self.pooler(node_embeddings)
 
     def parameters(self, recurse: bool = True):
-        # return chain(self.classifier.parameters())
         return chain(self.classifier.parameters(), self.pooler.parameters())
 
     def custom_state_dict(self):
@@ -383,6 +419,22 @@ class SubgraphClassifierObjective(NodeClassifierObjective, SubgraphAbstractObjec
             state_dict[f"classifier.{k}"] = v
         for k, v in self.pooler.state_dict().items():
             state_dict[f"pooler.{k}"] = v
+        return state_dict
+    
+class SubgraphClassifierObjectiveWithMaxPooling(SubgraphClassifierObjective):
+    def __init__(self,*args, **kwargs):
+        super(SubgraphClassifierObjectiveWithMaxPooling, self).__init__(*args, **kwargs)
+    
+    def pooling_fn(self, node_embeddings):
+        return torch.max(node_embeddings, dim=0, keepdim=True)[0]
+
+    def parameters(self, recurse: bool = True):
+        return chain(self.classifier.parameters())
+
+    def custom_state_dict(self):
+        state_dict = OrderedDict()
+        for k, v in self.classifier.state_dict().items():
+            state_dict[f"classifier.{k}"] = v
         return state_dict
 
 
