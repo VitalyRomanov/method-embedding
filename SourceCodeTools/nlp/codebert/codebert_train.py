@@ -128,7 +128,7 @@ def train_step_finetune(model, optimizer, token_ids, prefix, suffix, graph_ids, 
     loss.backward()
     optimizer.step()
 
-    return loss, p, r, f1
+    return loss.cpu().item(), p, r, f1
 
 
 def test_step(
