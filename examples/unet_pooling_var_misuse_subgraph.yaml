@@ -16,9 +16,9 @@ DATASET:
 MODEL:
   activation: tanh
   dropout: 0.1
-  h_dim: 300
+  h_dim: 150
   n_layers: 5
-  node_emb_size: 300
+  node_emb_size: 150
   num_bases: 10
   use_att_checkpoint: false
   use_gcn_checkpoint: false
@@ -31,7 +31,7 @@ TRAINING:
   dilate_scores: 200
   early_stopping: false
   early_stopping_tolerance: 20
-  elem_emb_size: 300
+  elem_emb_size: 150
   embedding_table_size: 200000
   epochs: 10
   external_dataset: null

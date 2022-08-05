@@ -14,7 +14,7 @@ DATASET:
   use_edge_types: false
   use_node_types: false
 MODEL:
-  activation: tanh
+  activation: relu
   dropout: 0.1
   h_dim: 300
   n_layers: 5

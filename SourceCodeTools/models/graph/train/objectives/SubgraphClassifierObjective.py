@@ -21,7 +21,7 @@ from SourceCodeTools.models.graph.train.objectives.NodeClassificationObjective i
 from SourceCodeTools.tabular.common import compact_property
 
 
-class PoolingLayer(torch.nn.Module):
+class PoolingLayerUnet(torch.nn.Module):
     # From : http://proceedings.mlr.press/v97/gao19a/gao19a.pdf
 
     def __init__(self, k, shape=1):
@@ -40,18 +40,16 @@ class PoolingLayer(torch.nn.Module):
         return (x_part * y.reshape(-1, 1)).sum(dim=0, keepdim=True)
     
 class PoolingLayerWithTrans(torch.nn.Module):
-    # From : http://proceedings.mlr.press/v97/gao19a/gao19a.pdf
 
     def __init__(self, emb_size):
         super().__init__()
-        # self.trans_layer = nn.Transformer(nhead=8, num_encoder_layers=2)
         self.multihead_attn = nn.MultiheadAttention(emb_size, 10)
         self.multihead_attn2 = nn.MultiheadAttention(emb_size, 10)
 
     def forward(self, x):
         x = x.unsqueeze(1)
-        x = torch.tanh(self.multihead_attn(x,x,x)[0])
-        x = torch.tanh(self.multihead_attn2(x,x,x)[0])
+        x = torch.relu(self.multihead_attn(x,x,x)[0])
+        x = torch.relu(self.multihead_attn2(x,x,x)[0])
         x = x.squeeze(1)
         assert len(x.shape) == 2
         return torch.max(x,dim=0,keepdim=True)[0]
@@ -360,9 +358,7 @@ class SubgraphClassifierObjective(NodeClassifierObjective, SubgraphAbstractObjec
                 neg_sampling_strategy=neg_sampling_strategy,
                 train_embeddings=False
             )
-            # indices = self.seeds_to_global(seeds).tolist()
-            # labels = self.target_embedder[indices]
-            # labels = torch.LongTensor(labels).to(self.device)
+            
             acc, loss, logits = self.compute_acc_loss(node_embs_, element_embs_, labels, return_logits=True)
 
             y_pred = nn.functional.softmax(logits, dim=-1).to("cpu").numpy()
@@ -437,7 +433,27 @@ class SubgraphClassifierObjectiveWithMaxPooling(SubgraphClassifierObjective):
             state_dict[f"classifier.{k}"] = v
         return state_dict
 
+class SubgraphClassifierObjectiveWithUnetPool(SubgraphClassifierObjective):
+    def __init__(self,*args, **kwargs):
+        super(SubgraphClassifierObjectiveWithUnetPool,self).__init__(*args, **kwargs)
+        
+    def create_pooling_layer(self):
+        self.pooler = PoolingLayerUnet(300, (300, 1)).to(self.device)
+    
+    def pooling_fn(self, node_embeddings):
+        return self.pooler(node_embeddings)
 
+    def parameters(self, recurse: bool = True):
+        return chain(self.classifier.parameters(), self.pooler.parameters())
+
+    def custom_state_dict(self):
+        state_dict = OrderedDict()
+        for k, v in self.classifier.state_dict().items():
+            state_dict[f"classifier.{k}"] = v
+        for k, v in self.pooler.state_dict().items():
+            state_dict[f"pooler.{k}"] = v
+        return state_dict
+    
 class SubgraphElementEmbedderBase(ElementEmbedderBase):
     def __init__(self, elements, compact_dst=True):
         # super(ElementEmbedderBase, self).__init__()
