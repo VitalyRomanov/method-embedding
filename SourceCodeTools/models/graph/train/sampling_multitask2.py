@@ -106,8 +106,8 @@ class SamplingMultitaskTrainer:
         #     self.create_text_generation_objective(dataset, tokenizer_path)
         if "node_clf" in objective_list:
             self.create_node_classifier_objective(dataset, tokenizer_path)
-        # if "type_ann_pred" in objective_list:
-        #     self.create_type_ann_objective(dataset, tokenizer_path)
+        if "type_ann_pred" in objective_list:
+            self.create_type_ann_objective(dataset, tokenizer_path)
         # if "subgraph_name_clf" in objective_list:
         #     self.create_subgraph_name_objective(dataset, tokenizer_path)
         if "subgraph_clf" in objective_list:
@@ -228,10 +228,12 @@ class SamplingMultitaskTrainer:
         )
 
     def create_type_ann_objective(self, dataset, tokenizer_path):
+        from SourceCodeTools.models.graph.train.objectives.NodeClassificationObjective import ClassifierTargetMapper
         self.objectives.append(
             self._create_node_level_objective(
                 objective_name="TypeAnnPrediction",
                 objective_class=NodeClassifierObjective,
+                label_loader_class=ClassifierTargetMapper,
                 dataset=dataset,
                 labels_fn=dataset.load_type_prediction,
                 tokenizer_path=tokenizer_path,
