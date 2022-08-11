@@ -73,7 +73,7 @@ config_specification = {
         'num_bases': 10,
         'dropout': 0.0,
 
-        'activation': "tanh",
+        'activation': "relu",
         # torch.nn.functional.hardswish], #[torch.nn.functional.hardtanh], #torch.nn.functional.leaky_relu
     },
     "TOKENIZER": {
