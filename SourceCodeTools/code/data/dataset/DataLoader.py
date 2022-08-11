@@ -477,7 +477,7 @@ class SGSubgraphDataLoader(SGNodesDataLoader):
             "indices": subgraph_ids,
             "input_nodes": input_nodes.to(self.device),
             "input_mask": None,
-            "blocks": batched_subgraphs,
+            "blocks": batched_subgraphs.to(self.device),
             "positive_indices": positive_labels,
             "negative_indices": None,
             # "subgraph_masks": subgraph_masks,
@@ -508,7 +508,7 @@ class SGSubgraphDataLoader(SGNodesDataLoader):
             group = subgraph_["group"][0]
             subgraph = subgraph_["subgraph"]
             masker = subgraph_["masker"]
-            labels_loader = subgraph_["label_loader"]
+            labels_loader = subgraph_["labels_loader"]
             subgraph_data = subgraph_["subgraph_data"]
 
             if not in_partition(group):

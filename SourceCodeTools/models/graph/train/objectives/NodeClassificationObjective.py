@@ -38,6 +38,8 @@ class NodeClassifierObjective(AbstractObjective):
         def compute_average_score(scores, labels=None):
             assert len(scores.shape) > 1 and scores.shape[1] > 1
             sm = nn.Softmax(dim=-1)
+            scores = scores.cpu()
+            labels = labels.cpu()
             return sm(scores)[torch.full(scores.shape, False).scatter_(1, labels.reshape(-1, 1), True)].mean().item()
             # return compute_accuracy(scores.argmax(dim=-1), labels)
 
