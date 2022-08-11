@@ -1384,7 +1384,7 @@ class SourceGraphDataset:
             result = type_ann
             self._write_to_cache(result, cache_key)
 
-        return type_ann
+        return result
 
     def load_cubert_subgraph_labels(self):
         filecontent = unpersist(join(self.data_path, "common_filecontent.json.bz2"))
