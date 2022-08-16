@@ -66,6 +66,11 @@ class NodeClassifierObjective(AbstractObjective):
         sm = nn.Softmax(dim=-1)
         y_pred = sm(logits).to("cpu").numpy()
 
+        if y_pred.shape[1] == 2:
+            logging.warning("Scores are meaningless for binary classification. Disabling.")
+            self.measure_scores = False
+            return
+
         labels = kwargs.pop("y_true")[0].to("cpu").numpy()
         y_true = np.zeros(y_pred.shape)
         y_true[np.arange(0, y_true.shape[0]), labels] = 1.

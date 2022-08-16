@@ -611,6 +611,91 @@ class OnDiskGraphStorage:
         self._drop_tmp_node_ids_list(node_ids_table_name)
         return results, column_name
 
+
+class OnDiskGraphStorageWithFastIteration(OnDiskGraphStorage):
+    def iterate_subgraphs(self, how, groups):
+        if how == SGPartitionStrategies.package:
+            query_str = """
+                        SELECT
+                        edges.id as id, edge_types.type_desc as type, src, dst, file_id, package
+                        FROM
+                        edges
+                        INNER JOIN edge_file_id ON edge_file_id.id = edges.id
+                        INNER JOIN edge_types ON edges.type = edge_types.type_id"""
+            partition_columns = ["package"]
+        elif how == SGPartitionStrategies.file:
+            query_str = """
+            SELECT
+            edges.id as id, edge_types.type_desc as type, src, dst, file_id, package
+            FROM
+            edges
+            INNER JOIN edge_file_id ON edge_file_id.id = edges.id
+            INNER JOIN edge_types ON edges.type = edge_types.type_id"""
+
+            # query_str = f"""
+            #             SELECT
+            #             edges.id as id, edge_types.type_desc as type, src, dst, file_id, package
+            #             FROM (
+            #                 SELECT
+            #                 id, file_id, package
+            #                 FROM
+            #                 edge_file_id
+            #                 ORDER BY package, file_id
+            #             ) as edge_file_id
+            #             LEFT JOIN edges ON edge_file_id.id = edges.id
+            #             LEFT JOIN edge_types ON edges.type = edge_types.type_id
+            #             """
+            partition_columns = ["file_id", "package"]
+        elif how == SGPartitionStrategies.mention:
+            query_str = """
+                        SELECT
+                        edges.id as id, edge_types.type_desc as type, src, dst, mentioned_in
+                        FROM
+                        edges
+                        INNER JOIN edge_hierarchy ON edge_hierarchy.id = edges.id
+                        INNER JOIN edge_types ON edges.type = edge_types.type_id"""
+            partition_columns = ["mentioned_in"]
+        else:
+            raise ValueError()
+
+        iterator = iter(self.database.query(query_str, chunksize=100000))
+
+        current_part = None
+        prev_partition_value = None
+
+        def merge_current_part(current_part, new_part):
+            if current_part is None:
+                return new_part
+            return pd.concat([current_part, new_part])
+
+        while True:
+            try:
+                edges = next(iterator)
+                start = 0
+
+                partition_c = edges[partition_columns]
+
+                for ind, val in enumerate(partition_c.values.tolist()):
+                    if val != prev_partition_value and prev_partition_value is not None:
+                        end = ind
+                        if end > 0:
+                            current_part = merge_current_part(current_part, edges[start: end])
+                        partition_edges = current_part
+                        partition_nodes = self.get_nodes_for_edges(partition_edges)
+                        yield tuple(prev_partition_value), partition_nodes, partition_edges
+                        current_part = None
+                        start = end
+                    prev_partition_value = val
+                if start != len(edges):
+                    current_part = merge_current_part(current_part, edges[start: len(edges)])
+
+            except StopIteration:
+                partition_edges = current_part
+                partition_nodes = self.get_nodes_for_edges(partition_edges)
+                yield tuple(prev_partition_value), partition_nodes, partition_edges
+                break
+
+
 # class N4jGraphStorage:
 #     def __init__(self):
 #         import neo4j
