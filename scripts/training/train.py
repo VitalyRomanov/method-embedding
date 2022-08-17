@@ -156,6 +156,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
     verify_arguments(args)
 
+    if "filter_edges" in args.__dict__ and args.__dict__["filter_edges"] is not None:
+        args.__dict__["filter_edges"] = args.__dict__["filter_edges"].split(",")
+
     logging.basicConfig(level=logging.INFO, format="%(asctime)s:%(levelname)s:%(module)s:%(lineno)d:%(message)s")
 
     # models_ = {
