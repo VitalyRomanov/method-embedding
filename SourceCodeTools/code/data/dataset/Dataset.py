@@ -1038,7 +1038,7 @@ class SourceGraphDataset:
         dataset = pickle.load(open(path, "rb"))
         dataset.data_path = args["data_path"]
         if dataset.tokenizer_path is not None:
-            dataset.tokenizer_path = args["tokenizer"]
+            dataset.tokenizer_path = args["tokenizer_path"]
         return dataset
 
 
