@@ -120,30 +120,31 @@ def main(args):
         model_base_path=model_base
     )
 
-    trainer.save_checkpoint(model_base)
+    if not (args["restore_state"] and args["loose_recovery"]):
+        trainer.save_checkpoint(model_base)
 
-    print("Saving...")
+        print("Saving...")
 
-    metadata = {
-        "base": model_base,
-        "name": model_attempt,
-        "layers": "embeddings.pkl",
-        "mappings": "nodes.csv",
-        "state": "state_dict.pt",
-        "scores": scores,
-        "time": date_time,
-    }
+        metadata = {
+            "base": model_base,
+            "name": model_attempt,
+            "layers": "embeddings.pkl",
+            "mappings": "nodes.csv",
+            "state": "state_dict.pt",
+            "scores": scores,
+            "time": date_time,
+        }
 
-    metadata["config"] = args
+        metadata["config"] = args
 
-    # pickle.dump(dataset, open(join(model_base, "dataset.pkl"), "wb"))
-    import pickle
-    pickle.dump(trainer.get_embeddings(), open(join(model_base, metadata['layers']), "wb"))
+        # pickle.dump(dataset, open(join(model_base, "dataset.pkl"), "wb"))
+        import pickle
+        pickle.dump(trainer.get_embeddings(), open(join(model_base, metadata['layers']), "wb"))
 
-    with open(join(model_base, "metadata.json"), "w") as mdata:
-        mdata.write(json.dumps(metadata, indent=4))
+        with open(join(model_base, "metadata.json"), "w") as mdata:
+            mdata.write(json.dumps(metadata, indent=4))
 
-    print("Done saving")
+        print("Done saving")
 
 
 if __name__ == "__main__":
