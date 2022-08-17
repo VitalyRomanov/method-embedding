@@ -58,6 +58,7 @@ config_specification = {
         "external_dataset": None,
 
         "restore_state": False,
+        "loose_recovery": False
     },
     "MODEL": {
         "node_emb_size": 100,

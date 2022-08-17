@@ -8,6 +8,7 @@ def add_data_arguments(parser):
     parser.add_argument('--use_node_types', action='store_true', help='Add node types to the graph')
     parser.add_argument('--use_edge_types', action='store_true', help='Add edge types to the graph')
     parser.add_argument('--restore_state', action='store_true', help='Load from checkpoint')
+    parser.add_argument('--loose_recovery', action='store_true', help='Do not fail state recovery if model in checkpoint is from a different task')
     parser.add_argument('--no_global_edges', action='store_true', help='Remove all global edges from the graph')
     parser.add_argument('--remove_reverse', action='store_true', help="Remove reverse edges from the graph")
     parser.add_argument('--custom_reverse', dest='custom_reverse', default=None, help='List of edges for which to add reverse types. Should use together with `remove_reverse`')

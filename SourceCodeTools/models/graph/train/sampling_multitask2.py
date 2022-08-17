@@ -24,6 +24,7 @@ from SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObject
 from SourceCodeTools.models.graph.train.objectives.SubgraphClassifierObjective import SubgraphClassifierObjective
 from SourceCodeTools.models.graph.train.objectives.SubgraphEmbedderObjective import SubgraphEmbeddingObjective, \
     SubgraphMatchingObjective
+from SourceCodeTools.models.graph.train.utils import get_name
 
 
 class EarlyStopping(Exception):
@@ -673,15 +674,24 @@ class SamplingMultitaskTrainer:
 
     def restore_from_checkpoint(self, checkpoint_path):
         checkpoint = torch.load(join(checkpoint_path, "saved_state.pt"), map_location=torch.device('cpu'))
-        self.graph_model.load_state_dict(checkpoint['graph_model'])
+        self.graph_model.load_state_dict(checkpoint['graph_model'], strict=not self.trainer_params["loose_recovery"])
         self.node_embedder.load_state_dict(checkpoint['node_embedder'])
         for objective in self.objectives:
+            if objective.name not in checkpoint and self.trainer_params["loose_recovery"]:
+                continue
             objective.custom_load_state_dict(checkpoint[objective.name])
-        self.epoch = checkpoint['epoch']
-        self.restore_epoch = checkpoint['epoch']
-        self.batch = checkpoint['batch']
+
+        if self.trainer_params["loose_recovery"]:
+            self.epoch = self.restore_epoch = self.batch = 0
+        else:
+            self.epoch = checkpoint['epoch']
+            self.restore_epoch = checkpoint['epoch']
+            self.batch = checkpoint['batch']
         logging.info(f"Restored from epoch {checkpoint['epoch']}")
         # TODO needs test
+
+        from datetime import datetime
+        self.trainer_params["model_base_path"] = join(self.trainer_params["model_base_path"], get_name(self.graph_model.__class__, str(datetime.now())))
 
     def final_evaluation(self):
 
