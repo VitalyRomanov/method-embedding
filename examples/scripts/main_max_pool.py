@@ -45,7 +45,7 @@ config = get_config(
     #use_edge_types=True,
     gpu=0,
     epochs=10,
-    learning_rate=0.5,
+    learning_rate=0.8,
     
     train_frac=0.8,
     random_seed=42, 

@@ -21,16 +21,6 @@ from os.path import join
 from functools import partial
 
 
-
-# import argparse
-
-# parser = argparse.ArgumentParser(description='Process some integers.')
-# parser.add_argument('lr', type=float, help='an i')
-
-# args = parser.parse_args()
-# print(args.lr)
-
-
 tokenizer_path = "sentencepiece_bpe.model"
 
 data_path = "10_percent_v1"
@@ -91,7 +81,7 @@ class Trainer(SamplingMultitaskTrainer):
 
         self.objectives.append(
             self._create_subgraph_objective(
-                objective_name="VariableMisuseClfWithAtt",
+                objective_name="VariableMisuseClfWithAtt_m",
                 objective_class=SubgraphClassifierObjectiveWithAttentionPooling,
                 dataset=dataset,
                 tokenizer_path=tokenizer_path,

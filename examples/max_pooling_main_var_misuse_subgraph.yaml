@@ -37,7 +37,7 @@ TRAINING:
   external_dataset: null
   force_w2v_ns: false
   gpu: 0
-  learning_rate: 0.5
+  learning_rate: 0.8
   measure_scores: false
   metric: inner_prod
   model_output_dir: 10_percent_v1

@@ -24,6 +24,8 @@ from SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObject
 from SourceCodeTools.models.graph.train.objectives.SubgraphClassifierObjective import SubgraphAbstractObjective, \
     SubgraphClassifierObjective, SubgraphEmbeddingObjective
 
+from SourceCodeTools.mltools.torch.RAdam import RAdam
+
 
 class EarlyStopping(Exception):
     def __init__(self, *args, **kwargs):
@@ -424,6 +426,9 @@ class SamplingMultitaskTrainer:
         self.optimizer = torch.optim.AdamW(
             [{"params": parameters}], lr=self.lr, weight_decay=0.5
         )
+        # self.optimizer = torch.optim.RAdam(
+        #     [{"params": parameters}], lr=self.lr, weight_decay=0.5
+        # )
         self.sparse_optimizer = torch.optim.SparseAdam(
             [{"params": nodeembedder_params}], lr=self.lr
         )

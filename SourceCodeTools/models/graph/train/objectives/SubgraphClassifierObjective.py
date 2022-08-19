@@ -45,8 +45,12 @@ class PoolingLayerWithTrans(torch.nn.Module):
         super().__init__()
         self.multihead_attn = nn.MultiheadAttention(emb_size, 10)
         self.multihead_attn2 = nn.MultiheadAttention(emb_size, 10)
+        
+        self.batch_norm_layer = torch.nn.BatchNorm1d(emb_size)
 
     def forward(self, x):
+        # print(x.shape)
+        # x = self.batch_norm_layer(x)
         x = x.unsqueeze(1)
         x = torch.relu(self.multihead_attn(x,x,x)[0])
         x = torch.relu(self.multihead_attn2(x,x,x)[0])
