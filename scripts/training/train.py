@@ -3,7 +3,7 @@ import logging
 from copy import copy
 from datetime import datetime
 from os import mkdir
-from os.path import isdir, join
+from os.path import isdir, join, isfile
 
 from SourceCodeTools.code.data.dataset.Dataset import read_or_create_gnn_dataset
 from SourceCodeTools.models.graph import RGGAN
@@ -125,6 +125,10 @@ def main(args):
     trainer.save_checkpoint(model_base)
 
     print("Saving...")
+
+    config_path = join(model_base, "config.yaml")
+    if not isfile(config_path):
+        save_config(config, config_path)
 
     metadata = {
         "base": model_base,
