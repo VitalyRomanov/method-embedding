@@ -66,11 +66,6 @@ class NodeClassifierObjective(AbstractObjective):
         sm = nn.Softmax(dim=-1)
         y_pred = sm(logits).to("cpu").numpy()
 
-        if y_pred.shape[1] == 2:
-            logging.warning("Scores are meaningless for binary classification. Disabling.")
-            self.measure_scores = False
-            return
-
         labels = kwargs.pop("y_true")[0].to("cpu").numpy()
         y_true = np.zeros(y_pred.shape)
         y_true[np.arange(0, y_true.shape[0]), labels] = 1.
@@ -86,7 +81,11 @@ class NodeClassifierObjective(AbstractObjective):
                     setattr(self, f"meaning_scores_warning_{k}", True)
                 continue  # scores do not have much sense in this situation
             scores_[f"ndcg@{k}"] = ndcg_score(y_true, y_pred, k=k)
-            scores_[f"acc@{k}"] = top_k_accuracy_score(y_true_onehot.argmax(-1), y_pred, k=k, labels=labels)
+            if y_pred.shape[1] == 2:
+                accuracy = top_k_accuracy_score(y_true_onehot.argmax(-1), y_pred.argmax(-1), k=k, labels=labels)
+            else:
+                accuracy = top_k_accuracy_score(y_true_onehot.argmax(-1), y_pred, k=k, labels=labels)
+            scores_[f"acc@{k}"] = accuracy
         for key, val in scores_.items():
             longterm_metrics[key].append(val)
 
