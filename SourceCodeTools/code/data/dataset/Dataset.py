@@ -1482,8 +1482,9 @@ class SourceGraphDataset:
 
 def read_or_create_gnn_dataset(args, model_base, force_new=False, restore_state=False):
     if restore_state and not force_new:
-        raise NotImplementedError()
-        # dataset = SourceGraphDataset.load(join(model_base, "dataset.pkl"), args)
+        from SourceCodeTools.models.training_config import load_config
+        args = load_config(join(model_base, "dataset.config"))
+        dataset = SourceGraphDataset(**args)
     else:
         dataset = SourceGraphDataset(**args)
 
