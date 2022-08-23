@@ -112,10 +112,11 @@ def main(args):
         model_base=model_base, restore_state=restore_state
     )
 
+    ntypes, etypes = dataset.get_graph_types()
+    config["TRAINING"]['ntypes'] = ntypes
+    config["TRAINING"]['etypes'] = etypes
+
     if not restore_state:
-        ntypes, etypes = dataset.get_graph_types()
-        config["TRAINING"]['ntypes'] = ntypes
-        config["TRAINING"]['etypes'] = etypes
         save_config(config, join(model_base, "config.yaml"))
 
     trainer, scores, embedder = training_procedure(
