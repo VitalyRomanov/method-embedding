@@ -129,46 +129,56 @@ class RGANLayer(RelGraphConvLayer):
 
 
 class RGAN(RGCNSampling):
-    def __init__(self,
-                 g,
-                 h_dim, num_classes,
-                 num_bases,
-                 num_hidden_layers=1,
-                 dropout=0,
-                 use_self_loop=False,
-                 activation=F.relu, use_gcn_checkpoint=False, use_att_checkpoint=False, **kwargs):
-        super(RGCNSampling, self).__init__()
-        self.g = g
-        self.h_dim = h_dim
-        self.out_dim = num_classes
-        self.activation = activation
+    def __init__(
+            self, ntypes, etypes, h_dim, node_emb_size, num_bases, num_hidden_layers=1, dropout=0, use_self_loop=False,
+            activation=F.relu, use_gcn_checkpoint=False, use_att_checkpoint=False, **kwargs
+    ):
+        super(RGAN, self).__init__(
+            ntypes, etypes, h_dim, node_emb_size, num_bases, num_hidden_layers=num_hidden_layers, dropout=dropout,
+            use_self_loop=use_self_loop, activation=activation, use_gcn_checkpoint=use_gcn_checkpoint
+        )
 
-        self.rel_names = list(set(g.etypes))
-        self.rel_names.sort()
-        self.ntype_names = list(set(g.ntypes))
-        self.ntype_names.sort()
-        if num_bases < 0 or num_bases > len(self.rel_names):
-            self.num_bases = len(self.rel_names)
-        else:
-            self.num_bases = num_bases
+        self.ntypes = ntypes
+        self.etypes = etypes
+        self.h_dim = h_dim
+        self.out_dim = node_emb_size
+        self.activation = activation
+        self.num_bases = num_bases
         self.num_hidden_layers = num_hidden_layers
         self.dropout = dropout
         self.use_self_loop = use_self_loop
+        self.use_gcn_checkpoint = use_gcn_checkpoint
+        self.use_att_checkpoint = use_att_checkpoint
+
+        self._initialize()
+
+    def _initialize(self):
+        self.rel_names = list(set(self.etypes))
+        self.rel_names.sort()
+        self.ntype_names = list(set(self.ntypes))
+        self.ntype_names.sort()
+        if self.num_bases < 0 or self.num_bases > len(self.rel_names):
+            self.num_bases = len(self.rel_names)
+        else:
+            self.num_bases = self.num_bases
+        self.num_hidden_layers = self.num_hidden_layers
+        self.dropout = self.dropout
+        self.use_self_loop = self.use_self_loop
 
         self.layers = nn.ModuleList()
         # i2h
         self.layers.append(RGANLayer(
             self.h_dim, self.h_dim, self.rel_names, self.ntype_names,
             self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
-            dropout=self.dropout, weight=False, use_gcn_checkpoint=use_gcn_checkpoint,
-            use_att_checkpoint=use_att_checkpoint))
+            dropout=self.dropout, weight=False, use_gcn_checkpoint=self.use_gcn_checkpoint,
+            use_att_checkpoint=self.use_att_checkpoint))
         # h2h
         for i in range(self.num_hidden_layers):
             self.layers.append(RGANLayer(
                 self.h_dim, self.h_dim, self.rel_names, self.ntype_names,
                 self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
-                dropout=self.dropout, weight=False, use_gcn_checkpoint=use_gcn_checkpoint,
-            use_att_checkpoint=use_att_checkpoint))  # changed weight for GATConv
+                dropout=self.dropout, weight=False, use_gcn_checkpoint=self.use_gcn_checkpoint,
+            use_att_checkpoint=self.use_att_checkpoint))  # changed weight for GATConv
             # TODO
             # think of possibility switching to GAT
             # weight=False
@@ -176,13 +186,13 @@ class RGAN(RGCNSampling):
         self.layers.append(RGANLayer(
             self.h_dim, self.out_dim, self.rel_names, self.ntype_names,
             self.num_bases, activation=None,
-            self_loop=self.use_self_loop, weight=False, use_gcn_checkpoint=use_gcn_checkpoint,
-            use_att_checkpoint=use_att_checkpoint))  # changed weight for GATConv
+            self_loop=self.use_self_loop, weight=False, use_gcn_checkpoint=self.use_gcn_checkpoint,
+            use_att_checkpoint=self.use_att_checkpoint))  # changed weight for GATConv
         # TODO
         # think of possibility switching to GAT
         # weight=False
 
-        self.emb_size = num_classes
+        self.emb_size = self.out_dim
         self.num_layers = len(self.layers)
 
 
@@ -314,47 +324,58 @@ class RGGAN(RGAN):
         \end{array}
 
     where :math:`\sigma` is the sigmoid function, and :math:`*` is the Hadamard product."""
-    def __init__(self,
-                 ntypes, etypes,
-                 h_dim, node_emb_size,
-                 num_bases,
-                 n_layers=1,
-                 dropout=0,
-                 use_self_loop=False,
-                 activation=F.relu,
-                 use_gcn_checkpoint=False, use_att_checkpoint=False, use_gru_checkpoint=False):
-        super(RGCNSampling, self).__init__()
-        # self.g = g
+    def __init__(
+            self, ntypes, etypes, h_dim, node_emb_size, num_bases, num_hidden_layers=1, dropout=0, use_self_loop=False,
+            activation=F.relu, use_gcn_checkpoint=False, use_att_checkpoint=False, use_gru_checkpoint=False, **kwargs
+    ):
+        super(RGGAN, self).__init__(
+            ntypes, etypes, h_dim, node_emb_size, num_bases, num_hidden_layers=num_hidden_layers, dropout=dropout,
+            use_self_loop=use_self_loop, activation=activation, use_gcn_checkpoint=use_gcn_checkpoint,
+            use_att_checkpoint=use_att_checkpoint
+        )
+
+        self.ntypes = ntypes
+        self.etypes = etypes
         self.h_dim = h_dim
         self.out_dim = node_emb_size
         self.activation = activation
-
-        assert h_dim == node_emb_size, f"Parameter h_dim and num_classes should be equal in {self.__class__.__name__}"
-
-        self.rel_names = list(set(etypes))
-        self.ntype_names = list(set(ntypes))
-        self.rel_names.sort()
-        self.ntype_names.sort()
-        if num_bases < 0 or num_bases > len(self.rel_names):
-            self.num_bases = len(self.rel_names)
-        else:
-            self.num_bases = num_bases
-
+        self.num_bases = num_bases
+        self.num_hidden_layers = num_hidden_layers
         self.dropout = dropout
         self.use_self_loop = use_self_loop
+        self.use_gcn_checkpoint = use_gcn_checkpoint
+        self.use_att_checkpoint = use_att_checkpoint
+        self.use_gru_checkpoint = use_gru_checkpoint
+
+        self._initialize()
+
+    def _initialize(self):
+        assert self.h_dim == self.node_emb_size, f"Parameter h_dim and num_classes should be equal in {self.__class__.__name__}"
+
+        self.rel_names = list(set(self.etypes))
+        self.ntype_names = list(set(self.ntypes))
+        self.rel_names.sort()
+        self.ntype_names.sort()
+        if self.num_bases < 0 or self.num_bases > len(self.rel_names):
+            self.num_bases = len(self.rel_names)
+        else:
+            self.num_bases = self.num_bases
+
+        self.dropout = self.dropout
+        self.use_self_loop = self.use_self_loop
 
         # i2h
         self.layer = RGGANLayer(
             self.h_dim, self.h_dim, self.rel_names, self.ntype_names,
             self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
-            dropout=self.dropout, weight=True, use_gcn_checkpoint=use_gcn_checkpoint, # : )
-            use_att_checkpoint=use_att_checkpoint, use_gru_checkpoint=use_gru_checkpoint
+            dropout=self.dropout, weight=True, use_gcn_checkpoint=self.use_gcn_checkpoint, # : )
+            use_att_checkpoint=self.use_att_checkpoint, use_gru_checkpoint=self.use_gru_checkpoint
         )
         # TODO
         # think of possibility switching to GAT
         # weight=False
 
-        self.emb_size = node_emb_size
-        self.num_layers = n_layers
-        self.layers = [self.layer] * n_layers
+        self.emb_size = self.node_emb_size
+        self.num_layers = self.n_layers
+        self.layers = [self.layer] * self.n_layers
         self.layer_norm = nn.ModuleList([nn.LayerNorm([self.h_dim]) for _ in range(self.num_layers)])

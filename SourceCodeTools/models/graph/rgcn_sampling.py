@@ -1,34 +1,24 @@
 """RGCN layer implementation"""
-import torch
-import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
-import dgl
 import dgl.nn as dglnn
-# import tqdm
+from dgl import dataloading
+from torch import ones, float32, Tensor, split, matmul, no_grad, zeros, arange
 from torch.utils import checkpoint
 from tqdm import tqdm
 
-from SourceCodeTools.models.Embedder import Embedder
 
 class CkptGATConv(dglnn.GATConv):
-    def __init__(self,
-                 in_feats,
-                 out_feats,
-                 num_heads,
-                 feat_drop=0.,
-                 attn_drop=0.,
-                 negative_slope=0.2,
-                 residual=False,
-                 activation=None,
-                 allow_zero_in_degree=False,
-                 use_checkpoint=False):
+    def __init__(
+            self, in_feats, out_feats, num_heads, feat_drop=0., attn_drop=0., negative_slope=0.2, residual=False,
+            activation=None, allow_zero_in_degree=False, use_checkpoint=False
+    ):
         super(CkptGATConv, self).__init__(
             in_feats, out_feats, num_heads,
             feat_drop=feat_drop, attn_drop=attn_drop, negative_slope=negative_slope,
             residual=residual, activation=activation, allow_zero_in_degree=allow_zero_in_degree
         )
-        self.dummy_tensor = th.ones(1, dtype=th.float32, requires_grad=True)
+        self.dummy_tensor = ones(1, dtype=float32, requires_grad=True)
         self.use_checkpoint = use_checkpoint
 
     def custom(self, graph):
@@ -39,9 +29,9 @@ class CkptGATConv(dglnn.GATConv):
 
     def forward(self, graph, feat):
         if self.use_checkpoint:
-            return checkpoint.checkpoint(self.custom(graph), feat[0], feat[1], self.dummy_tensor) #.squeeze(1)
+            return checkpoint.checkpoint(self.custom(graph), feat[0], feat[1], self.dummy_tensor)  # .squeeze(1)
         else:
-            return super(CkptGATConv, self).forward(graph, feat) #.squeeze(1)
+            return super(CkptGATConv, self).forward(graph, feat)  # .squeeze(1)
 
 
 class RelGraphConvLayer(nn.Module):
@@ -68,18 +58,10 @@ class RelGraphConvLayer(nn.Module):
     dropout : float, optional
         Dropout rate. Default: 0.0
     """
-    def __init__(self,
-                 in_feat,
-                 out_feat,
-                 rel_names,
-                 ntype_names,
-                 num_bases,
-                 *,
-                 weight=True,
-                 bias=True,
-                 activation=None,
-                 self_loop=False,
-                 dropout=0.0, use_gcn_checkpoint=False, **kwargs):
+    def __init__(
+            self, in_feat, out_feat, rel_names, ntype_names, num_bases, *, weight=True, bias=True, activation=None,
+            self_loop=False, dropout=0.0, use_gcn_checkpoint=False, **kwargs
+    ):
         super(RelGraphConvLayer, self).__init__()
         self.in_feat = in_feat
         self.out_feat = out_feat
@@ -97,7 +79,7 @@ class RelGraphConvLayer(nn.Module):
             if self.use_basis:
                 self.basis = dglnn.WeightBasis((in_feat, out_feat), num_bases, len(self.rel_names))
             else:
-                self.weight = nn.Parameter(th.Tensor(len(self.rel_names), in_feat, out_feat))
+                self.weight = nn.Parameter(Tensor(len(self.rel_names), in_feat, out_feat))
                 # nn.init.xavier_uniform_(self.weight, gain=nn.init.calculate_gain('relu'))
                 nn.init.xavier_normal_(self.weight)
 
@@ -111,7 +93,7 @@ class RelGraphConvLayer(nn.Module):
         if bias:
             self.bias_dict = nn.ParameterDict()
             for ntype_name in self.ntype_names:
-                self.bias_dict[ntype_name] = nn.Parameter(torch.Tensor(1, out_feat))
+                self.bias_dict[ntype_name] = nn.Parameter(Tensor(1, out_feat))
                 nn.init.normal_(self.bias_dict[ntype_name])
             # self.h_bias = nn.Parameter(th.Tensor(1, out_feat))
             # nn.init.normal_(self.h_bias)
@@ -124,7 +106,7 @@ class RelGraphConvLayer(nn.Module):
             #     self.loop_weight = nn.Parameter(th.Tensor(len(self.ntype_names), in_feat, out_feat))
             #     # nn.init.xavier_uniform_(self.weight, gain=nn.init.calculate_gain('relu'))
             #     nn.init.xavier_normal_(self.loop_weight)
-            self.loop_weight = nn.Parameter(th.Tensor(in_feat, out_feat))
+            self.loop_weight = nn.Parameter(Tensor(in_feat, out_feat))
             nn.init.xavier_uniform_(self.loop_weight,
                                     gain=nn.init.calculate_gain('tanh'))
             # # nn.init.xavier_normal_(self.loop_weight)
@@ -136,7 +118,6 @@ class RelGraphConvLayer(nn.Module):
             rel: CkptGATConv((in_feat, in_feat), out_feat, num_heads=1, use_checkpoint=self.use_gcn_checkpoint)
             for rel in rel_names
         })
-
 
     def forward(self, g, inputs):
         """Forward computation
@@ -156,8 +137,8 @@ class RelGraphConvLayer(nn.Module):
         g = g.local_var()
         if self.use_weight:
             weight = self.basis() if self.use_basis else self.weight
-            wdict = {self.rel_names[i] : {'weight' : w.squeeze(0)}
-                     for i, w in enumerate(th.split(weight, 1, dim=0))}
+            wdict = {self.rel_names[i]: {'weight': w.squeeze(0)}
+                     for i, w in enumerate(split(weight, 1, dim=0))}
             # if self.self_loop:
             #     self_loop_weight = self.loop_weight_basis() if self.use_basis else self.loop_weight
             #     self_loop_wdict = {self.ntype_names[i]: w.squeeze(0)
@@ -178,7 +159,7 @@ class RelGraphConvLayer(nn.Module):
         def _apply(ntype, h):
             if self.self_loop:
                 # h = h + th.matmul(inputs_dst[ntype], self_loop_wdict[ntype])
-                h = h + th.matmul(inputs_dst[ntype], self.loop_weight)
+                h = h + matmul(inputs_dst[ntype], self.loop_weight)
             if self.bias:
                 h = h + self.bias_dict[ntype]
                 # h = h + self.h_bias
@@ -188,7 +169,7 @@ class RelGraphConvLayer(nn.Module):
         # TODO
         # think of possibility switching to GAT
         # return {ntype: _apply(ntype, h) for ntype, h in hs.items()}
-        return {ntype : _apply(ntype, h).mean(1) for ntype, h in hs.items()}
+        return {ntype: _apply(ntype, h).mean(1) for ntype, h in hs.items()}
 
 # class RelGraphEmbed(nn.Module):
 #     r"""Embedding layer for featureless heterograph."""
@@ -232,33 +213,38 @@ class RelGraphConvLayer(nn.Module):
 #         """
 #         return self.embeds
 
-class RGCNSampling(nn.Module):
-    def __init__(self,
-                 g,
-                 h_dim, num_classes,
-                 num_bases,
-                 num_hidden_layers=1,
-                 dropout=0,
-                 use_self_loop=False,
-                 activation=F.relu,
-                 use_gcn_checkpoint=False, **kwargs):
-        super(RGCNSampling, self).__init__()
-        self.g = g
-        self.h_dim = h_dim
-        self.out_dim = num_classes
-        self.activation = activation
 
-        self.rel_names = list(set(g.etypes))
-        self.rel_names.sort()
-        self.ntype_names = list(set(g.etypes))
-        self.ntype_names.sort()
-        if num_bases < 0 or num_bases > len(self.rel_names):
-            self.num_bases = len(self.rel_names)
-        else:
-            self.num_bases = num_bases
+class RGCNSampling(nn.Module):
+    def __init__(
+            self, ntypes, etypes, h_dim, node_emb_size, num_bases, num_hidden_layers=1, dropout=0, use_self_loop=False,
+            activation=F.relu, use_gcn_checkpoint=False, **kwargs
+    ):
+        super(RGCNSampling, self).__init__()
+        self.ntypes = ntypes
+        self.etypes = etypes
+        self.h_dim = h_dim
+        self.out_dim = node_emb_size
+        self.activation = activation
+        self.num_bases = num_bases
         self.num_hidden_layers = num_hidden_layers
         self.dropout = dropout
         self.use_self_loop = use_self_loop
+        self.use_gcn_checkpoint = use_gcn_checkpoint
+
+        self._initialize()
+
+    def _initialize(self):
+        self.rel_names = list(set(self.etypes))
+        self.rel_names.sort()
+        self.ntype_names = list(set(self.ntypes))
+        self.ntype_names.sort()
+        if self.num_bases < 0 or self.num_bases > len(self.rel_names):
+            self.num_bases = len(self.rel_names)
+        else:
+            self.num_bases = self.num_bases
+        self.num_hidden_layers = self.num_hidden_layers
+        self.dropout = self.dropout
+        self.use_self_loop = self.use_self_loop
 
         # self.embed_layer = RelGraphEmbed(g, self.h_dim)
         self.layers = nn.ModuleList()
@@ -267,14 +253,15 @@ class RGCNSampling(nn.Module):
         self.layers.append(RelGraphConvLayer(
             self.h_dim, self.h_dim, self.rel_names, self.ntype_names,
             self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
-            dropout=self.dropout, weight=False, use_gcn_checkpoint=use_gcn_checkpoint))
+            dropout=self.dropout, weight=False, use_gcn_checkpoint=self.use_gcn_checkpoint))
         self.layer_norm.append(nn.LayerNorm([self.h_dim]))
         # h2h
         for i in range(self.num_hidden_layers):
             self.layers.append(RelGraphConvLayer(
                 self.h_dim, self.h_dim, self.rel_names, self.ntype_names,
                 self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
-                dropout=self.dropout, weight=False, use_gcn_checkpoint=use_gcn_checkpoint)) # changed weight for GATConv
+                dropout=self.dropout, weight=False,
+                use_gcn_checkpoint=self.use_gcn_checkpoint))  # changed weight for GATConv
             self.layer_norm.append(nn.LayerNorm([self.h_dim]))
             # TODO
             # think of possibility switching to GAT
@@ -283,13 +270,14 @@ class RGCNSampling(nn.Module):
         self.layers.append(RelGraphConvLayer(
             self.h_dim, self.out_dim, self.rel_names, self.ntype_names,
             self.num_bases, activation=None,
-            self_loop=self.use_self_loop, weight=False, use_gcn_checkpoint=use_gcn_checkpoint)) # changed weight for GATConv
+            self_loop=self.use_self_loop, weight=False,
+            use_gcn_checkpoint=self.use_gcn_checkpoint))  # changed weight for GATConv
         self.layer_norm.append(nn.LayerNorm([self.out_dim]))
         # TODO
         # think of possibility switching to GAT
         # weight=False
 
-        self.emb_size = num_classes
+        self.emb_size = self.out_dim
         self.num_layers = len(self.layers)
 
     # def node_embed(self):
@@ -358,29 +346,29 @@ class RGCNSampling(nn.Module):
         """
         h0 = x
 
-        with th.set_grad_enabled(False):
+        with no_grad():
 
             # if x is None:
             #     x = self.embed_layer()
 
-            for l, (layer, norm) in enumerate(zip(self.layers, self.layer_norm)):
+            for l_ind, (layer, norm) in enumerate(zip(self.layers, self.layer_norm)):
                 y = {
-                    k: th.zeros(
+                    k: zeros(
                         self.g.number_of_nodes(k),
-                        self.h_dim if l != len(self.layers) - 1 else self.out_dim)
+                        self.h_dim if l_ind != len(self.layers) - 1 else self.out_dim)
                     for k in self.g.ntypes}
 
-                sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
-                dataloader = dgl.dataloading.NodeDataLoader(
+                sampler = dataloading.MultiLayerFullNeighborSampler(1)
+                dataloader = dataloading.NodeDataLoader(
                     self.g,
-                    {k: th.arange(self.g.number_of_nodes(k)) for k in self.g.ntypes},
+                    {k: arange(self.g.number_of_nodes(k)) for k in self.g.ntypes},
                     sampler,
                     batch_size=batch_size,
                     shuffle=True,
                     drop_last=False,
                     num_workers=num_workers)
 
-                for input_nodes, output_nodes, blocks in tqdm(dataloader, desc=f"Layer {l}"):
+                for input_nodes, output_nodes, blocks in tqdm(dataloader, desc=f"Layer {l_ind}"):
                     block = blocks[0].to(device)
 
                     if not isinstance(input_nodes, dict):
