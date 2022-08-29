@@ -130,27 +130,15 @@ class RGANLayer(RelGraphConvLayer):
 
 class RGAN(RGCNSampling):
     def __init__(
-            self, ntypes, etypes, h_dim, node_emb_size, num_bases, num_hidden_layers=1, dropout=0, use_self_loop=False,
+            self, ntypes, etypes, h_dim, node_emb_size, num_bases, n_layers=1, dropout=0, use_self_loop=False,
             activation=F.relu, use_gcn_checkpoint=False, use_att_checkpoint=False, **kwargs
     ):
-        super(RGAN, self).__init__(
-            ntypes, etypes, h_dim, node_emb_size, num_bases, num_hidden_layers=num_hidden_layers, dropout=dropout,
-            use_self_loop=use_self_loop, activation=activation, use_gcn_checkpoint=use_gcn_checkpoint
-        )
-
-        self.ntypes = ntypes
-        self.etypes = etypes
-        self.h_dim = h_dim
-        self.out_dim = node_emb_size
-        self.activation = activation
-        self.num_bases = num_bases
-        self.num_hidden_layers = num_hidden_layers
-        self.dropout = dropout
-        self.use_self_loop = use_self_loop
-        self.use_gcn_checkpoint = use_gcn_checkpoint
         self.use_att_checkpoint = use_att_checkpoint
 
-        self._initialize()
+        super(RGAN, self).__init__(
+            ntypes, etypes, h_dim, node_emb_size, num_bases, n_layers=n_layers, dropout=dropout,
+            use_self_loop=use_self_loop, activation=activation, use_gcn_checkpoint=use_gcn_checkpoint
+        )
 
     def _initialize(self):
         self.rel_names = list(set(self.etypes))
@@ -161,7 +149,6 @@ class RGAN(RGCNSampling):
             self.num_bases = len(self.rel_names)
         else:
             self.num_bases = self.num_bases
-        self.num_hidden_layers = self.num_hidden_layers
         self.dropout = self.dropout
         self.use_self_loop = self.use_self_loop
 
@@ -173,7 +160,7 @@ class RGAN(RGCNSampling):
             dropout=self.dropout, weight=False, use_gcn_checkpoint=self.use_gcn_checkpoint,
             use_att_checkpoint=self.use_att_checkpoint))
         # h2h
-        for i in range(self.num_hidden_layers):
+        for i in range(self.n_layers):
             self.layers.append(RGANLayer(
                 self.h_dim, self.h_dim, self.rel_names, self.ntype_names,
                 self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
@@ -325,32 +312,19 @@ class RGGAN(RGAN):
 
     where :math:`\sigma` is the sigmoid function, and :math:`*` is the Hadamard product."""
     def __init__(
-            self, ntypes, etypes, h_dim, node_emb_size, num_bases, num_hidden_layers=1, dropout=0, use_self_loop=False,
+            self, ntypes, etypes, h_dim, node_emb_size, num_bases, n_layers=1, dropout=0, use_self_loop=False,
             activation=F.relu, use_gcn_checkpoint=False, use_att_checkpoint=False, use_gru_checkpoint=False, **kwargs
     ):
+        self.use_gru_checkpoint = use_gru_checkpoint
+
         super(RGGAN, self).__init__(
-            ntypes, etypes, h_dim, node_emb_size, num_bases, num_hidden_layers=num_hidden_layers, dropout=dropout,
+            ntypes, etypes, h_dim, node_emb_size, num_bases, n_layers=n_layers, dropout=dropout,
             use_self_loop=use_self_loop, activation=activation, use_gcn_checkpoint=use_gcn_checkpoint,
             use_att_checkpoint=use_att_checkpoint
         )
 
-        self.ntypes = ntypes
-        self.etypes = etypes
-        self.h_dim = h_dim
-        self.out_dim = node_emb_size
-        self.activation = activation
-        self.num_bases = num_bases
-        self.num_hidden_layers = num_hidden_layers
-        self.dropout = dropout
-        self.use_self_loop = use_self_loop
-        self.use_gcn_checkpoint = use_gcn_checkpoint
-        self.use_att_checkpoint = use_att_checkpoint
-        self.use_gru_checkpoint = use_gru_checkpoint
-
-        self._initialize()
-
     def _initialize(self):
-        assert self.h_dim == self.node_emb_size, f"Parameter h_dim and num_classes should be equal in {self.__class__.__name__}"
+        assert self.h_dim == self.out_dim, f"Parameter h_dim and num_classes should be equal in {self.__class__.__name__}"
 
         self.rel_names = list(set(self.etypes))
         self.ntype_names = list(set(self.ntypes))
@@ -375,7 +349,7 @@ class RGGAN(RGAN):
         # think of possibility switching to GAT
         # weight=False
 
-        self.emb_size = self.node_emb_size
+        self.emb_size = self.out_dim
         self.num_layers = self.n_layers
         self.layers = [self.layer] * self.n_layers
         self.layer_norm = nn.ModuleList([nn.LayerNorm([self.h_dim]) for _ in range(self.num_layers)])

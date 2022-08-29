@@ -216,33 +216,33 @@ class RelGraphConvLayer(nn.Module):
 
 class RGCNSampling(nn.Module):
     def __init__(
-            self, ntypes, etypes, h_dim, node_emb_size, num_bases, num_hidden_layers=1, dropout=0, use_self_loop=False,
+            self, ntypes, etypes, h_dim, node_emb_size, num_bases, n_layers=1, dropout=0, use_self_loop=False,
             activation=F.relu, use_gcn_checkpoint=False, **kwargs
     ):
         super(RGCNSampling, self).__init__()
-        self.ntypes = ntypes
-        self.etypes = etypes
+        self.ntypes = list(set(ntypes))
+        self.ntypes.sort()
+        self.etypes = list(set(etypes))
+        self.etypes.sort()
         self.h_dim = h_dim
         self.out_dim = node_emb_size
         self.activation = activation
         self.num_bases = num_bases
-        self.num_hidden_layers = num_hidden_layers
+        self.n_layers = n_layers
         self.dropout = dropout
         self.use_self_loop = use_self_loop
         self.use_gcn_checkpoint = use_gcn_checkpoint
 
         self._initialize()
 
+        self.emb_size = self.out_dim
+        self.num_layers = len(self.layers)
+
     def _initialize(self):
-        self.rel_names = list(set(self.etypes))
-        self.rel_names.sort()
-        self.ntype_names = list(set(self.ntypes))
-        self.ntype_names.sort()
-        if self.num_bases < 0 or self.num_bases > len(self.rel_names):
-            self.num_bases = len(self.rel_names)
+        if self.num_bases < 0 or self.num_bases > len(self.etypes):
+            self.num_bases = len(self.etypes)
         else:
             self.num_bases = self.num_bases
-        self.num_hidden_layers = self.num_hidden_layers
         self.dropout = self.dropout
         self.use_self_loop = self.use_self_loop
 
@@ -251,14 +251,14 @@ class RGCNSampling(nn.Module):
         self.layer_norm = nn.ModuleList()
         # i2h
         self.layers.append(RelGraphConvLayer(
-            self.h_dim, self.h_dim, self.rel_names, self.ntype_names,
+            self.h_dim, self.h_dim, self.etypes, self.ntypes,
             self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
             dropout=self.dropout, weight=False, use_gcn_checkpoint=self.use_gcn_checkpoint))
         self.layer_norm.append(nn.LayerNorm([self.h_dim]))
         # h2h
-        for i in range(self.num_hidden_layers):
+        for i in range(self.n_layers):
             self.layers.append(RelGraphConvLayer(
-                self.h_dim, self.h_dim, self.rel_names, self.ntype_names,
+                self.h_dim, self.h_dim, self.etypes, self.ntypes,
                 self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
                 dropout=self.dropout, weight=False,
                 use_gcn_checkpoint=self.use_gcn_checkpoint))  # changed weight for GATConv
@@ -268,7 +268,7 @@ class RGCNSampling(nn.Module):
             # weight=False
         # h2o
         self.layers.append(RelGraphConvLayer(
-            self.h_dim, self.out_dim, self.rel_names, self.ntype_names,
+            self.h_dim, self.out_dim, self.etypes, self.ntypes,
             self.num_bases, activation=None,
             self_loop=self.use_self_loop, weight=False,
             use_gcn_checkpoint=self.use_gcn_checkpoint))  # changed weight for GATConv

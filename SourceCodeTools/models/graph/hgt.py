@@ -7,43 +7,47 @@ from SourceCodeTools.models.graph import RGGAN
 
 
 class HGTLayer(nn.Module):
-    def __init__(self, in_dim, out_dim, num_types, num_relations, n_heads, dropout=0.2, use_norm=False):
+    def __init__(self, in_dim, out_dim, node_types, relation_types, n_heads, dropout=0.2, use_norm=False):
         super(HGTLayer, self).__init__()
 
         self.in_dim = in_dim
         self.out_dim = out_dim
-        self.num_types = num_types
-        self.num_relations = num_relations
+        self.node_types = node_types
+        self.relation_types = relation_types
         self.n_heads = n_heads
         self.d_k = out_dim // n_heads
         self.sqrt_dk = math.sqrt(self.d_k)
 
-        self.k_linears = nn.ModuleList()
-        self.q_linears = nn.ModuleList()
-        self.v_linears = nn.ModuleList()
-        self.a_linears = nn.ModuleList()
-        self.norms = nn.ModuleList()
+        self.k_linears = nn.ModuleDict()
+        self.q_linears = nn.ModuleDict()
+        self.v_linears = nn.ModuleDict()
+        self.a_linears = nn.ModuleDict()
+        self.norms = nn.ModuleDict()
+        self.skip = nn.ParameterDict()
         self.use_norm = use_norm
 
-        for t in range(num_types):
-            self.k_linears.append(nn.Linear(in_dim, out_dim))
-            self.q_linears.append(nn.Linear(in_dim, out_dim))
-            self.v_linears.append(nn.Linear(in_dim, out_dim))
-            self.a_linears.append(nn.Linear(out_dim, out_dim))
+        for ntype in node_types:
+            self.k_linears[ntype] = nn.Linear(in_dim, out_dim)
+            self.q_linears[ntype] = nn.Linear(in_dim, out_dim)
+            self.v_linears[ntype] = nn.Linear(in_dim, out_dim)
+            self.a_linears[ntype] = nn.Linear(out_dim, out_dim)
             if use_norm:
-                self.norms.append(nn.LayerNorm(out_dim))
+                self.norms[ntype] = nn.LayerNorm(out_dim)
+            self.skip[ntype] = nn.Parameter(torch.tensor(1.))
 
-        self.relation_pri = nn.Parameter(torch.ones(num_relations, self.n_heads))
-        self.relation_att = nn.Parameter(torch.Tensor(num_relations, n_heads, self.d_k, self.d_k))
-        self.relation_msg = nn.Parameter(torch.Tensor(num_relations, n_heads, self.d_k, self.d_k))
-        self.skip = nn.Parameter(torch.ones(num_types))
+        self.relation_pri = nn.ParameterDict()
+        self.relation_att = nn.ParameterDict()
+        self.relation_msg = nn.ParameterDict()
+        for etype in relation_types:
+            self.relation_pri[etype] = nn.Parameter(torch.ones(self.n_heads))
+            self.relation_att[etype] = nn.Parameter(torch.Tensor(n_heads, self.d_k, self.d_k))
+            self.relation_msg[etype] = nn.Parameter(torch.Tensor(n_heads, self.d_k, self.d_k))
+            nn.init.xavier_uniform_(self.relation_att[etype])
+            nn.init.xavier_uniform_(self.relation_msg[etype])
         self.drop = nn.Dropout(dropout)
 
-        nn.init.xavier_uniform_(self.relation_att)
-        nn.init.xavier_uniform_(self.relation_msg)
-
     def edge_attention(self, edges):
-        etype = edges.data['id'][0]
+        etype = edges.canonical_etype[1]
         relation_att = self.relation_att[etype]
         relation_pri = self.relation_pri[etype]
         relation_msg = self.relation_msg[etype]
@@ -60,29 +64,55 @@ class HGTLayer(nn.Module):
         h = torch.sum(att.unsqueeze(dim=-1) * nodes.mailbox['v'], dim=1)
         return {'t': h.view(-1, self.out_dim)}
 
-    def forward(self, G, inp_key, out_key):
-        node_dict, edge_dict = G.node_dict, G.edge_dict
-        for srctype, etype, dsttype in G.canonical_etypes:
-            k_linear = self.k_linears[node_dict[srctype]]
-            v_linear = self.v_linears[node_dict[srctype]]
-            q_linear = self.q_linears[node_dict[dsttype]]
+    def forward(self, G, input):
+        k_linear = self.k_linears["node_"]
+        v_linear = self.v_linears["node_"]
+        q_linear = self.q_linears["node_"]
 
-            G.nodes[srctype].data['k'] = k_linear(G.nodes[srctype].data[inp_key]).view(-1, self.n_heads, self.d_k)
-            G.nodes[srctype].data['v'] = v_linear(G.nodes[srctype].data[inp_key]).view(-1, self.n_heads, self.d_k)
-            G.nodes[dsttype].data['q'] = q_linear(G.nodes[dsttype].data[inp_key]).view(-1, self.n_heads, self.d_k)
+        if G.is_block:
+            input_src = input
+            input_dst = {k: v[:G.number_of_dst_nodes(k)] for k, v in input.items()}
+            G.srcnodes["node_"].data['k'] = k_linear(input_src["node_"].view(-1, self.n_heads, self.d_k))
+            G.srcnodes["node_"].data['v'] = v_linear(input_src["node_"].view(-1, self.n_heads, self.d_k))
+            G.dstnodes["node_"].data['q'] = q_linear(input_dst["node_"].view(-1, self.n_heads, self.d_k))
+        else:
+            input_src = input_dst = input
+            G.srcnodes["node_"].data['k'] = k_linear(input["node_"].view(-1, self.n_heads, self.d_k))
+            G.srcnodes["node_"].data['v'] = v_linear(input["node_"].view(-1, self.n_heads, self.d_k))
+            G.dstnodes["node_"].data['q'] = q_linear(input["node_"].view(-1, self.n_heads, self.d_k))
+
+        for srctype, etype, dsttype in G.canonical_etypes:
+            # k_linear = self.k_linears[srctype]
+            # v_linear = self.v_linears[srctype]
+            # q_linear = self.q_linears[dsttype]
+
+            assert srctype == dsttype, "Multiple node types are not supported"
+
+            # G.nodes[srctype].data['k'] = k_linear(input[srctype].view(-1, self.n_heads, self.d_k))
+            # G.nodes[srctype].data['v'] = v_linear(input[srctype].view(-1, self.n_heads, self.d_k))
+            # G.nodes[dsttype].data['q'] = q_linear(input[dsttype].view(-1, self.n_heads, self.d_k))
+
+            if G.number_of_edges(etype) == 0:
+                continue
 
             G.apply_edges(func=self.edge_attention, etype=etype)
-        G.multi_update_all({etype: (self.message_func, self.reduce_func) \
-                            for etype in edge_dict}, cross_reducer='mean')
-        for ntype in G.ntypes:
-            n_id = node_dict[ntype]
-            alpha = torch.sigmoid(self.skip[n_id])
-            trans_out = self.a_linears[n_id](G.nodes[ntype].data['t'])
-            trans_out = trans_out * alpha + G.nodes[ntype].data[inp_key] * (1 - alpha)
+        G.multi_update_all(
+            {
+                etype: (self.message_func, self.reduce_func)
+                for etype in self.relation_types if G.number_of_edges(etype) > 0
+            }, cross_reducer='mean'
+        )
+
+        h = dict()
+        for ntype in self.node_types:
+            alpha = torch.sigmoid(self.skip[ntype])
+            trans_out = self.a_linears[ntype](G.dstnodes[ntype].data['t'])
+            trans_out = trans_out * alpha + input_dst[ntype] * (1 - alpha)
             if self.use_norm:
-                G.nodes[ntype].data[out_key] = self.drop(self.norms[n_id](trans_out))
+                h[ntype] = self.drop(self.norms[ntype](trans_out))
             else:
-                G.nodes[ntype].data[out_key] = self.drop(trans_out)
+                h[ntype] = self.drop(trans_out)
+        return h
 
     def __repr__(self):
         return '{}(in_dim={}, out_dim={}, num_types={}, num_types={})'.format(
@@ -92,53 +122,70 @@ class HGTLayer(nn.Module):
 
 class HGT(RGGAN):
     def __init__(
-            self, ntypes, etypes, h_dim, node_emb_size, num_bases, num_hidden_layers, n_heads=1, use_norm=True,
+            self, ntypes, etypes, h_dim, node_emb_size, num_bases, n_layers=1, n_heads=1, use_norm=True,
             dropout=0, use_self_loop=False, activation=F.relu, use_gcn_checkpoint=False,
             use_att_checkpoint=False, use_gru_checkpoint=False, **kwargs
     ):
+        self.n_heads = n_heads
+        self.use_norm = use_norm
+
         super(HGT, self).__init__(
-            ntypes, etypes, h_dim, node_emb_size, num_bases=1, num_hidden_layers=num_hidden_layers,
+            ntypes, etypes, h_dim, node_emb_size, num_bases=1, n_layers=n_layers,
             use_gcn_checkpoint=False, use_att_checkpoint=False, use_gru_checkpoint=False
         )
 
-        self.ntypes = ntypes
-        self.etypes = etypes
-        self.h_dim = h_dim
-        self.out_dim = node_emb_size
-        self.activation = activation
-        self.num_bases = num_bases
-        self.n_heads = n_heads
-        self.use_norm = use_norm
-        self.num_hidden_layers = num_hidden_layers
-        self.dropout = dropout
-        self.use_self_loop = use_self_loop
-        self.use_gcn_checkpoint = use_gcn_checkpoint
-        self.use_att_checkpoint = use_att_checkpoint
-        self.use_gru_checkpoint = use_gru_checkpoint
-
-        self._initialize()
-
     def _initialize(self):
-        self.gcs = nn.ModuleList()
-        self.n_inp = self.h_dim
-        self.n_hid = self.h_dim
-        self.n_out = self.node_emb_size
-        self.n_layers = self.n_layers
-        self.adapt_ws = nn.ModuleList()
-        for t in range(len(self.ntypes)):
-            self.adapt_ws.append(nn.Linear(self.h_dim, self.h_dim))
-        for _ in range(self.n_layers):
-            self.gcs.append(HGTLayer(self.h_dim, self.h_dim, len(self.ntypes), len(self.etypes), self.n_heads,
-                                     use_norm=self.use_norm))
-        self.out = nn.Linear(self.h_dim, self.node_emb_size)
+        # self.n_inp = self.h_dim
+        # self.n_hid = self.h_dim
+        # self.n_out = self.out_dim
+        # self.n_layers = self.n_layers
+        self.adapt_ws = nn.ModuleDict()
 
-    # def forward(self, h, blocks=None, graph=None, return_all=False):
-    #     for ntype in G.ntypes:
-    #         n_id = G.node_dict[ntype]
-    #         G.nodes[ntype].data['h'] = torch.tanh(self.adapt_ws[n_id](G.nodes[ntype].data['inp']))
-    #     for i in range(self.n_layers):
-    #         self.gcs[i](G, 'h', 'h')
-    #     return self.out(G.nodes[out_key].data['h'])
+        for n_type in self.ntypes:
+            self.adapt_ws[n_type] = nn.Linear(self.h_dim, self.h_dim)
+
+        self.layers = nn.ModuleList()
+        for _ in range(self.n_layers):
+            self.layers.append(HGTLayer(self.h_dim, self.h_dim, self.ntypes, self.etypes, self.n_heads,
+                                     use_norm=self.use_norm))
+        self.out = nn.Linear(self.h_dim, self.out_dim)
+
+    # def forward(self, h, blocks=None, graph=None,
+    #             return_all=False): # added this as an experimental feature for intermediate supervision
+    #     all_layers = [] # added this as an experimental feature for intermediate supervision
+    #
+    #     if blocks is None:
+    #         # full graph training
+    #         h0 = h
+    #         for layer in self.layers:
+    #             h = layer(graph, h, h0)
+    #             all_layers.append(h) # added this as an experimental feature for intermediate supervision
+    #     else:
+    #         # minibatch training
+    #         h0 = h
+    #         for layer, block in zip(self.layers, blocks):
+    #             # h = checkpoint.checkpoint(self.custom(layer), block, h)
+    #             h = layer(block, h, h0)
+    #             all_layers.append(h) # added this as an experimental feature for intermediate supervision
+    #
+    #     if return_all: # added this as an experimental feature for intermediate supervision
+    #         return all_layers
+    #     else:
+    #         return h
+
+    def forward(self, input, blocks=None, graph=None, **kwargs):
+        h = dict()
+        for ntype in input:
+            h[ntype] = torch.tanh(self.adapt_ws[ntype](input[ntype]))
+
+        if blocks is not None:
+            for block, layer in zip(blocks, self.layers):
+                h = layer(block, h)
+        else:
+            for layer in self.layers:
+                h = layer(graph, h)
+        h = {key: self.out(val) for key, val in h.items()}
+        return h
     #
     # def __repr__(self):
     #     return '{}(n_inp={}, n_hid={}, n_out={}, n_layers={})'.format(

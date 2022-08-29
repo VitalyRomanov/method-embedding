@@ -8,6 +8,7 @@ from os.path import isdir, join
 
 from SourceCodeTools.code.data.dataset.Dataset import read_or_create_gnn_dataset
 from SourceCodeTools.models.graph import RGGAN
+from SourceCodeTools.models.graph.hgt import HGT
 from SourceCodeTools.models.graph.train.sampling_multitask2 import training_procedure
 from SourceCodeTools.models.graph.train.utils import get_name, get_model_base
 from SourceCodeTools.models.training_config import get_config, load_config, update_config, save_config
@@ -95,7 +96,7 @@ def main(args):
     else:
         config = load_config(config_path)
 
-    model = RGGAN
+    model = HGT  # RGGAN
 
     date_time = str(datetime.now())
     print("\n\n")
