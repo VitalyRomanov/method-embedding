@@ -623,6 +623,7 @@ class OnDiskGraphStorageWithFastIteration(OnDiskGraphStorage):
                         INNER JOIN edge_file_id ON edge_file_id.id = edges.id
                         INNER JOIN edge_types ON edges.type = edge_types.type_id"""
             partition_columns = ["package"]
+            group_encoder = lambda x: x[0]
         elif how == SGPartitionStrategies.file:
             query_str = """
             SELECT
@@ -646,6 +647,7 @@ class OnDiskGraphStorageWithFastIteration(OnDiskGraphStorage):
             #             LEFT JOIN edge_types ON edges.type = edge_types.type_id
             #             """
             partition_columns = ["file_id", "package"]
+            group_encoder = lambda x: tuple(x)
         elif how == SGPartitionStrategies.mention:
             query_str = """
                         SELECT
@@ -655,6 +657,7 @@ class OnDiskGraphStorageWithFastIteration(OnDiskGraphStorage):
                         INNER JOIN edge_hierarchy ON edge_hierarchy.id = edges.id
                         INNER JOIN edge_types ON edges.type = edge_types.type_id"""
             partition_columns = ["mentioned_in"]
+            group_encoder = lambda x: x[0]
         else:
             raise ValueError()
 
@@ -682,7 +685,7 @@ class OnDiskGraphStorageWithFastIteration(OnDiskGraphStorage):
                             current_part = merge_current_part(current_part, edges[start: end])
                         partition_edges = current_part
                         partition_nodes = self.get_nodes_for_edges(partition_edges)
-                        yield tuple(prev_partition_value), partition_nodes, partition_edges
+                        yield group_encoder(prev_partition_value), partition_nodes, partition_edges
                         current_part = None
                         start = end
                     prev_partition_value = val
@@ -692,7 +695,7 @@ class OnDiskGraphStorageWithFastIteration(OnDiskGraphStorage):
             except StopIteration:
                 partition_edges = current_part
                 partition_nodes = self.get_nodes_for_edges(partition_edges)
-                yield tuple(prev_partition_value), partition_nodes, partition_edges
+                yield group_encoder(prev_partition_value), partition_nodes, partition_edges
                 break
 
 

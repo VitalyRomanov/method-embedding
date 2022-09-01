@@ -168,6 +168,11 @@ class SubgraphClassifierObjective(NodeClassifierObjective, SubgraphAbstractObjec
     def parameters(self, recurse: bool = True):
         return chain(self.classifier.parameters())
 
+    def custom_load_state_dict(self, state_dicts):
+        self.classifier.load_state_dict(
+            self.get_prefix("classifier", state_dicts)
+        )
+
     def custom_state_dict(self):
         state_dict = OrderedDict()
         for k, v in self.classifier.state_dict().items():
@@ -196,6 +201,14 @@ class SubgraphClassifierObjectiveWithAttentionPooling(SubgraphClassifierObjectiv
             state_dict[f"pooler.{k}"] = v
         return state_dict
 
+    def custom_load_state_dict(self, state_dicts):
+        self.classifier.load_state_dict(
+            self.get_prefix("classifier", state_dicts)
+        )
+        self.pooler.load_state_dict(
+            self.get_prefix("pooler", state_dicts)
+        )
+
 
 class SubgraphClassifierObjectiveWithMaxPooling(SubgraphClassifierObjective):
     def __init__(self, *args, **kwargs):
@@ -212,6 +225,11 @@ class SubgraphClassifierObjectiveWithMaxPooling(SubgraphClassifierObjective):
         for k, v in self.classifier.state_dict().items():
             state_dict[f"classifier.{k}"] = v
         return state_dict
+
+    def custom_load_state_dict(self, state_dicts):
+        self.classifier.load_state_dict(
+            self.get_prefix("classifier", state_dicts)
+        )
 
 class SubgraphClassifierObjectiveWithUnetPool(SubgraphClassifierObjective):
     def __init__(self,*args, **kwargs):
@@ -233,6 +251,14 @@ class SubgraphClassifierObjectiveWithUnetPool(SubgraphClassifierObjective):
         for k, v in self.pooler.state_dict().items():
             state_dict[f"pooler.{k}"] = v
         return state_dict
+
+    def custom_load_state_dict(self, state_dicts):
+        self.classifier.load_state_dict(
+            self.get_prefix("classifier", state_dicts)
+        )
+        self.pooler.load_state_dict(
+            self.get_prefix("pooler", state_dicts)
+        )
 
 
 class SubgraphElementEmbedderBase(ElementEmbedderBase):
