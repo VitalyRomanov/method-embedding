@@ -101,12 +101,6 @@ class SubgraphLoader:
             for input_nodes, seeds, blocks in loader:
                 yield input_nodes, (coincidence_matrix, torch.LongTensor(batch_ids)), blocks
 
-        # for id_ in self.ids:
-        #     idx = self._get_subgraph(id_)
-        #     loader = self.loading_fn(idx)
-        #     for input_nodes, seeds, blocks in loader:
-        #         yield input_nodes, torch.LongTensor([id_]), blocks
-
     def _get_subgraph(self, id_):
         return self.subgraph_mapping[id_]
 
@@ -114,100 +108,11 @@ class SubgraphLoader:
 class SubgraphAbstractObjective(AbstractObjective):
     def __init__(self, *args, **kwargs):
         super(SubgraphAbstractObjective, self).__init__(*args, **kwargs)
-    #
-    # def __init__(
-    #         self, name, graph_model, node_embedder, dataset, label_load_fn, device,
-    #         sampling_neighbourhood_size, batch_size, labels_for, number_of_hops, preload_for="package",
-    #         masker_fn=None, label_loader_class=None, label_loader_params=None,
-    #         tokenizer_path=None, target_emb_size=None, link_scorer_type="inner_prod", masker: SubwordMasker = None,
-    #         measure_scores=False, dilate_scores=1, early_stopping=False, early_stopping_tolerance=20, nn_index="brute",
-    #         subgraph_mapping=None, subgraph_partition=None
-    # ):
-    #     assert subgraph_partition is not None, "Provide train/val/test splits with `subgraph_partition` option"
-    #     self.subgraph_mapping = subgraph_mapping
-    #     self.subgraph_partition = unpersist(subgraph_partition)
-    #     super(SubgraphAbstractObjective, self).__init__(
-    #         name, graph_model, node_embedder, dataset, label_load_fn, device,
-    #         sampling_neighbourhood_size, batch_size, labels_for=labels_for, number_of_hops=number_of_hops,
-    #         preload_for=preload_for, masker_fn=masker_fn, label_loader_class=label_loader_class,
-    #         label_loader_params=label_loader_params,
-    #         tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_scorer_type=link_scorer_type,
-    #         masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores,
-    #         early_stopping=False, early_stopping_tolerance=20, nn_index=nn_index
-    #     )
-    #
-    #     self.target_embedding_fn = self.get_targets_from_embedder
-    #     self.negative_factor = 1
         self.update_embeddings_for_queries = False
         self.create_pooling_layer()
 
     def create_pooling_layer(self):
         pass
-
-    # def _create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
-    #     self.target_embedder = SubgraphElementEmbedderWithSubwords(
-    #         data_loading_func(), self.target_emb_size, tokenizer_path
-    #     )
-
-    # def _get_training_targets(self):
-    #
-    #     if hasattr(self.graph_model.g, 'ntypes'):
-    #         self.ntypes = self.graph_model.g.ntypes
-    #         self.use_types = True
-    #
-    #         if len(self.graph_model.g.ntypes) == 1:
-    #             self.use_types = False
-    #     else:
-    #         # not sure when this is called
-    #         raise NotImplementedError()
-    #
-    #     train_idx = self.subgraph_partition[
-    #         self.subgraph_partition["train_mask"]
-    #     ]["id"].to_numpy()
-    #     val_idx = self.subgraph_partition[
-    #         self.subgraph_partition["val_mask"]
-    #     ]["id"].to_numpy()
-    #     test_idx = self.subgraph_partition[
-    #         self.subgraph_partition["test_mask"]
-    #     ]["id"].to_numpy()
-    #
-    #     return train_idx, val_idx, test_idx
-
-    # def _create_loaders(self):
-    #     print("Number of nodes", self.graph_model.g.number_of_nodes())
-    #     train_idx, val_idx, test_idx = self._get_training_targets()
-    #     train_idx, val_idx, test_idx = self.target_embedder.create_idx_pools(
-    #         train_idx=train_idx, val_idx=val_idx, test_idx=test_idx
-    #     )
-    #     logging.info(
-    #         f"Pool sizes for {self.name}: train {self._idx_len(train_idx)}, "
-    #         f"val {self._idx_len(val_idx)}, "
-    #         f"test {self._idx_len(test_idx)}."
-    #     )
-    #     loaders = self._get_loaders(
-    #         train_idx=train_idx, val_idx=val_idx, test_idx=test_idx,
-    #         batch_size=self.batch_size  # batch_size_node_name
-    #     )
-    #     self.train_loader, self.val_loader, self.test_loader = loaders
-    #
-    #     # def get_num_nodes(ids):
-    #     #     return sum(len(ids[key_]) for key_ in ids) // self.batch_size + 1
-    #
-    #     self.num_train_batches = len(train_idx) // self.batch_size + 1
-    #     self.num_test_batches = len(test_idx) // self.batch_size + 1
-    #     self.num_val_batches = len(val_idx) // self.batch_size + 1
-    #
-    # def _get_loaders(self, train_idx, val_idx, test_idx, batch_size):
-    #
-    #     logging.info("Batch size is ignored for subgraphs")
-    #
-    #     subgraph_mapping = self.subgraph_mapping
-    #
-    #     train_loader = SubgraphLoader(train_idx, subgraph_mapping, self._create_loader, batch_size, self.graph_model.g.ntypes)
-    #     val_loader = SubgraphLoader(val_idx, subgraph_mapping, self._create_loader, batch_size, self.graph_model.g.ntypes)
-    #     test_loader = SubgraphLoader(test_idx, subgraph_mapping, self._create_loader, batch_size, self.graph_model.g.ntypes)
-    #
-    #     return train_loader, val_loader, test_loader
 
     def parameters(self, recurse: bool = True):
         return chain(self.target_embedder.parameters(), self.link_predictor.parameters())
@@ -231,53 +136,6 @@ class SubgraphAbstractObjective(AbstractObjective):
     def pooling_fn(self, node_embeddings):
         return torch.mean(node_embeddings, dim=0, keepdim=True)
 
-    # def _graph_embeddings(self, input_nodes, graph, mask=None):
-    #     emb = self._extract_embed(input_nodes, mask=mask)
-    #     graph_emb = self.graph_model(self._wrap_into_dict(emb), blocks=None, graph=graph)
-    #     return graph_emb["node_"]
-
-    # def _evaluate_objective(self, data_split, neg_sampling_strategy=None, negative_factor=1):
-    #     at = [1, 3, 5, 10]
-    #     count = 0
-    #
-    #     scores = defaultdict(list)
-    #
-    #     for input_nodes, seeds, blocks in tqdm(
-    #             getattr(self, f"{data_split}_loader"), total=getattr(self, f"num_{data_split}_batches")
-    #     ):
-    #         blocks = [blk.to(self.device) for blk in blocks]
-    #
-    #         subgraph_masks, seeds = seeds
-    #
-    #         if self.masker is None:
-    #             masked = None
-    #         else:
-    #             masked = self.masker.get_mask(self.seeds_to_python(seeds))
-    #
-    #         src_embs = self._graph_embeddings(input_nodes, blocks, masked=masked, subgraph_masks=subgraph_masks)
-    #         node_embs_, element_embs_, labels = self.prepare_for_prediction(
-    #             src_embs, seeds, self.target_embedding_fn, negative_factor=negative_factor,
-    #             neg_sampling_strategy=neg_sampling_strategy,
-    #             train_embeddings=False
-    #         )
-    #
-    #         if self.measure_scores:
-    #             if count % self.dilate_scores == 0:
-    #                 scores_ = self.target_embedder.score_candidates(self.seeds_to_global(seeds), src_embs,
-    #                                                              self.link_predictor, at=at,
-    #                                                              type=self.link_scorer_type, device=self.device)
-    #                 for key, val in scores_.items():
-    #                     scores[key].append(val)
-    #
-    #         acc, loss = self._compute_acc_loss(node_embs_, element_embs_, labels)
-    #
-    #         scores["Loss"].append(loss.item())
-    #         scores["Accuracy"].append(acc)
-    #         count += 1
-    #
-    #     scores = {key: self._sum_scores(val) for key, val in scores.items()}
-    #     return scores
-
     def _verify_parameters(self):
         pass
 
@@ -285,23 +143,6 @@ class SubgraphAbstractObjective(AbstractObjective):
 class SubgraphEmbeddingObjective(SubgraphAbstractObjective):
     def __init__(self, *args, **kwargs):
         super(SubgraphEmbeddingObjective, self).__init__(*args, **kwargs)
-    # def __init__(
-    #         self, name, graph_model, node_embedder, dataset, label_load_fn, device,
-    #         sampling_neighbourhood_size, batch_size, labels_for, number_of_hops, preload_for="package",
-    #         masker_fn=None, label_loader_class=None, label_loader_params=None,
-    #         tokenizer_path=None, target_emb_size=None, link_scorer_type="inner_prod", masker: SubwordMasker = None,
-    #         measure_scores=False, dilate_scores=1, early_stopping=False, early_stopping_tolerance=20, nn_index="brute",
-    #         subgraph_mapping=None, subgraph_partition=None
-    # ):
-    #     super(SubgraphEmbeddingObjective, self).__init__(
-    #         name, graph_model, node_embedder, dataset, label_load_fn, device,
-    #         sampling_neighbourhood_size, batch_size, labels_for=labels_for, number_of_hops=number_of_hops,
-    #         preload_for=preload_for, masker_fn=masker_fn, label_loader_class=label_loader_class,
-    #         label_loader_params=label_loader_params,
-    #         tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_scorer_type=link_scorer_type,
-    #         masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores,
-    #         early_stopping=False, early_stopping_tolerance=20, nn_index=nn_index
-    #     )
 
 
 class SubgraphClassifierObjective(NodeClassifierObjective, SubgraphAbstractObjective):
@@ -323,80 +164,6 @@ class SubgraphClassifierObjective(NodeClassifierObjective, SubgraphAbstractObjec
             subgraph_embs.append(self.pooling_fn(subgraph.nodes["node_"].data["node_embeddings"]))
 
         return torch.cat(subgraph_embs, dim=0)
-
-    # def __init__(
-    #         self, name, graph_model, node_embedder, dataset, label_load_fn, device,
-    #         sampling_neighbourhood_size, batch_size, labels_for, number_of_hops, preload_for="package",
-    #         masker_fn=None, label_loader_class=None, label_loader_params=None,
-    #         tokenizer_path=None, target_emb_size=None, link_scorer_type="inner_prod", masker: SubwordMasker = None,
-    #         measure_scores=False, dilate_scores=1, early_stopping=False, early_stopping_tolerance=20, nn_index="brute",
-    #         subgraph_mapping=None, subgraph_partition=None
-    # ):
-    #     SubgraphAbstractObjective.__init__(
-    #         self, name, graph_model, node_embedder, dataset, label_load_fn, device,
-    #         sampling_neighbourhood_size, batch_size, labels_for=labels_for, number_of_hops=number_of_hops,
-    #         preload_for=preload_for, masker_fn=masker_fn, label_loader_class=label_loader_class,
-    #         label_loader_params=label_loader_params,
-    #         tokenizer_path=tokenizer_path, target_emb_size=target_emb_size, link_scorer_type=link_scorer_type,
-    #         masker=masker, measure_scores=measure_scores, dilate_scores=dilate_scores,
-    #         early_stopping=False, early_stopping_tolerance=20, nn_index=nn_index
-    #     )
-
-    # def _create_target_embedder(self, data_loading_func, nodes, tokenizer_path):
-    #     self.target_embedder = SubgraphClassifierTargetMapper(
-    #         elements=data_loading_func()
-    #     )
-
-    # def _evaluate_objective(self, data_split, neg_sampling_strategy=None, negative_factor=1):
-    #     at = [1, 3, 5, 10]
-    #     count = 0
-    #     scores = defaultdict(list)
-    #
-    #     for input_nodes, seeds, blocks in getattr(self, f"{data_split}_loader"):
-    #         blocks = [blk.to(self.device) for blk in blocks]
-    #
-    #         subgraph_masks, seeds = seeds
-    #
-    #         if self.masker is None:
-    #             masked = None
-    #         else:
-    #             masked = self.masker.get_mask(self.seeds_to_python(seeds))
-    #
-    #         src_embs = self._graph_embeddings(input_nodes, blocks, masked=masked, subgraph_masks=subgraph_masks)
-    #         node_embs_, element_embs_, labels = self.prepare_for_prediction(
-    #             src_embs, seeds, self.target_embedding_fn, negative_factor=negative_factor,
-    #             neg_sampling_strategy=neg_sampling_strategy,
-    #             train_embeddings=False
-    #         )
-    #         # indices = self.seeds_to_global(seeds).tolist()
-    #         # labels = self.target_embedder[indices]
-    #         # labels = torch.LongTensor(labels).to(self.device)
-    #         acc, loss, logits = self._compute_acc_loss(node_embs_, element_embs_, labels)
-    #
-    #         y_pred = nn.functional.softmax(logits, dim=-1).to("cpu").numpy()
-    #         y_true = np.zeros(y_pred.shape)
-    #         y_true[np.arange(0, y_true.shape[0]), labels.to("cpu").numpy()] = 1.
-    #
-    #         if self.measure_scores:
-    #             if count % self.dilate_scores == 0:
-    #                 y_true_onehot = np.array(y_true)
-    #                 labels = list(range(y_true_onehot.shape[1]))
-    #
-    #                 for k in at:
-    #                     scores[f"ndcg@{k}"].append(ndcg_score(y_true, y_pred, k=k))
-    #                     scores[f"acc@{k}"].append(
-    #                         top_k_accuracy_score(y_true_onehot.argmax(-1), y_pred, k=k, labels=labels)
-    #                     )
-    #
-    #         scores["Loss"].append(loss.item())
-    #         scores["Accuracy"].append(acc)
-    #         count += 1
-    #
-    #     if count == 0:
-    #         count += 1
-    #
-    #     scores = {key: self._sum_scores(val) for key, val in scores.items()}
-    #     return scores
 
     def parameters(self, recurse: bool = True):
         return chain(self.classifier.parameters())
