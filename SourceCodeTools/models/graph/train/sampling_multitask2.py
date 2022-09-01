@@ -9,7 +9,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
-from torch.optim.lr_scheduler import ExponentialLR, ReduceLROnPlateau
+from torch.optim.lr_scheduler import ExponentialLR, ReduceLROnPlateau, MultiplicativeLR
 from time import time
 from os.path import join
 import logging
@@ -49,11 +49,6 @@ class SamplingMultitaskTrainer:
         self.batch = 0
         self.dtype = torch.float32
         self.dataset = dataset
-        # if load_external_dataset is not None:
-        #     logging.info("Loading external dataset")
-        #     external_args, external_dataset = load_external_dataset()
-        #     self.graph_model.g = external_dataset.g
-        #     dataset = external_dataset
 
         self.create_node_embedder(
             dataset, tokenizer_path, n_dims=model_params["h_dim"],
@@ -67,13 +62,11 @@ class SamplingMultitaskTrainer:
         if restore:
             self.restore_from_checkpoint(self.model_base_path)
 
-        # if load_external_dataset is not None:
-        #     self.trainer_params["model_base_path"] = external_args.external_model_base
-
         self._create_optimizer()
-
-        self.lr_scheduler = ExponentialLR(self.optimizer, gamma=1.0)
-        # self.lr_scheduler = ReduceLROnPlateau(self.optimizer, patience=10, cooldown=20)
+        
+        lmbda = lambda epoch: 1.1
+        self.lr_scheduler = MultiplicativeLR(self.optimizer, lr_lambda=lmbda)
+        # self.lr_scheduler = ReduceLROnPlateau(self.optimizer, factor=1.1, patience=10, cooldown=20)
         self.summary_writer = SummaryWriter(self.model_base_path)
 
     def _verify_arguments(self, model_params, trainer_params):
@@ -472,23 +465,6 @@ class SamplingMultitaskTrainer:
             [{"params": nodeembedder_params}], lr=self.lr
         )
 
-    # def _warm_up_proximity_ns(self, objective, update_ns_callback):
-    #     if objective.update_embeddings_for_queries:
-    #         def chunks(lst, n):
-    #             for i in range(0, len(lst), n):
-    #                 yield torch.LongTensor(lst[i:i + n])
-    #
-    #         all_keys = objective.target_embedder.keys()
-    #         batches = chunks(all_keys, self.trainer_params["batch_size"])
-    #         for batch in tqdm(
-    #                 batches,
-    #                 total=len(all_keys) // self.trainer_params["batch_size"] + 1,
-    #                 desc="Precompute Target Embeddings", leave=True
-    #         ):
-    #             _ = objective.target_embedding_fn(batch, update_ns_callback)  # scorer embedding updated inside
-    #
-    #         self.proximity_ns_warmup_complete = True
-
     def _get_grad_norms(self):
         total_norm = 0.
         for p in self.parameters():
@@ -553,24 +529,6 @@ class SamplingMultitaskTrainer:
                 for groups in self.optimizer.param_groups:
                     for param in groups["params"]:
                         torch.nn.utils.clip_grad_norm_(param, max_norm=1.)
-
-                # for ind, (objective, batch) in enumerate(zip(self.objectives, loaders)):
-                #     loss, scores = objective.make_step(
-                #         self.batch, batch, "train", longterm_metrics, scorer=None
-                #     )
-                #
-                #     if scores is None:
-                #         continue
-                #
-                #     loss.backward()
-                #     for groups in self.optimizer.param_groups:
-                #         for param in groups["params"]:
-                #             torch.nn.utils.clip_grad_norm_(param, max_norm=1.)
-                #
-                #     self.add_to_summary(
-                #         summary=batch_summary, partition="train", objective_name=objective.name,
-                #         scores=scores, postfix=""
-                #     )
 
                 self.add_to_summary(
                     summary=batch_summary, partition="train", objective_name="",

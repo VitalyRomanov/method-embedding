@@ -23,7 +23,7 @@ from functools import partial
 
 tokenizer_path = "sentencepiece_bpe.model"
 
-data_path = "../10_percent_v1"
+data_path = "../2_percent_v1"
 partition = join(data_path, "partition.json.bz2")
 filecontent_path = join(data_path, "common_filecontent.json.bz2")
 
