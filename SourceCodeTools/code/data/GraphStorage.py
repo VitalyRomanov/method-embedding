@@ -267,19 +267,30 @@ class OnDiskGraphStorage:
     def _import_edges(self, path):
         type_map = {}
         package_map = {}
+        file_id_map = {}
 
         def update_mapping(seq, mapping):
             for val in seq:
                 if val not in mapping:
                     mapping[val] = len(mapping)
 
+        def add_unique_file_id(table):
+            table["unique_file_id"] = list(zip(table["file_id"], table["package"]))
+
         for edges in tqdm(read_edges(path, as_chunks=True), desc="Importing edges"):
-            update_mapping(edges["type"], type_map)
             if "package" not in edges.columns:
                 edges["package"] = edges["file_id"]
+
+            add_unique_file_id(edges)
+
+            update_mapping(edges["type"], type_map)
             update_mapping(edges["package"].dropna(), package_map)
+            update_mapping(edges["unique_file_id"], file_id_map)
+
             edges["type"] = edges["type"].apply(type_map.get)
             edges["package"] = edges["package"].apply(package_map.get)
+            edges["unique_file_id"] = edges["unique_file_id"].apply(file_id_map.get)
+
             edges.rename({"source_node_id": "src", "target_node_id": "dst"}, axis=1, inplace=True)
 
             self._write_non_empty_table(
@@ -295,17 +306,22 @@ class OnDiskGraphStorage:
             )
 
             self._write_non_empty_table(
-                table=edges[["id", "file_id", "package"]].dropna(),
+                table=edges[["id", "unique_file_id", "file_id", "package"]].dropna(),
                 table_name="edge_file_id",
-                create_index=["id", "file_id", "package"],
+                create_index=["id", "unique_file_id", "file_id", "package"],
                 dtype={
                     "id": AbstractDBStorage.DataTypes.INT_PRIMARY,
+                    "unique_file_id": AbstractDBStorage.DataTypes.INT_NOT_NULL,
                     "file_id": AbstractDBStorage.DataTypes.INT_NOT_NULL,
                     "package": AbstractDBStorage.DataTypes.INT_NOT_NULL,
                 }
             )
 
-            rest_columns = [col for col in edges.columns if col not in {"id", "src", "dst", "type", "file_id", "package"}]
+            rest_columns = [
+                col for col in edges.columns
+                if col not in {"id", "src", "dst", "type", "unique_file_id", "file_id", "package"}
+            ]
+
             self._write_non_empty_table(
                 table=edges[["id"] + rest_columns],
                 table_name="edge_hierarchy",
@@ -473,7 +489,6 @@ class OnDiskGraphStorage:
         return self.database.query("SELECT package_id, package_desc FROM packages")["package_id"]
 
     def get_subgraph_for_file(self, file_id):
-        file_id, package = file_id
         edges = self.database.query(
             f"""
                         SELECT
@@ -482,7 +497,7 @@ class OnDiskGraphStorage:
                         edge_file_id
                         LEFT JOIN edges ON edge_file_id.id = edges.id
                         LEFT JOIN edge_types ON edges.type = edge_types.type_id
-                        WHERE edge_file_id.file_id = '{file_id}' and edge_file_id.package = '{package}'
+                        WHERE edge_file_id.unique_file_id = '{file_id}'
                         """
         )
 
@@ -490,10 +505,7 @@ class OnDiskGraphStorage:
         return file_nodes, edges
 
     def get_all_files(self):
-        return [
-            tuple(group) for group in
-            self.database.query("SELECT distinct file_id, package FROM edge_file_id").values
-            ]
+        return self.database.query("SELECT distinct unique_file_id FROM edge_file_id").values
 
     def get_subgraph_for_mention(self, mention):
         edges = self.database.query(
@@ -520,17 +532,14 @@ class OnDiskGraphStorage:
             load_fn = self.get_subgraph_for_package
             if groups is None:
                 groups = self.get_all_packages()
-            # return self.iterate_packages(all_packages=groups)
         elif how == SGPartitionStrategies.file:
             load_fn = self.get_subgraph_for_file
             if groups is None:
                 groups = self.get_all_files()
-            # return self.iterate_files(all_files=groups)
         elif how == SGPartitionStrategies.mention:
             load_fn = self.get_subgraph_for_mention
             if groups is None:
                 groups = self.get_all_mentions()
-            # return self.iterate_mentions(all_mentions=groups)
         else:
             raise ValueError()
 
@@ -565,48 +574,70 @@ class OnDiskGraphStorage:
     def _drop_tmp_node_ids_list(self, table_name):
         self.database.execute(f"DROP TABLE {table_name}")
 
+    def get_info_for_subgraphs(self, subgraph_ids, field):
+        info_column = subgraph_ids.copy()
+
+        if field == SGPartitionStrategies.package:
+            column_name = "package"
+            package_data = self.database.query(
+                f"""
+                SELECT distinct package_desc, package_id from packages
+                """
+            )
+
+            package_2_package_id = dict(zip(package_data["package_desc"], package_data["package_id"]))
+            info_column = info_column.map(package_2_package_id.get)
+        elif field == SGPartitionStrategies.file:
+            column_name = "unique_file_id"
+
+            file_id_data = self.database.query(
+                f"""
+                SELECT distinct file_id, unique_file_id from edge_file_id
+                """
+            )
+
+            assert file_id_data["file_id"].nunique() == file_id_data["unique_file_id"].nunique()
+
+            file_is_2_unique_file_id = dict(zip(file_id_data["file_id"], file_id_data["unique_file_id"]))
+
+            info_column = info_column.map(file_is_2_unique_file_id.get)
+        elif field == SGPartitionStrategies.mention:
+            column_name = "mentioned_in"
+        else:
+            raise ValueError()
+
+        results = subgraph_ids.to_frame()
+        results[column_name] = info_column
+        return results, column_name
+
     def get_info_for_node_ids(self, node_ids, field):
         if field == SGPartitionStrategies.package:
             column_name = "package"
         elif field == SGPartitionStrategies.file:
-            column_name = "file_id"
+            column_name = "unique_file_id"
         elif field == SGPartitionStrategies.mention:
             column_name = "mentioned_in"
         else:
             raise ValueError()
 
         node_ids_table_name = self._create_tmp_node_ids_list(node_ids, )
-
-        select_nodes = f"""
-            select src, package, file_id, mentioned_in
-            from {node_ids_table_name}
-            inner join edges on edges.src = {node_ids_table_name}.node_ids
-            inner join edge_file_id on edges.id = edge_file_id.id
-            join edge_hierarchy on edges.id = edge_hierarchy.id
-            union
-            select dst as src, package, file_id, mentioned_in
-            from {node_ids_table_name}
-            inner join edges on edges.dst = {node_ids_table_name}.node_ids
-            inner join edge_file_id on edges.id = edge_file_id.id
-            join edge_hierarchy on edges.id = edge_hierarchy.id
-        """
-        # node_id_str = ",".join(map(str, node_ids))
-        if column_name == "file_id":
-            query_str = f"""
-            select distinct src, file_id, package from (
-                {select_nodes}
-            ) as node_info where {column_name} is not null order by package, file_id
-            """  # order by {column_name}
-        else:
-            query_str = f"""
+        results = self.database.query(
+            f"""
             select distinct src, {column_name} from (
-                {select_nodes}
+                select src, package, unique_file_id, mentioned_in
+                from {node_ids_table_name}
+                inner join edges on edges.src = {node_ids_table_name}.node_ids
+                inner join edge_file_id on edges.id = edge_file_id.id
+                join edge_hierarchy on edges.id = edge_hierarchy.id
+                union
+                select dst as src, package, unique_file_id, mentioned_in
+                from {node_ids_table_name}
+                inner join edges on edges.dst = {node_ids_table_name}.node_ids
+                inner join edge_file_id on edges.id = edge_file_id.id
+                join edge_hierarchy on edges.id = edge_hierarchy.id
             ) as node_info where {column_name} is not null order by {column_name}
             """
-
-        results = self.database.query(query_str)
-        if column_name == "file_id":
-            results["file_id"] = list(zip(results["file_id"], results["package"]))
+        )
 
         self._drop_tmp_node_ids_list(node_ids_table_name)
         return results, column_name
@@ -614,48 +645,41 @@ class OnDiskGraphStorage:
 
 class OnDiskGraphStorageWithFastIteration(OnDiskGraphStorage):
     def iterate_subgraphs(self, how, groups):
+        requested_partition_groups = ",".join(map(str, groups))
         if how == SGPartitionStrategies.package:
-            query_str = """
+            query_str = f"""
                         SELECT
-                        edges.id as id, edge_types.type_desc as type, src, dst, file_id, package
+                        edges.id as id, edge_types.type_desc as type, src, dst, unique_file_id, package
                         FROM
                         edges
                         INNER JOIN edge_file_id ON edge_file_id.id = edges.id
-                        INNER JOIN edge_types ON edges.type = edge_types.type_id"""
+                        INNER JOIN edge_types ON edges.type = edge_types.type_id
+                        WHERE package in ({requested_partition_groups})
+                        """
             partition_columns = ["package"]
             group_encoder = lambda x: x[0]
         elif how == SGPartitionStrategies.file:
-            query_str = """
-            SELECT
-            edges.id as id, edge_types.type_desc as type, src, dst, file_id, package
-            FROM
-            edges
-            INNER JOIN edge_file_id ON edge_file_id.id = edges.id
-            INNER JOIN edge_types ON edges.type = edge_types.type_id"""
-
-            # query_str = f"""
-            #             SELECT
-            #             edges.id as id, edge_types.type_desc as type, src, dst, file_id, package
-            #             FROM (
-            #                 SELECT
-            #                 id, file_id, package
-            #                 FROM
-            #                 edge_file_id
-            #                 ORDER BY package, file_id
-            #             ) as edge_file_id
-            #             LEFT JOIN edges ON edge_file_id.id = edges.id
-            #             LEFT JOIN edge_types ON edges.type = edge_types.type_id
-            #             """
-            partition_columns = ["file_id", "package"]
-            group_encoder = lambda x: tuple(x)
+            query_str = f"""
+                        SELECT
+                        edges.id as id, edge_types.type_desc as type, src, dst, unique_file_id, file_id, package
+                        FROM
+                        edges
+                        INNER JOIN edge_file_id ON edge_file_id.id = edges.id
+                        INNER JOIN edge_types ON edges.type = edge_types.type_id
+                        WHERE unique_file_id in ({requested_partition_groups})
+                        """
+            partition_columns = ["unique_file_id", "file_id"]
+            group_encoder = lambda x: x[1]
         elif how == SGPartitionStrategies.mention:
-            query_str = """
+            query_str = f"""
                         SELECT
                         edges.id as id, edge_types.type_desc as type, src, dst, mentioned_in
                         FROM
                         edges
                         INNER JOIN edge_hierarchy ON edge_hierarchy.id = edges.id
-                        INNER JOIN edge_types ON edges.type = edge_types.type_id"""
+                        INNER JOIN edge_types ON edges.type = edge_types.type_id
+                        WHERE mentioned_in in ({requested_partition_groups})
+                        """
             partition_columns = ["mentioned_in"]
             group_encoder = lambda x: x[0]
         else:

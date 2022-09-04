@@ -352,14 +352,11 @@ class SGEdgesDataLoader(SGNodesDataLoader):
             if self._num_nodes_total(nodes_for_batching) == 0:
                 continue
 
-            graph_id_to_original_id = dict(zip(
-                subgraph.nodes("node_").numpy(),
-                subgraph.nodes["node_"].data["original_id"].numpy(),
-            ))
-            original_id_to_graph_id = dict(zip(
-                subgraph.nodes["node_"].data["original_id"].numpy(),
-                subgraph.nodes("node_").numpy()
-            ))
+            graph_ids = subgraph.nodes("node_").numpy()
+            original_ids = subgraph.nodes["node_"].data["original_id"].numpy()
+
+            graph_id_to_original_id = dict(zip(graph_ids, original_ids))
+            original_id_to_graph_id = dict(zip(original_ids, graph_ids))
 
 
             for nodes_in_batch_g in self.iterate_nodes_for_batches(self.seeds_to_python(nodes_for_batching)):
@@ -488,11 +485,7 @@ class SGSubgraphDataLoader(SGNodesDataLoader):
 
         return batch
 
-
     def create_batches(self, subgraph_generator, number_of_hops, batch_size, partition, labels_for):
-
-
-
         batch_subgrap_id = []
         batch_subgraphs = []
 
@@ -505,7 +498,7 @@ class SGSubgraphDataLoader(SGNodesDataLoader):
             return in_p
 
         for subgraph_ in subgraph_generator:
-            group = subgraph_["group"][0]
+            group = subgraph_["group"]
             subgraph = subgraph_["subgraph"]
             masker = subgraph_["masker"]
             labels_loader = subgraph_["labels_loader"]
