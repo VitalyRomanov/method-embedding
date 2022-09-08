@@ -44,12 +44,14 @@ config = get_config(
     #use_edge_types=True,
     gpu=0,
     epochs=10,
-    batch_size=8,
+    batch_size=128,
+    measure_scores = True,  
     
     train_frac=0.8,
     random_seed=42, 
     
     # model parameters
+    learning_rate=0.001
     elem_emb_size=300,
     node_emb_size=300,                  # *** dimensionality of node embeddings
     h_dim=300,                           # *** should match to node dimensionality
@@ -57,6 +59,8 @@ config = get_config(
     dropout=0.1,
     activation="relu"
 )
+
+save_config(config, "attention_pool_var_misuse_subgraph.yaml")
 
 dataset = SourceGraphDataset(
     **{**config["DATASET"], **config["TOKENIZER"]}

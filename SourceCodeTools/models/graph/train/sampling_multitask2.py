@@ -64,9 +64,10 @@ class SamplingMultitaskTrainer:
 
         self._create_optimizer()
         
-        lmbda = lambda epoch: 1.1
-        self.lr_scheduler = MultiplicativeLR(self.optimizer, lr_lambda=lmbda)
-        # self.lr_scheduler = ReduceLROnPlateau(self.optimizer, factor=1.1, patience=10, cooldown=20)
+        # lmbda = lambda epoch: 1.1
+        # self.lr_scheduler = MultiplicativeLR(self.optimizer, lr_lambda=lmbda)
+        # self.lr_scheduler = ReduceLROnPlateau(self.optimizer, factor=0.1, patience=10, cooldown=20)
+        self.lr_scheduler = ExponentialLR(self.optimizer, gamma=1.0)
         self.summary_writer = SummaryWriter(self.model_base_path)
 
     def _verify_arguments(self, model_params, trainer_params):
