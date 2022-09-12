@@ -1,0 +1,56 @@
+DATASET:
+  custom_reverse: null
+  data_path: ../10_percent_v1
+  filter_edges: null
+  min_count_for_objectives: 5
+  no_global_edges: false
+  partition: ../10_percent_v1/partition.json.bz2
+  random_seed: 42
+  remove_reverse: false
+  restricted_id_pool: null
+  self_loops: false
+  subgraph_id_column: file_id
+  subgraph_partition: null
+  train_frac: 0.8
+  use_edge_types: false
+  use_node_types: false
+MODEL:
+  activation: relu
+  dropout: 0.1
+  h_dim: 300
+  n_layers: 5
+  node_emb_size: 300
+  num_bases: 10
+  use_att_checkpoint: false
+  use_gcn_checkpoint: false
+  use_gru_checkpoint: false
+  use_self_loop: true
+TOKENIZER:
+  tokenizer_path: sentencepiece_bpe.model
+TRAINING:
+  batch_size: 128
+  dilate_scores: 200
+  early_stopping: false
+  early_stopping_tolerance: 20
+  elem_emb_size: 300
+  embedding_table_size: 200000
+  epochs: 10
+  external_dataset: null
+  force_w2v_ns: false
+  gpu: 0
+  learning_rate: 0.001
+  measure_scores: true
+  metric: inner_prod
+  model_output_dir: ../10_percent_v1
+  neg_sampling_factor: 3
+  nn_index: brute
+  objectives: subgraph_clf
+  pretrained: null
+  pretraining_phase: 0
+  restore_state: false
+  sampling_neighbourhood_size: 10
+  save_checkpoints: true
+  save_each_epoch: false
+  schedule_layers_every: 10
+  use_layer_scheduling: false
+  use_ns_groups: false
