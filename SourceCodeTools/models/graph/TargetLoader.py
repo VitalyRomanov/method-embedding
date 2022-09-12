@@ -247,10 +247,19 @@ class TargetLoader:
             self._element_lookup[src].append(dst)
 
         self._groups = None
+        self._ns_groups = None
+
         if "group" in targets.columns:
             self._groups = defaultdict(set)
-            for dst, group in zip(compacted, targets["group"]):
-                self._groups[group].add(dst)
+            for src, group in zip(targets["src"], targets["group"]):
+                self._groups[group].add(src)
+
+            if self._use_ns_groups:
+                self._ns_groups = defaultdict(set)
+                for dst, group in zip(compacted, targets["group"]):
+                    self._ns_groups[group].add(dst)
+        else:
+            raise ValueError("Group information is not present for labels")
 
         self._prepare_excluded_targets(targets)
 
@@ -297,7 +306,7 @@ class TargetLoader:
         if group == self._general_sample_group_key:
             return self._neg_prob
         else:
-            positions = np.fromiter((self._id_loc[loc] for loc in self._groups[group]), dtype=np.int32)
+            positions = np.fromiter((self._id_loc[loc] for loc in self._ns_groups[group]), dtype=np.int32)
             group_probs = np.zeros_like(self._neg_prob)
             group_probs[positions] = self._neg_prob[positions]
             return group_probs / np.sum(group_probs)
@@ -344,7 +353,7 @@ class TargetLoader:
             pass
 
         if self._use_ns_groups:
-            closest_keys = [n_key for n_key in closest_keys if n_key in self._groups[current_group] and (bloom_filter is None or (key, n_key) not in bloom_filter)]
+            closest_keys = [n_key for n_key in closest_keys if n_key in self._ns_groups[current_group] and (bloom_filter is None or (key, n_key) not in bloom_filter)]
 
         if len(closest_keys) == 0:
             # backup strategy
