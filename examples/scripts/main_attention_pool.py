@@ -23,7 +23,7 @@ from functools import partial
 
 tokenizer_path = "sentencepiece_bpe.model"
 
-data_path = "10_percent_v1"
+data_path = "../10_percent_v1"
 subgraph_partition = join(data_path, "partition.json.bz2")
 filecontent_path = join(data_path, "common_filecontent.json.bz2")
 
@@ -45,8 +45,9 @@ config = get_config(
     #use_edge_types=True,
     gpu=0,
     epochs=10, 
+    
     train_frac=0.8,
-    random_seed=42,
+    random_seed=42, 
     
     # model parameters
     elem_emb_size=300,
