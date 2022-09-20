@@ -14,6 +14,14 @@ from SourceCodeTools.models.training_config import get_config, load_config, upda
 from SourceCodeTools.models.training_options import add_gnn_train_args, verify_arguments
 
 
+_models = {
+    "RGCN": RGCN,
+    "RGAN": RGAN,
+    "RGGAN": RGGAN,
+    "HGT": HGT,
+}
+
+
 # def train_grid(models, args):
 #
 #     for model, param_grid in models.items():
@@ -84,7 +92,7 @@ from SourceCodeTools.models.training_options import add_gnn_train_args, verify_a
 #             print("Done saving")
 
 
-def train_model(model, args):
+def train_model(args):
 
     args = copy(args.__dict__)
     config_path = args.pop("config")
@@ -99,6 +107,7 @@ def train_model(model, args):
     print(date_time)
 
     restore_state = config["TRAINING"]["restore_state"]
+    model = _models[config["TRAINING"]["model"]]
     model_attempt = get_name(model, date_time)
     model_base = get_model_base(config["TRAINING"], model_attempt)
 
@@ -171,6 +180,4 @@ if __name__ == "__main__":
     if not isdir(args.model_output_dir):
         mkdir(args.model_output_dir)
 
-    model = RGGAN  # RGGAN  # RGAN  # RGCN  # RGGAN  # HGT
-
-    train_model(model, args)
+    train_model(args)

@@ -23,6 +23,7 @@ config_specification = {
         "partition": None
     },
     "TRAINING": {
+        "model": "RGCN",
         "model_output_dir": None,
         "pretrained": None,
         "pretraining_phase": 0,

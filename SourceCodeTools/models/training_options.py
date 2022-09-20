@@ -24,6 +24,7 @@ def add_pretraining_arguments(parser):
 
 
 def add_training_arguments(parser):
+    parser.add_argument('--model', dest='model', default="RGCN", help='')
     parser.add_argument('--embedding_table_size', dest='embedding_table_size', default=200000, type=int, help='Bucket size for the embedding table. Overriden when pretrained vectors provided???')
     parser.add_argument('--random_seed', dest='random_seed', default=None, type=int, help='Random seed for generating dataset splits')
 
