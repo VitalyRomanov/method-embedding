@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from SourceCodeTools.models.graph import RGGAN
+from SourceCodeTools.models.graph.rggan import RGGAN
 
 
 class HGTLayer(nn.Module):

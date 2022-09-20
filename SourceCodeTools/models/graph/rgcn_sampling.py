@@ -1,11 +1,8 @@
-"""RGCN layer implementation"""
 import torch.nn as nn
 import torch.nn.functional as F
 import dgl.nn as dglnn
-from dgl import dataloading
 from torch import ones, float32, Tensor, split, matmul, no_grad, zeros, arange
 from torch.utils import checkpoint
-from tqdm import tqdm
 
 
 class CkptGATConv(dglnn.GATConv):
@@ -83,10 +80,6 @@ class RelGraphConvLayer(nn.Module):
                 # nn.init.xavier_uniform_(self.weight, gain=nn.init.calculate_gain('relu'))
                 nn.init.xavier_normal_(self.weight)
 
-        # TODO
-        # think of possibility switching to GAT
-        # rel : dglnn.GATConv(in_feat, out_feat, num_heads=4)
-        # rel : dglnn.GraphConv(in_feat, out_feat, norm='right', weight=False, bias=False, allow_zero_in_degree=True)
         self.create_conv(in_feat, out_feat, rel_names)
 
         # bias
@@ -100,24 +93,31 @@ class RelGraphConvLayer(nn.Module):
 
         # weight for self loop
         if self.self_loop:
-            # if self.use_basis:
-            #     self.loop_weight_basis = dglnn.WeightBasis((in_feat, out_feat), num_bases, len(self.ntype_names))
-            # else:
-            #     self.loop_weight = nn.Parameter(th.Tensor(len(self.ntype_names), in_feat, out_feat))
-            #     # nn.init.xavier_uniform_(self.weight, gain=nn.init.calculate_gain('relu'))
-            #     nn.init.xavier_normal_(self.loop_weight)
             self.loop_weight = nn.Parameter(Tensor(in_feat, out_feat))
-            nn.init.xavier_uniform_(self.loop_weight,
-                                    gain=nn.init.calculate_gain('tanh'))
-            # # nn.init.xavier_normal_(self.loop_weight)
+            # nn.init.xavier_uniform_(self.loop_weight,
+            #                         gain=nn.init.calculate_gain('tanh'))
+            nn.init.xavier_normal_(self.loop_weight)
 
         self.dropout = nn.Dropout(dropout)
 
     def create_conv(self, in_feat, out_feat, rel_names):
+        # rel : dglnn.GATConv(in_feat, out_feat, num_heads=4)
+        # rel : dglnn.GraphConv(in_feat, out_feat, norm='right', weight=False, bias=False, allow_zero_in_degree=True)
+        # self.conv = dglnn.HeteroGraphConv({
+        #     rel: CkptGATConv((in_feat, in_feat), out_feat, num_heads=1, use_checkpoint=self.use_gcn_checkpoint)
+        #     for rel in rel_names
+        # }, aggregate="mean")
         self.conv = dglnn.HeteroGraphConv({
-            rel: CkptGATConv((in_feat, in_feat), out_feat, num_heads=1, use_checkpoint=self.use_gcn_checkpoint)
+            rel: dglnn.GraphConv(
+                in_feat, out_feat, norm='right', weight=False, bias=True, allow_zero_in_degree=True,
+                activation=self.activation
+            )
             for rel in rel_names
-        })
+        }, aggregate="mean")
+
+    def do_convolution(self, g, inputs_src, wdict):
+        hs = self.conv(g, inputs_src, mod_kwargs=wdict)
+        return hs
 
     def forward(self, g, inputs):
         """Forward computation
@@ -139,26 +139,21 @@ class RelGraphConvLayer(nn.Module):
             weight = self.basis() if self.use_basis else self.weight
             wdict = {self.rel_names[i]: {'weight': w.squeeze(0)}
                      for i, w in enumerate(split(weight, 1, dim=0))}
-            # if self.self_loop:
-            #     self_loop_weight = self.loop_weight_basis() if self.use_basis else self.loop_weight
-            #     self_loop_wdict = {self.ntype_names[i]: w.squeeze(0)
-            #              for i, w in enumerate(th.split(self_loop_weight, 1, dim=0))}
         else:
             wdict = {}
 
         if g.is_block:
             inputs_src = inputs
-            # the begginning of src and dst indexes match, that is why we can simply slice the first
+            # the beginning of src and dst indexes match, that is why we can simply slice the first
             # nodes to get dst embeddings
             inputs_dst = {k: v[:g.number_of_dst_nodes(k)] for k, v in inputs.items()}
         else:
             inputs_src = inputs_dst = inputs
 
-        hs = self.conv(g, inputs_src, mod_kwargs=wdict)
+        hs = self.do_convolution(g, inputs_src, wdict)
 
         def _apply(ntype, h):
             if self.self_loop:
-                # h = h + th.matmul(inputs_dst[ntype], self_loop_wdict[ntype])
                 h = h + matmul(inputs_dst[ntype], self.loop_weight)
             if self.bias:
                 h = h + self.bias_dict[ntype]
@@ -166,60 +161,16 @@ class RelGraphConvLayer(nn.Module):
             if self.activation:
                 h = self.activation(h)
             return self.dropout(h)
-        # TODO
-        # think of possibility switching to GAT
-        # return {ntype: _apply(ntype, h) for ntype, h in hs.items()}
-        return {ntype: _apply(ntype, h).mean(1) for ntype, h in hs.items()}
 
-# class RelGraphEmbed(nn.Module):
-#     r"""Embedding layer for featureless heterograph."""
-#     def __init__(self,
-#                  g,
-#                  embed_size,
-#                  embed_name='embed',
-#                  activation=None,
-#                  dropout=0.0):
-#         super(RelGraphEmbed, self).__init__()
-#         self.g = g
-#         self.embed_size = embed_size
-#         self.embed_name = embed_name
-#         # self.activation = activation
-#         # self.dropout = nn.Dropout(dropout)
-#
-#         # create weight embeddings for each node for each relation
-#         self.embeds = nn.ParameterDict()
-#         for ntype in g.ntypes:
-#             embed = nn.Parameter(th.Tensor(g.number_of_nodes(ntype), self.embed_size))
-#             # TODO
-#             # watch for activation in init
-#             # nn.init.xavier_uniform_(embed, gain=nn.init.calculate_gain('relu'))
-#             nn.init.xavier_normal_(embed)
-#             self.embeds[ntype] = embed
-#
-#     def forward(self, block=None):
-#         """Forward computation
-#
-#         Parameters
-#         ----------
-#         block : DGLHeteroGraph, optional
-#             If not specified, directly return the full graph with embeddings stored in
-#             :attr:`embed_name`. Otherwise, extract and store the embeddings to the block
-#             graph and return.
-#
-#         Returns
-#         -------
-#         DGLHeteroGraph
-#             The block graph fed with embeddings.
-#         """
-#         return self.embeds
+        return {ntype: _apply(ntype, h) for ntype, h in hs.items()}
 
 
-class RGCNSampling(nn.Module):
+class RGCN(nn.Module):
     def __init__(
             self, ntypes, etypes, h_dim, node_emb_size, num_bases, n_layers=1, dropout=0, use_self_loop=False,
             activation=F.relu, use_gcn_checkpoint=False, **kwargs
     ):
-        super(RGCNSampling, self).__init__()
+        super(RGCN, self).__init__()
         self.ntypes = list(set(ntypes))
         self.ntypes.sort()
         self.etypes = list(set(etypes))
@@ -235,9 +186,6 @@ class RGCNSampling(nn.Module):
 
         self._initialize()
 
-        self.emb_size = self.out_dim
-        self.num_layers = len(self.layers)
-
     def _initialize(self):
         if self.num_bases < 0 or self.num_bases > len(self.etypes):
             self.num_bases = len(self.etypes)
@@ -246,162 +194,46 @@ class RGCNSampling(nn.Module):
         self.dropout = self.dropout
         self.use_self_loop = self.use_self_loop
 
-        # self.embed_layer = RelGraphEmbed(g, self.h_dim)
-        self.layers = nn.ModuleList()
-        self.layer_norm = nn.ModuleList()
-        # i2h
-        self.layers.append(RelGraphConvLayer(
+        # self.layers = nn.ModuleList()
+        # self.layer_norm = nn.ModuleList()
+        # for i in range(self.n_layers):
+        #     self.layers.append(RelGraphConvLayer(
+        #         self.h_dim, self.h_dim, self.etypes, self.ntypes,
+        #         self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
+        #         dropout=self.dropout, weight=False,
+        #         use_gcn_checkpoint=self.use_gcn_checkpoint))  # changed weight for GATConv
+        #     self.layer_norm.append(nn.LayerNorm([self.h_dim]))
+
+        self.layer = RelGraphConvLayer(
             self.h_dim, self.h_dim, self.etypes, self.ntypes,
             self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
-            dropout=self.dropout, weight=False, use_gcn_checkpoint=self.use_gcn_checkpoint))
-        self.layer_norm.append(nn.LayerNorm([self.h_dim]))
-        # h2h
-        for i in range(self.n_layers):
-            self.layers.append(RelGraphConvLayer(
-                self.h_dim, self.h_dim, self.etypes, self.ntypes,
-                self.num_bases, activation=self.activation, self_loop=self.use_self_loop,
-                dropout=self.dropout, weight=False,
-                use_gcn_checkpoint=self.use_gcn_checkpoint))  # changed weight for GATConv
-            self.layer_norm.append(nn.LayerNorm([self.h_dim]))
-            # TODO
-            # think of possibility switching to GAT
-            # weight=False
-        # h2o
-        self.layers.append(RelGraphConvLayer(
-            self.h_dim, self.out_dim, self.etypes, self.ntypes,
-            self.num_bases, activation=None,
-            self_loop=self.use_self_loop, weight=False,
-            use_gcn_checkpoint=self.use_gcn_checkpoint))  # changed weight for GATConv
-        self.layer_norm.append(nn.LayerNorm([self.out_dim]))
-        # TODO
-        # think of possibility switching to GAT
-        # weight=False
+            dropout=self.dropout, weight=True,
+            use_gcn_checkpoint=self.use_gcn_checkpoint
+        )
+        self.layers = [self.layer] * self.n_layers
+        self.layer_norm = nn.ModuleList([nn.LayerNorm([self.h_dim]) for _ in range(self.num_layers)])
 
-        self.emb_size = self.out_dim
-        self.num_layers = len(self.layers)
+    @property
+    def emb_size(self):
+        return self.out_dim
 
-    # def node_embed(self):
-    #     return self.embed_layer()
+    @property
+    def num_layers(self):
+        return len(self.layers)
 
-    # def forward(self, h=None, blocks=None):
-    #     if h is None:
-    #         # full graph training
-    #         h = self.embed_layer()
-    #     if blocks is None:
-    #         # full graph training
-    #         for layer in self.layers:
-    #             h = layer(self.g, h)
-    #     else:
-    #         # minibatch training
-    #         for layer, block in zip(self.layers, blocks):
-    #             h = layer(block, h)
-    #     return h
-
-    def custom(self, layer):
-        def custom_forward(*inputs):
-            block, h = inputs
-            h = layer(block, h)
-            return h
-        return custom_forward
-
-    def normalize(self, h, layer):
+    def apply_norm_layer(self, h, layer):
         return {key: layer(val) for key, val in h.items()}
-        # return {key: val / torch.linalg.norm(val, dim=1, keepdim=True) for key, val in h.items()}
 
-    def forward(self, h, blocks=None, graph=None,
-                return_all=False): # added this as an experimental feature for intermediate supervision
-        # if h is None:
-        #     # full graph training
-        #     h = self.embed_layer()
-
-        all_layers = [] # added this as an experimental feature for intermediate supervision
+    def forward(self, h, blocks=None, graph=None):
 
         if blocks is None:
             # full graph training
-            h0 = h
             for layer, norm in zip(self.layers, self.layer_norm):
-                h = layer(graph, h, h0)
-                h = self.normalize(h, norm)
-                all_layers.append(h) # added this as an experimental feature for intermediate supervision
+                h = layer(graph, h)
+                h = self.apply_norm_layer(h, norm)
         else:
             # minibatch training
-            h0 = h
             for layer, norm, block in zip(self.layers, self.layer_norm, blocks):
-                # h = checkpoint.checkpoint(self.custom(layer), block, h)
-                h = layer(block, h, h0)
-                h = self.normalize(h, norm)
-                all_layers.append(h) # added this as an experimental feature for intermediate supervision
-
-        if return_all: # added this as an experimental feature for intermediate supervision
-            return all_layers
-        else:
-            return h
-
-    def inference(self, batch_size, device, num_workers, x=None):
-        """Minibatch inference of final representation over all node types.
-
-        ***NOTE***
-        For node classification, the model is trained to predict on only one node type's
-        label.  Therefore, only that type's final representation is meaningful.
-        """
-        h0 = x
-
-        with no_grad():
-
-            # if x is None:
-            #     x = self.embed_layer()
-
-            for l_ind, (layer, norm) in enumerate(zip(self.layers, self.layer_norm)):
-                y = {
-                    k: zeros(
-                        self.g.number_of_nodes(k),
-                        self.h_dim if l_ind != len(self.layers) - 1 else self.out_dim)
-                    for k in self.g.ntypes}
-
-                sampler = dataloading.MultiLayerFullNeighborSampler(1)
-                dataloader = dataloading.NodeDataLoader(
-                    self.g,
-                    {k: arange(self.g.number_of_nodes(k)) for k in self.g.ntypes},
-                    sampler,
-                    batch_size=batch_size,
-                    shuffle=True,
-                    drop_last=False,
-                    num_workers=num_workers)
-
-                for input_nodes, output_nodes, blocks in tqdm(dataloader, desc=f"Layer {l_ind}"):
-                    block = blocks[0].to(device)
-
-                    if not isinstance(input_nodes, dict):
-                        key = next(iter(self.g.ntypes))
-                        input_nodes = {key: input_nodes}
-                        output_nodes = {key: output_nodes}
-
-                    _h0 = {k: h0[k][input_nodes[k]].to(device) for k in input_nodes.keys()}
-                    h = {k: x[k][input_nodes[k]].to(device) for k in input_nodes.keys()}
-                    h = layer(block, h, _h0)
-                    h = self.normalize(h, norm)
-
-                    for k in h.keys():
-                        y[k][output_nodes[k]] = h[k].cpu()
-
-                x = y
-            return y
-
-    # def get_layers(self):
-    #     """
-    #     Retrieve tensor values on the layers for further use as node embeddings.
-    #     :return:
-    #     """
-    #     # h = self.embed_layer()
-    #     # l_out = [th.cat([h[ntype] for ntype in self.g.ntypes], dim=0).detach().numpy()]
-    #     # for layer in self.layers:
-    #     #     h = layer(self.g, h)
-    #     #     l_out.append(th.cat([h[ntype] for ntype in self.g.ntypes], dim=0).detach().numpy())
-    #
-    #     h = self.inference(batch_size=256, device='cpu', num_workers=0)
-    #     l_out = [th.cat([h[ntype] for ntype in self.g.ntypes], dim=0).detach().numpy()]
-    #
-    #     return l_out
-    #
-    # def get_embeddings(self, id_maps):
-    #     return [Embedder(id_maps, e) for e in self.get_layers()]
+                h = layer(block, h)
+                h = self.apply_norm_layer(h, norm)
+        return h

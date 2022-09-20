@@ -449,7 +449,7 @@ def node_clf(args):
     models_ = {
         # GCNSampling: gcnsampling_params,
         # GATSampler: gatsampling_params,
-        # RGCNSampling: rgcnsampling_params,
+        # RGCN: rgcnsampling_params,
         # RGAN: rgcnsampling_params,
         RGGAN: rggan_params
 
@@ -474,7 +474,7 @@ def link_pred(args):
     models_ = {
         # GCNSampling: gcnsampling_params,
         # GATSampler: gatsampling_params,
-        # RGCNSampling: rgcnsampling_params,
+        # RGCN: rgcnsampling_params,
         # RGAN: rgcnsampling_params,
         RGGAN: rggan_params
 

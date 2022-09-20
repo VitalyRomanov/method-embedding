@@ -11,7 +11,7 @@ def add_data_arguments(parser):
     parser.add_argument('--restore_state', action='store_true', help='Load from checkpoint')
     parser.add_argument('--no_global_edges', action='store_true', help='Remove all global edges from the graph')
     parser.add_argument('--remove_reverse', action='store_true', help="Remove reverse edges from the graph")
-    parser.add_argument('--custom_reverse', dest='custom_reverse', default=None, help='List of edges for which to add reverse types. Should use together with `remove_reverse`')
+    parser.add_argument('--custom_reverse', dest='custom_reverse', nargs='+', default=None, help='List of edges for which to add reverse types. Should use together with `remove_reverse`')
     parser.add_argument('--restricted_id_pool', dest='restricted_id_pool', default=None, help='???')
     parser.add_argument('--subgraph_partition', default=None)
     parser.add_argument('--subgraph_id_column', default=None)
