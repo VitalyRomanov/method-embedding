@@ -1,7 +1,7 @@
 import torch
 from torch.utils import checkpoint
 
-from SourceCodeTools.models.graph.rgcn_sampling import RGCN, RelGraphConvLayer, CkptGATConv
+from SourceCodeTools.models.graph.rgcn import RGCN, RelGraphConvLayer, CkptGATConv
 
 import torch.nn as nn
 import torch.nn.functional as F
