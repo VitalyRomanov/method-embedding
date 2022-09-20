@@ -25,12 +25,18 @@ requirements = [
       # 'javac_parser'
 ]
 # conda install pytorch cudatoolkit=11.1 dgl-cuda11.1 -c dglteam -c pytorch -c nvidia
+
+
+def remove_plain_dgl(requirements):
+      return [r for r in requirements if not r.startswith("dgl==")]
+
+
 setup(name='SourceCodeTools',
       version='0.0.3',
       py_modules=['SourceCodeTools'],
       install_requires=requirements + ["dgl==0.7.1"],
       extras_require={
-            "gpu": requirements + ["dgl-cu111==0.7.1"]
+            "gpu": remove_plain_dgl(requirements) + ["dgl-cu111==0.7.1"]
       },
       dependency_links=['https://data.dgl.ai/wheels/repo.html'],
       scripts=[
