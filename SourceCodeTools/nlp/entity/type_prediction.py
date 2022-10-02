@@ -239,7 +239,11 @@ class ModelTrainer:
                 "suffix_prefix_buckets": suffix_prefix_buckets,
                 "seq_len": self.seq_len,
                 "batch_size": self.batch_size,
-                "no_localization": self.no_localization
+                "no_localization": self.no_localization,
+                "no_graph": self.no_graph,
+                "finetune": self.finetune,
+                "word_emb_path": self.word_emb_path,
+                "graph_emb_path": self.graph_emb_path
             }
 
             print("Maximum f1:", max(test_f1))
