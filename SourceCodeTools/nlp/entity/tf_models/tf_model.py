@@ -108,7 +108,10 @@ class TypePredictor(Model):
         with tf.device('/CPU:0'):
             self.tok_emb = DefaultEmbedding(init_vectors=tok_embedder.e, trainable=train_embeddings)
             logging.warning("Not finetuning graph embeddings")
-            self.graph_emb = DefaultEmbedding(init_vectors=graph_embedder.e, trainable=False)  #    train_embeddings)
+            if graph_embedder is not None:
+                self.graph_emb = DefaultEmbedding(init_vectors=graph_embedder.e, trainable=False)  #    train_embeddings)
+            else:
+                self.graph_emb = None
         self.prefix_emb = DefaultEmbedding(shape=(suffix_prefix_buckets, suffix_prefix_dims))
         self.suffix_emb = DefaultEmbedding(shape=(suffix_prefix_buckets, suffix_prefix_dims))
 
@@ -167,6 +170,7 @@ class TypePredictor(Model):
         #     logits = self.decoder.seq_decode(encoded, training=training, mask=mask)
         # else:
         if self.use_graph:
+            assert graph_ids is not None, "Make sure you have provided graph embeddings"
             graph_emb = self.graph_emb(graph_ids)
             encoded = tf.concat([encoded, graph_emb], axis=-1)
         logits, _ = self.decoder((encoded, target), training=training, mask=mask) # consider sending input instead of target
@@ -367,7 +371,8 @@ def train(
                     # token_ids, graph_ids, labels, class_weights, lengths = b
                     loss, p, r, f1 = train_step_finetune(
                         model=model, optimizer=optimizer, token_ids=batch['tok_ids'],
-                        prefix=batch['prefix'], suffix=batch['suffix'], graph_ids=batch['graph_ids'],
+                        prefix=batch['prefix'], suffix=batch['suffix'],
+                        graph_ids=batch['graph_ids'] if 'graph_ids' in batch else None,
                         labels=batch['tags'], lengths=batch['lens'],
                         extra_mask=batch['no_loc_mask'] if no_localization else batch['hide_mask'],
                         # class_weights=batch['class_weights'],
@@ -392,7 +397,8 @@ def train(
                     # token_ids, graph_ids, labels, class_weights, lengths = b
                     test_loss, test_p, test_r, test_f1 = test_step(
                         model=model, token_ids=batch['tok_ids'],
-                        prefix=batch['prefix'], suffix=batch['suffix'], graph_ids=batch['graph_ids'],
+                        prefix=batch['prefix'], suffix=batch['suffix'],
+                        graph_ids=batch['graph_ids'] if 'graph_ids' in batch else None,
                         labels=batch['tags'], lengths=batch['lens'],
                         extra_mask=batch['no_loc_mask'] if no_localization else batch['hide_mask'],
                         # class_weights=batch['class_weights'],
