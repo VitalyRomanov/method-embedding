@@ -173,14 +173,14 @@ class ModelTrainer:
         train_batcher = self.get_batcher(
             self.train_data, self.batch_size, seq_len=self.seq_len,
             graphmap=graph_emb.ind if graph_emb is not None else None,
-            wordmap=word_emb.ind, tagmap=tagmap,
+            wordmap=word_emb.ind, tagmap=tagmap, tokenizer="codebert",
             class_weights=False, element_hash_size=suffix_prefix_buckets, no_localization=self.no_localization,
             **kwargs
         )
         test_batcher = self.get_batcher(
             self.test_data, self.batch_size, seq_len=self.seq_len,
             graphmap=graph_emb.ind if graph_emb is not None else None,
-            wordmap=word_emb.ind,
+            wordmap=word_emb.ind, tokenizer="codebert",
             tagmap=train_batcher.tagmap,  # use the same mapping
             class_weights=False, element_hash_size=suffix_prefix_buckets,  # class_weights are not used for testing
             no_localization=self.no_localization, **kwargs
@@ -212,7 +212,7 @@ class ModelTrainer:
 
             model = self.get_model(
                 word_emb, graph_emb, train_embeddings=self.finetune, suffix_prefix_buckets=suffix_prefix_buckets,
-                num_classes=train_batcher.num_classes(), seq_len=self.seq_len, no_graph=self.no_graph, **params
+                num_classes=train_batcher.num_classes, seq_len=self.seq_len, no_graph=self.no_graph, **params
             )
 
             def save_ckpt_fn():
