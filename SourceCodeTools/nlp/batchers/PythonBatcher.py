@@ -475,12 +475,15 @@ class PythonBatcher:
             tokens_for_biluo_alignment, adjust_offsets(ents, entity_adjustment_amount),
             self.no_localization
         )
-        repl_tags = ["O"] * len(ents_tags)  # biluo_tags_from_offsets(
-            # tokens_for_biluo_alignment, adjust_offsets(repl, entity_adjustment_amount),
-            # self.no_localization
-        # )
+        repl_tags = biluo_tags_from_offsets(
+            tokens_for_biluo_alignment, adjust_offsets(repl, entity_adjustment_amount),
+            self.no_localization
+        )
         if self.mask_unlabeled_declarations:
-            unlabeled_dec = []  # biluo_tags_from_offsets(tokens_for_biluo_alignment, unlabeled_dec, self.no_localization)
+            unlabeled_dec = biluo_tags_from_offsets(
+                tokens_for_biluo_alignment, adjust_offsets(unlabeled_dec, entity_adjustment_amount),
+                self.no_localization
+            )
 
         # # TODO
         # # enable those back
