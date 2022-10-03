@@ -8,6 +8,7 @@ import numpy as np
 import torch
 from sklearn.metrics import ndcg_score, top_k_accuracy_score
 from torch import nn
+from torch.utils import checkpoint
 from tqdm import tqdm
 
 from SourceCodeTools.code.data.dataset.SubwordMasker import SubwordMasker
@@ -24,13 +25,14 @@ from SourceCodeTools.tabular.common import compact_property
 class PoolingLayerUnet(torch.nn.Module):
     # From : http://proceedings.mlr.press/v97/gao19a/gao19a.pdf
 
-    def __init__(self, k, shape=1):
+    def __init__(self, k, emb_dim):
         super().__init__()
-        self.learnable_vector = torch.nn.Parameter(torch.randn(shape))
+        self.learnable_vector = torch.nn.Parameter(torch.randn(emb_dim, 1))
         self.learnable_vector.requires_grad = True
         self.k = k
+        self.dummy_tensor = torch.ones(1, dtype=torch.float32, requires_grad=True)
 
-    def forward(self, x):
+    def do_stuff(self, x):
         length = torch.norm(self.learnable_vector)
         y = (x @ self.learnable_vector / length).reshape(-1)
         top_k = min(self.k, y.shape[0])
@@ -39,6 +41,18 @@ class PoolingLayerUnet(torch.nn.Module):
         x_part = x[idx]
         return (x_part * y.reshape(-1, 1)).sum(dim=0, keepdim=True)
 
+    def custom(self):
+        def custom_forward(*inputs):
+            x, dummy = inputs
+            return self.do_stuff(x)
+        return custom_forward
+
+    def forward(self, x):
+        # if self.use_checkpoint:
+        return checkpoint.checkpoint(self.custom(), x, self.dummy_tensor)
+        # else:
+        #     return self.do_stuff(x)
+
 
 class PoolingLayerWithTrans(torch.nn.Module):
 
@@ -46,14 +60,28 @@ class PoolingLayerWithTrans(torch.nn.Module):
         super().__init__()
         self.multihead_attn = nn.MultiheadAttention(emb_size, 10)
         self.multihead_attn2 = nn.MultiheadAttention(emb_size, 10)
+        self.dummy_tensor = torch.ones(1, dtype=torch.float32, requires_grad=True)
 
-    def forward(self, x):
+    def do_stuff(self, x):
         x = x.unsqueeze(1)
         x = torch.relu(self.multihead_attn(x,x,x)[0])
         x = torch.relu(self.multihead_attn2(x,x,x)[0])
         x = x.squeeze(1)
         assert len(x.shape) == 2
-        return torch.max(x,dim=0,keepdim=True)[0]
+        return torch.mean(x,dim=0,keepdim=True)
+
+    def custom(self):
+        def custom_forward(*inputs):
+            x, dummy = inputs
+            return self.do_stuff(x)
+        return custom_forward
+
+    def forward(self, x):
+        # if self.use_checkpoint:
+        return checkpoint.checkpoint(self.custom(), x, self.dummy_tensor)
+        # else:
+        #     return self.do_stuff(x)
+
 
 class SubgraphLoader:
     def __init__(self, ids, subgraph_mapping, loading_fn, batch_size, graph_node_types):
@@ -468,8 +496,8 @@ class SubgraphClassifierObjectiveWithUnetPool(SubgraphClassifierObjective):
     def __init__(self,*args, **kwargs):
         super(SubgraphClassifierObjectiveWithUnetPool,self).__init__(*args, **kwargs)
 
-    def create_pooling_layer(self):
-        self.pooler = PoolingLayerUnet(300, (300, 1)).to(self.device)
+    def create_pooling_layer(self, num_heads=1):
+        self.pooler = PoolingLayerUnet(k=300, emb_dim=self.graph_model.emb_size).to(self.device)
 
     def pooling_fn(self, node_embeddings):
         return self.pooler(node_embeddings)
