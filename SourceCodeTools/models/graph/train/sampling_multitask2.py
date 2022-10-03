@@ -25,7 +25,7 @@ from SourceCodeTools.models.graph.train.objectives import GraphTextPrediction, G
 from SourceCodeTools.models.graph.NodeEmbedder import SimplestNodeEmbedder
 from SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObjective import TransRObjective
 from SourceCodeTools.models.graph.train.objectives.SubgraphClassifierObjective import SubgraphClassifierObjective, \
-    SubgraphEmbeddingObjective
+    SubgraphEmbeddingObjective, SubgraphClassifierObjectiveWithUnetPool, SubgraphClassifierObjectiveWithAttentionPooling
 
 
 class EarlyStopping(Exception):
@@ -81,6 +81,9 @@ class SamplingMultitaskTrainer:
             print("Early stopping disabled when several objectives are used")
             trainer_params["early_stopping"] = False
         model_params["activation"] = resolve_activation_function(model_params["activation"])
+        if model_params["h_dim"] is None:
+            print(f"Model parameter `h_dim` is not provided, setting it to: {model_params['node_emb_size']}")
+            model_params["h_dim"] = model_params['node_emb_size']
 
     def create_objectives(self, dataset, tokenizer_path):
         objective_list = self.trainer_params["objectives"]
@@ -218,7 +221,7 @@ class SamplingMultitaskTrainer:
         self.objectives.append(
             self._create_subgraph_objective(
                 objective_name="SubgraphClassifierObjective",
-                objective_class=SubgraphClassifierObjective,
+                objective_class=SubgraphClassifierObjective,  # SubgraphClassifierObjectiveWithAttentionPooling,  # SubgraphClassifierObjectiveWithUnetPool,  # SubgraphClassifierObjective,
                 dataset=dataset,
                 tokenizer_path=tokenizer_path,
                 labels_fn=load_labels,
