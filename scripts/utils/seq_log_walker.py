@@ -28,7 +28,10 @@ def parse_tensorboard(path):
         except IndexError:
             pass
 
-    df = pd.DataFrame(data).ewm(0.98).mean()
+    df = pd.DataFrame(data)
+
+    win_size = int(len(df) / 300)
+    df = df.rolling(win_size, min_periods=1).mean()
     maxidx = df["F1/Test"].idxmax()
     max_val = df.loc[maxidx]
 
@@ -90,6 +93,9 @@ def main():
         if events_file is None:
             print("Could not find event file", params_path)
         max_p, max_r, max_f1 = parse_tensorboard(events_file)
+
+        if max_f1 < 0.5:
+            print("Possible problem:", params_path)
 
         statistics[key]["test_p"].append(max_p)
         statistics[key]["test_r"].append(max_r)
