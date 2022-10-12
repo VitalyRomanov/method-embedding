@@ -303,14 +303,14 @@ class CodeBertModelTrainer2(CodeBertModelTrainer):
 
         codebert_model = RobertaModel.from_pretrained("microsoft/codebert-base")
         model = CodebertHybridModel(
-            codebert_model, graph_emb.e, padding_idx=train_batcher.graphpad, num_classes=train_batcher.num_classes(),
+            codebert_model, graph_emb.e if graph_emb is not None else None, padding_idx=train_batcher.graphpad, num_classes=train_batcher.num_classes(),
             no_graph=self.no_graph
         )
         if self.use_cuda:
             model.cuda()
 
         trial_dir = self.get_trial_dir()
-        os.mkdir(trial_dir)
+        os.makedirs(trial_dir)
         self.create_summary_writer(trial_dir)
 
         def save_ckpt_fn():
