@@ -552,6 +552,13 @@ class SamplingMultitaskTrainer:
                     # loaders = [next(objective_iterator) for objective_iterator in objective_iterators]
                 except StopIteration:
                     break
+                except RuntimeError:
+                    with open(join(self.model_base_path, "batch_errors.log")) as error_log:
+                        error_log.write(
+                            f"Runtime error at step {step}\n"
+                        )
+                        torch.cuda.empty_cache()
+                        continue
 
                 for groups in self.optimizer.param_groups:
                     for param in groups["params"]:
