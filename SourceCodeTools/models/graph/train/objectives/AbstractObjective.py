@@ -2,6 +2,7 @@ import logging
 from abc import abstractmethod
 from collections import defaultdict
 from enum import Enum
+from os.path import join
 
 import dgl
 import torch
@@ -447,8 +448,14 @@ class AbstractObjective(nn.Module):
         for batch_ind, batch in enumerate(tqdm(
                 self.get_iterator(data_split), total=getattr(self, f"num_{data_split}_batches")
         )):
-
-            _, _ = self.make_step(batch_ind, batch, data_split, longterm_scores, scorer)
+            try:
+                _, _ = self.make_step(batch_ind, batch, data_split, longterm_scores, scorer)
+            except RuntimeError:
+                with open(join(self.base_path, "batch_errors.log")) as error_log:
+                    error_log.write(
+                        f"Runtime error at training step {batch_ind}\n"
+                    )
+                    torch.cuda.empty_cache()
 
         return longterm_scores
 

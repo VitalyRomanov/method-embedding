@@ -555,7 +555,7 @@ class SamplingMultitaskTrainer:
                 except RuntimeError:
                     with open(join(self.model_base_path, "batch_errors.log")) as error_log:
                         error_log.write(
-                            f"Runtime error at step {step}\n"
+                            f"Runtime error at training step {step}\n"
                         )
                         torch.cuda.empty_cache()
                         continue
@@ -596,7 +596,8 @@ class SamplingMultitaskTrainer:
 
             epoch_summary = self._reduce_metrics(longterm_metrics)
 
-            epoch_summary.update(self._do_evaluation())
+            # epoch_summary.update(self._do_evaluation())
+            if epoch % 3 == 0: epoch_summary.update(self._do_evaluation())
             self.write_summary(epoch_summary, self.batch)
 
             end = time()
