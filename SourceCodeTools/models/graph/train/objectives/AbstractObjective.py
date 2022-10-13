@@ -453,7 +453,7 @@ class AbstractObjective(nn.Module):
             except RuntimeError:
                 with open(join(self.base_path, "batch_errors.log"), "a") as error_log:
                     error_log.write(
-                        f"Runtime error at training step {batch_ind}\n"
+                        f"Runtime error at evaluation step {batch_ind}\n"
                     )
                     torch.cuda.empty_cache()
 
