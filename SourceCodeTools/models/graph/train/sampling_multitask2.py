@@ -553,7 +553,7 @@ class SamplingMultitaskTrainer:
                 except StopIteration:
                     break
                 except RuntimeError:
-                    with open(join(self.model_base_path, "batch_errors.log")) as error_log:
+                    with open(join(self.model_base_path, "batch_errors.log"), "a") as error_log:
                         error_log.write(
                             f"Runtime error at training step {step}\n"
                         )

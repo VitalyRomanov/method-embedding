@@ -451,7 +451,7 @@ class AbstractObjective(nn.Module):
             try:
                 _, _ = self.make_step(batch_ind, batch, data_split, longterm_scores, scorer)
             except RuntimeError:
-                with open(join(self.base_path, "batch_errors.log")) as error_log:
+                with open(join(self.base_path, "batch_errors.log"), "a") as error_log:
                     error_log.write(
                         f"Runtime error at training step {batch_ind}\n"
                     )
