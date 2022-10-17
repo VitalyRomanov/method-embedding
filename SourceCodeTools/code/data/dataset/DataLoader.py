@@ -368,13 +368,23 @@ class SGEdgesDataLoader(SGNodesDataLoader):
                         nodes_in_batch, k=self.neg_sampling_factor, strategy=self.negative_sampling_strategy,
                         current_group=group, bloom_filter=edges_bloom_filter
                     )
-                    positive_indices_g = torch.LongTensor(list(map(original_id_to_graph_id.get, positive_indices)))
-                    negative_indices_g = torch.LongTensor(list(map(original_id_to_graph_id.get, negative_indices)))
+                    if isinstance(positive_indices, tuple):
+                        positive_indices, positive_labels = positive_indices
+                        negative_indices, negative_labels = negative_indices
+                        positive_labels = torch.LongTensor(positive_labels).to(self.device)
+                        negative_labels = torch.LongTensor(negative_labels).to(self.device)
+                    else:
+                        positive_labels = None
+                        negative_labels = None
+                    positive_indices_g = torch.LongTensor(list(map(original_id_to_graph_id.get, positive_indices))).to(self.device)
+                    negative_indices_g = torch.LongTensor(list(map(original_id_to_graph_id.get, negative_indices))).to(self.device)
                 else:
                     positive_indices = None
                     negative_indices = None
                     positive_indices_g = None
                     negative_indices_g = None
+                    positive_labels = None
+                    negative_labels = None
 
                 nodes_in_total = len(nodes_in_batch) + len(positive_indices) + len(negative_indices)
                 empty_mask = [False] * nodes_in_total
@@ -427,6 +437,8 @@ class SGEdgesDataLoader(SGNodesDataLoader):
                     "blocks": [block.to(self.device) for block in blocks],
                     "positive_indices": positive_indices,  # .to(self.device),
                     "negative_indices": negative_indices,  # .to(self.device),
+                    "positive_labels": positive_labels,
+                    "negative_labels": negative_labels,
                     "labels_loader": labels_loader,
                     "src_nodes_mask": src_nodes_mask,
                     "positive_nodes_mask": positive_nodes_mask,

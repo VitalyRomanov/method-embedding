@@ -91,13 +91,13 @@ class LinkClassifier(AbstractNNLinkScorer):
         super(LinkClassifier, self).__init__(input_dim1, input_dim2, num_classes, h_dim)
         concat_emb_size = self._input_dim1 + self._input_dim1
 
-        self.norm = nn.BatchNorm1d(concat_emb_size) # LayerNorm
+        # self.norm = nn.BatchNorm1d(concat_emb_size) # LayerNorm
         self.l1 = nn.Linear(concat_emb_size, self._h_dim)
         self.logits = nn.Linear(self._h_dim, num_classes)
 
     def forward(self, x1, x2, **kwargs):
         x = torch.cat([x1, x2], dim=-1)
-        x = self.norm(x)
+        # x = self.norm(x)
         x = F.relu(self.l1(x))
         return self.logits(x)
 

@@ -5,13 +5,14 @@ from collections import defaultdict
 import numpy as np
 import random as rnd
 import torch
+from torch import nn
 from torch.nn import CrossEntropyLoss
 
 from SourceCodeTools.code.data.dataset.SubwordMasker import SubwordMasker
 from SourceCodeTools.mltools.torch import compute_accuracy
 from SourceCodeTools.models.graph.ElementEmbedder import GraphLinkSampler
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
-from SourceCodeTools.models.graph.LinkPredictor import BilinearLinkClassifier, TransRLinkScorer
+from SourceCodeTools.models.graph.LinkPredictor import BilinearLinkClassifier, TransRLinkScorer, LinkClassifier
 from SourceCodeTools.models.graph.train.Scorer import Scorer
 from SourceCodeTools.models.graph.train.objectives.GraphLinkObjective import GraphLinkObjective
 from SourceCodeTools.tabular.common import compact_property
@@ -22,7 +23,7 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
         super().__init__(**kwargs)
 
         self.measure_scores = True
-        self.update_embeddings_for_queries = True
+        self.update_embeddings_for_queries = False
 
     def create_graph_link_sampler(self, data_loading_func, *args, **kwargs):
         raise NotImplementedError()
@@ -30,54 +31,93 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
         #     elements=data_loading_func(), nodes=nodes, emb_size=self.target_emb_size, ns_groups=self.ns_groups
         # )
 
-    def _create_link_predictor(self):
-        self.link_predictor = BilinearLinkClassifier(
-            self.target_emb_size, self.graph_model.emb_size, self.target_embedder.num_classes
+    def _create_link_scorer(self):
+        self.link_scorer = LinkClassifier(
+            self.graph_model.emb_size, self.target_emb_size, self.dataloader.train_loader.num_classes
         ).to(self.device)
-        # self.positive_label = 1
-        self.negative_label = self.target_embedder.null_class
-        self.label_dtype = torch.long
+        self._loss_op = nn.CrossEntropyLoss()
 
-    def _create_positive_labels(self, ids):
-        return torch.LongTensor(self.target_embedder.get_labels(ids))
+        def compute_average_score(scores, labels=None):
+            assert len(scores.shape) > 1 and scores.shape[1] > 1
+            sm = nn.Softmax(dim=-1)
+            scores = scores.cpu()
+            labels = labels.cpu()
+            return sm(scores)[torch.full(scores.shape, False).scatter_(1, labels.reshape(-1, 1), True)].mean().item()
+            # return compute_accuracy(scores.argmax(dim=-1), labels)
 
-    def _compute_scores_loss(self, node_embs_, element_embs_, labels):
-        logits = self.link_predictor(node_embs_, element_embs_)
+        self._compute_average_score = compute_average_score
 
-        loss_fct = CrossEntropyLoss(ignore_index=-100)
-        loss = loss_fct(logits.reshape(-1, logits.size(-1)),
-                        labels.reshape(-1))
+    # def _create_positive_labels(self, ids):
+    #     return torch.LongTensor(self.target_embedder.get_labels(ids))
 
-        acc = compute_accuracy(logits.argmax(dim=1), labels)
+    def _compute_scores_loss(self, node_embs, positive_embs, negative_embs, positive_labels, negative_labels):
+        pos_scores = self.link_scorer(node_embs, positive_embs)
+        loss = self._loss_op(pos_scores, positive_labels)
+        with torch.no_grad():
+            scores = {
+                f"positive_score/{self.link_scorer_type.name}": self._compute_average_score(pos_scores, positive_labels),
+            }
+        return (pos_scores, None), scores, loss
 
-        return acc, loss
+    def forward(
+            self, input_nodes, input_mask, blocks, positive_indices, negative_indices,
+            update_ns_callback=None, subgraph=None, **kwargs
+    ):
+        unique_embeddings = self._graph_embeddings(input_nodes, blocks, mask=input_mask)
+
+        all_embeddings = unique_embeddings[kwargs["slice_map"]]
+
+        graph_embeddings = all_embeddings[kwargs["src_nodes_mask"]]
+        positive_embeddings = all_embeddings[kwargs["positive_nodes_mask"]]
+        negative_embeddings = all_embeddings[kwargs["negative_nodes_mask"]]
+
+        # non_src_nodes_mask = ~kwargs["src_nodes_mask"]
+        # non_src_ids = kwargs["compute_embeddings_for"][non_src_nodes_mask]
+        # non_src_embeddings = all_embeddings[non_src_nodes_mask].cpu().detach().numpy()
+
+        pos_labels = kwargs["positive_labels"]  #  self._create_positive_labels(positive_indices).to(self.device)
+        neg_labels = kwargs["negative_labels"]  # self._create_negative_labels(negative_embeddings).to(self.device)
+
+        pos_neg_scores, avg_scores, loss = self._compute_scores_loss(
+            graph_embeddings, positive_embeddings, negative_embeddings, pos_labels, neg_labels
+        )
+
+        return graph_embeddings, pos_neg_scores, (pos_labels, neg_labels), loss, avg_scores
 
 
 class TransRObjective(GraphLinkClassificationObjective):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    def _create_link_predictor(self):
-        self.link_predictor = TransRLinkScorer(
-            input_dim=self.target_emb_size, rel_dim=30,
-            num_relations=self.target_embedder.num_classes
+    def _create_link_scorer(self):
+        self.link_scorer = TransRLinkScorer(
+            self.target_emb_size, self.target_emb_size, h_dim=30,
+            num_classes=self.target_embedder.num_classes
         ).to(self.device)
-        # self.positive_label = 1
-        self.negative_label = -1
-        self.label_dtype = torch.long
+        self._loss_op = nn.CrossEntropyLoss()
 
-    def _compute_scores_loss(self, node_embs_, element_embs_, labels):
+        def compute_average_score(scores, labels=None):
+            assert len(scores.shape) > 1 and scores.shape[1] > 1
+            sm = nn.Softmax(dim=-1)
+            scores = scores.cpu()
+            labels = labels.cpu()
+            return sm(scores)[torch.full(scores.shape, False).scatter_(1, labels.reshape(-1, 1), True)].mean().item()
+            # return compute_accuracy(scores.argmax(dim=-1), labels)
 
-        num_examples = len(labels) // 2
-        anchor = node_embs_[:num_examples, :]
-        positive = element_embs_[:num_examples, :]
-        negative = element_embs_[num_examples:, :]
-        labels_ = labels[:num_examples]
+        self._compute_average_score = compute_average_score
 
-        loss, sim = self.link_predictor(anchor, positive, negative, labels_)
-        acc = compute_accuracy(sim, labels >= 0)
-
-        return acc, loss
+    # def _compute_scores_loss(self, node_embs_, element_embs_, labels):
+    #
+    #     num_examples = len(labels) // 2
+    #     anchor = node_embs_[:num_examples, :]
+    #     positive = element_embs_[:num_examples, :]
+    #     negative = element_embs_[num_examples:, :]
+    #     labels_ = labels[:num_examples]
+    #
+    #     loss, sim = self.link_predictor(anchor, positive, negative, labels_)
+    #     acc = compute_accuracy(sim, labels >= 0)
+    #
+    #     return acc, loss
 
 
 # class TargetLinkMapper(GraphLinkSampler):

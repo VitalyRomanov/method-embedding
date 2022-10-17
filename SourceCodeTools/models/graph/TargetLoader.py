@@ -144,6 +144,10 @@ class LabelDenseEncoder:
         self._compact_target(labels)
 
     def _compact_target(self, targets):
+        if "label" in targets.columns:
+            self._label2label_id, self._label_inverse_target_map = compact_property(targets['label'], return_order=True)
+            targets['label_enc'] = targets['label'].apply(self._label2label_id.get)
+            targets['dst'] = list(zip(targets['dst'], targets['label_enc']))
         self._target2target_id, self._inverse_target_map = compact_property(targets['dst'], return_order=True)
 
     def __getitem__(self, item):
@@ -442,8 +446,8 @@ class GraphLinkTargetLoader(TargetLoader):
     ):
         # assert emb_size is not None
         # assert compact_dst is False
-        TargetLoader.__init__(
-            self, *args, **kwargs
+        super(GraphLinkTargetLoader, self).__init__(
+            *args, **kwargs
         )
 
     def sample_positive(self, ids):
@@ -473,26 +477,32 @@ class GraphLinkWithTypeTargetLoader(GraphLinkTargetLoader):
     ):
         # assert emb_size is not None
         # assert compact_dst is False
-        TargetLoader.__init__(
-            self, *args, **kwargs
+        super(GraphLinkWithTypeTargetLoader, self).__init__(
+            *args, **kwargs
         )
 
     def sample_positive(self, ids):
-        positive = np.fromiter(
+        dst, labels = zip(*
             (self._label_encoder._inverse_target_map[rnd.choice(self._element_lookup[id_])] for id_ in ids),
-            dtype=np.int32
         )
 
         if self._ps_logger is not None:
-            for a, p in zip(ids, positive):
-                self._ps_logger.write(f"{a}\t{p}\n")
+            for a, d, lbl in zip(ids, dst, labels):
+                self._ps_logger.write(f"{a}\t{d}\t{lbl}\n")
             self._ps_logger.flush()
 
-        return positive
+        return np.array(dst, dtype=np.int32), np.array(labels, dtype=np.int32)
 
     def sample_negative(self, ids, k=1, strategy="w2v", current_group=None, bloom_filter=None):
-        negative = super().sample_negative(
-            ids, k=k, strategy=strategy, current_group=current_group, bloom_filter=bloom_filter
+        negative = TargetLoader.sample_negative(
+            self, ids, k=k, strategy=strategy, current_group=current_group, bloom_filter=bloom_filter
+        )
+        dst, labels = zip(*
+            (self._label_encoder._inverse_target_map[id_] for id_ in negative),
         )
 
-        return np.fromiter((self._label_encoder._inverse_target_map[neg] for neg in negative), dtype=np.int32)
+        return np.array(dst, dtype=np.int32), np.array(labels, dtype=np.int32)
+
+    @property
+    def num_classes(self):
+        return len(self._label_encoder._label_inverse_target_map)

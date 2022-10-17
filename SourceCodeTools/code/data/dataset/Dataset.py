@@ -1362,7 +1362,7 @@ class SourceGraphDataset:
             result = edges[["src", "dst", "type"]]
             self._write_to_cache(result, cache_key)
 
-        return result
+        return result.rename({"type": "label"}, axis=1)
 
     def load_type_prediction(self):
 

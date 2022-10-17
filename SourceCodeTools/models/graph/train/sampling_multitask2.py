@@ -19,11 +19,12 @@ from tqdm import tqdm
 from SourceCodeTools.code.data.dataset.DataLoader import SGNodesDataLoader, SGEdgesDataLoader, SGSubgraphDataLoader
 from SourceCodeTools.code.data.file_utils import unpersist
 from SourceCodeTools.models.Embedder import Embedder
-from SourceCodeTools.models.graph.TargetLoader import TargetLoader, GraphLinkTargetLoader
+from SourceCodeTools.models.graph.TargetLoader import TargetLoader, GraphLinkTargetLoader, GraphLinkWithTypeTargetLoader
 from SourceCodeTools.models.graph.train.objectives import GraphTextPrediction, GraphTextGeneration, \
     NodeNameClassifier, NodeClassifierObjective, SubwordEmbedderObjective, GraphLinkObjective
 from SourceCodeTools.models.graph.NodeEmbedder import SimplestNodeEmbedder
-from SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObjective import TransRObjective
+from SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObjective import TransRObjective, \
+    GraphLinkClassificationObjective
 from SourceCodeTools.models.graph.train.objectives.SubgraphClassifierObjective import SubgraphClassifierObjective, \
     SubgraphEmbeddingObjective, SubgraphClassifierObjectiveWithUnetPool, SubgraphClassifierObjectiveWithAttentionPooling
 
@@ -103,6 +104,8 @@ class SamplingMultitaskTrainer:
             self.create_edge_objective(dataset, tokenizer_path)
         # if "transr" in objective_list:
         #     self.create_transr_objective(dataset, tokenizer_path)
+        if "misuse_edge" in objective_list:
+            self.create_misuse_edge_objective(dataset, tokenizer_path)
         # if "doc_pred" in objective_list:
         #     self.create_text_prediction_objective(dataset, tokenizer_path)
         # if "doc_gen" in objective_list:
@@ -324,6 +327,31 @@ class SamplingMultitaskTrainer:
                 objective_class=TransRObjective,
                 dataset=dataset,
                 labels_fn=dataset.load_edge_prediction,
+                label_loader_class=GraphLinkWithTypeTargetLoader,
+                label_loader_params={"compact_dst": False},
+                dataloader_class=SGEdgesDataLoader,
+                tokenizer_path=tokenizer_path,
+                masker_fn=None,
+                preload_for="package"  # "file", "function"
+            )
+        )
+
+    def create_misuse_edge_objective(self, dataset, tokenizer_path):
+
+        def load_labels():
+            filecontent_path = Path(dataset.data_path).joinpath("misuse_edge_labels.json.bz2")
+            filecontent = unpersist(filecontent_path)
+            return filecontent[["src", "dst", "label"]]
+
+        self.objectives.append(
+            self._create_node_level_objective(
+                objective_name="GraphLinkClassificationObjective",
+                objective_class=GraphLinkClassificationObjective,
+                dataset=dataset,
+                labels_fn=load_labels,
+                label_loader_class=GraphLinkWithTypeTargetLoader,
+                label_loader_params={"compact_dst": False},
+                dataloader_class=SGEdgesDataLoader,
                 tokenizer_path=tokenizer_path,
                 masker_fn=None,
                 preload_for="package"  # "file", "function"
