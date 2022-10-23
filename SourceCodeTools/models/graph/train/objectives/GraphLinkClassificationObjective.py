@@ -85,6 +85,52 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
         return graph_embeddings, pos_neg_scores, (pos_labels, neg_labels), loss, avg_scores
 
 
+class GraphLinkMisuseObjective(GraphLinkClassificationObjective):
+    def __init__(self, *args, **kwargs):
+        super().__init__(**kwargs)
+
+    def _compute_scores_loss(self, node_embs, positive_embs, negative_embs, positive_labels, negative_labels):
+
+        pos_scores = self.link_scorer(node_embs[:len(positive_labels)], positive_embs)
+        neg_scores = self.link_scorer(node_embs[len(positive_labels):], negative_embs)
+        loss = self._loss_op(
+            torch.cat([pos_scores, neg_scores]),
+            torch.cat([positive_labels, negative_labels])
+        )
+        with torch.no_grad():
+            scores = {
+                f"positive_score/{self.link_scorer_type.name}": self._compute_average_score(pos_scores, positive_labels),
+                f"negative_score/{self.link_scorer_type.name}": self._compute_average_score(neg_scores, negative_labels)
+            }
+        return (pos_scores, neg_scores), scores, loss
+
+    def forward(
+            self, input_nodes, input_mask, blocks, positive_indices, negative_indices,
+            update_ns_callback=None, subgraph=None, **kwargs
+    ):
+        unique_embeddings = self._graph_embeddings(input_nodes, blocks, mask=input_mask)
+
+        all_embeddings = unique_embeddings[kwargs["slice_map"]]
+
+        graph_embeddings = all_embeddings[kwargs["src_nodes_mask"]]
+        positive_embeddings = all_embeddings[kwargs["positive_nodes_mask"]]
+        negative_embeddings = all_embeddings[kwargs["negative_nodes_mask"]]
+
+        # non_src_nodes_mask = ~kwargs["src_nodes_mask"]
+        # non_src_ids = kwargs["compute_embeddings_for"][non_src_nodes_mask]
+        # non_src_embeddings = all_embeddings[non_src_nodes_mask].cpu().detach().numpy()
+
+        pos_labels = kwargs["positive_labels"]  # self._create_positive_labels(positive_indices).to(self.device)
+        neg_labels = kwargs["negative_labels"]  # self._create_negative_labels(negative_embeddings).to(self.device)
+
+        pos_neg_scores, avg_scores, loss = self._compute_scores_loss(
+            graph_embeddings, positive_embeddings, negative_embeddings, pos_labels, neg_labels
+        )
+
+        return graph_embeddings, pos_neg_scores, (pos_labels, neg_labels), loss, avg_scores
+
+
+
 class TransRObjective(GraphLinkClassificationObjective):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

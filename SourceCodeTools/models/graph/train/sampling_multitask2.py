@@ -16,15 +16,17 @@ import logging
 
 from tqdm import tqdm
 
-from SourceCodeTools.code.data.dataset.DataLoader import SGNodesDataLoader, SGEdgesDataLoader, SGSubgraphDataLoader
+from SourceCodeTools.code.data.dataset.DataLoader import SGNodesDataLoader, SGEdgesDataLoader, SGSubgraphDataLoader, \
+    SGMisuseEdgesDataLoader
 from SourceCodeTools.code.data.file_utils import unpersist
 from SourceCodeTools.models.Embedder import Embedder
-from SourceCodeTools.models.graph.TargetLoader import TargetLoader, GraphLinkTargetLoader, GraphLinkWithTypeTargetLoader
+from SourceCodeTools.models.graph.TargetLoader import TargetLoader, GraphLinkTargetLoader, \
+    GraphLinkWithTypeTargetLoader, GraphLinkExhaustiveWithTypeTargetLoader
 from SourceCodeTools.models.graph.train.objectives import GraphTextPrediction, GraphTextGeneration, \
     NodeNameClassifier, NodeClassifierObjective, SubwordEmbedderObjective, GraphLinkObjective
 from SourceCodeTools.models.graph.NodeEmbedder import SimplestNodeEmbedder
 from SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObjective import TransRObjective, \
-    GraphLinkClassificationObjective
+    GraphLinkClassificationObjective, GraphLinkMisuseObjective
 from SourceCodeTools.models.graph.train.objectives.SubgraphClassifierObjective import SubgraphClassifierObjective, \
     SubgraphEmbeddingObjective, SubgraphClassifierObjectiveWithUnetPool, SubgraphClassifierObjectiveWithAttentionPooling
 
@@ -345,13 +347,13 @@ class SamplingMultitaskTrainer:
 
         self.objectives.append(
             self._create_node_level_objective(
-                objective_name="GraphLinkClassificationObjective",
-                objective_class=GraphLinkClassificationObjective,
+                objective_name="GraphLinkMisuseObjective",
+                objective_class=GraphLinkMisuseObjective,
                 dataset=dataset,
                 labels_fn=load_labels,
-                label_loader_class=GraphLinkWithTypeTargetLoader,
+                label_loader_class=GraphLinkExhaustiveWithTypeTargetLoader,
                 label_loader_params={"compact_dst": False},
-                dataloader_class=SGEdgesDataLoader,
+                dataloader_class=SGMisuseEdgesDataLoader,
                 tokenizer_path=tokenizer_path,
                 masker_fn=None,
                 preload_for="package"  # "file", "function"

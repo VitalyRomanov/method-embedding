@@ -506,3 +506,29 @@ class GraphLinkWithTypeTargetLoader(GraphLinkTargetLoader):
     @property
     def num_classes(self):
         return len(self._label_encoder._label_inverse_target_map)
+
+
+class GraphLinkExhaustiveWithTypeTargetLoader(GraphLinkTargetLoader):
+    def __init__(
+            self, *args, **kwargs
+    ):
+        # assert emb_size is not None
+        # assert compact_dst is False
+        super(GraphLinkExhaustiveWithTypeTargetLoader, self).__init__(
+            *args, **kwargs
+        )
+
+    def sample_positive(self, ids):
+        edges = [[(id_, self._label_encoder._inverse_target_map[e]) for e in self._element_lookup[id_]] for id_ in ids]
+        edges_ = []
+        for e in edges:
+            for src, (dst, label) in e:
+                edges_.append((src, dst, label))
+        return edges_
+
+    def sample_negative(self, ids, k=1, strategy="w2v", current_group=None, bloom_filter=None):
+        return None
+
+    @property
+    def num_classes(self):
+        return len(self._label_encoder._label_inverse_target_map)

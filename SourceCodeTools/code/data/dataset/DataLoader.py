@@ -448,6 +448,151 @@ class SGEdgesDataLoader(SGNodesDataLoader):
                 yield batch
 
 
+class SGMisuseEdgesDataLoader(SGNodesDataLoader):
+
+    def iterate_nodes_for_batches(self, nodes):
+        if isinstance(nodes, dict):
+            nodes = nodes["node_"]
+        total_nodes = len(nodes)
+        for i in range(0, total_nodes, self.batch_size):
+            yield nodes[i: min(i + self.batch_size, total_nodes)]
+
+    @staticmethod
+    def _handle_non_unique(non_unique_ids):
+        id_list = non_unique_ids.tolist()
+        unique_ids = sorted(list(set(id_list)))
+        new_position = dict(zip(unique_ids, range(len(unique_ids))))
+        slice_map = torch.tensor(list(map(lambda x: new_position[x], id_list)), dtype=torch.long)
+        return torch.tensor(unique_ids, dtype=torch.long), slice_map
+
+    def create_batches(self, subgraph_generator, number_of_hops, batch_size, partition, labels_for):
+
+        sampler = MultiLayerFullNeighborSampler(number_of_hops)
+
+        # for group, subgraph, masker, labels_loader, edge_labels_loader, edges_bloom_filter in subgraph_generator:
+        for subgraph_ in subgraph_generator:
+            group = subgraph_["group"]
+            subgraph = subgraph_["subgraph"]
+            masker = subgraph_["masker"]
+            labels_loader = subgraph_["labels_loader"]
+            edges_bloom_filter = subgraph_["edges_bloom_filter"]
+
+            nodes_in_graph = set(subgraph.nodes("node_")[subgraph.nodes["node_"].data["current_type_mask"]].cpu().numpy())
+            nodes_for_batching = self.get_nodes_from_partition(subgraph, partition, labels_for)
+            if self._num_nodes_total(nodes_for_batching) == 0:
+                continue
+
+            graph_ids = subgraph.nodes("node_").numpy()
+            original_ids = subgraph.nodes["node_"].data["original_id"].numpy()
+
+            graph_id_to_original_id = dict(zip(graph_ids, original_ids))
+            original_id_to_graph_id = dict(zip(original_ids, graph_ids))
+
+
+            for nodes_in_batch_g in self.iterate_nodes_for_batches(self.seeds_to_python(nodes_for_batching)):
+                nodes_in_batch = np.array(list(map(graph_id_to_original_id.get, nodes_in_batch_g)))
+
+                if labels_loader is not None:
+                    positive_edges = labels_loader.sample_positive(nodes_in_batch)
+                    nodes_in_batch_p = []
+                    nodes_in_batch_n = []
+                    positive_indices = []
+                    negative_indices = []
+                    positive_labels = []
+                    negative_labels = []
+
+                    for src, dst, label in positive_edges:
+                        if label > 0:
+                            nodes_in_batch_p.append(src)
+                            positive_indices.append(dst)
+                            positive_labels.append(label)
+                        else:
+                            nodes_in_batch_n.append(src)
+                            negative_indices.append(dst)
+                            negative_labels.append(label)
+
+                    nodes_in_batch_ = nodes_in_batch_p + nodes_in_batch_n
+
+                    if partition == "train_mask" and sum(positive_labels) == 0:
+                        continue
+
+                    nodes_in_batch_g = np.array(list(map(original_id_to_graph_id.get, nodes_in_batch)))
+                    nodes_in_batch_ = np.array(nodes_in_batch_)
+                    positive_indices_g = torch.LongTensor(list(map(original_id_to_graph_id.get, positive_indices))).to(self.device)
+                    positive_labels = torch.LongTensor(positive_labels)
+                    negative_indices_g = torch.LongTensor(list(map(original_id_to_graph_id.get, negative_indices))).to(self.device)
+                    negative_labels = torch.LongTensor(negative_labels)
+                else:
+                    positive_indices = None
+                    negative_indices = None
+                    positive_indices_g = None
+                    negative_indices_g = None
+                    positive_labels = None
+                    negative_labels = None
+                    nodes_in_batch_ = nodes_in_batch
+
+                nodes_in_total = len(nodes_in_batch_) + len(positive_indices) + len(negative_indices)
+                empty_mask = [False] * nodes_in_total
+
+                src_nodes_mask = torch.BoolTensor(empty_mask)
+                positive_nodes_mask = torch.BoolTensor(empty_mask)
+                negative_nodes_mask = torch.BoolTensor(empty_mask)
+
+                positive_start = len(nodes_in_batch_)
+                negative_start = len(nodes_in_batch_) + len(positive_indices)
+
+                src_nodes_mask[:positive_start] = True
+                positive_nodes_mask[positive_start: negative_start] = True
+                negative_nodes_mask[negative_start:] = True
+
+                all_nodes = torch.cat([torch.LongTensor(nodes_in_batch_g), positive_indices_g, negative_indices_g])
+
+                unique_nodes, slice_map = self._handle_non_unique(all_nodes)
+                assert unique_nodes[slice_map].tolist() == all_nodes.tolist()
+
+                loader = NodeDataLoader(
+                    subgraph, {"node_": unique_nodes}, sampler, batch_size=len(unique_nodes), shuffle=True, num_workers=0
+                )
+
+                input_nodes, seeds, blocks = next(iter(loader))
+
+                if masker is not None:
+                    input_mask = masker.get_mask(mask_for=unique_nodes, input_nodes=input_nodes).to(self.device)
+                else:
+                    input_mask = None
+
+                # indices = self.seeds_to_python(seeds)  # dgl returns torch tensor
+                #
+                # if isinstance(indices, dict):
+                #     raise NotImplementedError("Using node types is currently not supported. Set use_node_types=False")
+
+                input_nodes = blocks[0].srcnodes["node_"].data["embedding_id"]
+
+                assert len(set(seeds.numpy()) - nodes_in_graph) == 0
+                assert -1 not in input_nodes.tolist()
+
+                batch = {
+                    # "seeds": seeds,  # list of unique nodes
+                    "indices": nodes_in_batch,
+                    "slice_map": slice_map,  # needed to restore original_nodes
+                    "compute_embeddings_for": np.concatenate([nodes_in_batch_, positive_indices]),  # all_nodes,
+                    "group": group,
+                    "input_nodes": input_nodes.to(self.device),
+                    "input_mask": input_mask,
+                    "blocks": [block.to(self.device) for block in blocks],
+                    "positive_indices": positive_indices,  # .to(self.device),
+                    "negative_indices": negative_indices,  # .to(self.device),
+                    "positive_labels": positive_labels,
+                    "negative_labels": negative_labels,
+                    "labels_loader": labels_loader,
+                    "src_nodes_mask": src_nodes_mask,
+                    "positive_nodes_mask": positive_nodes_mask,
+                    "negative_nodes_mask": negative_nodes_mask
+                }
+
+                yield batch
+
+
 class SGSubgraphDataLoader(SGNodesDataLoader):
 
     def _prepare_batch(self, subgraph_ids, subgraphs, labels_loader, number_of_hops):
