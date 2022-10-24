@@ -361,8 +361,8 @@ if __name__ == "__main__":
     # )
 
     train_data, test_data = read_json_data(
-        dataset_dir, normalize=True, allowed=None, include_replacements=True, include_only="entities",
-        min_entity_count=args.min_entity_count, random_seed=args.random_seed
+        dataset_dir, normalize=True, allowed=allowed, include_replacements=True, include_only="entities",
+        min_entity_count=args.min_entity_count
     )
 
     unique_entities = get_unique_entities(train_data, field="entities")
