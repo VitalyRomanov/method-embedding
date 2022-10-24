@@ -80,6 +80,86 @@ def read_data(
     return train, test
 
 
+def read_json_data(
+        data_path, normalize=False, include_replacements=False, allowed=None, min_entity_count=None,
+        include_only="entities",
+        random_seed=None, train_frac=0.8
+):
+    """
+    Read dataset and split into train and test
+    :param data: NER dataset in jsonl format
+    :param normalize: Optional. Whether to apply normalization function. See `normalize_entities`.
+    :param include_replacements: Optional. Whether to include replacements into the data
+    :param allowed: Optional. A list of allowed entities for filtering. Entities not on the list are replaced
+        with "Other".
+    :param min_entity_count: Optional. Set minimum frequency for entities. Entities wit hcount less than this will be
+        renamed `Other`.
+    :param include_only: Optional: entities|categories. Default: entities. Whether to read dataset for NER
+        or classification.
+    :param random_seed: Optional. Set this to enforce repeatable data splits.
+    :param train_frac: Optional. Default: 0.8. Proportion of train set.
+    :return: train and test sets
+    """
+    import random
+
+
+
+    assert include_only in {"entities", "categories"}
+
+    train_file = data_path.joinpath("type_prediction_dataset_no_default_args_mapped_train.json")
+    test_file = data_path.joinpath("type_prediction_dataset_no_default_args_mapped_test.json")
+
+    def read_data_file(path):
+        data = []
+        entities_in_dataset = []
+        for line in open(path, "r"):
+            entry = json.loads(line)
+            # format for entry is (text, annotation_dict)
+            data.append(format_json_record(entry, include_only, allowed))
+
+            if len(data[-1][1][include_only]) == 0:
+                data.pop(-1)
+                continue
+
+            if include_replacements:
+                if "replacements" in entry[1]:
+                    # [1] is for annotation_dict
+                    data[-1][1]['replacements'] = resolve_repeats(entry[1]['replacements'])
+
+            if normalize:
+                data[-1][1][include_only] = normalize_entities(data[-1][1][include_only])
+
+            # ensure spans are given as integers
+            if include_only == "entities":
+                data[-1][1]['entities'] = [(int(e[0]), int(e[1]), e[2]) for e in data[-1][1]['entities']]
+
+            for entity in data[-1][1][include_only]:
+                entities_in_dataset.append(get_entity_name(entity))
+
+        return data, entities_in_dataset
+
+    train_data, entities_in_dataset = read_data_file(train_file)
+    test_data, _ = read_data_file(test_file)
+
+    filter_infrequent(
+        train_data, entities_in_dataset=Counter(entities_in_dataset),
+        field=include_only, min_entity_count=min_entity_count, behaviour="rename"
+    )
+
+    entities_in_train = get_unique_entities(train_data, field=include_only)
+
+    filter_entities(test_data, field=include_only, allowed=entities_in_train, behaviour="drop")
+
+    assert len(test_data) > 0, """
+    It appears test set is too small. Reasons are:
+        - dataset is too small
+        - label distribution is such that no labels in test set are present in train set
+        - parameter `train_frac` has inadequate value for the given dataset size
+    """
+
+    return train_data, test_data
+
+
 def test_read_data():
     test_data = [
         '{"ents": [[23, 31, "int"]], "cats": [], "replacements": [[43, 47, "16"], [48, 53, "5"], [56, 64, "19"], [17, 21, "17"], [8, 16, "2"]], "text": "    def __init__(self, argument):\\n\\n        self.field = argument\\n", "docstrings": ["        \\"\\"\\"\\n        Initialize. \\u0418\\u043d\\u0438\\u0446\\u0438\\u0430\\u043b\\u0438\\u0437\\u0430\\u0446\\u0438\\u044f\\n        :param argument:\\n        \\"\\"\\""]}\n',

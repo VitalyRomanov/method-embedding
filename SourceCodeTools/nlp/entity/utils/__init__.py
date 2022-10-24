@@ -102,6 +102,15 @@ def format_record(entry, field, allowed):
     ]
 
 
+def format_json_record(entry, field, allowed):
+    text, entry = entry
+    return [
+        text, {
+            field: filter_allowed(entry[field], allowed=allowed, behaviour="rename")
+        }
+    ]
+
+
 def filter_infrequent(train_data, entities_in_dataset, field, min_entity_count, behaviour):
 
     if min_entity_count is None:

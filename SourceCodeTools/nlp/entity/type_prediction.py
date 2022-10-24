@@ -18,7 +18,7 @@ from SourceCodeTools.nlp.batchers import PythonBatcher
 from SourceCodeTools.nlp.entity import parse_biluo
 from SourceCodeTools.nlp.entity.tf_models.params import cnn_params
 from SourceCodeTools.nlp.entity.utils import get_unique_entities, overlap
-from SourceCodeTools.nlp.entity.utils.data import read_data
+from SourceCodeTools.nlp.entity.utils.data import read_data, read_json_data
 
 
 def load_pkl_emb(path):
@@ -351,13 +351,18 @@ if __name__ == "__main__":
     # )
 
     dataset_dir = Path(args.data_path).parent
-    train_data = filter_labels(
-        pickle.load(open(dataset_dir.joinpath("type_prediction_dataset_no_defaults_train.pkl"), "rb")),
-        allowed=allowed
-    )
-    test_data = filter_labels(
-        pickle.load(open(dataset_dir.joinpath("type_prediction_dataset_no_defaults_test.pkl"), "rb")),
-        allowed=allowed
+    # train_data = filter_labels(
+    #     pickle.load(open(dataset_dir.joinpath("type_prediction_dataset_no_defaults_train.pkl"), "rb")),
+    #     allowed=allowed
+    # )
+    # test_data = filter_labels(
+    #     pickle.load(open(dataset_dir.joinpath("type_prediction_dataset_no_defaults_test.pkl"), "rb")),
+    #     allowed=allowed
+    # )
+
+    train_data, test_data = read_json_data(
+        dataset_dir, normalize=True, allowed=None, include_replacements=True, include_only="entities",
+        min_entity_count=args.min_entity_count, random_seed=args.random_seed
     )
 
     unique_entities = get_unique_entities(train_data, field="entities")
