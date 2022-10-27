@@ -851,17 +851,17 @@ class SourceGraphDataset:
         return self.partition.get_partition_ids(partition_label)
 
     def _attach_info_to_label(self, labels, labels_for, group_by):
-        if labels_for == SGLabelSpec.nodes:
-            labels, new_col_name = self.dataset_db.get_info_for_node_ids(labels["src"], group_by)
-            labels.rename({new_col_name: "group"}, axis=1, inplace=True)
-        elif labels_for == SGLabelSpec.edges:
-            raise NotImplementedError("Grouping for labels for edges is currently not supported")
-        elif labels_for == SGLabelSpec.subgraphs:
-            labels, new_col_name = self.dataset_db.get_info_for_subgraphs(labels["src"], group_by)
-            labels.rename({new_col_name: "group"}, axis=1, inplace=True)
-        else:
-            raise ValueError()
-
+        if "group" not in labels:
+            if labels_for == SGLabelSpec.nodes:
+                labels, new_col_name = self.dataset_db.get_info_for_node_ids(labels["src"], group_by)
+                labels.rename({new_col_name: "group"}, axis=1, inplace=True)
+            elif labels_for == SGLabelSpec.edges:
+                raise NotImplementedError("Grouping for labels for edges is currently not supported")
+            elif labels_for == SGLabelSpec.subgraphs:
+                labels, new_col_name = self.dataset_db.get_info_for_subgraphs(labels["src"], group_by)
+                labels.rename({new_col_name: "group"}, axis=1, inplace=True)
+            else:
+                raise ValueError()
         return labels
 
     @staticmethod
