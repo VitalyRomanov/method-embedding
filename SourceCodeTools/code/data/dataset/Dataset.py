@@ -852,17 +852,16 @@ class SourceGraphDataset:
         return self.partition.get_partition_ids(partition_label)
 
     def _attach_info_to_label(self, labels, labels_for, group_by):
-        if "group" not in labels:
-            if labels_for == SGLabelSpec.nodes:
-                labels, new_col_name = self.dataset_db.get_info_for_node_ids(labels["src"], group_by)
-                labels.rename({new_col_name: "group"}, axis=1, inplace=True)
-            elif labels_for == SGLabelSpec.edges:
-                raise NotImplementedError("Grouping for labels for edges is currently not supported")
-            elif labels_for == SGLabelSpec.subgraphs:
-                labels, new_col_name = self.dataset_db.get_info_for_subgraphs(labels["src"], group_by)
-                labels.rename({new_col_name: "group"}, axis=1, inplace=True)
-            else:
-                raise ValueError()
+        if labels_for == SGLabelSpec.nodes:
+            labels, new_col_name = self.dataset_db.get_info_for_node_ids(labels["src"], group_by)
+            labels.rename({new_col_name: "group"}, axis=1, inplace=True)
+        elif labels_for == SGLabelSpec.edges:
+            raise NotImplementedError("Grouping for labels for edges is currently not supported")
+        elif labels_for == SGLabelSpec.subgraphs:
+            labels, new_col_name = self.dataset_db.get_info_for_subgraphs(labels["src"], group_by)
+            labels.rename({new_col_name: "group"}, axis=1, inplace=True)
+        else:
+            raise ValueError()
         return labels
 
     @staticmethod
@@ -890,22 +889,14 @@ class SourceGraphDataset:
         # allowed_labels_for = {"nodes", "edges", "subgraphs"}
         # assert labels_for in allowed_labels_for, f"{labels_for} not in {allowed_labels_for}"
 
-        original_label_map = {}
-        for col in labels.columns:
-            if col == "src":
-                continue
-            original_label_map[col] = dict(zip(labels["src"], labels[col]))
-
         partition_ids = self._get_partition_ids(partition_label)
         labels_from_partition = labels.query("src in @partition_ids", local_dict={"partition_ids": partition_ids})
 
-        labels_ = self._attach_info_to_label(labels_from_partition, labels_for, group_by)
-        for col in original_label_map:
-            labels_.eval(
-                f"{col} = src.map(@original_label_map.get)",
-                local_dict={"original_label_map": original_label_map[col]},
-                inplace=True
-            )
+        if "group" in labels_from_partition.columns:
+            labels_ = labels_from_partition
+        else:
+            labels_ = self._attach_info_to_label(labels_from_partition, labels_for, group_by)
+            labels_ = labels_.merge(labels, how="left", on="src")
 
         self._write_to_cache(labels_, cache_key)
         return labels_
