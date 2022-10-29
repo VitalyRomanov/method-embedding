@@ -520,7 +520,7 @@ class SGMisuseEdgesDataLoader(SGNodesDataLoader):
                     if partition == "train_mask" and sum(positive_labels) == 0:
                         continue
 
-                    nodes_in_batch_g = np.array(list(map(original_id_to_graph_id.get, nodes_in_batch)))
+                    nodes_in_batch_g = np.array(list(map(original_id_to_graph_id.get, nodes_in_batch_)))
                     nodes_in_batch_ = np.array(nodes_in_batch_)
                     positive_indices_g = torch.LongTensor(list(map(original_id_to_graph_id.get, positive_indices))).to(self.device)
                     positive_labels = torch.LongTensor(positive_labels)
