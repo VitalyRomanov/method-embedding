@@ -1,3 +1,4 @@
+import logging
 import tempfile
 from copy import copy
 
@@ -46,8 +47,10 @@ class SGNodesDataLoader:
         self.test_num_batches = 0
 
         if labels is not None:
+            logging.info("Encoding labels")
             self.label_encoder = LabelDenseEncoder(labels)
             if "emb_size" in label_loader_params and label_loader_params["emb_size"] is not None:  # if present, need to create an index for distance queries
+                logging.info("Creating Proximity Target Embedder")
                 self.target_embedding_proximity = TargetEmbeddingProximity(
                     self.label_encoder.encoded_labels(), label_loader_params["emb_size"]
                 )
@@ -73,6 +76,7 @@ class SGNodesDataLoader:
                 label_loader_params = copy(label_loader_params)
                 label_loader_params["logger_path"] = base_path
                 label_loader_params["logger_name"] = objective_name
+            logging.info("Creating label loader")
             label_loader = label_loader_class(
                 partition_labels, self.label_encoder, target_embedding_proximity=self.target_embedding_proximity,
                 **label_loader_params

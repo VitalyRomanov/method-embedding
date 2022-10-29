@@ -1,3 +1,4 @@
+import logging
 import pickle
 from collections import Counter
 from functools import partial
@@ -878,6 +879,8 @@ class SourceGraphDataset:
         return self.partition_columns_names[partition_label]
 
     def get_labels_for_partition(self, labels, partition_label, labels_for, group_by=SGPartitionStrategies.package):
+
+        logging.info(f"Getting labels for {partition_label} partition")
 
         cache_key = f"{self._get_df_hash(labels)}_{partition_label}_{labels_for}_{group_by.name}"
         cached_result = self._load_cache_if_exists(cache_key)
