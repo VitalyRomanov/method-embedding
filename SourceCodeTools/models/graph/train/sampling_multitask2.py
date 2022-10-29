@@ -352,7 +352,7 @@ class SamplingMultitaskTrainer:
                 dataset=dataset,
                 labels_fn=load_labels,
                 label_loader_class=GraphLinkExhaustiveWithTypeTargetLoader,
-                label_loader_params={"compact_dst": False},
+                label_loader_params={"compact_dst": False, "emb_size": None},
                 dataloader_class=SGMisuseEdgesDataLoader,
                 tokenizer_path=tokenizer_path,
                 masker_fn=None,
