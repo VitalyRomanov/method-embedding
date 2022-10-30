@@ -26,12 +26,14 @@ def main():
 
     repls = []
     vects = []
+    added = set()
 
     for t in train_data:
         for s, e, r in t[1]["replacements"]:
-            if r in embedder:
+            if r in embedder and r not in added:
                 repls.append(r)
                 vects.append(embedder[r])
+                added.add(r)
 
     embs = Embedder(dict(zip(repls, range(len(repls)))), np.vstack(vects))
     pickle.dump(embs, open(args.output, "wb"))
