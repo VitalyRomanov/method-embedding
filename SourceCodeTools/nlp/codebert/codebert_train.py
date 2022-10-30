@@ -14,7 +14,7 @@ from SourceCodeTools.models.Embedder import Embedder
 from SourceCodeTools.nlp.codebert.codebert import CodeBertModelTrainer, load_typed_nodes
 from SourceCodeTools.nlp.entity.type_prediction import get_type_prediction_arguments, ModelTrainer, load_pkl_emb, \
     scorer, filter_labels
-from SourceCodeTools.nlp.entity.utils.data import read_data
+from SourceCodeTools.nlp.entity.utils.data import read_data, read_json_data
 
 import torch.nn as nn
 
