@@ -303,7 +303,7 @@ class CodeBertModelTrainer2(CodeBertModelTrainer):
 
         codebert_model = RobertaModel.from_pretrained("microsoft/codebert-base")
         model = CodebertHybridModel(
-            codebert_model, graph_emb.e if graph_emb is not None else None, padding_idx=train_batcher.graphpad, num_classes=train_batcher.num_classes(),
+            codebert_model, graph_emb.e if graph_emb is not None else None, padding_idx=train_batcher.graphpad, num_classes=train_batcher.num_classes,
             no_graph=self.no_graph
         )
         if self.use_cuda:
