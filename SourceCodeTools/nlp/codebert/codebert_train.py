@@ -396,13 +396,17 @@ def main():
 
     from pathlib import Path
     dataset_dir = Path(args.data_path).parent
-    train_data = filter_labels(
-        pickle.load(open(dataset_dir.joinpath("type_prediction_dataset_no_defaults_train.pkl"), "rb")),
-        allowed=allowed
-    )
-    test_data = filter_labels(
-        pickle.load(open(dataset_dir.joinpath("type_prediction_dataset_no_defaults_test.pkl"), "rb")),
-        allowed=allowed
+    # train_data = filter_labels(
+    #     pickle.load(open(dataset_dir.joinpath("type_prediction_dataset_no_defaults_train.pkl"), "rb")),
+    #     allowed=allowed
+    # )
+    # test_data = filter_labels(
+    #     pickle.load(open(dataset_dir.joinpath("type_prediction_dataset_no_defaults_test.pkl"), "rb")),
+    #     allowed=allowed
+    # )
+    train_data, test_data = read_json_data(
+        dataset_dir, normalize=True, allowed=allowed, include_replacements=True, include_only="entities",
+        min_entity_count=args.min_entity_count
     )
 
     trainer = CodeBertModelTrainer2(
