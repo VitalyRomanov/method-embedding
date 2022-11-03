@@ -5,15 +5,19 @@ from SourceCodeTools.code.data.file_utils import write_mapping_to_json, read_map
 
 class ValueEncoder:
     def __init__(self, *, values=None, default=None, value_to_code=None):
+        self._initialize(values, value_to_code)
+
+        self.default = default
+
+    def _initialize(self, values, value_to_code):
         if values is not None:
+            values = sorted(values)
             self._value_to_code = dict(zip(values, range(len(values))))
             self._values = values
         else:
             assert value_to_code is not None
             self._value_to_code = value_to_code
             self._values = self._get_ordered_values(value_to_code)
-
-        self.default = default
 
     def set_default(self, default):
         self.default = default
@@ -69,7 +73,7 @@ class HashingValueEncoder:
         return self._num_buckets
 
     def __getitem__(self, item):
-        return int(hashlib.md5(item.encode('utf-8')).hexdigest(), 16) % (self._num_buckets - 1)
+        return int(hashlib.md5(item.encode('utf-8')).hexdigest(), 16) % max((self._num_buckets - 1), 1)
 
     def __len__(self):
         return self._num_buckets

@@ -29,10 +29,15 @@ def _inject_tokenizer(nlp):
 
 
 class AdapterDoc:
-    def __init__(self, tokens):
+    def __init__(self, tokens, replacements=None):
+        """
+        A simple wrapper for tokens that also stores additional data such as character span adjustment and
+        tokens compatible with `biluo_tags_from_offsets`
+        """
         self.tokens = tokens
         self.adjustment_amount = 0
         self.tokens_for_biluo_alignment = None
+        self._replacements = replacements
 
     def __iter__(self):
         return iter(self.tokens)
@@ -43,8 +48,19 @@ class AdapterDoc:
     def __len__(self):
         return len(self.tokens)
 
+    @property
+    def text(self):
+        r = self.__repr__()
+        if self._replacements is not None:
+            for rc, c in self._replacements.items():
+                r = r.replace(rc, c)
+        return r
+
 
 class CodebertAdapter:
+    """
+    This tokenizer returns tokens in a format that can be used with `biluo_tags_from_offsets`
+    """
     def __init__(self):
         from transformers import RobertaTokenizer
 
@@ -56,19 +72,27 @@ class CodebertAdapter:
         return self.tokenizer.tokenize(text)
 
     def secondary_tokenization(self, tokens):
+        # secondary tokenizer performs subtokenization
+        # example:
+        # "(arg1" -> "(", "arg1"
         new_tokens = []
         for token in tokens:
             new_tokens.extend(self.regex_tok(token))
         return new_tokens
 
     def __call__(self, text):
+        """
+        Tokenization function. Example:
+            original string: 'a + b'
+            codebert tokenized: '<s>', 'a', 'Ġ+', 'Ġb', '</s>'
+        """
         tokens = self.primary_tokenization(text)
         tokens = self.secondary_tokenization(tokens)
         doc = Doc(self.nlp.vocab, tokens, spaces=[False] * len(tokens))
 
         backup_tokens = doc
         fixed_spaces = [False]
-        fixed_words = ["<s>"]
+        fixed_words = ["<s>"]  # add additional tokens for codebert to avoid adding them later.
 
         for ind, t in enumerate(doc):
             if len(t.text) > 1:
@@ -88,7 +112,7 @@ class CodebertAdapter:
         assert len(doc) - 2 == len(backup_tokens)
         assert len(doc.text) - 7 == len(backup_tokens.text)
 
-        final_doc = AdapterDoc(["<s>"] + [t.text for t in backup_tokens] + ["</s>"])
+        final_doc = AdapterDoc(["<s>"] + [t.text for t in backup_tokens] + ["</s>"], {"Ċ": "\n", "Ġ": " ", "<s>": "", "</s>": ""})
         final_doc.adjustment_amount = -3
         final_doc.tokens_for_biluo_alignment = doc
 

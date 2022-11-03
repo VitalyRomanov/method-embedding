@@ -1,8 +1,9 @@
 import pickle
+from datetime import datetime
+from pathlib import Path
 
 import gensim
 import numpy as np
-import torch
 from tqdm import tqdm
 
 from SourceCodeTools.models.Embedder import Embedder
@@ -34,6 +35,11 @@ class FasttextModelTrainer(ModelTrainer):
     def get_batcher(self, *args, **kwargs):
         # kwargs.update({"tokenizer": "codebert"})
         return self.batcher(*args, **kwargs)
+
+    def get_training_dir(self):
+        if not hasattr(self, "_timestamp"):
+            self._timestamp = str(datetime.now()).replace(":", "-").replace(" ", "_")
+        return Path(self.trainer_params["model_output"]).joinpath("fasttext_extract_" + self._timestamp)
 
     def train_model(self):
         # graph_emb = load_pkl_emb(self.graph_emb_path) if self.graph_emb_path is not None else None
@@ -72,7 +78,10 @@ class FasttextModelTrainer(ModelTrainer):
 
         all_embs = np.vstack(embeddings)
         embedder = Embedder(dict(zip(node_ids, range(len(node_ids)))), all_embs)
-        pickle.dump(embedder, open("/Users/LTV/Downloads/NitroShare/fasttext_embeddings_500_2.pkl", "wb"), fix_imports=False)
+
+        output_path = self.get_training_dir()
+        output_path.mkdir(parents=True, exist_ok=True)
+        pickle.dump(embedder, open(output_path.joinpath("fasttext_embeddings_500_2.pkl"), "wb"), fix_imports=False)
         print(node_ids)
 
 

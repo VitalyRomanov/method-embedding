@@ -6,6 +6,7 @@ from time import time
 
 import numpy as np
 # from collections import Counter
+from SourceCodeTools.mltools.tensorflow import to_numpy
 from scipy.linalg import toeplitz
 # from gensim.models import KeyedVectors
 from copy import copy, deepcopy
@@ -74,11 +75,11 @@ class TypePredictor(Model):
     Prefix: Embeddings for the first n characters of a token
     Suffix: Embeddings for the last n characters of a token
     """
-    def __init__(self, tok_embedder, graph_embedder, train_embeddings=False,
-                 h_sizes=None, dense_size=100, num_classes=None,
-                 seq_len=100, pos_emb_size=30, cnn_win_size=3,
-                 crf_transitions=None, suffix_prefix_dims=50, suffix_prefix_buckets=1000,
-                 no_graph=False):
+    def __init__(
+            self, tok_embedder, graph_embedder, train_embeddings=False, h_sizes=None, dense_size=100, num_classes=None,
+            seq_len=100, pos_emb_size=30, cnn_win_size=3, crf_transitions=None, suffix_prefix_dims=50,
+            suffix_prefix_buckets=1000, no_graph=False, **kwargs
+    ):
         """
         Initialize TypePredictor. Model initializes embedding layers and then passes embeddings to TextCnnEncoder model
         :param tok_embedder: Embedder for tokens
@@ -229,14 +230,12 @@ class TypePredictor(Model):
 
         p, r, f1 = scorer(to_numpy(estimated_labels), to_numpy(true_labels))
 
-        return p, r, f1
+        scores = {}
+        scores["Precision"] = p
+        scores["Recall"] = r
+        scores["F1"] = f1
 
-
-def to_numpy(tensor):
-    if hasattr(tensor, "numpy"):
-        return tensor.numpy()
-    else:
-        return tf.make_ndarray(tf.make_tensor_proto(tensor))
+        return scores
 
 
 # def estimate_crf_transitions(batches, n_tags):
@@ -335,102 +334,102 @@ def test(model, test_batches, scorer=None):
 
     return avg(test_alosses), avg(test_aps), avg(test_ars), avg(test_af1s)
 
-def train(
-        model, train_batches, test_batches, epochs, report_every=10, scorer=None, learning_rate=0.01,
-        learning_rate_decay=1., finetune=False, summary_writer=None, save_ckpt_fn=None, no_localization=False
-):
-
-    assert summary_writer is not None
-
-    lr = tf.Variable(learning_rate, trainable=False)
-    optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
-
-    train_losses = []
-    test_losses = []
-    train_f1s = []
-    test_f1s = []
-
-    num_train_batches = len(train_batches)
-    num_test_batches = len(test_batches)
-
-    best_f1 = 0.
-
-    try:
-
-        with summary_writer.as_default():
-
-            for e in range(epochs):
-                losses = []
-                ps = []
-                rs = []
-                f1s = []
-
-                start = time()
-
-                for ind, batch in enumerate(tqdm(train_batches)):
-                    # token_ids, graph_ids, labels, class_weights, lengths = b
-                    loss, p, r, f1 = train_step_finetune(
-                        model=model, optimizer=optimizer, token_ids=batch['tok_ids'],
-                        prefix=batch['prefix'], suffix=batch['suffix'],
-                        graph_ids=batch['graph_ids'] if 'graph_ids' in batch else None,
-                        labels=batch['tags'], lengths=batch['lens'],
-                        extra_mask=batch['no_loc_mask'] if no_localization else batch['hide_mask'],
-                        # class_weights=batch['class_weights'],
-                        scorer=scorer, finetune=finetune and e/epochs > 0.6
-                    )
-                    losses.append(loss.numpy())
-                    ps.append(p)
-                    rs.append(r)
-                    f1s.append(f1)
-
-                    tf.summary.scalar("Loss/Train", loss, step=e * num_train_batches + ind)
-                    tf.summary.scalar("Precision/Train", p, step=e * num_train_batches + ind)
-                    tf.summary.scalar("Recall/Train", r, step=e * num_train_batches + ind)
-                    tf.summary.scalar("F1/Train", f1, step=e * num_train_batches + ind)
-
-                test_alosses = []
-                test_aps = []
-                test_ars = []
-                test_af1s = []
-
-                for ind, batch in enumerate(test_batches):
-                    # token_ids, graph_ids, labels, class_weights, lengths = b
-                    test_loss, test_p, test_r, test_f1 = test_step(
-                        model=model, token_ids=batch['tok_ids'],
-                        prefix=batch['prefix'], suffix=batch['suffix'],
-                        graph_ids=batch['graph_ids'] if 'graph_ids' in batch else None,
-                        labels=batch['tags'], lengths=batch['lens'],
-                        extra_mask=batch['no_loc_mask'] if no_localization else batch['hide_mask'],
-                        # class_weights=batch['class_weights'],
-                        scorer=scorer
-                    )
-
-                    tf.summary.scalar("Loss/Test", test_loss, step=e * num_test_batches + ind)
-                    tf.summary.scalar("Precision/Test", test_p, step=e * num_test_batches + ind)
-                    tf.summary.scalar("Recall/Test", test_r, step=e * num_test_batches + ind)
-                    tf.summary.scalar("F1/Test", test_f1, step=e * num_test_batches + ind)
-                    test_alosses.append(test_loss)
-                    test_aps.append(test_p)
-                    test_ars.append(test_r)
-                    test_af1s.append(test_f1)
-
-                epoch_time = time() - start
-
-                train_losses.append(float(sum(losses) / len(losses)))
-                train_f1s.append(float(sum(f1s) / len(f1s)))
-                test_losses.append(float(sum(test_alosses) / len(test_alosses)))
-                test_f1s.append(float(sum(test_af1s) / len(test_af1s)))
-
-                print(f"Epoch: {e}, {epoch_time: .2f} s, Train Loss: {train_losses[-1]: .4f}, Train P: {sum(ps) / len(ps): .4f}, Train R: {sum(rs) / len(rs): .4f}, Train F1: {sum(f1s) / len(f1s): .4f}, "
-                      f"Test loss: {test_losses[-1]: .4f}, Test P: {sum(test_aps) / len(test_aps): .4f}, Test R: {sum(test_ars) / len(test_ars): .4f}, Test F1: {test_f1s[-1]: .4f}")
-
-                if save_ckpt_fn is not None and float(test_f1s[-1]) > best_f1:
-                    save_ckpt_fn()
-                    best_f1 = float(test_f1s[-1])
-
-                lr.assign(lr * learning_rate_decay)
-
-    except KeyboardInterrupt:
-        pass
-
-    return train_losses, train_f1s, test_losses, test_f1s
+# def train(
+#         model, train_batches, test_batches, epochs, report_every=10, scorer=None, learning_rate=0.01,
+#         learning_rate_decay=1., finetune=False, summary_writer=None, save_ckpt_fn=None, no_localization=False
+# ):
+#
+#     assert summary_writer is not None
+#
+#     lr = tf.Variable(learning_rate, trainable=False)
+#     optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
+#
+#     train_losses = []
+#     test_losses = []
+#     train_f1s = []
+#     test_f1s = []
+#
+#     num_train_batches = len(train_batches)
+#     num_test_batches = len(test_batches)
+#
+#     best_f1 = 0.
+#
+#     try:
+#
+#         with summary_writer.as_default():
+#
+#             for e in range(epochs):
+#                 losses = []
+#                 ps = []
+#                 rs = []
+#                 f1s = []
+#
+#                 start = time()
+#
+#                 for ind, batch in enumerate(tqdm(train_batches)):
+#                     # token_ids, graph_ids, labels, class_weights, lengths = b
+#                     loss, p, r, f1 = train_step_finetune(
+#                         model=model, optimizer=optimizer, token_ids=batch['tok_ids'],
+#                         prefix=batch['prefix'], suffix=batch['suffix'],
+#                         graph_ids=batch['graph_ids'] if 'graph_ids' in batch else None,
+#                         labels=batch['tags'], lengths=batch['lens'],
+#                         extra_mask=batch['no_loc_mask'] if no_localization else batch['hide_mask'],
+#                         # class_weights=batch['class_weights'],
+#                         scorer=scorer, finetune=finetune and e/epochs > 0.6
+#                     )
+#                     losses.append(loss.numpy())
+#                     ps.append(p)
+#                     rs.append(r)
+#                     f1s.append(f1)
+#
+#                     tf.summary.scalar("Loss/Train", loss, step=e * num_train_batches + ind)
+#                     tf.summary.scalar("Precision/Train", p, step=e * num_train_batches + ind)
+#                     tf.summary.scalar("Recall/Train", r, step=e * num_train_batches + ind)
+#                     tf.summary.scalar("F1/Train", f1, step=e * num_train_batches + ind)
+#
+#                 test_alosses = []
+#                 test_aps = []
+#                 test_ars = []
+#                 test_af1s = []
+#
+#                 for ind, batch in enumerate(test_batches):
+#                     # token_ids, graph_ids, labels, class_weights, lengths = b
+#                     test_loss, test_p, test_r, test_f1 = test_step(
+#                         model=model, token_ids=batch['tok_ids'],
+#                         prefix=batch['prefix'], suffix=batch['suffix'],
+#                         graph_ids=batch['graph_ids'] if 'graph_ids' in batch else None,
+#                         labels=batch['tags'], lengths=batch['lens'],
+#                         extra_mask=batch['no_loc_mask'] if no_localization else batch['hide_mask'],
+#                         # class_weights=batch['class_weights'],
+#                         scorer=scorer
+#                     )
+#
+#                     tf.summary.scalar("Loss/Test", test_loss, step=e * num_test_batches + ind)
+#                     tf.summary.scalar("Precision/Test", test_p, step=e * num_test_batches + ind)
+#                     tf.summary.scalar("Recall/Test", test_r, step=e * num_test_batches + ind)
+#                     tf.summary.scalar("F1/Test", test_f1, step=e * num_test_batches + ind)
+#                     test_alosses.append(test_loss)
+#                     test_aps.append(test_p)
+#                     test_ars.append(test_r)
+#                     test_af1s.append(test_f1)
+#
+#                 epoch_time = time() - start
+#
+#                 train_losses.append(float(sum(losses) / len(losses)))
+#                 train_f1s.append(float(sum(f1s) / len(f1s)))
+#                 test_losses.append(float(sum(test_alosses) / len(test_alosses)))
+#                 test_f1s.append(float(sum(test_af1s) / len(test_af1s)))
+#
+#                 print(f"Epoch: {e}, {epoch_time: .2f} s, Train Loss: {train_losses[-1]: .4f}, Train P: {sum(ps) / len(ps): .4f}, Train R: {sum(rs) / len(rs): .4f}, Train F1: {sum(f1s) / len(f1s): .4f}, "
+#                       f"Test loss: {test_losses[-1]: .4f}, Test P: {sum(test_aps) / len(test_aps): .4f}, Test R: {sum(test_ars) / len(test_ars): .4f}, Test F1: {test_f1s[-1]: .4f}")
+#
+#                 if save_ckpt_fn is not None and float(test_f1s[-1]) > best_f1:
+#                     save_ckpt_fn()
+#                     best_f1 = float(test_f1s[-1])
+#
+#                 lr.assign(lr * learning_rate_decay)
+#
+#     except KeyboardInterrupt:
+#         pass
+#
+#     return train_losses, train_f1s, test_losses, test_f1s
