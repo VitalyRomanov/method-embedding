@@ -314,7 +314,9 @@ class Batcher:
         return list(self._data_ids)
 
     def _iterate_sorted_by_length(self, limit_max_length=False):
-        for id_, length in sorted(self._length_cache.items(), key=lambda x: x[1]):
+        ids = list(self._iterate_record_ids())
+        ids_length = list(zip(ids, list(map(self._length_cache.get, ids))))
+        for id_, length in sorted(ids_length, key=lambda x: x[1]):
             if id_ not in self._data_ids or limit_max_length and length >= self._max_seq_len:
                 continue
             yield id_
