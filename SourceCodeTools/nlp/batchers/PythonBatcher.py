@@ -103,6 +103,7 @@ class Batcher:
         self.labelmap = None
         self._sort_by_length = sort_by_length
         self._data_ids = set()
+        self._batch_generator = None
 
         self._create_cache()
         self._prepare_data()
@@ -302,7 +303,7 @@ class Batcher:
     def _parse_additional_tags(self, text, annotations, doc, parsed):
         return {}
         
-    def _get_record_with_id(self, id_):
+    def get_record_with_id(self, id_):
         if id_ not in self._data_cache:
             raise KeyError("Record with such id is not found")
         text, annotations = self._data_cache[id_]
@@ -473,7 +474,7 @@ class Batcher:
             if id_ in self._batch_cache:
                 batch.append(self._batch_cache[id_])
             else:
-                batch.append(self._encode_for_batch(self._get_record_with_id(id_)))
+                batch.append(self._encode_for_batch(self.get_record_with_id(id_)))
             if len(batch) >= self._batch_size:
                 yield self.format_batch(batch)
                 batch.clear()
@@ -488,7 +489,13 @@ class Batcher:
         # yield self.format_batch(batch)
 
     def __iter__(self):
-        return self.generate_batches()
+        self._batch_generator = self.generate_batches()
+        return self
+
+    def __next__(self):
+        if self._batch_generator is None:
+            raise StopIteration()
+        return next(self._batch_generator)
 
     def __len__(self):
         total_valid = 0
