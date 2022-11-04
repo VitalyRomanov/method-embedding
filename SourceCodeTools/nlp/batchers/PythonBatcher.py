@@ -315,7 +315,7 @@ class Batcher:
 
     def _iterate_sorted_by_length(self, limit_max_length=False):
         ids = list(self._iterate_record_ids())
-        ids_length = list(zip(ids, list(map(self._length_cache.get, ids))))
+        ids_length = list(zip(ids, list(map(lambda x: self._length_cache[x], ids))))
         for id_, length in sorted(ids_length, key=lambda x: x[1]):
             if id_ not in self._data_ids or limit_max_length and length >= self._max_seq_len:
                 continue
@@ -577,7 +577,7 @@ class PythonBatcher(Batcher):
             graphmap_enc.set_default(len(self._graphmap))
             self._mappers.append(
                 MapperSpec(
-                    field="replacements", target_field="graph_id", encoder=graphmap_enc,
+                    field="replacements", target_field="graph_ids", encoder=graphmap_enc,
                     preproc_fn=extract_graph_id, dtype=np.int32
                 )
             )
