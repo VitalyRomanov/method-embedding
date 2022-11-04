@@ -173,14 +173,14 @@ class ModelTrainer:
         train_batcher = self.get_batcher(
             self.train_data, self.batch_size, seq_len=self.seq_len,
             graphmap=graph_emb.ind if graph_emb is not None else None,
-            wordmap=word_emb.ind, tagmap=tagmap, tokenizer="codebert",
+            wordmap=word_emb.ind, tagmap=tagmap,
             class_weights=False, element_hash_size=suffix_prefix_buckets, no_localization=self.no_localization,
             **kwargs
         )
         test_batcher = self.get_batcher(
             self.test_data, self.batch_size, seq_len=self.seq_len,
             graphmap=graph_emb.ind if graph_emb is not None else None,
-            wordmap=word_emb.ind, tokenizer="codebert",
+            wordmap=word_emb.ind,
             tagmap=train_batcher.tagmap,  # use the same mapping
             class_weights=False, element_hash_size=suffix_prefix_buckets,  # class_weights are not used for testing
             no_localization=self.no_localization, **kwargs
