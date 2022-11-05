@@ -108,14 +108,13 @@ class CodeBertModelTrainer(ModelTrainer):
         super().__init__(*args, **kwargs)
 
     def set_gpu(self):
-        # torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        if self.gpu_id == -1:
-            self.use_cuda = False
-            self.device = "cpu"
-        else:
+        if self.gpu_id != -1 and torch.cuda.is_available():
             torch.cuda.set_device(self.gpu_id)
             self.use_cuda = True
             self.device = f"cuda:{self.gpu_id}"
+        else:
+            self.use_cuda = False
+            self.device = "cpu"
 
     def set_model_class(self):
         self.model = CodebertHybridModel
