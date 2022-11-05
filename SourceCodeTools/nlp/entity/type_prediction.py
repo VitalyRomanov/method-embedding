@@ -283,8 +283,8 @@ class ModelTrainer:
         if train is True:
             with tensorflow.GradientTape() as tape:
                 scores = cls.compute_loss_and_scores(
-                    model, token_ids, prefix, suffix, graph_ids, labels, lengths, extra_mask=None,
-                    class_weights=None, scorer=scorer, finetune=False, training=True
+                    model, token_ids, prefix, suffix, graph_ids, labels, lengths, extra_mask=extra_mask,
+                    class_weights=class_weights, scorer=scorer, finetune=finetune, training=train
                 )
                 gradients = tape.gradient(scores["loss"], model.trainable_variables)
                 # optimizer.apply_gradients(zip(gradients, model.trainable_variables))
@@ -297,8 +297,8 @@ class ModelTrainer:
                     optimizer.apply_gradients(zip(gradients, model.trainable_variables))
         else:
             scores = cls.compute_loss_and_scores(
-                model, token_ids, prefix, suffix, graph_ids, labels, lengths, extra_mask=None,
-                class_weights=None, scorer=scorer, finetune=False, training=False
+                model, token_ids, prefix, suffix, graph_ids, labels, lengths, extra_mask=extra_mask,
+                class_weights=class_weights, scorer=scorer, finetune=finetune, training=train
             )
 
         scores["loss"] = float(scores["loss"])
