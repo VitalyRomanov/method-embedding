@@ -287,14 +287,7 @@ class ModelTrainer:
                     class_weights=class_weights, scorer=scorer, finetune=finetune, training=train
                 )
                 gradients = tape.gradient(scores["loss"], model.trainable_variables)
-                # optimizer.apply_gradients(zip(gradients, model.trainable_variables))
-                if not finetune:
-                    # do not update embeddings
-                    # pop embeddings related to embedding matrices
-                    optimizer.apply_gradients((g, v) for g, v in zip(gradients, model.trainable_variables) if
-                                              not v.name.startswith("default_embedder"))
-                else:
-                    optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+                optimizer.apply_gradients(zip(gradients, model.trainable_variables))
         else:
             scores = cls.compute_loss_and_scores(
                 model, token_ids, prefix, suffix, graph_ids, labels, lengths, extra_mask=extra_mask,
