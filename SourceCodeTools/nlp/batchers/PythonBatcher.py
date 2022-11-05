@@ -534,7 +534,7 @@ class PythonBatcher(Batcher):
             unlabeled_dec_tags = self._biluo_tags_from_offsets(doc, unlabeled_dec)
             assert len(parsed["tokens"]) == len(unlabeled_dec_tags)
         else:
-            unlabeled_dec_tags = ["mention"] * len(parsed["tokens"])
+            unlabeled_dec_tags = ["O"] * len(parsed["tokens"])
 
         return {
             "replacements": repl_tags,
