@@ -350,7 +350,7 @@ def standardize_new_edges(edges, node_resolver, mention_tokenizer):
 
 def process_code_without_index(source_code, node_resolver, mention_tokenizer, track_offsets=False):
     try:
-        ast_processor = AstProcessor(source_code)
+        ast_processor = AstProcessor(source_code, add_mention_instances=True)
     except:
         return None, None, None
     try: # TODO recursion error does not appear consistently. The issue is probably with library versions...

@@ -352,13 +352,14 @@ class GEdge:
 
 class AstGraphGenerator(object):
 
-    def __init__(self, source, add_reverse_edges=True):
+    def __init__(self, source, add_reverse_edges=True, add_mention_instances=False):
         self.source = source.split("\n")  # lines of the source code
         self.root = ast.parse(source)
         self.current_condition = []
         self.condition_status = []
         self.scope = []
         self._add_reverse_edges = add_reverse_edges
+        self._add_mention_instances = add_mention_instances
 
         self._identifier_pool = IdentifierPool()
 
@@ -535,12 +536,19 @@ class AstGraphGenerator(object):
 
     def parse_as_mention(self, name):
         mention_name = GNode(name=name + "@" + self.scope[-1].name, type="mention", scope=copy(self.scope[-1]))
-        name = GNode(name=name, type="Name")
+        name_ = GNode(name=name, type="Name")
         # mention_name = (name + "@" + self.scope[-1], "mention")
 
         # edge from name to mention in a function
         edges = []
-        self.add_edge(edges, src=name, dst=mention_name, type="local_mention", scope=self.scope[-1])
+        self.add_edge(edges, src=name_, dst=mention_name, type="local_mention", scope=self.scope[-1])
+
+        if self._add_mention_instances:
+            mention_instance = self.get_name(name="instance", type="instance", add_random_identifier=True)
+            mention_instance.string = name
+            self.add_edge(edges, src=mention_name, dst=mention_instance, type="instance", scope=self.scope[-1])
+            mention_name = mention_instance
+
         return edges, mention_name
 
     def parse_operand(self, node):
@@ -852,41 +860,41 @@ class AstGraphGenerator(object):
     def parse_For(self, node):
 
         edges, for_name = self.generic_parse(node, ["target", "iter"])
-        
+
         self.parse_in_context(for_name, "executed_in_for", edges, node.body)
         self.parse_in_context(for_name, "executed_in_for_orelse", edges, node.orelse)
-        
+
         return edges, for_name
 
     def parse_AsyncFor(self, node):
         return self.parse_For(node)
-        
+
     def parse_Try(self, node):
 
         edges, try_name = self.generic_parse(node, [])
 
         self.parse_in_context(try_name, "executed_in_try", edges, node.body)
-        
+
         for h in node.handlers:
-            
+
             handler_name, ext_edges = self.parse_operand(h)
             edges.extend(ext_edges)
             self.parse_in_context([try_name, handler_name], ["executed_in_try_except", "executed_with_try_handler"], edges, h.body)
-        
+
         self.parse_in_context(try_name, "executed_in_try_final", edges, node.finalbody)
         self.parse_in_context(try_name, "executed_in_try_else", edges, node.orelse)
-        
+
         return edges, try_name
-        
+
     def parse_While(self, node):
 
         edges, while_name = self.generic_parse(node, [])
-        
+
         cond_name, ext_edges = self.parse_operand(node.test)
         edges.extend(ext_edges)
 
         self.parse_in_context([while_name, cond_name], ["executed_in_while", "executed_while_true"], edges, node.body)
-        
+
         return edges, while_name
 
     # def parse_Compare(self, node):
@@ -899,7 +907,7 @@ class AstGraphGenerator(object):
         edges = []
         expr_name, ext_edges = self.parse_operand(node.value)
         edges.extend(ext_edges)
-        
+
         return edges, expr_name
 
     def parse_control_flow(self, node):
@@ -982,7 +990,7 @@ class AstGraphGenerator(object):
 
 if __name__ == "__main__":
     c = "def f(a=5): f(a=4)"
-    g = AstGraphGenerator(c.lstrip())
+    g = AstGraphGenerator(c.lstrip(), add_mention_instances=True)
     g.parse(g.root)
     # import sys
     # f_bodies = pd.read_csv(sys.argv[1])
