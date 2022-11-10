@@ -51,6 +51,23 @@ class CodebertHybridModel(nn.Module):
 
         self.loss_f = nn.CrossEntropyLoss(reduction="mean")
 
+    def get_tensors_for_saliency(self, token_ids, graph_ids, mask):
+        token_embs = self.codebert_model.embeddings.word_embeddings(token_ids)
+        x = self.codebert_model(input_embeds=token_embs, attention_mask=mask).last_hidden_state
+
+        if self.use_graph:
+            graph_emb = self.graph_emb(graph_ids)
+            x = torch.cat([x, graph_emb], dim=-1)
+
+        x = torch.relu(self.fc1(x))
+        x = self.drop(x)
+        logits = self.fc2(x)
+
+        if self.use_graph:
+            return token_embs, graph_emb, logits
+        else:
+            return token_embs, logits
+
     def forward(self, token_ids, graph_ids, mask, finetune=False):
         if finetune:
             x = self.codebert_model(input_ids=token_ids, attention_mask=mask).last_hidden_state
