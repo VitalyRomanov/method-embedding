@@ -397,6 +397,107 @@ def process_code_without_index(source_code, node_resolver, mention_tokenizer, tr
     return edges, ast_offsets
 
 
+def ast_graph_for_single_example(
+        source_code, bpe_tokenizer_path, create_subword_instances=False, connect_subwords=False, track_offsets=False
+):
+    node_resolver = NodeIdResolver()
+    mention_tokenizer = MentionTokenizer(bpe_tokenizer_path, create_subword_instances, connect_subwords)
+    all_ast_edges = []
+    all_offsets = []
+
+    source_code_ = source_code.lstrip()
+    initial_strip = source_code[:len(source_code) - len(source_code_)]
+
+    if not has_valid_syntax(source_code):
+        raise SyntaxError()
+
+    edges, ast_offsets = process_code_without_index(
+        source_code, node_resolver, mention_tokenizer, track_offsets=track_offsets
+    )
+
+    if ast_offsets is not None:
+        adjust_offsets2(ast_offsets, len(initial_strip))
+
+    if edges is None:
+        raise ValueError("No graph can be generated from the source code")
+
+    # afterprocessing
+
+    # for edge in edges:
+    #     edge["file_id"] = source_code_id
+
+    # finish afterprocessing
+
+    all_ast_edges.extend(edges)
+
+    def format_offsets(ast_offsets, target):
+        """
+        Format offset as a record and add to the common storage for offsets
+        :param ast_offsets:
+        :param target: List where all other offsets are stored.
+        :return: Nothing
+        """
+        if ast_offsets is not None:
+            for offset in ast_offsets:
+                target.append({
+                    "file_id": 0,  # source_code_id,
+                    "start": offset[0],
+                    "end": offset[1],
+                    "node_id": offset[2],
+                    "mentioned_in": offset[3],
+                    "string": source_code[offset[0]: offset[1]],
+                    "package": "0",  # package
+                })
+
+    format_offsets(ast_offsets, target=all_offsets)
+
+    node_resolver.stash_new_nodes()
+
+    all_ast_nodes = node_resolver.new_nodes_for_write(from_stashed=True)
+
+    if all_ast_nodes is None:
+        return None, None, None
+
+    def prepare_edges(all_ast_edges):
+        all_ast_edges = pd.DataFrame(all_ast_edges)
+        all_ast_edges.drop_duplicates(["type", "src", "dst"], inplace=True)
+        all_ast_edges = all_ast_edges.query("src != dst")
+        all_ast_edges["id"] = 0
+
+        all_ast_edges = all_ast_edges[["id", "type", "src", "dst", "file_id", "scope", "offset_start", "offset_end"]] \
+            .rename({'src': 'source_node_id', 'dst': 'target_node_id', 'scope': 'mentioned_in'}, axis=1) \
+            .astype({'file_id': 'Int32', "mentioned_in": 'string'})
+
+        all_ast_edges["id"] = range(len(all_ast_edges))
+        return all_ast_edges
+
+    all_ast_edges = prepare_edges(all_ast_edges)
+
+    if len(all_offsets) > 0:
+        all_offsets = pd.DataFrame(all_offsets)
+    else:
+        all_offsets = None
+
+    node2id = dict(zip(all_ast_nodes["id"], range(len(all_ast_nodes))))
+
+    def map_columns_to_int(table, dense_columns, sparse_columns):
+        types = {column: "int64" for column in dense_columns}
+        types.update({column: "Int64" for column in sparse_columns})
+
+        for column, dtype in types.items():
+            table[column] = table[column].apply(node2id.get).astype(dtype)
+
+    map_columns_to_int(all_ast_nodes, dense_columns=["id"], sparse_columns=["mentioned_in"])
+    map_columns_to_int(
+        all_ast_edges,
+        dense_columns=["source_node_id", "target_node_id"],
+        sparse_columns=["mentioned_in"]
+    )
+    map_columns_to_int(all_offsets, dense_columns=["node_id"], sparse_columns=["mentioned_in"])
+
+    return all_ast_nodes, all_ast_edges, all_offsets
+
+
 def build_ast_only_graph(
         source_codes, bpe_tokenizer_path, create_subword_instances, connect_subwords, lang, track_offsets=False
 ):
