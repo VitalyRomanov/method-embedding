@@ -17,7 +17,7 @@ import logging
 from tqdm import tqdm
 
 from SourceCodeTools.code.data.dataset.DataLoader import SGNodesDataLoader, SGEdgesDataLoader, SGSubgraphDataLoader, \
-    SGMisuseEdgesDataLoader
+    SGMisuseEdgesDataLoader, SGMisuseNodesDataLoader
 from SourceCodeTools.code.data.file_utils import unpersist
 from SourceCodeTools.models.Embedder import Embedder
 from SourceCodeTools.models.graph.TargetLoader import TargetLoader, GraphLinkTargetLoader, \
@@ -108,6 +108,8 @@ class SamplingMultitaskTrainer:
         #     self.create_transr_objective(dataset, tokenizer_path)
         if "misuse_edge" in objective_list:
             self.create_misuse_edge_objective(dataset, tokenizer_path)
+        if "misuse_node" in objective_list:
+            self.create_misuse_node_objective(dataset, tokenizer_path)
         # if "doc_pred" in objective_list:
         #     self.create_text_prediction_objective(dataset, tokenizer_path)
         # if "doc_gen" in objective_list:
@@ -356,7 +358,7 @@ class SamplingMultitaskTrainer:
                 dataloader_class=SGMisuseEdgesDataLoader,
                 tokenizer_path=tokenizer_path,
                 masker_fn=None,
-                preload_for="package"  # "file", "function"
+                preload_for="file"  # "file", "function"
             )
         )
 
@@ -383,6 +385,28 @@ class SamplingMultitaskTrainer:
                 tokenizer_path=tokenizer_path,
                 masker_fn=None,
                 preload_for="package"  # "file", "function"
+            )
+        )
+
+    def create_misuse_node_objective(self, dataset, tokenizer_path):
+        from SourceCodeTools.models.graph.train.objectives.NodeClassificationObjective import ClassifierTargetMapper
+
+        def load_labels():
+            filecontent_path = Path(dataset.data_path).joinpath("misuse_edge_labels.json.bz2")
+            filecontent = unpersist(filecontent_path)[["src", "label", "file_id"]]
+            return filecontent.rename({"file_id": "group", "label": "dst"}, axis=1)
+
+        self.objectives.append(
+            self._create_node_level_objective(
+                objective_name="MisuseNodeClf",
+                objective_class=NodeClassifierObjective,
+                label_loader_class=ClassifierTargetMapper,
+                dataset=dataset,
+                labels_fn=load_labels,
+                dataloader_class=SGMisuseNodesDataLoader,
+                tokenizer_path=tokenizer_path,
+                masker_fn=None,
+                preload_for="file"
             )
         )
 

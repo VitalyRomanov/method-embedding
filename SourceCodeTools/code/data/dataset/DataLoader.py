@@ -452,6 +452,18 @@ class SGEdgesDataLoader(SGNodesDataLoader):
                 yield batch
 
 
+class SGMisuseNodesDataLoader(SGNodesDataLoader):
+    def __init__(self, *args, **kwargs):
+        super(SGMisuseNodesDataLoader, self).__init__(*args, **kwargs)
+
+    def create_batches(self, *args, **kwargs):
+        for batch in super(SGMisuseNodesDataLoader, self).create_batches(*args, **kwargs):
+            if batch["positive_indices"].sum() == 0.:
+                continue
+            else:
+                yield batch
+
+
 class SGMisuseEdgesDataLoader(SGNodesDataLoader):
 
     def iterate_nodes_for_batches(self, nodes):
