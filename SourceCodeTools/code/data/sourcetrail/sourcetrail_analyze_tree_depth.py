@@ -30,11 +30,14 @@ def main():
 
     for filecontent in unpersist(args.bodies, chunksize=10000):
         for ind, row in filecontent.iterrows():
-            body = row.content
-            body_ast = ast.parse(body.strip())
-            de = DepthEstimator()
-            de.go(body_ast)
-            depths.append(de.depth)
+            try:
+                body = row.content
+                body_ast = ast.parse(body.strip())
+                de = DepthEstimator()
+                de.go(body_ast)
+                depths.append(de.depth)
+            except:
+                continue
 
     print(f"Average depth: {sum(depths)/len(depths)}")
     depths = np.array(depths, dtype=np.int32)
