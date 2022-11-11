@@ -26,16 +26,15 @@ def main():
     parser.add_argument("bodies")
     args = parser.parse_args()
 
-    bodies = unpersist(args.bodies)
-
     depths = []
 
-    for ind, row in bodies.iterrows():
-        body = row.body
-        body_ast = ast.parse(body.strip())
-        de = DepthEstimator()
-        de.go(body_ast)
-        depths.append(de.depth)
+    for filecontent in unpersist(args.bodies, chunksize=10000):
+        for ind, row in filecontent.iterrows():
+            body = row.content
+            body_ast = ast.parse(body.strip())
+            de = DepthEstimator()
+            de.go(body_ast)
+            depths.append(de.depth)
 
     print(f"Average depth: {sum(depths)/len(depths)}")
     depths = np.array(depths, dtype=np.int32)
