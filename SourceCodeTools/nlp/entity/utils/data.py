@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from SourceCodeTools.nlp.entity.utils import *
 
 def read_data(
@@ -100,11 +102,9 @@ def read_json_data(
     :param train_frac: Optional. Default: 0.8. Proportion of train set.
     :return: train and test sets
     """
-    import random
-
-
-
     assert include_only in {"entities", "categories"}
+
+    data_path = Path(data_path)
 
     train_file = data_path.joinpath("type_prediction_dataset_no_default_args_mapped_train.json")
     test_file = data_path.joinpath("type_prediction_dataset_no_default_args_mapped_test.json")

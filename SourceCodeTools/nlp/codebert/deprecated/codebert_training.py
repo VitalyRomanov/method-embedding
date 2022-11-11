@@ -5,7 +5,7 @@ from tqdm import tqdm
 from transformers import RobertaTokenizer, RobertaModel
 
 from SourceCodeTools.models.Embedder import Embedder
-from SourceCodeTools.nlp.codebert.codebert import CodeBertModelTrainer, load_typed_nodes
+from SourceCodeTools.nlp.codebert.codebert_extract import CodeBertModelTrainer, load_typed_nodes
 from SourceCodeTools.nlp.entity.type_prediction import get_type_prediction_arguments, ModelTrainer
 from SourceCodeTools.nlp.entity.utils.data import read_data
 

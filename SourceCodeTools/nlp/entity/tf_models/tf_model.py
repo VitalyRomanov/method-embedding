@@ -1,35 +1,13 @@
-# import tensorflow as tf
-# import sys
-# from gensim.models import Word2Vec
 import logging
-from time import time
-
-import numpy as np
-# from collections import Counter
-from scipy.linalg import toeplitz
-# from gensim.models import KeyedVectors
-from copy import copy, deepcopy
 
 import tensorflow as tf
-import tensorflow_addons as tfa
 
-from tensorflow.keras.layers import Dense, Conv2D, Flatten, Input, Embedding, concatenate
+from tensorflow.keras.layers import Dense
 from tensorflow.keras import Model
-from tensorflow.keras.layers import Layer
-# from tensorflow.keras import regularizers
 
-# from spacy.gold import offsets_from_biluo_tags
-
-# alternative models
-# https://github.com/flairNLP/flair/tree/master/flair/models
-# https://github.com/dhiraa/tener/tree/master/src/tener/models
-# https://arxiv.org/pdf/1903.07785v1.pdf
-# https://github.com/tensorflow/models/tree/master/research/cvt_text/model
-from tensorflow_addons.layers import MultiHeadAttention
-from tqdm import tqdm
-
-from SourceCodeTools.models.nlp.TFDecoder import ConditionalAttentionDecoder, FlatDecoder
-from SourceCodeTools.models.nlp.TFEncoder import DefaultEmbedding, TextCnnEncoder, GRUEncoder
+from SourceCodeTools.mltools.tensorflow import to_numpy
+from SourceCodeTools.models.nlp.TFDecoder import FlatDecoder
+from SourceCodeTools.models.nlp.TFEncoder import DefaultEmbedding, TextCnnEncoder
 
 
 class T5Encoder(Model):
@@ -74,11 +52,11 @@ class TypePredictor(Model):
     Prefix: Embeddings for the first n characters of a token
     Suffix: Embeddings for the last n characters of a token
     """
-    def __init__(self, tok_embedder, graph_embedder, train_embeddings=False,
-                 h_sizes=None, dense_size=100, num_classes=None,
-                 seq_len=100, pos_emb_size=30, cnn_win_size=3,
-                 crf_transitions=None, suffix_prefix_dims=50, suffix_prefix_buckets=1000,
-                 no_graph=False):
+    def __init__(
+            self, tok_embedder, graph_embedder, train_embeddings=False, h_sizes=None, dense_size=100, num_classes=None,
+            seq_len=100, pos_emb_size=30, cnn_win_size=3, crf_transitions=None, suffix_prefix_dims=50,
+            suffix_prefix_buckets=1000, no_graph=False, **kwargs
+    ):
         """
         Initialize TypePredictor. Model initializes embedding layers and then passes embeddings to TextCnnEncoder model
         :param tok_embedder: Embedder for tokens
@@ -181,8 +159,6 @@ class TypePredictor(Model):
         mask = self.encoder.compute_mask(None, mask=mask)
         return self.decoder.compute_mask(None, mask=mask)
 
-
-    # @tf.function
     def loss(self, logits, labels, mask, class_weights=None, extra_mask=None):
         """
         Compute cross-entropy loss for each meaningful tokens. Mask padded tokens.
@@ -229,208 +205,9 @@ class TypePredictor(Model):
 
         p, r, f1 = scorer(to_numpy(estimated_labels), to_numpy(true_labels))
 
-        return p, r, f1
+        scores = {}
+        scores["Precision"] = p
+        scores["Recall"] = r
+        scores["F1"] = f1
 
-
-def to_numpy(tensor):
-    if hasattr(tensor, "numpy"):
-        return tensor.numpy()
-    else:
-        return tf.make_ndarray(tf.make_tensor_proto(tensor))
-
-
-# def estimate_crf_transitions(batches, n_tags):
-#     transitions = []
-#     for _, _, labels, lengths in batches:
-#         _, transition_params = tfa.text.crf_log_likelihood(tf.ones(shape=(labels.shape[0], labels.shape[1], n_tags)), labels, lengths)
-#         transitions.append(transition_params.numpy())
-#
-#     return np.stack(transitions, axis=0).mean(axis=0)
-
-# @tf.function
-def train_step_finetune(model, optimizer, token_ids, prefix, suffix, graph_ids, labels, lengths,
-                   extra_mask=None, class_weights=None, scorer=None, finetune=False):
-    """
-    Make a train step
-    :param model: TypePrediction model instance
-    :param optimizer: tf optimizer
-    :param token_ids: ids for tokens, shape (?, seq_len)
-    :param prefix: ids for prefixes, shape (?, seq_len)
-    :param suffix: ids for suffixes, shape (?, seq_len)
-    :param graph_ids: ids for graph nodes, shape (?, seq_len)
-    :param labels: ids for labels, shape (?, )
-    :param lengths: actual sequence lengths, shape (?, )
-    :param extra_mask: additional mask to hide tokens that should be labeled, but are not labeled, shape (?, seq_len)
-    :param class_weights: weight of each token, shape (?, seq_len)
-    :param scorer: scorer function, takes `pred_labels` and `true_labels` as aguments
-    :param finetune: whether to train embeddings
-    :return: values for loss, precision, recall and f1-score
-    """
-    with tf.GradientTape() as tape:
-        seq_mask = tf.sequence_mask(lengths, token_ids.shape[1])
-        logits = model(token_ids, prefix, suffix, graph_ids, target=None, training=True, mask=seq_mask)
-        loss = model.loss(logits, labels, mask=seq_mask, class_weights=class_weights, extra_mask=extra_mask)
-        # token_acc = tf.reduce_sum(tf.cast(tf.argmax(logits, axis=-1) == labels, tf.float32)) / (token_ids.shape[0] * token_ids.shape[1])
-        p, r, f1 = model.score(logits, labels, mask=seq_mask, scorer=scorer, extra_mask=extra_mask)
-        gradients = tape.gradient(loss, model.trainable_variables)
-        if not finetune:
-            # do not update embeddings
-            # pop embeddings related to embedding matrices
-            optimizer.apply_gradients((g, v) for g, v in zip(gradients, model.trainable_variables) if not v.name.startswith("default_embedder"))
-        else:
-            optimizer.apply_gradients(zip(gradients, model.trainable_variables))
-
-    return loss, p, r, f1
-
-# @tf.function
-def test_step(
-        model, token_ids, prefix, suffix, graph_ids, labels, lengths, extra_mask=None, class_weights=None, scorer=None,
-        no_localization=False
-):
-    """
-
-    :param model: TypePrediction model instance
-    :param token_ids: ids for tokens, shape (?, seq_len)
-    :param prefix: ids for prefixes, shape (?, seq_len)
-    :param suffix: ids for suffixes, shape (?, seq_len)
-    :param graph_ids: ids for graph nodes, shape (?, seq_len)
-    :param labels: ids for labels, shape (?, )
-    :param lengths: actual sequence lengths, shape (?, )
-    :param extra_mask: additional mask to hide tokens that should be labeled, but are not labeled, shape (?, seq_len)
-    :param class_weights: weight of each token, shape (?, seq_len)
-    :param scorer: scorer function, takes `pred_labels` and `true_labels` as aguments
-    :return: values for loss, precision, recall and f1-score
-    """
-    seq_mask = tf.sequence_mask(lengths, token_ids.shape[1])
-    logits = model(token_ids, prefix, suffix, graph_ids, target=None, training=False, mask=seq_mask)
-    loss = model.loss(logits, labels, mask=seq_mask, class_weights=class_weights, extra_mask=extra_mask)
-    p, r, f1 = model.score(logits, labels, mask=seq_mask, scorer=scorer, extra_mask=extra_mask)
-
-    return loss, p, r, f1
-
-
-def test(model, test_batches, scorer=None):
-    test_alosses = []
-    test_aps = []
-    test_ars = []
-    test_af1s = []
-
-    for ind, batch in enumerate(test_batches):
-        # token_ids, graph_ids, labels, class_weights, lengths = b
-        test_loss, test_p, test_r, test_f1 = test_step(
-            model=model, token_ids=batch['tok_ids'],
-            prefix=batch['prefix'], suffix=batch['suffix'], graph_ids=batch['graph_ids'],
-            labels=batch['tags'], lengths=batch['lens'], extra_mask=batch['hide_mask'],
-            # class_weights=batch['class_weights'],
-            scorer=scorer
-        )
-
-        test_alosses.append(test_loss)
-        test_aps.append(test_p)
-        test_ars.append(test_r)
-        test_af1s.append(test_f1)
-
-    def avg(arr):
-        return sum(arr) / len(arr)
-
-    return avg(test_alosses), avg(test_aps), avg(test_ars), avg(test_af1s)
-
-def train(
-        model, train_batches, test_batches, epochs, report_every=10, scorer=None, learning_rate=0.01,
-        learning_rate_decay=1., finetune=False, summary_writer=None, save_ckpt_fn=None, no_localization=False
-):
-
-    assert summary_writer is not None
-
-    lr = tf.Variable(learning_rate, trainable=False)
-    optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
-
-    train_losses = []
-    test_losses = []
-    train_f1s = []
-    test_f1s = []
-
-    num_train_batches = len(train_batches)
-    num_test_batches = len(test_batches)
-
-    best_f1 = 0.
-
-    try:
-
-        with summary_writer.as_default():
-
-            for e in range(epochs):
-                losses = []
-                ps = []
-                rs = []
-                f1s = []
-
-                start = time()
-
-                for ind, batch in enumerate(tqdm(train_batches)):
-                    # token_ids, graph_ids, labels, class_weights, lengths = b
-                    loss, p, r, f1 = train_step_finetune(
-                        model=model, optimizer=optimizer, token_ids=batch['tok_ids'],
-                        prefix=batch['prefix'], suffix=batch['suffix'],
-                        graph_ids=batch['graph_ids'] if 'graph_ids' in batch else None,
-                        labels=batch['tags'], lengths=batch['lens'],
-                        extra_mask=batch['no_loc_mask'] if no_localization else batch['hide_mask'],
-                        # class_weights=batch['class_weights'],
-                        scorer=scorer, finetune=finetune and e/epochs > 0.6
-                    )
-                    losses.append(loss.numpy())
-                    ps.append(p)
-                    rs.append(r)
-                    f1s.append(f1)
-
-                    tf.summary.scalar("Loss/Train", loss, step=e * num_train_batches + ind)
-                    tf.summary.scalar("Precision/Train", p, step=e * num_train_batches + ind)
-                    tf.summary.scalar("Recall/Train", r, step=e * num_train_batches + ind)
-                    tf.summary.scalar("F1/Train", f1, step=e * num_train_batches + ind)
-
-                test_alosses = []
-                test_aps = []
-                test_ars = []
-                test_af1s = []
-
-                for ind, batch in enumerate(test_batches):
-                    # token_ids, graph_ids, labels, class_weights, lengths = b
-                    test_loss, test_p, test_r, test_f1 = test_step(
-                        model=model, token_ids=batch['tok_ids'],
-                        prefix=batch['prefix'], suffix=batch['suffix'],
-                        graph_ids=batch['graph_ids'] if 'graph_ids' in batch else None,
-                        labels=batch['tags'], lengths=batch['lens'],
-                        extra_mask=batch['no_loc_mask'] if no_localization else batch['hide_mask'],
-                        # class_weights=batch['class_weights'],
-                        scorer=scorer
-                    )
-
-                    tf.summary.scalar("Loss/Test", test_loss, step=e * num_test_batches + ind)
-                    tf.summary.scalar("Precision/Test", test_p, step=e * num_test_batches + ind)
-                    tf.summary.scalar("Recall/Test", test_r, step=e * num_test_batches + ind)
-                    tf.summary.scalar("F1/Test", test_f1, step=e * num_test_batches + ind)
-                    test_alosses.append(test_loss)
-                    test_aps.append(test_p)
-                    test_ars.append(test_r)
-                    test_af1s.append(test_f1)
-
-                epoch_time = time() - start
-
-                train_losses.append(float(sum(losses) / len(losses)))
-                train_f1s.append(float(sum(f1s) / len(f1s)))
-                test_losses.append(float(sum(test_alosses) / len(test_alosses)))
-                test_f1s.append(float(sum(test_af1s) / len(test_af1s)))
-
-                print(f"Epoch: {e}, {epoch_time: .2f} s, Train Loss: {train_losses[-1]: .4f}, Train P: {sum(ps) / len(ps): .4f}, Train R: {sum(rs) / len(rs): .4f}, Train F1: {sum(f1s) / len(f1s): .4f}, "
-                      f"Test loss: {test_losses[-1]: .4f}, Test P: {sum(test_aps) / len(test_aps): .4f}, Test R: {sum(test_ars) / len(test_ars): .4f}, Test F1: {test_f1s[-1]: .4f}")
-
-                if save_ckpt_fn is not None and float(test_f1s[-1]) > best_f1:
-                    save_ckpt_fn()
-                    best_f1 = float(test_f1s[-1])
-
-                lr.assign(lr * learning_rate_decay)
-
-    except KeyboardInterrupt:
-        pass
-
-    return train_losses, train_f1s, test_losses, test_f1s
+        return scores

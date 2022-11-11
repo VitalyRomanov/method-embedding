@@ -1,6 +1,6 @@
 import hashlib
-from functools import lru_cache
 
+import spacy
 from spacy.tokens import Doc
 
 from SourceCodeTools.nlp.spacy_tools.SpacyPythonBpeTokenizer import SpacyPythonBpe
@@ -29,10 +29,15 @@ def _inject_tokenizer(nlp):
 
 
 class AdapterDoc:
-    def __init__(self, tokens):
+    def __init__(self, tokens, replacements=None):
+        """
+        A simple wrapper for tokens that also stores additional data such as character span adjustment and
+        tokens compatible with `biluo_tags_from_offsets`
+        """
         self.tokens = tokens
         self.adjustment_amount = 0
         self.tokens_for_biluo_alignment = None
+        self._replacements = replacements
 
     def __iter__(self):
         return iter(self.tokens)
@@ -43,13 +48,23 @@ class AdapterDoc:
     def __len__(self):
         return len(self.tokens)
 
+    @property
+    def text(self):
+        r = self.__repr__()
+        if self._replacements is not None:
+            for rc, c in self._replacements.items():
+                r = r.replace(rc, c)
+        return r
+
 
 class CodebertAdapter:
+    """
+    This tokenizer returns tokens in a format that can be used with `biluo_tags_from_offsets`
+    """
     def __init__(self):
         from transformers import RobertaTokenizer
 
         self.tokenizer = RobertaTokenizer.from_pretrained("microsoft/codebert-base")
-        import spacy
         self.nlp = spacy.blank("en")
         self.regex_tok = create_tokenizer("regex")
 
@@ -57,19 +72,27 @@ class CodebertAdapter:
         return self.tokenizer.tokenize(text)
 
     def secondary_tokenization(self, tokens):
+        # secondary tokenizer performs subtokenization
+        # example:
+        # "(arg1" -> "(", "arg1"
         new_tokens = []
         for token in tokens:
             new_tokens.extend(self.regex_tok(token))
         return new_tokens
 
     def __call__(self, text):
+        """
+        Tokenization function. Example:
+            original string: 'a + b'
+            codebert tokenized: '<s>', 'a', 'Ġ+', 'Ġb', '</s>'
+        """
         tokens = self.primary_tokenization(text)
         tokens = self.secondary_tokenization(tokens)
         doc = Doc(self.nlp.vocab, tokens, spaces=[False] * len(tokens))
 
         backup_tokens = doc
         fixed_spaces = [False]
-        fixed_words = ["<s>"]
+        fixed_words = ["<s>"]  # add additional tokens for codebert to avoid adding them later.
 
         for ind, t in enumerate(doc):
             if len(t.text) > 1:
@@ -78,8 +101,7 @@ class CodebertAdapter:
                 fixed_words.append(t.text)
             if ind != 0:
                 fixed_spaces.append(t.text.startswith("Ġ") and len(t.text) > 1)
-        if len(doc) > 0:
-            fixed_spaces.append(False)
+        fixed_spaces.append(False)
         fixed_spaces.append(False)
         fixed_words.append("</s>")
 
@@ -90,14 +112,13 @@ class CodebertAdapter:
         assert len(doc) - 2 == len(backup_tokens)
         assert len(doc.text) - 7 == len(backup_tokens.text)
 
-        final_doc = AdapterDoc(["<s>"] + [t.text for t in backup_tokens] + ["</s>"])
+        final_doc = AdapterDoc(["<s>"] + [t.text for t in backup_tokens] + ["</s>"], {"Ċ": "\n", "Ġ": " ", "<s>": "", "</s>": ""})
         final_doc.adjustment_amount = -3
         final_doc.tokens_for_biluo_alignment = doc
 
         return final_doc
 
 
-@lru_cache
 def create_tokenizer(type, bpe_path=None, regex=None):
     """
     Create tokenizer instance. Usage
@@ -134,7 +155,7 @@ def create_tokenizer(type, bpe_path=None, regex=None):
     elif type == "regex":
         from nltk import RegexpTokenizer
         if regex is None:
-            regex = "[\w]+|[^\w\s]|[0-9]+"
+            regex = "[\w0-9]+|[^\w\s]|[0-9]+"
         _tokenizer = RegexpTokenizer(regex)
 
         def default_tokenizer(text):
@@ -153,16 +174,6 @@ def create_tokenizer(type, bpe_path=None, regex=None):
         import spacy
         from spacy.tokens import Doc
 
-        tokenizer = RobertaTokenizer.from_pretrained("microsoft/codebert-base")
-        nlp = spacy.blank("en")
-
-        def tokenize(text):
-            tokens = tokenizer.tokenize(text)
-            doc = Doc(nlp.vocab, tokens, spaces=[False] * len(tokens))
-            return doc
-
-        return tokenize
-    elif type == "codebert_proper":
         adapter = CodebertAdapter()
 
         def tokenize(text):
@@ -201,6 +212,7 @@ def codebert_to_spacy(tokens):
     adjustment = -3
     # spans = [adjust_offsets(sp, -3) for sp in spans]
     return doc, adjustment
+
 
 # import tokenize
 # from io import BytesIO

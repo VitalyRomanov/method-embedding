@@ -1,24 +1,25 @@
+import hashlib
 import json
-import os
-import shelve
-import shutil
+import random
 import tempfile
 from collections import defaultdict
-from time import time
+from copy import copy
+from pathlib import Path
 from math import ceil
-from typing import Dict, Optional, List
-
-import spacy
+from typing import Dict, Optional, Union
 
 from SourceCodeTools.code.ast.ast_tools import get_declarations
-from SourceCodeTools.models.ClassWeightNormalizer import ClassWeightNormalizer
-from SourceCodeTools.nlp import create_tokenizer, tag_map_from_sentences, TagMap, token_hasher, try_int
+from SourceCodeTools.code.data.file_utils import write_mapping_to_json, read_mapping_from_json
+# from SourceCodeTools.models.ClassWeightNormalizer import ClassWeightNormalizer
+from SourceCodeTools.nlp import create_tokenizer, TagMap, ValueEncoder, \
+    HashingValueEncoder
 from SourceCodeTools.nlp.entity import fix_incorrect_tags
 from SourceCodeTools.code.annotator_utils import adjust_offsets, biluo_tags_from_offsets
 from SourceCodeTools.nlp.entity.utils import overlap
 import numpy as np
 
-
+from nhkv import KVStore
+from tqdm import tqdm
 
 
 def filter_unlabeled(entities, declarations):
@@ -43,248 +44,583 @@ def print_token_tag(doc, tags):
         print(t, "\t", tag)
 
 
-class PythonBatcher:
+class SampleEntry(object):
+    def __init__(self, id, text, labels=None, category=None, **kwargs):
+        self._storage = dict()
+        self._storage["id"] = id
+        self._storage["text"] = text
+        self._storage["labels"] = labels
+        self._storage["category"] = category
+        self._storage.update(kwargs)
+
+    def __getattr__(self, item):
+        storage = object.__getattribute__(self, "_storage")
+        if item in storage:
+            return storage[item]
+        return super().__getattribute__(item)
+
+    def __repr__(self):
+        return repr(self._storage)
+
+    def __getitem__(self, item):
+        return self._storage[item]
+
+    def __contains__(self, item):
+        return item in self._storage
+
+    def keys(self):
+        return list(self._storage.keys())
+
+
+class MapperSpec:
+    def __init__(self, field, target_field, encoder, dtype=np.int32, preproc_fn=None):
+        self.field = field
+        self.target_field = target_field
+        self.encoder = encoder
+        self.preproc_fn = preproc_fn
+        self.dtype = dtype
+
+
+class Batcher:
     def __init__(
             self, data, batch_size: int, seq_len: int,
-            wordmap: Dict[str, int], *, graphmap: Optional[Dict[str, int]], tagmap: Optional[TagMap] = None,
-            mask_unlabeled_declarations=True,
-            class_weights=False, element_hash_size=1000, len_sort=True, tokenizer="spacy", no_localization=False
+            wordmap: Dict[str, int], *, tagmap: Optional[TagMap] = None,
+            class_weights=False, sort_by_length=True, tokenizer="spacy", no_localization=False,
+            cache_dir: Optional[Union[str, Path]] = None, **kwargs
     ):
+        self._data = data
+        self._batch_size = batch_size
+        self._max_seq_len = seq_len
+        self._tokenizer = tokenizer
+        self._class_weights = None
+        self._no_localization = no_localization
+        self._nlp = create_tokenizer(tokenizer)
+        self._cache_dir = Path(cache_dir) if cache_dir is not None else cache_dir
+        self._valid_sentences = 0
+        self._filtered_sentences = 0
+        self._wordmap = wordmap
+        self.tagmap = tagmap
+        self.labelmap = None
+        self._sort_by_length = sort_by_length
+        self._data_ids = set()
+        self._batch_generator = None
 
-        self.create_cache()
+        self._create_cache()
+        self._prepare_data()
+        self._create_mappers(**kwargs)
 
-        self.data = sorted(data, key=lambda x: len(x[0])) if len_sort else data
-        self.batch_size = batch_size
-        self.seq_len = seq_len
-        self.class_weights = None
-        self.mask_unlabeled_declarations = mask_unlabeled_declarations
-        self.tokenizer = tokenizer
-        if tokenizer == "codebert":
-            self.vocab = spacy.blank("en").vocab
-        self.no_localization = no_localization
+    @property
+    def _data_cache_path(self):
+        return self._get_cache_location_name("DataCache")
 
-        self.nlp = create_tokenizer(tokenizer)
-        if tagmap is None:
-            self.tagmap = tag_map_from_sentences(list(zip(*[self.prepare_sent(sent) for sent in data]))[1])
+    # @property
+    # def _sent_cache_path(self):
+    #     return self._get_cache_location_name("SentCache")
+
+    @property
+    def _batch_cache_path(self):
+        return self._get_cache_location_name("BatchCache")
+
+    @property
+    def _length_cache_path(self):
+        return self._get_cache_location_name("LengthCache")
+
+    @property
+    def _tagmap_path(self):
+        return self._cache_dir.joinpath("tagmap.json")
+
+    @property
+    def _labelmap_path(self):
+        return self._cache_dir.joinpath("labelmap.json")
+
+    @property
+    def _unique_tags_and_labels_path(self):
+        return self._cache_dir.joinpath("unique_tags_and_labels.json")
+
+    @property
+    def _tag_fields(self):
+        return ["tags"]
+
+    @property
+    def _category_fields(self):
+        return ["category"]
+
+    def num_classes(self, how):
+        if how == "tags":
+            if len(self.tagmap) > 0:
+                return len(self.tagmap)
+            else:
+                raise Exception("There were no tags in the data")
+        elif how == "labels":
+            if self.labelmap is not None and len(self.labelmap) > 0:
+                return len(self.labelmap)
+            else:
+                raise Exception("There were no labels in the data")
         else:
-            self.tagmap = tagmap
+            raise ValueError(f"Unrecognized category for classes: {how}")
 
-        self.graphpad = len(graphmap) if graphmap is not None else None
-        self.wordpad = len(wordmap)
-        self.tagpad = self.tagmap["O"]
-        self.prefpad = element_hash_size
-        self.suffpad = element_hash_size
+    def _get_version_code(self):
+        signature_dict = {
+            "tokenizer": self._tokenizer, "max_seq_len": self._max_seq_len, "class_weights": self._class_weights,
+            "_no_localization": self._no_localization, "wordmap": self._wordmap
+        }
+        if hasattr(self, "_extra_signature_parameters"):
+            signature_dict.update(self._extra_signature_parameters)
+        defining_parameters = json.dumps(signature_dict)
+        return self._compute_text_id(defining_parameters)
 
-        self.graphmap_func = (lambda g: graphmap.get(g, len(graphmap))) if graphmap is not None else None
-        self.wordmap_func = lambda w: wordmap.get(w, len(wordmap))
-        self.tagmap_func = lambda t: self.tagmap.get(t, self.tagmap["O"])
-        self.prefmap_func = lambda w: token_hasher(w[:3], element_hash_size)
-        self.suffmap_func = lambda w: token_hasher(w[-3:], element_hash_size)
+    def _get_cache_location_name(self, cache_name):
+        self._check_cache_dir()
+        return str(self._cache_dir.joinpath(cache_name))
 
-        self.mask_unlblpad = 1.
-        if mask_unlabeled_declarations:
-            self.mask_unlbl_func = lambda t: 1 if t == "O" else 0
-        else:
-            self.mask_unlbl_func = lambda t: 1.
+    def _check_cache_dir(self):
+        if not hasattr(self, "_cache_dir") or self._cache_dir is None:
+            raise Exception("Cache directory location has not been specified yet")
 
-        self.classwpad = 1.
-        if class_weights:
-            self.class_weights = ClassWeightNormalizer()
-            self.class_weights.init(list(zip(*[self.prepare_sent(sent) for sent in data]))[1])
-            self.classw_func = lambda t: self.class_weights.get(t, self.classwpad)
-        else:
-            self.classw_func = lambda t: 1.
+    def _create_cache(self):
+        if self._cache_dir is None:
+            self._tmp_dir = tempfile.TemporaryDirectory()
+            self._cache_dir = Path(self._tmp_dir.name)
 
-    def __del__(self):
-        self.sent_cache.close()
-        self.batch_cache.close()
+        self._cache_dir = self._cache_dir.joinpath(f"PythonBatcher{self._get_version_code()}")
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
 
-        from shutil import rmtree
-        rmtree(self.tmp_dir, ignore_errors=True)
+        self._data_cache = KVStore(self._data_cache_path)  # dc.Cache(self._data_cache_path)
+        self._length_cache = KVStore(self._length_cache_path)
+        self._batch_cache = KVStore(self._batch_cache_path)
 
-    def create_cache(self):
-        char_ranges = [chr(i) for i in range(ord("a"), ord("a")+26)] + [chr(i) for i in range(ord("A"), ord("A")+26)] + [chr(i) for i in range(ord("0"), ord("0")+10)]
-        from random import sample
-        rnd_name = "".join(sample(char_ranges, k=10)) + str(int(time() * 1e6))
-        time()
+    @staticmethod
+    def _compute_text_id(text):
+        return abs(int(hashlib.md5(text.encode('utf-8')).hexdigest(), 16)) % 1152921504606846976
 
-        self.tmp_dir = os.path.join(tempfile.gettempdir(), rnd_name)
-        if os.path.isdir(self.tmp_dir):
-            shutil.rmtree(self.tmp_dir)
-        os.mkdir(self.tmp_dir)
+    def _prepare_record(self, id_, text, annotations):
+        extra = copy(annotations)
+        labels = extra.pop("entities")
+        extra.update(self._prepare_tokenized_sent((text, annotations)))
+        entry = SampleEntry(id=id_, text=text, labels=labels, **extra)
+        return entry
 
-        self.sent_cache = shelve.open(os.path.join(self.tmp_dir, "sent_cache"))
-        self.batch_cache = shelve.open(os.path.join(self.tmp_dir, "batch_cache"))
+    def _update_unique_tags_and_labels(self, unique_tags_and_labels):
+        if self._unique_tags_and_labels_path.is_file():
+            existing = read_mapping_from_json(self._unique_tags_and_labels_path)
+            for field in unique_tags_and_labels:
+                if field in existing:
+                    existing[field] = set(existing[field])
+                    existing[field].update(unique_tags_and_labels[field])
+                else:
+                    existing[field] = unique_tags_and_labels[field]
 
-    def num_classes(self):
-        return len(self.tagmap)
+            unique_tags_and_labels = existing
 
-    # @lru_cache(maxsize=200000)
-    def prepare_sent(self, sent):
+        for field in unique_tags_and_labels:
+            unique_tags_and_labels[field] = list(unique_tags_and_labels[field])
 
-        sent_json = json.dumps(sent)
-        if sent_json in self.sent_cache:
-            return self.sent_cache[sent_json]
+        write_mapping_to_json(unique_tags_and_labels, self._unique_tags_and_labels_path)
 
-        # sent = json.loads(sent)
+    def _prepare_data(self):
+        data_edited = False
+        length_edited = True
+
+        unique_tags_and_labels = defaultdict(set)
+
+        def iterate_tags(record, field):
+            for label in record[field]:
+                yield label
+
+        for text, annotations in tqdm(self._data, desc="Scanning data"):
+            id_ = self._compute_text_id(text)
+            self._data_ids.add(id_)
+            if id_ not in self._length_cache:
+                length_edited = True
+                if id_ not in self._data_cache:
+                    data_edited = True
+                    self._data_cache[id_] = (text, annotations)
+                entry = self._prepare_record(id_, text, annotations)
+
+                for tag_field in self._tag_fields:
+                    unique_tags_and_labels[tag_field].update(set(iterate_tags(entry, tag_field)))
+
+                for cat_field in self._category_fields:
+                    cat = entry[cat_field]
+                    if cat is not None:
+                        unique_tags_and_labels[cat_field].add(entry.category)
+
+                self._length_cache[id_] = len(entry.tokens)
+
+        self._update_unique_tags_and_labels(unique_tags_and_labels)
+
+        if data_edited:
+            self._data_cache.save()
+        if length_edited:
+            self._length_cache.save()
+
+    def _prepare_tokenized_sent(self, sent):
         text, annotations = sent
 
-        doc = self.nlp(text)
+        doc = self._nlp(text)
         ents = annotations['entities']
-        repl = annotations['replacements']
-        if self.mask_unlabeled_declarations:
-            unlabeled_dec = filter_unlabeled(ents, get_declarations(text))
 
-        tokens = [t.text for t in doc]
+        tokens = doc
+        try:
+            tokens = [t.text for t in tokens]
+        except:
+            pass
 
-        if self.tokenizer == "codebert":
-            backup_tokens = doc
-            fixed_spaces = [False]
-            fixed_words = ["<s>"]
-
-            for ind, t in enumerate(doc):
-                if len(t.text) > 1:
-                    fixed_words.append(t.text.strip("Ġ"))
-                else:
-                    fixed_words.append(t.text)
-                if ind != 0:
-                    fixed_spaces.append(t.text.startswith("Ġ") and len(t.text) > 1)
-            fixed_spaces.append(False)
-            fixed_spaces.append(False)
-            fixed_words.append("</s>")
-
-            assert len(fixed_spaces) == len(fixed_words)
-
-            from spacy.tokens import Doc
-            doc = Doc(self.vocab, fixed_words, fixed_spaces)
-
-            assert len(doc) - 2 == len(backup_tokens)
-            assert len(doc.text) - 7 == len(backup_tokens.text)
-            ents = adjust_offsets(ents, -3)
-            repl = adjust_offsets(repl, -3)
-            if self.mask_unlabeled_declarations:
-                unlabeled_dec = adjust_offsets(unlabeled_dec, -3)
-
-        ents_tags = biluo_tags_from_offsets(doc, ents, self.no_localization)
-        repl_tags = biluo_tags_from_offsets(doc, repl, self.no_localization)
-        if self.mask_unlabeled_declarations:
-            unlabeled_dec = biluo_tags_from_offsets(doc, unlabeled_dec, self.no_localization)
-
-        fix_incorrect_tags(ents_tags)
-        fix_incorrect_tags(repl_tags)
-        if self.mask_unlabeled_declarations:
-            fix_incorrect_tags(unlabeled_dec)
-
-        if self.tokenizer == "codebert":
-            tokens = ["<s>"] + [t.text for t in backup_tokens] + ["</s>"]
-
-        assert len(tokens) == len(ents_tags) == len(repl_tags)
-        if self.mask_unlabeled_declarations:
-            assert len(tokens) == len(unlabeled_dec)
-
-        # decls = declarations_to_tags(doc, decls)
-
-        repl_tags = [try_int(t.split("-")[-1]) for t in repl_tags]
-
-        if self.mask_unlabeled_declarations:
-            output = tuple(tokens), tuple(ents_tags), tuple(repl_tags), tuple(unlabeled_dec)
-        else:
-            output = tuple(tokens), tuple(ents_tags), tuple(repl_tags)
-
-        self.sent_cache[sent_json] = output
-        return output
-
-    # @lru_cache(maxsize=200000)
-    def create_batches_with_mask(
-            self, sent: List[str], tags: List[str], repl: List[str], unlabeled_decls: Optional[List[str]]=None
-    ):
-
-        input_json = json.dumps((sent, tags, repl, unlabeled_decls))
-        if input_json in self.batch_cache:
-            return self.batch_cache[input_json]
-
-        def encode(seq, encode_func, pad):
-            blank = np.ones((self.seq_len,), dtype=np.int32) * pad
-            encoded = np.array([encode_func(w) for w in seq], dtype=np.int32)
-            blank[0:min(encoded.size, self.seq_len)] = encoded[0:min(encoded.size, self.seq_len)]
-            return blank
-
-        # input
-        pref = encode(sent, self.prefmap_func, self.prefpad)
-        suff = encode(sent, self.suffmap_func, self.suffpad)
-        s = encode(sent, self.wordmap_func, self.wordpad)
-        r = encode(repl, self.graphmap_func, self.graphpad) if self.graphmap_func is not None else None
-
-        # labels
-        t = encode(tags, self.tagmap_func, self.tagpad)
-
-        # mask unlabeled, feed dummy no mask provided
-        hidem = encode(
-            list(range(len(sent))) if unlabeled_decls is None else unlabeled_decls,
-            self.mask_unlbl_func, self.mask_unlblpad
-        ).astype(np.bool)
-
-        # class weights
-        classw = encode(tags, self.classw_func, self.classwpad)
-
-        assert len(s) == len(pref) == len(suff) == len(t) == len(classw) == len(hidem)
-        if r is not None:
-            assert len(r) == len(s)
-
-        no_localization_mask = np.array([tag != self.tagpad for tag in t]).astype(np.bool)
+        ents_tags = self._biluo_tags_from_offsets(doc, ents, check_localization_parameter=True)
+        assert len(tokens) == len(ents_tags)
 
         output = {
-            "tok_ids": s,
-            "replacements": repl,
-            # "graph_ids": r,
-            "prefix": pref,
-            "suffix": suff,
-            "tags": t,
-            "class_weights": classw,
-            "hide_mask": hidem,
-            "no_loc_mask": no_localization_mask,
-            "lens": len(sent) if len(sent) < self.seq_len else self.seq_len
+            "tokens": tokens,
+            "tags": ents_tags
         }
 
-        if r is not None:
-            output["graph_ids"] = r
+        output.update(self._parse_additional_tags(text, annotations, doc, output))
 
-        self.batch_cache[input_json] = output
+        return output
+
+    def _get_adjustment(self, doc):
+        if hasattr(doc, "tokens_for_biluo_alignment"):
+            entity_adjustment_amount = doc.adjustment_amount
+            tokens_for_biluo_alignment = doc.tokens_for_biluo_alignment
+        else:
+            entity_adjustment_amount = 0
+            tokens_for_biluo_alignment = doc
+        return entity_adjustment_amount, tokens_for_biluo_alignment
+
+    def _biluo_tags_from_offsets(self, doc, tags, check_localization_parameter=False):
+        if check_localization_parameter is True:
+            no_localization = self._no_localization
+        else:
+            no_localization = False
+        entity_adjustment_amount, tokens_for_biluo_alignment = self._get_adjustment(doc)
+        ents_tags = biluo_tags_from_offsets(
+            tokens_for_biluo_alignment, adjust_offsets(tags, entity_adjustment_amount),
+            no_localization
+        )
+        fix_incorrect_tags(ents_tags)
+        return ents_tags
+
+    def _parse_additional_tags(self, text, annotations, doc, parsed):
+        return {}
+
+    def get_record_with_id(self, id_):
+        if id_ not in self._data_cache:
+            raise KeyError("Record with such id is not found")
+        text, annotations = self._data_cache[id_]
+        return self._prepare_record(id_, text, annotations)
+        # return self._data_cache[id]
+
+    def _iterate_record_ids(self):
+        return list(self._data_ids)
+
+    def _iterate_sorted_by_length(self, limit_max_length=False):
+        ids = list(self._iterate_record_ids())
+        ids_length = list(zip(ids, list(map(lambda x: self._length_cache[x], ids))))
+        for id_, length in sorted(ids_length, key=lambda x: x[1]):
+            if id_ not in self._data_ids or limit_max_length and length >= self._max_seq_len:
+                continue
+            yield id_
+            # text, annotations = self._get_record_with_id(id_)
+            # yield self._prepare_record(id_, text, annotations)
+
+    def _iterate_records(self, limit_max_length=False, shuffle=False):
+        ids = self._iterate_record_ids()
+        if shuffle:
+            random.shuffle(ids)
+        for id_ in ids:
+            if limit_max_length and self._length_cache[id_] >= self._max_seq_len:
+                continue
+            yield id_
+            # text, annotations = self._get_record_with_id(id_)
+            # yield self._prepare_record(id_, text, annotations)
+
+    def _create_mappers(self, **kwargs):
+        self._mappers = []
+        self._create_wordmap_encoder()
+        self._create_tagmap_encoder()
+        self._create_category_encoder()
+        self._create_additional_encoders()
+
+    def _create_additional_encoders(self):
+        pass
+
+    def _create_category_encoder(self, **kwargs):
+        if self.labelmap is None:
+            if self._labelmap_path.is_file():
+                labelmap = TagMap.load(self._labelmap_path)
+            else:
+                unique_tags_and_labels = read_mapping_from_json(self._unique_tags_and_labels_path)
+                if "category" not in unique_tags_and_labels:
+                    return
+                labelmap = TagMap(
+                    unique_tags_and_labels["category"]
+                )
+                labelmap.save(self._labelmap_path)
+
+            self.labelmap = labelmap
+
+        self._mappers.append(
+            MapperSpec(field="category", target_field="label", encoder=self.labelmap)
+        )
+
+    def _create_tagmap_encoder(self):
+        if self.tagmap is None:
+            if self._tagmap_path.is_file():
+                tagmap = TagMap.load(self._tagmap_path)
+            else:
+                unique_tags_and_labels = read_mapping_from_json(self._unique_tags_and_labels_path)
+                if "tags" not in unique_tags_and_labels:
+                    return
+                tagmap = TagMap(
+                    unique_tags_and_labels["tags"]
+                )
+                tagmap.set_default(tagmap._value_to_code["O"])
+                tagmap.save(self._tagmap_path)
+
+            self.tagmap = tagmap
+
+        self._mappers.append(
+            MapperSpec(field="tags", target_field="tags", encoder=self.tagmap)
+        )
+        # self.tagmap = tagmap
+        # self.tagpad = self.tagmap["O"]
+
+    def _create_wordmap_encoder(self):
+        wordmap_enc = ValueEncoder(value_to_code=self._wordmap)
+        wordmap_enc.set_default(len(self._wordmap))
+        self._mappers.append(
+            MapperSpec(field="tokens", target_field="tok_ids", encoder=wordmap_enc)
+        )
+
+    # @lru_cache(maxsize=200000)
+    def _encode_for_batch(self, record):
+
+        if record.id in self._batch_cache:
+            return self._batch_cache[record.id]
+
+        def encode(seq, encoder, pad, preproc_fn=None):
+            if preproc_fn is None:
+                def preproc_fn(x):
+                    return x
+            blank = np.ones((self._max_seq_len,), dtype=np.int32) * pad
+            encoded = np.array([encoder[preproc_fn(w)] for w in seq], dtype=np.int32)
+            blank[0:min(encoded.size, self._max_seq_len)] = encoded[0:min(encoded.size, self._max_seq_len)]
+            return blank
+
+        def encode_label(item, encoder, pad=None, preproc_fn=None):
+            if preproc_fn is None:
+                def preproc_fn(x):
+                    return x
+            encoded = np.array(encoder[preproc_fn(item)], dtype=np.int32)
+            return encoded
+
+        output = {}
+
+        for mapper in self._mappers:
+            if mapper.field in record:
+                if mapper.target_field == "label":
+                    enc_fn = encode_label
+                else:
+                    enc_fn = encode
+
+                output[mapper.target_field] = enc_fn(
+                    record[mapper.field], encoder=mapper.encoder, pad=mapper.encoder.default,
+                    preproc_fn=mapper.preproc_fn
+                ).astype(mapper.dtype)
+
+        num_tokens = len(record.tokens)
+
+        output["lens"] = np.array(num_tokens if num_tokens < self._max_seq_len else self._max_seq_len, dtype=np.int32)
+        output["id"] = record.id
+
+        self._batch_cache[record.id] = output
+        self._batch_cache.save()
+
         return output
 
     def format_batch(self, batch):
-        # fbatch = {
-        #     "tok_ids": [], "graph_ids": [], "prefix": [], "suffix": [],
-        #     "tags": [], "class_weights": [], "hide_mask": [], "lens": [], "replacements": []
-        # }
         fbatch = defaultdict(list)
 
         for sent in batch:
             for key, val in sent.items():
                 fbatch[key].append(val)
 
-        if len(fbatch["graph_ids"]) == 0:
-            fbatch.pop("graph_ids")
-
         max_len = max(fbatch["lens"])
 
-        return {
-            key: np.stack(val)[:,:max_len] if key != "lens" and key != "replacements"
-            else (np.array(val, dtype=np.int32) if key != "replacements" else np.array(val)) for key, val in fbatch.items()}
+        batch_o = {}
+
+        for field, items in fbatch.items():
+            if field == "lens" or field == "label":
+                batch_o[field] = np.array(items, dtype=np.int32)
+            elif field == "id":
+                batch_o[field] = np.array(items, dtype=np.int64)
+            elif field == "tokens" or field == "replacements":
+                batch_o[field] = items
+            else:
+                batch_o[field] = np.stack(items)[:, :max_len]
+
+        return batch_o
+
+        # return {
+        #     key: np.stack(val)[:,:max_len] if key != "lens" and key != "replacements" and key != "tokens"
+        #     else (np.array(val, dtype=np.int32) if key == "lens" else np.array(val)) for key, val in fbatch.items()}
 
     def generate_batches(self):
         batch = []
-        for sent in self.data:
-            batch.append(self.create_batches_with_mask(*self.prepare_sent(sent)))
-            if len(batch) >= self.batch_size:
+        if self._sort_by_length:
+            records = self._iterate_sorted_by_length(limit_max_length=True)
+        else:
+            records = self._iterate_records(limit_max_length=True, shuffle=False)
+
+        for id_ in records:
+            if id_ in self._batch_cache:
+                batch.append(self._batch_cache[id_])
+            else:
+                batch.append(self._encode_for_batch(self.get_record_with_id(id_)))
+            if len(batch) >= self._batch_size:
                 yield self.format_batch(batch)
-                batch = []
+                batch.clear()
+
+        # for sent in records:
+        #     batch.append(self._encode_for_batch(sent))
+        #     if len(batch) >= self._batch_size:
+        #         yield self.format_batch(batch)
+        #         batch = []
         if len(batch) > 0:
             yield self.format_batch(batch)
         # yield self.format_batch(batch)
 
     def __iter__(self):
-        return self.generate_batches()
+        self._batch_generator = self.generate_batches()
+        return self
+
+    def __next__(self):
+        if self._batch_generator is None:
+            raise StopIteration()
+        return next(self._batch_generator)
 
     def __len__(self):
-        return int(ceil(len(self.data) / self.batch_size))
+        total_valid = 0
+        for id_ in self._iterate_record_ids():
+            length = self._length_cache[id_]
+            if length < self._max_seq_len:
+                total_valid += 1
+        return int(ceil(total_valid / self._batch_size))
+
+
+class PythonBatcher(Batcher):
+    def __init__(
+            self, *args, graphmap, element_hash_size, mask_unlabeled_declarations=False, **kwargs
+    ):
+        self._element_hash_size = element_hash_size
+        self._graphmap = graphmap
+        self._mask_unlabeled_declarations = mask_unlabeled_declarations
+
+        self._extra_signature_parameters = {
+            "element_hash_size": element_hash_size,
+            "mask_unlabeled_declarations": mask_unlabeled_declarations,
+            "graphmap": self._graphmap
+        }
+
+        super(PythonBatcher, self).__init__(*args, **kwargs)
+
+    def _parse_additional_tags(self, text, annotations, doc, parsed):
+
+        repl_tags = self._biluo_tags_from_offsets(doc, annotations["replacements"])
+        assert len(parsed["tokens"]) == len(repl_tags)
+
+        if self._mask_unlabeled_declarations:
+            unlabeled_dec = filter_unlabeled(annotations["entities"], get_declarations(text))
+            unlabeled_dec_tags = self._biluo_tags_from_offsets(doc, unlabeled_dec)
+            assert len(parsed["tokens"]) == len(unlabeled_dec_tags)
+        else:
+            unlabeled_dec_tags = ["O"] * len(parsed["tokens"])
+
+        return {
+            "replacements": repl_tags,
+            "unlabeled_dec": unlabeled_dec_tags
+        }
+
+    def _create_additional_encoders(self):
+
+        def suffix(word):
+            return word[-3:]
+
+        def prefix(word):
+            return word[:3]
+
+        self._mappers.append(
+            MapperSpec(
+                field="tokens", target_field="prefix", encoder=HashingValueEncoder(self._element_hash_size),
+                preproc_fn=prefix, dtype=np.int32
+            )
+        )
+
+        self._mappers.append(
+            MapperSpec(
+                field="tokens", target_field="suffix", encoder=HashingValueEncoder(self._element_hash_size),
+                preproc_fn=suffix, dtype=np.int32
+            )
+        )
+
+        def extract_graph_id(graph_tag):
+            if "-" in graph_tag:
+                graph_tag = graph_tag.split("-")[-1]
+            try:
+                graph_tag = int(graph_tag)
+            except:
+                pass
+            return graph_tag
+
+        if self._graphmap is not None:
+            graphmap_enc = ValueEncoder(value_to_code=self._graphmap)
+            graphmap_enc.set_default(len(self._graphmap))
+            self._mappers.append(
+                MapperSpec(
+                    field="replacements", target_field="graph_ids", encoder=graphmap_enc,
+                    preproc_fn=extract_graph_id, dtype=np.int32
+                )
+            )
+            self.graphpad = graphmap_enc.default
+        else:
+            self.graphpad = 0
+
+        class NoMaskEncoder(ValueEncoder):
+            def __init__(self, default=False, *args, **kwargs):
+                super(NoMaskEncoder, self).__init__(default=default)
+
+            def _initialize(self, values, value_to_code):
+                pass
+
+            def __getitem__(self, item):
+                if item == "O":
+                    return False
+                else:
+                    return True
+
+            def get(self, key, default=0):
+                return self.__getitem__(key)
+
+        self._mappers.append(
+            MapperSpec(
+                field="tags", target_field="no_loc_mask", encoder=NoMaskEncoder(),
+                preproc_fn=extract_graph_id, dtype=np.bool
+            )
+        )
+
+        class OMaskEncoder(NoMaskEncoder):
+            def __init__(self, default=True, *args, **kwargs):
+                super(OMaskEncoder, self).__init__(default=default)
+
+            def __getitem__(self, item):
+                if item == "O":
+                    return True
+                else:
+                    return False
+
+        self._mappers.append(
+            MapperSpec(
+                field="unlabeled_dec", target_field="hide_mask", encoder=OMaskEncoder(),
+                preproc_fn=extract_graph_id, dtype=np.bool
+            )
+        )
