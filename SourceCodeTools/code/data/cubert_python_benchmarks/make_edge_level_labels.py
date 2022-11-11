@@ -18,11 +18,15 @@ def create_edge_labels(dataset_directory):
 
     def get_node_names():
         id2node_name = dict()
+        id2node_type = dict()
+        id2node_str = dict()
         for nodes in read_nodes(nodes_path, as_chunks=True):
             id2node_name.update(dict(zip(nodes["id"], nodes["serialized_name"])))
-        return id2node_name
+            id2node_type.update(dict(zip(nodes["id"], nodes["type"])))
+            id2node_str.update(dict(zip(nodes["id"], nodes["string"])))
+        return id2node_name, id2node_type, id2node_str
 
-    id2node_name = get_node_names()
+    id2node_name, id2node_type, id2node_str = get_node_names()
 
     def get_misuse_spans():
         filecontent = unpersist(filecontent_path)
@@ -34,13 +38,13 @@ def create_edge_labels(dataset_directory):
             except:
                 return None  # this happens when function does not have a misuse
 
-        return dict(zip(filecontent["id"], filecontent["misuse_span"].map(literal_eval))), dict(zip(filecontent["id"], filecontent["comment"].map(try_get_misused_name)))
+        return dict(zip(filecontent["id"], filecontent["misuse_span"].map(literal_eval))), dict(zip(filecontent["id"], filecontent["comment"].map(try_get_misused_name))), dict(zip(filecontent["id"], filecontent["partition"]))
 
-    file_id2misuse_span, file_id2replacement_var = get_misuse_spans()
+    file_id2misuse_span, file_id2replacement_var, file_id2partition = get_misuse_spans()
 
     file_id2incorrect_edge = set()
     skipped = []
-    file_id2incorrect_edges = []
+    file_id2labeled_edges = []
 
     last_file_id = None
     total = 0
@@ -66,28 +70,43 @@ def create_edge_labels(dataset_directory):
                 if needed_span == given_span:
                     replacement = file_id2replacement_var[file_id]
                     if replacement is not None:
-                        node_name = id2node_name[source_node_id]
-                        assert node_name.startswith(replacement)
+                        # node_name = id2node_name[source_node_id]
+                        assert id2node_str[source_node_id] == replacement  # node_name.startswith(replacement)
                         file_id2incorrect_edge.add(file_id)
-                        file_id2incorrect_edges.append({
+                        file_id2labeled_edges.append({
                             "src": source_node_id,
-                            "dst": target_node_id,
-                            "type": type,
-                            "file_id": file_id
+                            # "dst": target_node_id,
+                            # "type": type,
+                            "file_id": file_id,
+                            "label": "misuse"
+                        })
+                else:
+                    node_type = id2node_type[source_node_id]
+                    if node_type == "instance":
+                        file_id2labeled_edges.append({
+                            "src": source_node_id,
+                            # "dst": target_node_id,
+                            # "type": type,
+                            "file_id": file_id,
+                            "label": "correct"
                         })
 
-    misuse_edges = pd.DataFrame.from_records(file_id2incorrect_edges)
+    misuse_edges = pd.DataFrame.from_records(file_id2labeled_edges)
 
-    misuse_nodes = misuse_edges["src"].unique()
-    assert len(misuse_nodes) == len(misuse_edges)
-    partition = add_splits(misuse_edges[["src"]].rename({"src": "id"}, axis=1), 0.8)
-    misuse_edges_ = misuse_edges.merge(partition, how="left", left_on="src", right_on="id")
-    misuse_edges_.drop("id", axis=1, inplace=True)
-    assert (misuse_edges_.isna().sum() == 0).all()
+    misuse_nodes = misuse_edges.query("label == 'misuse'")["src"].unique()
+    assert len(misuse_nodes) == len(misuse_edges.query("label == 'misuse'"))
+    misuse_edges["train_mask"] = misuse_edges["file_id"].apply(lambda x: file_id2partition[x] == "train")
+    misuse_edges["test_mask"] = misuse_edges["file_id"].apply(lambda x: file_id2partition[x] == "eval")
+    misuse_edges["val_mask"] = misuse_edges["file_id"].apply(lambda x: file_id2partition[x] == "dev")
+    misuse_edges["id"] = misuse_edges["src"]
+    # partition = add_splits(misuse_edges[["file_id"]].rename({"file_id": "id"}, axis=1), 0.8)
+    # misuse_edges_ = misuse_edges.merge(partition, how="left", left_on="file_id", right_on="id")
+    # misuse_edges_.drop("id", axis=1, inplace=True)
+    # assert (misuse_edges_.isna().sum() == 0).all()
 
     print(f"Found {len(misuse_edges)} misuse edges, skipped {len(skipped)} files")
     pd.Series(skipped).to_csv(dataset.joinpath("skipped.csv"), index=False)
-    persist(misuse_edges_, dataset.joinpath("misuse_edges.json.bz2"))
+    persist(misuse_edges, dataset.joinpath("misuse_edge_labels.json.bz2"))
 
 
 if __name__ == "__main__":
