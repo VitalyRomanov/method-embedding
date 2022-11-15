@@ -27,6 +27,7 @@ from SourceCodeTools.models.graph.train.objectives import GraphTextPrediction, G
 from SourceCodeTools.models.graph.NodeEmbedder import SimplestNodeEmbedder
 from SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObjective import TransRObjective, \
     GraphLinkClassificationObjective, GraphLinkMisuseObjective
+from SourceCodeTools.models.graph.train.objectives.NodeClassificationObjective import MisuseNodeClassifierObjective
 from SourceCodeTools.models.graph.train.objectives.SubgraphClassifierObjective import SubgraphClassifierObjective, \
     SubgraphEmbeddingObjective, SubgraphClassifierObjectiveWithUnetPool, SubgraphClassifierObjectiveWithAttentionPooling
 
@@ -398,8 +399,8 @@ class SamplingMultitaskTrainer:
 
         self.objectives.append(
             self._create_node_level_objective(
-                objective_name="MisuseNodeClf",
-                objective_class=NodeClassifierObjective,
+                objective_name="MisuseNodeClassifier",
+                objective_class=MisuseNodeClassifierObjective,
                 label_loader_class=ClassifierTargetMapper,
                 dataset=dataset,
                 labels_fn=load_labels,
