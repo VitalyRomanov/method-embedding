@@ -58,7 +58,8 @@ def main():
             else:
                 parse_train(line)
 
-        assert model_names == eval_model_names
+        if len(eval_model_names) != 0:
+            assert model_names == eval_model_names
 
     for s, v in zip(steps, buffer_pos):
         plt.plot(s, v)
