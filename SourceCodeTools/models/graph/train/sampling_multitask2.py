@@ -310,12 +310,17 @@ class SamplingMultitaskTrainer:
     def create_edge_objective(self, dataset, tokenizer_path):
         assert self.trainer_params["use_ns_groups"] is True, "Parameter `use_ns_groups` should be set to True " \
                                                              "for edge link prediction"
+
+        def load_edge_prediction():
+            edges = dataset.load_edge_prediction()
+            return edges[["src", "dst"]]
+
         self.objectives.append(
             self._create_node_level_objective(
                 objective_name="EdgePrediction",
                 objective_class=GraphLinkObjective,
                 dataset=dataset,
-                labels_fn=dataset.load_edge_prediction,
+                labels_fn=load_edge_prediction,
                 label_loader_class=GraphLinkTargetLoader,
                 label_loader_params={"compact_dst": False},
                 dataloader_class=SGEdgesDataLoader,
