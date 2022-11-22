@@ -22,6 +22,7 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
+        raise Exception('why measure score is set true')
         self.measure_scores = True
         self.update_embeddings_for_queries = False
 
