@@ -645,6 +645,16 @@ class OnDiskGraphStorage:
 
 class OnDiskGraphStorageWithFastIteration(OnDiskGraphStorage):
     def iterate_subgraphs(self, how, groups):
+        if groups is None:
+            if how == SGPartitionStrategies.package:
+                groups = self.get_all_packages()
+            elif how == SGPartitionStrategies.file:
+                groups = self.get_all_files()
+            elif how == SGPartitionStrategies.mention:
+                groups = self.get_all_mentions()
+            else:
+                raise ValueError()
+
         requested_partition_groups = ",".join(map(str, groups))
         if how == SGPartitionStrategies.package:
             query_str = f"""
