@@ -162,7 +162,7 @@ class Batcher:
     def _get_version_code(self):
         signature_dict = {
             "tokenizer": self._tokenizer, "max_seq_len": self._max_seq_len, "class_weights": self._class_weights,
-            "_no_localization": self._no_localization, "wordmap": self._wordmap
+            "_no_localization": self._no_localization, "wordmap": self._wordmap, "class": self.__class__.__name__
         }
         if hasattr(self, "_extra_signature_parameters"):
             signature_dict.update(self._extra_signature_parameters)
