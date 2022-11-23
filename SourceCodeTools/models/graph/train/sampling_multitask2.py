@@ -816,7 +816,7 @@ class SamplingMultitaskTrainer:
 
                     emb_sink.write(f"{node_id}")
                     for feat in emb:
-                        emb_sink.write(f"{feat}")
+                        emb_sink.write(f" {feat}")
                     emb_sink.write(f"\n")
 
                     # if node_id not in id_maps:
