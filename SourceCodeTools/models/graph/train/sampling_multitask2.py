@@ -121,8 +121,12 @@ class SamplingMultitaskTrainer:
             self.create_type_ann_objective(dataset, tokenizer_path)
         # if "subgraph_name_clf" in objective_list:
         #     self.create_subgraph_name_objective(dataset, tokenizer_path)
-        if "subgraph_clf" in objective_list:
-            self.create_subgraph_classifier_objective(dataset, tokenizer_path)
+        if "mususe_subgraph_clf_avg_pool" in objective_list:
+            self.create_misuse_subgraph_classifier_objective_avg_pooling(dataset, tokenizer_path)
+        if "mususe_subgraph_clf_att_pool" in objective_list:
+            self.create_misuse_subgraph_classifier_objective_att_pooling(dataset, tokenizer_path)
+        if "mususe_subgraph_clf_unet_pool" in objective_list:
+            self.create_misuse_subgraph_classifier_objective_unet_pooling(dataset, tokenizer_path)
 
         if len(self.objectives) == 0:
             raise Exception("No valid objectives provided:", objective_list)
@@ -218,7 +222,7 @@ class SamplingMultitaskTrainer:
             )
         )
 
-    def create_subgraph_classifier_objective(self, dataset, tokenizer_path):
+    def create_misuse_subgraph_classifier_objective_avg_pooling(self, dataset, tokenizer_path):
         from SourceCodeTools.models.graph.train.objectives.NodeClassificationObjective import ClassifierTargetMapper
 
         def load_labels():
@@ -228,8 +232,48 @@ class SamplingMultitaskTrainer:
 
         self.objectives.append(
             self._create_subgraph_objective(
-                objective_name="SubgraphClassifierObjective",
-                objective_class=SubgraphClassifierObjective,  # SubgraphClassifierObjectiveWithAttentionPooling,  # SubgraphClassifierObjectiveWithUnetPool,  # SubgraphClassifierObjective,
+                objective_name="MisuseSubgraphClassifierObjective",
+                objective_class=SubgraphClassifierObjective,
+                dataset=dataset,
+                tokenizer_path=tokenizer_path,
+                labels_fn=load_labels,
+                label_loader_class=ClassifierTargetMapper,
+                label_loader_params={"emb_size": None, "tokenizer_path": None, "use_ns_groups": False}
+            )
+        )
+
+    def create_misuse_subgraph_classifier_objective_att_pooling(self, dataset, tokenizer_path):
+        from SourceCodeTools.models.graph.train.objectives.NodeClassificationObjective import ClassifierTargetMapper
+
+        def load_labels():
+            filecontent_path = Path(dataset.data_path).joinpath("common_filecontent.json.bz2")
+            filecontent = unpersist(filecontent_path)
+            return filecontent[["id", "label"]].rename({"id": "src", "label": "dst"}, axis=1)
+
+        self.objectives.append(
+            self._create_subgraph_objective(
+                objective_name="MisuseSubgraphClassifierObjectiveWithAttentionPooling",
+                objective_class=SubgraphClassifierObjectiveWithAttentionPooling,
+                dataset=dataset,
+                tokenizer_path=tokenizer_path,
+                labels_fn=load_labels,
+                label_loader_class=ClassifierTargetMapper,
+                label_loader_params={"emb_size": None, "tokenizer_path": None, "use_ns_groups": False}
+            )
+        )
+
+    def create_misuse_subgraph_classifier_objective_unet_pooling(self, dataset, tokenizer_path):
+        from SourceCodeTools.models.graph.train.objectives.NodeClassificationObjective import ClassifierTargetMapper
+
+        def load_labels():
+            filecontent_path = Path(dataset.data_path).joinpath("common_filecontent.json.bz2")
+            filecontent = unpersist(filecontent_path)
+            return filecontent[["id", "label"]].rename({"id": "src", "label": "dst"}, axis=1)
+
+        self.objectives.append(
+            self._create_subgraph_objective(
+                objective_name="MisuseSubgraphClassifierObjectiveWithUnetPool",
+                objective_class=SubgraphClassifierObjectiveWithUnetPool,
                 dataset=dataset,
                 tokenizer_path=tokenizer_path,
                 labels_fn=load_labels,
