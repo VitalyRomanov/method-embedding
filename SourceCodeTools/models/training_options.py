@@ -43,6 +43,7 @@ def add_training_arguments(parser):
     parser.add_argument("--n_layers", dest="n_layers", default=5, type=int, help='Number of layers')
     parser.add_argument("--objectives", dest="objectives", nargs='+', default=None, type=str, help='???')
 
+    parser.add_argument("--skip_final_eval", action="store_true", help='')
     parser.add_argument("--save_each_epoch", action="store_true", help='Save checkpoints for each epoch (high disk space utilization)')
     parser.add_argument("--early_stopping", action="store_true", help='???')
     parser.add_argument("--early_stopping_tolerance", default=20, type=int, help='???')

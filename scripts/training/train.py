@@ -148,7 +148,7 @@ def train_model(args):
 
     metadata["config"] = args
 
-    pickle.dump(embedder, open(join(model_base, metadata['layers']), "wb"))
+    # pickle.dump(embedder, open(join(model_base, metadata['layers']), "wb"))
 
     with open(join(model_base, "metadata.json"), "w") as mdata:
         mdata.write(json.dumps(metadata, indent=4))

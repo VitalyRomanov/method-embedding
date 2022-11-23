@@ -796,36 +796,44 @@ class SamplingMultitaskTrainer:
             negative_sampling_strategy="w2v", embedding_table_size=self.trainer_params["embedding_table_size"]
         )
 
-        id_maps = dict()
-        embeddings = []
+        # id_maps = dict()
+        # embeddings = []
 
-        for batch in tqdm(
-                dataloader.get_dataloader("any"),
-                total=dataloader.train_num_batches,
-                desc="Computing final embeddings"
-        ):
-            with torch.no_grad():
-                graph_emb = self.graph_model(
-                    {"node_": self.node_embedder(batch["input_nodes"])},
-                    batch["blocks"]
-                )["node_"].to("cpu").numpy()
+        with open(join(self.model_base_path, "embeddings.txt"), "w") as emb_sink:
 
-            for node_id, emb in zip(batch["indices"], graph_emb):
-                if node_id not in id_maps:
-                    id_maps[node_id] = len(id_maps)
+            for batch in tqdm(
+                    dataloader.get_dataloader("any"),
+                    total=dataloader.train_num_batches,
+                    desc="Computing final embeddings"
+            ):
+                with torch.no_grad():
+                    graph_emb = self.graph_model(
+                        {"node_": self.node_embedder(batch["input_nodes"])},
+                        batch["blocks"]
+                    )["node_"].to("cpu").numpy()
 
-                ind_to_set = id_maps[node_id]
+                for node_id, emb in zip(batch["indices"], graph_emb):
 
-                if ind_to_set == len(embeddings):
-                    embeddings.append(emb)
-                elif ind_to_set < len(embeddings):
-                    embeddings[ind_to_set] = emb
-                else:
-                    raise ValueError()
+                    emb_sink.write(f"{node_id}")
+                    for feat in emb:
+                        emb_sink.write(f"{feat}")
+                    emb_sink.write(f"\n")
 
-        embedder = Embedder(id_maps, np.vstack(embeddings))
+                    # if node_id not in id_maps:
+                    #     id_maps[node_id] = len(id_maps)
+                    #
+                    # ind_to_set = id_maps[node_id]
+                    #
+                    # if ind_to_set == len(embeddings):
+                    #     embeddings.append(emb)
+                    # elif ind_to_set < len(embeddings):
+                    #     embeddings[ind_to_set] = emb
+                    # else:
+                    #     raise ValueError()
 
-        return embedder
+        # embedder = Embedder(id_maps, np.vstack(embeddings))
+
+        return None  # embedder
 
     # def get_embeddings(self):
     #     # self.graph_model.g.nodes["function"].data.keys()
@@ -905,7 +913,10 @@ def training_procedure(
     #     print("There was an exception", e)
 
     trainer.eval()
-    scores = trainer.final_evaluation()
+    if trainer_params["skip_final_eval"]:
+        scores = {}
+    else:
+        scores = trainer.final_evaluation()
     trainer.to('cpu')
     embedder = trainer.inference()
 

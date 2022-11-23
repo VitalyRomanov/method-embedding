@@ -60,6 +60,7 @@ config_specification = {
         "external_dataset": None,
 
         "restore_state": False,
+        "skip_final_eval": False
     },
     "MODEL": {
         "node_emb_size": 100,
