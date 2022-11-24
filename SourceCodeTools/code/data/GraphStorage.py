@@ -350,7 +350,7 @@ class OnDiskGraphStorage:
 
         self._write_type_map(type_map, "edge_types")
         self._write_package_map(package_map, "packages")
-        self._write_node_partition_table()
+        self._write_node_file_id_table()
 
     def _import_filecontent(self, path):
         for filecontent in unpersist(path, chunksize=100000):
