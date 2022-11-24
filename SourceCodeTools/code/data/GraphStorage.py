@@ -218,7 +218,7 @@ class OnDiskGraphStorage:
         self._write_mapping(package_map, "package_id", "package_desc", table_name)
 
     def _write_node_file_id_table(self):
-        self.database.query(
+        self.database.execute(
             """
             create table node_file_id as 
             select distinct src as id, unique_file_id, file_id, package from (
