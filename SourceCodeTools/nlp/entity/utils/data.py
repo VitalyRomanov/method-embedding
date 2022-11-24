@@ -2,6 +2,7 @@ from pathlib import Path
 
 from SourceCodeTools.nlp.entity.utils import *
 
+
 def read_data(
         data, normalize=False, include_replacements=False, allowed=None, min_entity_count=None,
         include_only="entities",

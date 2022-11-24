@@ -1,7 +1,7 @@
 import pickle
 from collections import Counter
 
-from SourceCodeTools.nlp.entity.type_prediction import get_type_prediction_arguments
+from scripts.training.type_prediction.cnn_type_prediction import get_type_prediction_arguments
 from SourceCodeTools.nlp.entity.utils.data import read_data
 
 

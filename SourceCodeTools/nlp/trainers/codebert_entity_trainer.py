@@ -1,125 +1,13 @@
 import os
-import pickle
 from datetime import datetime
 from pathlib import Path
 
-import numpy as np
 import torch
-from SourceCodeTools.mltools.torch import to_numpy
+from SourceCodeTools.mltools.torch import get_length_mask
 from torch.utils.tensorboard import SummaryWriter
 from transformers import RobertaTokenizer, RobertaModel
 
-from SourceCodeTools.nlp.entity.type_prediction import get_type_prediction_arguments, ModelTrainer, filter_labels
-
-import torch.nn as nn
-
-from SourceCodeTools.nlp.entity.utils.data import read_json_data
-
-
-class CodebertHybridModel(nn.Module):
-    def __init__(
-            self, codebert_model, graph_emb, graph_padding_idx, num_classes, dense_hidden=100, dropout=0.1,
-            bert_emb_size=768, no_graph=False
-    ):
-        super(CodebertHybridModel, self).__init__()
-
-        self.codebert_model = codebert_model
-        self.use_graph = not no_graph
-
-        if self.use_graph:
-            num_emb = graph_padding_idx + 1  # padding id is usually not a real embedding
-            assert graph_emb is not None, "Graph embeddings are not provided, but model requires them"
-            graph_emb_dim = graph_emb.e.shape[1]
-            self.graph_emb = nn.Embedding(
-                num_embeddings=num_emb, embedding_dim=graph_emb_dim, padding_idx=graph_padding_idx
-            )
-
-            pretrained_embeddings = torch.from_numpy(
-                np.concatenate([graph_emb.e, np.zeros((1, graph_emb_dim))], axis=0)
-            ).float()
-            new_param = torch.nn.Parameter(pretrained_embeddings)
-            assert self.graph_emb.weight.shape == new_param.shape
-            self.graph_emb.weight = new_param
-            self.graph_emb.weight.requires_grad = False
-        else:
-            graph_emb_dim = 0
-
-        self.fc1 = nn.Linear(
-            bert_emb_size + (graph_emb_dim if self.use_graph else 0),
-            dense_hidden
-        )
-        self.drop = nn.Dropout(dropout)
-        self.fc2 = nn.Linear(dense_hidden, num_classes)
-
-        self.loss_f = nn.CrossEntropyLoss(reduction="mean")
-
-    def get_tensors_for_saliency(self, token_ids, graph_ids, mask):
-        token_embs = self.codebert_model.embeddings.word_embeddings(token_ids)
-        x = self.codebert_model(input_embeds=token_embs, attention_mask=mask).last_hidden_state
-
-        if self.use_graph:
-            graph_emb = self.graph_emb(graph_ids)
-            x = torch.cat([x, graph_emb], dim=-1)
-
-        x = torch.relu(self.fc1(x))
-        x = self.drop(x)
-        logits = self.fc2(x)
-
-        if self.use_graph:
-            return token_embs, graph_emb, logits
-        else:
-            return token_embs, logits
-
-    def forward(self, token_ids, graph_ids, mask, finetune=False):
-        if finetune:
-            x = self.codebert_model(input_ids=token_ids, attention_mask=mask).last_hidden_state
-        else:
-            with torch.no_grad():
-                x = self.codebert_model(input_ids=token_ids, attention_mask=mask).last_hidden_state
-
-        if self.use_graph:
-            graph_emb = self.graph_emb(graph_ids)
-            x = torch.cat([x, graph_emb], dim=-1)
-
-        x = torch.relu(self.fc1(x))
-        x = self.drop(x)
-        x = self.fc2(x)
-
-        return x
-
-    def loss(self, logits, labels, mask, class_weights=None, extra_mask=None):
-        if extra_mask is not None:
-            mask = torch.logical_and(mask, extra_mask)
-        logits = logits[mask, :]
-        labels = labels[mask]
-        loss = self.loss_f(logits, labels)
-        # if class_weights is None:
-        #     loss = tf.reduce_mean(tf.boolean_mask(losses, seq_mask))
-        # else:
-        #     loss = tf.reduce_mean(tf.boolean_mask(losses * class_weights, seq_mask))
-
-        return loss
-
-    def score(self, logits, labels, mask, scorer=None, extra_mask=None):
-        if extra_mask is not None:
-            mask = torch.logical_and(mask, extra_mask)
-        true_labels = labels[mask]
-        argmax = logits.argmax(-1)
-        estimated_labels = argmax[mask]
-
-        p, r, f1 = scorer(to_numpy(estimated_labels), to_numpy(true_labels))
-
-        scores = {}
-        scores["Precision"] = p
-        scores["Recall"] = r
-        scores["F1"] = f1
-
-        return scores
-
-
-def get_length_mask(target, lens):
-    mask = torch.arange(target.size(1)).to(target.device)[None, :] < lens[:, None]
-    return mask
+from SourceCodeTools.nlp.trainers.cnn_entity_trainer import ModelTrainer
 
 
 class CodeBertModelTrainer(ModelTrainer):
@@ -136,7 +24,8 @@ class CodeBertModelTrainer(ModelTrainer):
             self.device = "cpu"
 
     def set_model_class(self):
-        self.model = CodebertHybridModel
+        from SourceCodeTools.models.nlp.CodeBertSemiHybrid import CodeBertSemiHybridModel
+        self.model = CodeBertSemiHybridModel
 
     def get_batcher(self, *args, **kwargs):
         kwargs.update({"tokenizer": "codebert"})
@@ -273,40 +162,8 @@ class CodeBertModelTrainer(ModelTrainer):
 
         self._create_optimizer(model)
 
-        train_scores, test_scores, train_average_scores, test_average_scores = self.iterate_epochs(train_batches,
-                                                                                                   test_batches, epochs,
-                                                                                                   model, scorer,
-                                                                                                   save_ckpt_fn)
+        train_scores, test_scores, train_average_scores, test_average_scores = self.iterate_epochs(
+            train_batches, test_batches, epochs, model, scorer, save_ckpt_fn
+        )
 
         return train_scores, test_scores, train_average_scores, test_average_scores
-
-
-def main():
-    args = get_type_prediction_arguments()
-
-    if args.restrict_allowed:
-        allowed = {
-            'str', 'Optional', 'int', 'Any', 'Union', 'bool', 'Callable', 'Dict', 'bytes', 'float', 'Description',
-            'List', 'Sequence', 'Namespace', 'T', 'Type', 'object', 'HTTPServerRequest', 'Future', "Matcher"
-        }
-    else:
-        allowed = None
-
-    train_data, test_data = read_json_data(
-        args.data_path, normalize=True, allowed=allowed, include_replacements=True, include_only="entities",
-        min_entity_count=args.min_entity_count, random_seed=args.random_seed
-    )
-
-    trainer_params = args.__dict__
-    trainer_params["suffix_prefix_buckets"] = 1
-
-    trainer = CodeBertModelTrainer(
-        train_data, test_data,
-        model_params={},
-        trainer_params=trainer_params
-    )
-    trainer.train_model()
-
-
-if __name__ == "__main__":
-    main()
