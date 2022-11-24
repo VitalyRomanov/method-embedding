@@ -217,6 +217,22 @@ class OnDiskGraphStorage:
     def _write_package_map(self, package_map, table_name):
         self._write_mapping(package_map, "package_id", "package_desc", table_name)
 
+    def _write_node_file_id_table(self):
+        self.database.query(
+            """
+            create table node_file_id as 
+            select distinct src as id, unique_file_id, file_id, package from (
+                select src, package, file_id, unique_file_id
+                from edges
+                inner join edge_file_id on edges.id = edge_file_id.id
+                union
+                select dst as src, package, file_id, unique_file_id
+                from edges
+                inner join edge_file_id on edges.id = edge_file_id.id
+            )
+            """
+        )
+
     def _import_nodes(self, path):
 
         type_map = {}
@@ -334,6 +350,7 @@ class OnDiskGraphStorage:
 
         self._write_type_map(type_map, "edge_types")
         self._write_package_map(package_map, "packages")
+        self._write_node_partition_table()
 
     def _import_filecontent(self, path):
         for filecontent in unpersist(path, chunksize=100000):
@@ -621,21 +638,29 @@ class OnDiskGraphStorage:
             raise ValueError()
 
         node_ids_table_name = self._create_tmp_node_ids_list(node_ids, )
+        # results = self.database.query(
+        #     f"""
+        #     select distinct src, {column_name} from (
+        #         select src, package, unique_file_id, mentioned_in
+        #         from {node_ids_table_name}
+        #         inner join edges on edges.src = {node_ids_table_name}.node_ids
+        #         inner join edge_file_id on edges.id = edge_file_id.id
+        #         join edge_hierarchy on edges.id = edge_hierarchy.id
+        #         union
+        #         select dst as src, package, unique_file_id, mentioned_in
+        #         from {node_ids_table_name}
+        #         inner join edges on edges.dst = {node_ids_table_name}.node_ids
+        #         inner join edge_file_id on edges.id = edge_file_id.id
+        #         join edge_hierarchy on edges.id = edge_hierarchy.id
+        #     ) as node_info where {column_name} is not null order by {column_name}
+        #     """
+        # )
         results = self.database.query(
             f"""
-            select distinct src, {column_name} from (
-                select src, package, unique_file_id, mentioned_in
-                from {node_ids_table_name}
-                inner join edges on edges.src = {node_ids_table_name}.node_ids
-                inner join edge_file_id on edges.id = edge_file_id.id
-                join edge_hierarchy on edges.id = edge_hierarchy.id
-                union
-                select dst as src, package, unique_file_id, mentioned_in
-                from {node_ids_table_name}
-                inner join edges on edges.dst = {node_ids_table_name}.node_ids
-                inner join edge_file_id on edges.id = edge_file_id.id
-                join edge_hierarchy on edges.id = edge_hierarchy.id
-            ) as node_info where {column_name} is not null order by {column_name}
+            select distinct node_file_id.id, {column_name}
+            from {node_ids_table_name}
+            inner join node_file_id on node_file_id.id = {node_ids_table_name}.node_ids
+            join node_hierarchy on node_file_id.id = node_hierarchy.id
             """
         )
 
