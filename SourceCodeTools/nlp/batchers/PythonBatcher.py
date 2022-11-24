@@ -6,7 +6,7 @@ from collections import defaultdict
 from copy import copy
 from pathlib import Path
 from math import ceil
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Union, Callable
 
 from SourceCodeTools.code.ast.ast_tools import get_declarations
 from SourceCodeTools.code.data.file_utils import write_mapping_to_json, read_mapping_from_json
@@ -73,12 +73,13 @@ class SampleEntry(object):
 
 
 class MapperSpec:
-    def __init__(self, field, target_field, encoder, dtype=np.int32, preproc_fn=None):
+    def __init__(self, field, target_field, encoder, dtype=np.int32, preproc_fn=None, encoder_fn="seq"):
         self.field = field
         self.target_field = target_field
         self.encoder = encoder
         self.preproc_fn = preproc_fn
         self.dtype = dtype
+        self.encoder_fn = encoder_fn
 
 
 class Batcher:
@@ -360,7 +361,7 @@ class Batcher:
             self.labelmap = labelmap
 
         self._mappers.append(
-            MapperSpec(field="category", target_field="label", encoder=self.labelmap)
+            MapperSpec(field="category", target_field="label", encoder=self.labelmap, encoder_fn="item")
         )
 
     def _create_tagmap_encoder(self):
@@ -398,7 +399,7 @@ class Batcher:
         if record.id in self._batch_cache:
             return self._batch_cache[record.id]
 
-        def encode(seq, encoder, pad, preproc_fn=None):
+        def encode_seq(seq, encoder, pad, preproc_fn=None):
             if preproc_fn is None:
                 def preproc_fn(x):
                     return x
@@ -407,7 +408,7 @@ class Batcher:
             blank[0:min(encoded.size, self._max_seq_len)] = encoded[0:min(encoded.size, self._max_seq_len)]
             return blank
 
-        def encode_label(item, encoder, pad=None, preproc_fn=None):
+        def encode_item(item, encoder, pad=None, preproc_fn=None):
             if preproc_fn is None:
                 def preproc_fn(x):
                     return x
@@ -418,15 +419,23 @@ class Batcher:
 
         for mapper in self._mappers:
             if mapper.field in record:
-                if mapper.target_field == "label":
-                    enc_fn = encode_label
+                if mapper.encoder_fn == "item":
+                    enc_fn = encode_item
+                elif mapper.encoder_fn == "seq":
+                    enc_fn = encode_seq
                 else:
-                    enc_fn = encode
+                    enc_fn = mapper.encoder_fn
+                assert isinstance(enc_fn, Callable), "encoder_fn should be either `item`/`seq` or a callable"
 
-                output[mapper.target_field] = enc_fn(
+                encoded = enc_fn(
                     record[mapper.field], encoder=mapper.encoder, pad=mapper.encoder.default,
                     preproc_fn=mapper.preproc_fn
                 ).astype(mapper.dtype)
+
+                if mapper.dtype is not None:
+                    output[mapper.target_field] = encoded.astype(mapper.dtype)
+                else:
+                    output[mapper.target_field] = encoded
 
         num_tokens = len(record.tokens)
 

@@ -1,17 +1,31 @@
+from collections import defaultdict
+
+import dgl
 import numpy as np
 
+from SourceCodeTools.code.annotator_utils import resolve_self_collisions2
+from SourceCodeTools.code.data.ast_graph.build_ast_graph import ast_graph_for_single_example
+from SourceCodeTools.code.data.dataset.Dataset import SimpleGraphCreator
 from SourceCodeTools.nlp.batchers import PythonBatcher
+from SourceCodeTools.nlp.batchers.PythonBatcher import MapperSpec
 
 
 class HybridBatcher(PythonBatcher):
     def __init__(self, *args, **kwargs):
+        self._graph_creator = SimpleGraphCreator()
         super(HybridBatcher, self).__init__(*args, **kwargs)
 
     def _prepare_tokenized_sent(self, sent):
         text, annotations = sent
 
+        nodes, edges, offsets = ast_graph_for_single_example(text, "/Users/LTV/dev/method-embeddings/examples/sentencepiece_bpe.model", track_offsets=True)
+        edges = edges.rename({"source_node_id": "src", "target_node_id": "dst"}, axis=1)
+        nodes = nodes.rename({"serialized_name": "name"}, axis=1)
+        graph = self._graph_creator._create_hetero_graph(nodes, edges)
+
         doc = self._nlp(text)
         ents = annotations['entities']
+        annotations['replacements'] = resolve_self_collisions2(list(zip(offsets["start"], offsets["end"], offsets["node_id"])))
 
         tokens = doc
         try:
@@ -24,54 +38,50 @@ class HybridBatcher(PythonBatcher):
 
         output = {
             "tokens": tokens,
-            "tags": ents_tags
+            "tags": ents_tags,
+            "graph": graph,
         }
 
         output.update(self._parse_additional_tags(text, annotations, doc, output))
 
         return output
 
-    def _encode_for_batch(self, record):
+    def _create_additional_encoders(self):
 
-        if record.id in self._batch_cache:
-            return self._batch_cache[record.id]
+        super()._create_additional_encoders()
 
-        def encode(seq, encoder, pad, preproc_fn=None):
-            if preproc_fn is None:
-                def preproc_fn(x):
-                    return x
-            blank = np.ones((self._max_seq_len,), dtype=np.int32) * pad
-            encoded = np.array([encoder[preproc_fn(w)] for w in seq], dtype=np.int32)
-            blank[0:min(encoded.size, self._max_seq_len)] = encoded[0:min(encoded.size, self._max_seq_len)]
-            return blank
+        def graph_encoder(*args):
+            graph = args[0]
+            return graph
 
-        def encode_label(item, encoder, pad=None, preproc_fn=None):
-            if preproc_fn is None:
-                def preproc_fn(x):
-                    return x
-            encoded = np.array(encoder[preproc_fn(item)], dtype=np.int32)
-            return encoded
+        self._mappers.append(
+            MapperSpec(
+                field="graph", target_field="graph", encoder=None, dtype=None, preproc_fn=None,
+                encoder_fn=graph_encoder
+            )
+        )
 
-        output = {}
+    def format_batch(self, batch):
+        fbatch = defaultdict(list)
 
-        for mapper in self._mappers:
-            if mapper.field in record:
-                if mapper.target_field == "label":
-                    enc_fn = encode_label
-                else:
-                    enc_fn = encode
+        for sent in batch:
+            for key, val in sent.items():
+                fbatch[key].append(val)
 
-                output[mapper.target_field] = enc_fn(
-                    record[mapper.field], encoder=mapper.encoder, pad=mapper.encoder.default,
-                    preproc_fn=mapper.preproc_fn
-                ).astype(mapper.dtype)
+        max_len = max(fbatch["lens"])
 
-        num_tokens = len(record.tokens)
+        batch_o = {}
 
-        output["lens"] = np.array(num_tokens if num_tokens < self._max_seq_len else self._max_seq_len, dtype=np.int32)
-        output["id"] = record.id
+        for field, items in fbatch.items():
+            if field == "lens" or field == "label":
+                batch_o[field] = np.array(items, dtype=np.int32)
+            elif field == "id":
+                batch_o[field] = np.array(items, dtype=np.int64)
+            elif field == "tokens" or field == "replacements":
+                batch_o[field] = items
+            elif field == "graph":
+                batch_o[field] = dgl.batch(items)
+            else:
+                batch_o[field] = np.stack(items)[:, :max_len]
 
-        self._batch_cache[record.id] = output
-        self._batch_cache.save()
-
-        return output
+        return batch_o

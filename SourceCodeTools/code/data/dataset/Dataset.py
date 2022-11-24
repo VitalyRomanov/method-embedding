@@ -186,6 +186,156 @@ class PartitionIndex:
         return self[item]
 
 
+class SimpleGraphCreator:
+    def __init__(self):
+        self.use_node_types = False
+        self.use_edge_types = False
+
+    @staticmethod
+    def _add_node_types_to_edges(nodes, edges):
+
+        node_type_map = dict(zip(nodes['id'].values, nodes['type']))
+
+        edges.eval("src_type = src.map(@node_type_map.get)", local_dict={"node_type_map": node_type_map}, inplace=True)
+        edges.eval("dst_type = dst.map(@node_type_map.get)", local_dict={"node_type_map": node_type_map}, inplace=True)
+        edges = edges.astype({'src_type': 'category', 'dst_type': 'category'}, copy=False)
+
+        return edges
+
+    @staticmethod
+    def _strip_types_if_needed(value, stripping_flag, stripped_type):
+        if not stripping_flag:
+            return stripped_type
+        else:
+            return f"{value}_"
+
+    def get_graph_types(self):
+        ntypes = self.dataset_db.get_node_type_descriptions()
+        etypes = self.dataset_db.get_edge_type_descriptions()
+
+        return list(
+            map(
+                partial(self._strip_types_if_needed, stripping_flag=self.use_node_types, stripped_type="node_"),
+                ntypes
+            )
+        ), list(
+            map(
+                partial(self._strip_types_if_needed, stripping_flag=self.use_edge_types, stripped_type="edge_"),
+                etypes
+            )
+        )
+
+    def _create_hetero_graph(self, nodes, edges):
+
+        def get_canonical_type(dtype):
+            default_values = [
+                ("int64", "int64"),
+                ("int32", "int64"),
+                ("bool", "bool"),
+                ("Int32", "int32"),
+                ("Int64", "int64")
+            ]
+            for candidate, value in default_values:
+                if dtype == candidate:
+                    return value
+            else:
+                raise KeyError("Unrecognized type: ", dtype)
+
+        def get_torch_dtype(canonical_type):
+            torch_types = {
+                "int32": torch.int32,
+                "int64": torch.int64,
+                "bool": torch.bool,
+            }
+            return torch_types[canonical_type]
+
+        def unpack_node_data(nodes):
+            node_data = {}
+            for col_name, dtype in zip(nodes.columns, nodes.dtypes):
+                if col_name in {"id", "type", "name", "type_backup"}:
+                    continue
+                mapping = dict(zip(nodes["id"], nodes[col_name]))
+                node_data[col_name] = torch.tensor(
+                    [mapping.get(node_id, -1) for node_id in range(num_nodes)],
+                    dtype=get_torch_dtype(get_canonical_type(dtype))
+                )
+            return node_data
+
+        def assign_dense_ids(nodes, edges):
+            nodes["original_id"] = nodes["id"].copy()
+            compact_node_ids = compact_property(nodes["id"])
+            nodes["id"] = nodes["id"].apply(compact_node_ids.get)
+            edges["src"] = edges["src"].apply(compact_node_ids.get)
+            edges["dst"] = edges["dst"].apply(compact_node_ids.get)
+
+        def normalize_types(nodes, edges):
+            nodes["type_backup"] = nodes["type"].copy()
+            nodes["type"] = nodes["type"].apply(partial(self._strip_types_if_needed, stripping_flag=self.use_node_types, stripped_type="node_"))
+            edges["type_backup"] = edges["type"].copy()
+            edges["type"] = edges["type"].apply(partial(self._strip_types_if_needed, stripping_flag=self.use_edge_types, stripped_type="edge_"))
+
+        normalize_types(nodes, edges)
+        nodes.drop("mentioned_in", axis=1, inplace=True)
+        nodes.drop("string", axis=1, inplace=True)
+
+        assign_dense_ids(nodes, edges)
+
+        edges = self._add_node_types_to_edges(nodes, edges)
+
+        possible_edge_signatures = edges[['src_type', 'type', 'dst_type']].drop_duplicates(
+            ['src_type', 'type', 'dst_type']
+        )
+
+        typed_subgraphs = {}
+
+        nodes_table = SQLiteStorage(":memory:")
+        nodes_table.add_records(nodes, "nodes", create_index=["id", "type"])
+        edges_table = SQLiteStorage(":memory:")
+        edges_table.add_records(edges, "edges", create_index=["src_type", "type", "dst_type"])
+
+        for src_type, type, dst_type in possible_edge_signatures[["src_type", "type", "dst_type"]].values:  #
+            subgraph_signature = (src_type, type, dst_type)
+
+            subset = edges_table.query(
+                f"select * from edges where src_type = '{src_type}' and type = '{type}' and dst_type = '{dst_type}'"
+            )
+
+            typed_subgraphs[subgraph_signature] = list(
+                zip(
+                    subset['src'],
+                    subset['dst']
+                )
+            )
+
+        # # need to make metagraphs the same for all graphs. lines below assume node types is set to false always
+        # assert self.use_node_types is False
+        # _, all_edge_types = self.get_graph_types()  # need to have this predefined
+        # for etype in set(all_edge_types) - set(possible_edge_signatures["type"]):
+        #     typed_subgraphs[("node_", etype, "node_")] = list()
+
+        num_nodes = len(nodes)  # self._num_nodes  # nodes["id"].max() + 1  # the fact that this is needed probably means that graphs are not loading correctly
+        graph = dgl.heterograph(typed_subgraphs, num_nodes_dict={ntype: num_nodes for ntype in nodes["type"].unique()})
+
+        def attach_node_data(graph, nodes):
+
+            node_data = unpack_node_data(nodes)
+
+            for ntype in graph.ntypes:
+                current_type_subset = set(nodes_table.query(f"select id from nodes where type = '{ntype}'")["id"])
+                node_ids_for_ntype = graph.nodes(ntype)  # all ntypes contain all nodes
+                current_type_mask = torch.tensor(
+                    # check memory consumption here
+                    [node_id in current_type_subset for node_id in node_ids_for_ntype.tolist()],
+                    dtype=get_torch_dtype("bool")
+                )
+                graph.nodes[ntype].data["current_type_mask"] = current_type_mask
+                for col_name in node_data:
+                    graph.nodes[ntype].data[col_name] = node_data[col_name]
+
+        attach_node_data(graph, nodes)
+        return graph
+
+
 class SourceGraphDataset:
     node_types = None
     edge_types = None
