@@ -1,4 +1,5 @@
 import ast
+import hashlib
 import logging
 from copy import copy
 from enum import Enum
@@ -333,6 +334,9 @@ class GNode:
 
     def setprop(self, key, value):
         setattr(self, key, value)
+
+    def get_hash_id(self):
+        return int(hashlib.md5(f"{self.type.strip()}_{self.name.strip()}".encode('utf-8')).hexdigest()[:16], 16)
 
 
 class GEdge:
