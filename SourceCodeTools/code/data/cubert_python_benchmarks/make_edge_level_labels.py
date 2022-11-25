@@ -48,8 +48,8 @@ def create_edge_labels(dataset_directory):
     total = 0
     for chunk_ind, edges in tqdm(enumerate(read_edges(edges_path, as_chunks=True)), desc="Extracting misuse edges"):
         edges = edges.astype({"offset_start": "Int32", "offset_end": "Int32"})
-        for file_id, source_node_id, target_node_id, type, offset_start, offset_end in \
-                edges[["file_id", "source_node_id", "target_node_id", "type", "offset_start", "offset_end"]].values:
+        for edge_id, file_id, source_node_id, target_node_id, type, offset_start, offset_end in \
+                edges[["id", "file_id", "source_node_id", "target_node_id", "type", "offset_start", "offset_end"]].values:
             if last_file_id != file_id:
                 total += 1
                 if last_file_id is not None and last_file_id not in file_id2incorrect_edge:
@@ -72,6 +72,7 @@ def create_edge_labels(dataset_directory):
                         assert node_name.startswith(replacement)
                         file_id2incorrect_edge.add(file_id)
                         file_id2labeled_edges.append({
+                            "id": edge_id,
                             "src": source_node_id,
                             "dst": target_node_id,
                             "type": type,
@@ -82,6 +83,7 @@ def create_edge_labels(dataset_directory):
                     node_type = id2node_type[source_node_id]
                     if node_type == "mention":
                         file_id2labeled_edges.append({
+                            "id": edge_id,
                             "src": source_node_id,
                             "dst": target_node_id,
                             "type": type,
@@ -96,7 +98,7 @@ def create_edge_labels(dataset_directory):
     misuse_edges["train_mask"] = misuse_edges["file_id"].apply(lambda x: file_id2partition[x] == "train")
     misuse_edges["test_mask"] = misuse_edges["file_id"].apply(lambda x: file_id2partition[x] == "eval")
     misuse_edges["val_mask"] = misuse_edges["file_id"].apply(lambda x: file_id2partition[x] == "dev")
-    misuse_edges["id"] = misuse_edges["src"]
+    # misuse_edges["id"] = misuse_edges["src"]
     # partition = add_splits(misuse_edges[["file_id"]].rename({"file_id": "id"}, axis=1), 0.8)
     # misuse_edges_ = misuse_edges.merge(partition, how="left", left_on="file_id", right_on="id")
     # misuse_edges_.drop("id", axis=1, inplace=True)
