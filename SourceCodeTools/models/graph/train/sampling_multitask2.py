@@ -6,6 +6,7 @@ from pprint import pprint
 from typing import Tuple
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
@@ -861,12 +862,25 @@ class SamplingMultitaskTrainer:
         from SourceCodeTools.code.data.dataset.DataLoader import SGNodesDataLoader
         self.dataset.inference_mode()
         batch_size = 512  # self.trainer_params["batch_size"]
+
+        if self.trainer_params["inference_ids_path"] is not None:
+            labels = pd.read_csv(self.trainer_params["inference_ids_path"])
+            labels["dst"] = 0
+            labels.rename({"id": "src"}, axis=1, inplace=True)
+        else:
+            labels = None
+
         dataloader = SGNodesDataLoader(
             dataset=self.dataset, labels_for="nodes", number_of_hops=self.model_params["n_layers"],
-            batch_size=batch_size, preload_for="package", labels=None,  # self.dataset.inference_labels,
+            batch_size=batch_size, preload_for="package", labels=labels,  # self.dataset.inference_labels,
             masker_fn=None, label_loader_class=TargetLoader, label_loader_params={}, device="cpu",
             negative_sampling_strategy="w2v", embedding_table_size=self.trainer_params["embedding_table_size"]
         )
+
+        # if self.trainer_params["inference_ids_path"] is not None:
+        #     ids_constraint = set(pd.read_csv(self.trainer_params["inference_ids_path"])["id"])
+        # else:
+        #     ids_constraint = None
 
         # id_maps = dict()
         # embeddings = []
@@ -878,6 +892,10 @@ class SamplingMultitaskTrainer:
                     total=dataloader.train_num_batches,
                     desc="Computing final embeddings"
             ):
+                # indices_set = set(batch["indices"])
+                # if ids_constraint is not None and len(indices_set.intersection(ids_constraint)) == 0:
+                #     continue
+
                 with torch.no_grad():
                     graph_emb = self.graph_model(
                         {"node_": self.node_embedder(batch["input_nodes"])},
@@ -885,6 +903,9 @@ class SamplingMultitaskTrainer:
                     )["node_"].to("cpu").numpy()
 
                 for node_id, emb in zip(batch["indices"], graph_emb):
+
+                    # if ids_constraint is not None and node_id not in ids_constraint:
+                    #     continue
 
                     emb_sink.write(f"{node_id}")
                     for feat in emb:

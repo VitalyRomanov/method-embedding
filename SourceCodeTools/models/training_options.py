@@ -57,6 +57,8 @@ def add_training_arguments(parser):
 
     parser.add_argument("--learning_rate", default=None, type=float, help='')
 
+    parser.add_argument("--inference_ids_path", default=None, type=str, help='')
+
 
 def add_scoring_arguments(parser):
     parser.add_argument('--measure_scores', action='store_true')

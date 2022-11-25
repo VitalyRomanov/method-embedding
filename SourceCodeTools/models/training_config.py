@@ -60,7 +60,9 @@ config_specification = {
         "external_dataset": None,
 
         "restore_state": False,
-        "skip_final_eval": False
+        "skip_final_eval": False,
+
+        "inference_ids_path": None
     },
     "MODEL": {
         "node_emb_size": 100,
