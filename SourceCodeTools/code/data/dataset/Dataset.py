@@ -540,35 +540,51 @@ class SourceGraphDataset:
             }
             return torch_types[canonical_type]
 
-        def unpack_node_data(nodes):
-            node_data = {}
-            for col_name, dtype in zip(nodes.columns, nodes.dtypes):
-                if col_name in {"id", "type", "name", "type_backup"}:
+        def unpack_table(table, columns_to_skip, reference):
+            data = {}
+            for col_name, dtype in zip(table.columns, table.dtypes):
+                if col_name in columns_to_skip:
                     continue
                 # if col_name == "label":
-                #     labels = nodes[["id", "label"]].dropna()
+                #     labels = table[["id", "label"]].dropna()
                 #     mapping = dict(zip(labels["id"], labels[col_name]))
                 #     has_label_mask = torch.tensor(
-                #         [node_id in mapping for node_id in range(nodes["id"].max() + 1)],
+                #         [node_id in mapping for node_id in range(table["id"].max() + 1)],
                 #         dtype=torch.bool
                 #     )
                 #     node_data["has_label"] = has_label_mask
                 # else:
-                mapping = dict(zip(nodes["id"], nodes[col_name]))
-                node_data[col_name] = torch.tensor(
-                    [mapping.get(node_id, -1) for node_id in range(num_nodes)],
+                mapping = dict(zip(table["id"], table[col_name]))
+                data[col_name] = torch.tensor(
+                    [mapping.get(node_id, -1) for node_id in reference],
                     dtype=get_torch_dtype(get_canonical_type(dtype))
                 )
-            return node_data
+            return data
 
-        def assign_dense_ids(nodes, edges):
+        def unpack_node_data(nodes):
+            return unpack_table(nodes, {"id", "type", "name", "type_backup"}, reference=range(num_nodes))
+
+        def unpack_edge_data(edges):
+            return unpack_table(edges, {
+                "id", "type", "type_backup", "unique_file_id", "file_id", "package",
+                "src_type", "dst_type"
+            }, reference=edges["id"])
+
+        def assign_dense_node_ids(nodes, edges):
             nodes["original_id"] = nodes["id"].copy()
             compact_node_ids = compact_property(nodes["id"])
             nodes["id"] = nodes["id"].apply(compact_node_ids.get)
             edges["src"] = edges["src"].apply(compact_node_ids.get)
             edges["dst"] = edges["dst"].apply(compact_node_ids.get)
 
-        assign_dense_ids(nodes, edges)
+        def assign_dense_edge_ids(edges):
+            edges["original_id"] = edges["id"].copy()
+            edges["typed_id"] = edges["id"].copy()
+            # compact_edge_ids = compact_property(edges["id"])
+            # edges["id"] = edges["id"].apply(compact_edge_ids.get)
+
+        assign_dense_node_ids(nodes, edges)
+        assign_dense_edge_ids(edges)
 
         edges = self._add_node_types_to_edges(nodes, edges)
 
@@ -577,6 +593,7 @@ class SourceGraphDataset:
         )
 
         typed_subgraphs = {}
+        typed_edge_ids = {}
 
         nodes_table = SQLiteStorage(":memory:")
         nodes_table.add_records(nodes, "nodes", create_index=["id", "type"])
@@ -590,12 +607,28 @@ class SourceGraphDataset:
                 f"select * from edges where src_type = '{src_type}' and type = '{type}' and dst_type = '{dst_type}'"
             )
 
+            typed_edge_ids[subgraph_signature] = dict(zip(subset["id"], range(len(subset))))
+
             typed_subgraphs[subgraph_signature] = list(
                 zip(
                     subset['src'],
                     subset['dst']
                 )
             )
+
+        def assign_typed_edge_ids(edges, typed_edge_ids):
+            type_ids = []
+            for edge_id, src_type, type_, dst_type in edges[["id", "src_type", "type", "dst_type"]].values:
+                subgraph_signature = (src_type, type_, dst_type)
+                value = typed_edge_ids[subgraph_signature][edge_id]
+                type_ids.append(value)
+
+            assert len(type_ids) == len(edges)
+            edges["typed_id"] = type_ids
+
+        assign_typed_edge_ids(edges, typed_edge_ids)
+        edges_table = SQLiteStorage(":memory:")
+        edges_table.add_records(edges, "edges", create_index=["src_type", "type", "dst_type"])
 
         # need to make metagraphs the same for all graphs. lines below assume node types is set to false always
         assert self.use_node_types is False
@@ -630,7 +663,31 @@ class SourceGraphDataset:
                 for col_name in node_data:
                     graph.nodes[ntype].data[col_name] = node_data[col_name]
 
+        def attach_edge_data(graph, edges):
+
+            # edge_data = unpack_edge_data(edges)
+
+            # def add_node_data_to_graph(graph, col_name, data, canonical_type):
+            #     data = torch.tensor(data, dtype=get_torch_dtype(canonical_type))
+            #     graph.nodes[ntype].data[col_name] = data
+
+            for src_type, etype, dst_type in graph.canonical_etypes:
+                subgraph_signature = (src_type, etype, dst_type)
+                current_type_subset = edges_table.query(
+                    f"select * from edges "
+                    f"where type = '{etype}' and src_type = '{src_type}' and dst_type = '{dst_type}'"
+                )
+                if len(current_type_subset) == 0:
+                    continue
+                edge_data = unpack_edge_data(current_type_subset)
+                src_for_etype, dst_for_etype, edge_ids_for_etype = graph.edges(etype=etype, form="all")  # all ntypes contain all nodes
+                apparent_src, apparent_dst, apparent_edge_ids = edge_data.pop("src"), edge_data.pop("dst"), edge_data.pop("typed_id")
+                assert all(src_for_etype == apparent_src) and all(dst_for_etype == apparent_dst) and all(edge_ids_for_etype == apparent_edge_ids), "Edge data assignment failed"
+                for col_name in edge_data:
+                    graph.edges[subgraph_signature].data[col_name] = edge_data[col_name]
+
         attach_node_data(graph, nodes)
+        attach_edge_data(graph, edges)
         return graph
 
     @staticmethod
@@ -695,9 +752,9 @@ class SourceGraphDataset:
     def _attach_info_to_label(self, labels, labels_for, group_by):
         if labels_for == SGLabelSpec.nodes:
             labels, new_col_name = self.dataset_db.get_info_for_node_ids(labels["src"], group_by)
-            labels.rename({new_col_name: "group"}, axis=1, inplace=True)
+            labels.rename({new_col_name: "group", "id": "src"}, axis=1, inplace=True)
         elif labels_for == SGLabelSpec.edges:
-            raise NotImplementedError("Grouping for labels for edges is currently not supported")
+            raise NotImplementedError("Grouping labels for edges is currently not supported")
         elif labels_for == SGLabelSpec.subgraphs:
             labels, new_col_name = self.dataset_db.get_info_for_subgraphs(labels["src"], group_by)
             labels.rename({new_col_name: "group"}, axis=1, inplace=True)
