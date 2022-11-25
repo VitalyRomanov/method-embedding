@@ -27,7 +27,8 @@ from SourceCodeTools.models.graph.train.objectives import GraphTextPrediction, G
 from SourceCodeTools.models.graph.NodeEmbedder import SimplestNodeEmbedder
 from SourceCodeTools.models.graph.train.objectives.GraphLinkClassificationObjective import TransRObjective, \
     GraphLinkClassificationObjective, GraphLinkMisuseObjective
-from SourceCodeTools.models.graph.train.objectives.NodeClassificationObjective import MisuseNodeClassifierObjective
+from SourceCodeTools.models.graph.train.objectives.NodeClassificationObjective import MisuseNodeClassifierObjective, \
+    ClassifierTargetMapper
 from SourceCodeTools.models.graph.train.objectives.SubgraphClassifierObjective import SubgraphClassifierObjective, \
     SubgraphEmbeddingObjective, SubgraphClassifierObjectiveWithUnetPool, SubgraphClassifierObjectiveWithAttentionPooling
 
@@ -147,6 +148,33 @@ class SamplingMultitaskTrainer:
             name=objective_name, graph_model=self.graph_model, node_embedder=self.node_embedder, dataset=dataset,
             label_load_fn=labels_fn, device=self.device, sampling_neighbourhood_size=self.sampling_neighbourhood_size,
             batch_size=self.batch_size, labels_for="nodes", number_of_hops=self.model_params["n_layers"],
+            preload_for=preload_for, masker_fn=masker_fn, label_loader_class=label_loader_class,
+            label_loader_params=label_loader_params_, dataloader_class=dataloader_class,
+            tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size,
+            link_scorer_type=self.trainer_params["metric"],
+            measure_scores=self.trainer_params["measure_scores"], dilate_scores=self.trainer_params["dilate_scores"],
+            early_stopping=False, early_stopping_tolerance=20, nn_index=self.trainer_params["nn_index"],
+            model_base_path=self.model_base_path, force_w2v=self.trainer_params["force_w2v_ns"],
+            neg_sampling_factor=self.neg_sampling_factor,
+            embedding_table_size=self.trainer_params["embedding_table_size"]
+        )
+
+    def _create_edge_level_objective(
+            self, *, objective_name, objective_class, dataset, labels_fn, tokenizer_path,
+            masker_fn=None, preload_for="package", label_loader_class=None, label_loader_params=None,
+            dataloader_class=SGNodesDataLoader
+    ):
+        if label_loader_class is None:
+            label_loader_class = TargetLoader
+
+        label_loader_params_ = {"emb_size": self.elem_emb_size, "tokenizer_path": tokenizer_path, "use_ns_groups": self.trainer_params["use_ns_groups"]}
+        if label_loader_params is not None:
+            label_loader_params_.update(label_loader_params)
+
+        return objective_class(
+            name=objective_name, graph_model=self.graph_model, node_embedder=self.node_embedder, dataset=dataset,
+            label_load_fn=labels_fn, device=self.device, sampling_neighbourhood_size=self.sampling_neighbourhood_size,
+            batch_size=self.batch_size, labels_for="edges", number_of_hops=self.model_params["n_layers"],
             preload_for=preload_for, masker_fn=masker_fn, label_loader_class=label_loader_class,
             label_loader_params=label_loader_params_, dataloader_class=dataloader_class,
             tokenizer_path=tokenizer_path, target_emb_size=self.elem_emb_size,
@@ -394,17 +422,17 @@ class SamplingMultitaskTrainer:
 
         def load_labels():
             filecontent_path = Path(dataset.data_path).joinpath("misuse_edge_labels.json.bz2")
-            filecontent = unpersist(filecontent_path)[["src", "dst", "label", "file_id"]]
-            return filecontent.rename({"file_id": "group"}, axis=1)
+            filecontent = unpersist(filecontent_path)
+            return filecontent[["id", "label", "file_id"]].rename({"file_id": "group", "id": "src", "label": "dst"}, axis=1)
 
         self.objectives.append(
-            self._create_node_level_objective(
+            self._create_edge_level_objective(
                 objective_name="GraphLinkMisuseObjective",
                 objective_class=GraphLinkMisuseObjective,
                 dataset=dataset,
                 labels_fn=load_labels,
-                label_loader_class=GraphLinkExhaustiveWithTypeTargetLoader,
-                label_loader_params={"compact_dst": False, "emb_size": None},
+                label_loader_class=ClassifierTargetMapper,
+                # label_loader_params={"compact_dst": False, "emb_size": None},
                 dataloader_class=SGMisuseEdgesDataLoader,
                 tokenizer_path=tokenizer_path,
                 masker_fn=None,
