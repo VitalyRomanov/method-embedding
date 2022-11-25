@@ -1,5 +1,6 @@
 import logging
 import tempfile
+from collections import defaultdict
 from copy import copy
 
 import dgl
@@ -138,7 +139,7 @@ class SGNodesDataLoader:
             # yield group, subgraph, masker, node_label_loader, edge_label_loader, edges_bloom_filter
 
     @staticmethod
-    def _get_ids_from_partition(graph, partition, labels_for):
+    def _get_ids_from_partition_for_nodes(graph, partition, labels_for):
         nodes = {}
 
         for node_type in graph.ntypes:
@@ -153,6 +154,28 @@ class SGNodesDataLoader:
                     nodes[node_type] = graph.nodes(node_type)[nodes_for_batching_mask]
         return nodes
 
+    @classmethod
+    def _get_ids_from_partition(cls, graph, partition, labels_for):
+        if labels_for == SGLabelSpec.edges:
+            edges = {}
+            # original_ids = {}
+
+            for edge_type in graph.canonical_etypes:
+                edge_data = graph.edges[edge_type].data
+                if partition not in edge_data:
+                    continue
+                edges_for_batching_mask = edge_data[partition]
+                with torch.no_grad():
+                    if edges_for_batching_mask.any().item() is True:
+                        # labels for subgraphs should be handled differently
+                        if "has_label" in edge_data:
+                            edges_for_batching_mask &= edge_data["has_label"]
+                        edges[edge_type] = graph.edges(etype=edge_type, form="eid")[edges_for_batching_mask]
+                        # original_ids[edge_type] = graph.edges[edge_type].data["original_id"][edges_for_batching_mask]
+            return edges  # , original_ids
+        else:
+            return cls._get_ids_from_partition_for_nodes(graph, partition, labels_for)
+
     @staticmethod
     def _seeds_to_python(seeds):
         if isinstance(seeds, dict):
@@ -164,13 +187,13 @@ class SGNodesDataLoader:
             python_seeds = seeds.tolist()
         return python_seeds
 
-    def _num_nodes_total(self, nodes):
-        if isinstance(nodes, dict):
+    def _num_for_batching_total(self, ids):
+        if isinstance(ids, dict):
             total = 0
-            for n in nodes.values():
+            for n in ids.values():
                 total += len(n)
         else:
-            total = len(nodes)
+            total = len(ids)
         return total
 
     @property
@@ -209,7 +232,7 @@ class SGNodesDataLoader:
 
             sampler = MultiLayerFullNeighborSampler(number_of_hops)
             nodes_for_batching = self._get_ids_from_partition(subgraph, partition, labels_for)
-            if self._num_nodes_total(nodes_for_batching) == 0:
+            if self._num_for_batching_total(nodes_for_batching) == 0:
                 continue
 
             # loader = NodeDataLoader(
@@ -222,6 +245,7 @@ class SGNodesDataLoader:
 
             for ind, (input_nodes, seeds, blocks) in enumerate(loader):  # 2-3gb consumed here
                 if masker is not None:
+                    logging.warning("Masker needs testing, possibly masking incorrect nodes")
                     input_mask = masker.get_mask(mask_for=seeds, input_nodes=input_nodes).to(self.device)
                 else:
                     input_mask = None
@@ -353,7 +377,7 @@ class SGEdgesDataLoader(SGNodesDataLoader):
 
             nodes_in_graph = set(subgraph.nodes("node_")[subgraph.nodes["node_"].data["current_type_mask"]].cpu().numpy())
             nodes_for_batching = self._get_ids_from_partition(subgraph, partition, labels_for)
-            if self._num_nodes_total(nodes_for_batching) == 0:
+            if self._num_for_batching_total(nodes_for_batching) == 0:
                 continue
 
             graph_ids = subgraph.nodes("node_").numpy()
@@ -416,6 +440,7 @@ class SGEdgesDataLoader(SGNodesDataLoader):
                 input_nodes, seeds, blocks = next(iter(loader))
 
                 if masker is not None:
+                    logging.warning("Masker needs testing, possibly masking incorrect nodes")
                     input_mask = masker.get_mask(mask_for=unique_nodes, input_nodes=input_nodes).to(self.device)
                 else:
                     input_mask = None
@@ -467,7 +492,7 @@ class SGMisuseNodesDataLoader(SGNodesDataLoader):
 
             sampler = MultiLayerFullNeighborSampler(number_of_hops)
             nodes_for_batching = self._get_ids_from_partition(subgraph, partition, labels_for)
-            if self._num_nodes_total(nodes_for_batching) == 0:
+            if self._num_for_batching_total(nodes_for_batching) == 0:
                 continue
 
             # loader = NodeDataLoader(
@@ -480,6 +505,7 @@ class SGMisuseNodesDataLoader(SGNodesDataLoader):
 
             for ind, (input_nodes, seeds, blocks) in enumerate(loader):  # 2-3gb consumed here
                 if masker is not None:
+                    logging.warning("Masker needs testing, possibly masking incorrect nodes")
                     input_mask = masker.get_mask(mask_for=seeds, input_nodes=input_nodes).to(self.device)
                 else:
                     input_mask = None
@@ -552,12 +578,45 @@ class SGMisuseNodesDataLoader(SGNodesDataLoader):
 
 class SGMisuseEdgesDataLoader(SGNodesDataLoader):
 
-    def iterate_nodes_for_batches(self, nodes):
-        if isinstance(nodes, dict):
-            nodes = nodes["node_"]
-        total_nodes = len(nodes)
-        for i in range(0, total_nodes, self.batch_size):
-            yield nodes[i: min(i + self.batch_size, total_nodes)]
+    def iterate_edges_for_batches(self, edges, original_edge_ids):
+        if isinstance(edges, dict):
+            edges_batch = defaultdict(list)
+            original_ids_batch = defaultdict(list)
+
+            added_to_batch = 0
+
+            for etype in edges:
+                for eid, oid in zip(edges[etype], original_edge_ids[etype]):
+                    edges_batch[etype].append(eid)
+                    original_ids_batch[etype].append(oid)
+                    added_to_batch += 1
+
+                    if added_to_batch >= self.batch_size:
+                        yield edges_batch, original_ids_batch
+                        edges_batch = {}
+                        original_ids_batch = {}
+                        added_to_batch = 0
+
+            if len(edges_batch) > 0:
+                yield edges_batch, original_ids_batch
+
+        else:
+            edge_ids_batch = []
+            original_ids_batch = []
+            added_to_batch = 0
+
+            for eid, oid in zip(edges, original_edge_ids):
+                edge_ids_batch.append(eid)
+                original_ids_batch.append(oid)
+
+                if added_to_batch >= self.batch_size:
+                    yield edge_ids_batch, original_ids_batch
+                    edge_ids_batch.clear()
+                    original_ids_batch.clear()
+                    added_to_batch = 0
+
+            if len(edge_ids_batch) > 0:
+                yield edge_ids_batch, original_ids_batch
 
     @staticmethod
     def _handle_non_unique(non_unique_ids):
@@ -579,87 +638,57 @@ class SGMisuseEdgesDataLoader(SGNodesDataLoader):
             labels_loader = subgraph_["labels_loader"]
             edges_bloom_filter = subgraph_["edges_bloom_filter"]
 
-            nodes_in_graph = set(subgraph.nodes("node_")[subgraph.nodes["node_"].data["current_type_mask"]].cpu().numpy())
-            nodes_for_batching = self._get_ids_from_partition(subgraph, partition, labels_for)
-            if self._num_nodes_total(nodes_for_batching) == 0:
+            # nodes_in_graph = set(subgraph.nodes("node_")[subgraph.nodes["node_"].data["current_type_mask"]].cpu().numpy())
+            edges_for_batching = self._get_ids_from_partition(subgraph, partition, labels_for)
+            if self._num_for_batching_total(edges_for_batching) == 0:
                 continue
 
-            graph_ids = subgraph.nodes("node_").numpy()
-            original_ids = subgraph.nodes["node_"].data["original_id"].numpy()
-
-            graph_id_to_original_id = dict(zip(graph_ids, original_ids))
-            original_id_to_graph_id = dict(zip(original_ids, graph_ids))
+            # for edges_in_batch_g, original_edge_ids_in_batch in self.iterate_edges_for_batches(
+            #         self._seeds_to_python(edges_for_batching), self._seeds_to_python(original_edge_ids)
+            # ):
 
 
-            for nodes_in_batch_g in self.iterate_nodes_for_batches(self._seeds_to_python(nodes_for_batching)):
-                nodes_in_batch = np.array(list(map(graph_id_to_original_id.get, nodes_in_batch_g)))
+            # nodes_in_total = len(nodes_in_batch_) + len(positive_indices) + len(negative_indices)
+            # empty_mask = [False] * nodes_in_total
+            #
+            # src_nodes_mask = torch.BoolTensor(empty_mask)
+            # positive_nodes_mask = torch.BoolTensor(empty_mask)
+            # negative_nodes_mask = torch.BoolTensor(empty_mask)
+            #
+            # positive_start = len(nodes_in_batch_)
+            # negative_start = len(nodes_in_batch_) + len(positive_indices)
+            #
+            # src_nodes_mask[:positive_start] = True
+            # positive_nodes_mask[positive_start: negative_start] = True
+            # negative_nodes_mask[negative_start:] = True
+            #
+            # all_nodes = torch.cat([nodes_in_batch_g, positive_indices_g, negative_indices_g])
+            #
+            # unique_nodes, slice_map = self._handle_non_unique(all_nodes)
+            # assert unique_nodes[slice_map].tolist() == all_nodes.tolist()
+
+            loader = EdgeDataLoader(
+                subgraph, edges_for_batching, sampler, batch_size=self.batch_size, shuffle=True, num_workers=0
+            )
+
+            for input_nodes, pair_graph, blocks in loader:
 
                 if labels_loader is not None:
-                    positive_edges = labels_loader.sample_positive(nodes_in_batch)
-                    nodes_in_batch_p = []
-                    nodes_in_batch_n = []
-                    positive_indices = []
-                    negative_indices = []
-                    positive_labels = []
-                    negative_labels = []
 
-                    for src, dst, label in positive_edges:
-                        if label > 0:
-                            nodes_in_batch_p.append(src)
-                            positive_indices.append(dst)
-                            positive_labels.append(label)
-                        else:
-                            nodes_in_batch_n.append(src)
-                            negative_indices.append(dst)
-                            negative_labels.append(label)
+                    edge_labels = {
+                        etype: labels_loader.sample_positive(eids.tolist()) for etype, eids in pair_graph.edata["original_id"].items() if len(eids) > 0
+                    }
 
-                    nodes_in_batch_ = nodes_in_batch_p + nodes_in_batch_n
+                    num_positive_labels = sum(sum(labels) for etype, labels in edge_labels.items())
 
-                    if partition == "train_mask" and sum(positive_labels) == 0:
+                    if partition == "train_mask" and num_positive_labels == 0:
                         continue
-
-                    nodes_in_batch_g = torch.LongTensor(list(map(original_id_to_graph_id.get, nodes_in_batch_))).to(self.device)
-                    nodes_in_batch_ = np.array(nodes_in_batch_)
-                    positive_indices_g = torch.LongTensor(list(map(original_id_to_graph_id.get, positive_indices))).to(self.device)
-                    positive_labels = torch.LongTensor(positive_labels)
-                    negative_indices_g = torch.LongTensor(list(map(original_id_to_graph_id.get, negative_indices))).to(self.device)
-                    negative_labels = torch.LongTensor(negative_labels)
                 else:
-                    positive_indices = None
-                    negative_indices = None
-                    positive_indices_g = None
-                    negative_indices_g = None
-                    positive_labels = None
-                    negative_labels = None
-                    nodes_in_batch_ = nodes_in_batch
-
-                nodes_in_total = len(nodes_in_batch_) + len(positive_indices) + len(negative_indices)
-                empty_mask = [False] * nodes_in_total
-
-                src_nodes_mask = torch.BoolTensor(empty_mask)
-                positive_nodes_mask = torch.BoolTensor(empty_mask)
-                negative_nodes_mask = torch.BoolTensor(empty_mask)
-
-                positive_start = len(nodes_in_batch_)
-                negative_start = len(nodes_in_batch_) + len(positive_indices)
-
-                src_nodes_mask[:positive_start] = True
-                positive_nodes_mask[positive_start: negative_start] = True
-                negative_nodes_mask[negative_start:] = True
-
-                all_nodes = torch.cat([nodes_in_batch_g, positive_indices_g, negative_indices_g])
-
-                unique_nodes, slice_map = self._handle_non_unique(all_nodes)
-                assert unique_nodes[slice_map].tolist() == all_nodes.tolist()
-
-                loader = EdgeDataLoader(
-                    subgraph, {"edge_": unique_nodes}, sampler, batch_size=len(unique_nodes), shuffle=True, num_workers=0
-                )
-
-                input_nodes, seeds, blocks = next(iter(loader))
+                    edge_labels = None
 
                 if masker is not None:
-                    input_mask = masker.get_mask(mask_for=unique_nodes, input_nodes=input_nodes).to(self.device)
+                    logging.warning("Masker needs testing, possibly masking incorrect nodes")
+                    input_mask = masker.get_mask(mask_for=blocks[-1].dstnodes(), input_nodes=input_nodes).to(self.device)
                 else:
                     input_mask = None
 
@@ -670,26 +699,31 @@ class SGMisuseEdgesDataLoader(SGNodesDataLoader):
 
                 input_nodes = blocks[0].srcnodes["node_"].data["embedding_id"]
 
-                assert len(set(seeds.numpy()) - nodes_in_graph) == 0
                 assert -1 not in input_nodes.tolist()
 
+                all_nodes = blocks[-1].dstnodes()
+                node_id_to_position = dict(zip(all_nodes.tolist(), range(len(all_nodes))))
+
+                src_node_slice_map = []
+                dst_node_slice_map = []
+                labels = []
+
+                for etype in edges_for_batching:
+                    src_nodes, dst_nodes = pair_graph.edges(etype=etype, form="uv")
+                    src_node_slice_map.extend(map(node_id_to_position.get, src_nodes.tolist()))
+                    dst_node_slice_map.extend(map(node_id_to_position.get, dst_nodes.tolist()))
+                    if edge_labels is not None:
+                        labels.extend(edge_labels[etype])
+
                 batch = {
-                    # "seeds": seeds,  # list of unique nodes
-                    "indices": nodes_in_batch,
-                    "slice_map": slice_map,  # needed to restore original_nodes
-                    "compute_embeddings_for": np.concatenate([nodes_in_batch_, positive_indices]),  # all_nodes,
-                    "group": group,
-                    "input_nodes": input_nodes.to(self.device),
+                    "src_slice_map": torch.LongTensor(src_node_slice_map).to(self.device),
+                    "dst_slice_map": torch.LongTensor(dst_node_slice_map).to(self.device),
+                    "labels": torch.LongTensor(labels).to(self.device),
+                    "input_nodes": input_nodes,
                     "input_mask": input_mask,
                     "blocks": [block.to(self.device) for block in blocks],
-                    "positive_indices": positive_indices,  # .to(self.device),
-                    "negative_indices": negative_indices,  # .to(self.device),
-                    "positive_labels": positive_labels,
-                    "negative_labels": negative_labels,
                     "labels_loader": labels_loader,
-                    "src_nodes_mask": src_nodes_mask,
-                    "positive_nodes_mask": positive_nodes_mask,
-                    "negative_nodes_mask": negative_nodes_mask
+                    "group": group,
                 }
 
                 yield batch

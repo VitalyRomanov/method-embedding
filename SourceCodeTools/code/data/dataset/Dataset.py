@@ -518,6 +518,13 @@ class SourceGraphDataset:
 
     def _create_hetero_graph(self, nodes, edges):
 
+        def set_canonical_edge_types(edges, edge_subset):
+            return edge_subset.astype(edges.dtypes)
+            # for col_name, dtype in zip(edges.dtypes.index, edges.dtypes):
+            #     if col_name in edge_subset.columns:
+            #         edge_subset = edge_subset.astype({col_name: dtype})
+            # return edge_subset
+
         def get_canonical_type(dtype):
             default_values = [
                 ("int64", "int64"),
@@ -607,6 +614,13 @@ class SourceGraphDataset:
                 f"select * from edges where src_type = '{src_type}' and type = '{type}' and dst_type = '{dst_type}'"
             )
 
+            if len(subset) > 0 and len(subset["id"].value_counts()) == 0:
+                raise Exception(
+                    "Found edges without ids. This is likely happening because new edges were added without properly "
+                    "setting edge ids. The same happens if one removes reverse edges and then adds some of the reverse "
+                    "edges back."
+                )
+
             typed_edge_ids[subgraph_signature] = dict(zip(subset["id"], range(len(subset))))
 
             typed_subgraphs[subgraph_signature] = list(
@@ -673,10 +687,10 @@ class SourceGraphDataset:
 
             for src_type, etype, dst_type in graph.canonical_etypes:
                 subgraph_signature = (src_type, etype, dst_type)
-                current_type_subset = edges_table.query(
+                current_type_subset = set_canonical_edge_types(edges, edges_table.query(
                     f"select * from edges "
                     f"where type = '{etype}' and src_type = '{src_type}' and dst_type = '{dst_type}'"
-                )
+                ))
                 if len(current_type_subset) == 0:
                     continue
                 edge_data = unpack_edge_data(current_type_subset)
