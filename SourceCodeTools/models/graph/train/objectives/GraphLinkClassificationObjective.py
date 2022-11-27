@@ -22,8 +22,8 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        raise Exception('why measure score is set true')
-        self.measure_scores = True
+        # raise Exception('why measure score is set true')
+        self.measure_scores = False
         self.update_embeddings_for_queries = False
 
     def create_graph_link_sampler(self, data_loading_func, *args, **kwargs):
@@ -93,42 +93,36 @@ class GraphLinkMisuseObjective(GraphLinkClassificationObjective):
     def _compute_scores_loss(self, node_embs, positive_embs, negative_embs, positive_labels, negative_labels):
 
         pos_scores = self.link_scorer(node_embs[:len(positive_labels)], positive_embs)
-        neg_scores = self.link_scorer(node_embs[len(positive_labels):], negative_embs)
+        # neg_scores = self.link_scorer(node_embs[len(positive_labels):], negative_embs)
         loss = self._loss_op(
-            torch.cat([pos_scores, neg_scores]),
-            torch.cat([positive_labels, negative_labels])
+            # torch.cat([pos_scores, neg_scores]),
+            # torch.cat([positive_labels, negative_labels])
+            pos_scores,
+            positive_labels
         )
         with torch.no_grad():
+            misuse_mask = positive_labels == 1
             scores = {
                 f"positive_score/{self.link_scorer_type.name}": self._compute_average_score(pos_scores, positive_labels),
-                f"negative_score/{self.link_scorer_type.name}": self._compute_average_score(neg_scores, negative_labels)
+                f"misuse_score/{self.link_scorer_type.name}": self._compute_average_score(pos_scores[misuse_mask], positive_labels[misuse_mask]),
+                # f"negative_score/{self.link_scorer_type.name}": self._compute_average_score(neg_scores, negative_labels)
             }
-        return (pos_scores, neg_scores), scores, loss
+        return (pos_scores, None), scores, loss
 
     def forward(
-            self, input_nodes, input_mask, blocks, positive_indices, negative_indices,
+            self, input_nodes, input_mask, blocks, src_slice_map, dst_slice_map, labels,
             update_ns_callback=None, subgraph=None, **kwargs
     ):
         unique_embeddings = self._graph_embeddings(input_nodes, blocks, mask=input_mask)
 
-        all_embeddings = unique_embeddings[kwargs["slice_map"]]
-
-        graph_embeddings = all_embeddings[kwargs["src_nodes_mask"]]
-        positive_embeddings = all_embeddings[kwargs["positive_nodes_mask"]]
-        negative_embeddings = all_embeddings[kwargs["negative_nodes_mask"]]
-
-        # non_src_nodes_mask = ~kwargs["src_nodes_mask"]
-        # non_src_ids = kwargs["compute_embeddings_for"][non_src_nodes_mask]
-        # non_src_embeddings = all_embeddings[non_src_nodes_mask].cpu().detach().numpy()
-
-        pos_labels = kwargs["positive_labels"]  # self._create_positive_labels(positive_indices).to(self.device)
-        neg_labels = kwargs["negative_labels"]  # self._create_negative_labels(negative_embeddings).to(self.device)
+        src_embeddings = unique_embeddings[src_slice_map]
+        dst_embeddings = unique_embeddings[dst_slice_map]
 
         pos_neg_scores, avg_scores, loss = self._compute_scores_loss(
-            graph_embeddings, positive_embeddings, negative_embeddings, pos_labels, neg_labels
+            src_embeddings, dst_embeddings, None, labels, None
         )
 
-        return graph_embeddings, pos_neg_scores, (pos_labels, neg_labels), loss, avg_scores
+        return src_embeddings, pos_neg_scores, (labels, None), loss, avg_scores
 
 
 
