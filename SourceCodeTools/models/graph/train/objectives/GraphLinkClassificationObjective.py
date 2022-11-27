@@ -90,6 +90,26 @@ class GraphLinkMisuseObjective(GraphLinkClassificationObjective):
     def __init__(self, *args, **kwargs):
         super().__init__(**kwargs)
 
+    def _create_link_scorer(self):
+        super(GraphLinkMisuseObjective, self)._create_link_scorer()
+
+        def compute_binary_precision(scores, labels=None):
+            scores = scores.cpu().argmax(dim=-1)
+            if scores.sum() == 0.:
+                return 0.
+            return ((labels * scores).sum() / scores.sum()).item()
+
+        def compute_binary_recall(scores, labels=None):
+            labels_sum = labels.sum()
+            if labels_sum == 0:
+                logging.warning("Trying to compute recall for batch without positive labels. Skipping.")
+                labels_sum = 1.0
+            scores = scores.cpu().argmax(dim=-1)
+            return ((labels * scores).sum() / labels_sum).item()
+
+        self._compute_precision = compute_binary_precision
+        self._compute_recall = compute_binary_recall
+
     def _compute_scores_loss(self, node_embs, positive_embs, negative_embs, positive_labels, negative_labels):
 
         pos_scores = self.link_scorer(node_embs[:len(positive_labels)], positive_embs)
@@ -105,6 +125,8 @@ class GraphLinkMisuseObjective(GraphLinkClassificationObjective):
             scores = {
                 f"positive_score/{self.link_scorer_type.name}": self._compute_average_score(pos_scores, positive_labels),
                 f"misuse_score/{self.link_scorer_type.name}": self._compute_average_score(pos_scores[misuse_mask], positive_labels[misuse_mask]),
+                f"precision/{self.link_scorer_type.name}": self._compute_precision(pos_scores, positive_labels),
+                f"recall/{self.link_scorer_type.name}": self._compute_recall(pos_scores, positive_labels),
                 # f"negative_score/{self.link_scorer_type.name}": self._compute_average_score(neg_scores, negative_labels)
             }
         return (pos_scores, None), scores, loss
