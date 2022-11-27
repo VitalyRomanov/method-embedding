@@ -739,7 +739,7 @@ class SGSubgraphDataLoader(SGNodesDataLoader):
 
         subgraph_nodes = []
         for subg in subgraphs:
-            subg.nodes["node_"].data["original_id"] = subg.nodes("node_")
+            subg.nodes["node_"].data["node_id_before_batching"] = subg.nodes("node_")
             subgraph_nodes.append(set(subg.nodes("node_")[subg.nodes["node_"].data["current_type_mask"]].tolist()))
 
         batched_subgraphs = dgl.batch(subgraphs)
