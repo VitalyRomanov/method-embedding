@@ -675,8 +675,12 @@ class SGMisuseEdgesDataLoader(SGNodesDataLoader):
 
                 if labels_loader is not None:
 
+                    original_id = pair_graph.edata["original_id"]
+                    if isinstance(original_id, torch.Tensor):
+                        original_id = {("node_", "edge_", "node_"): original_id}
+
                     edge_labels = {
-                        etype: labels_loader.sample_positive(eids.tolist()) for etype, eids in pair_graph.edata["original_id"].items() if len(eids) > 0
+                        etype: labels_loader.sample_positive(eids.tolist()) for etype, eids in original_id.items() if len(eids) > 0
                     }
 
                     num_positive_labels = sum(sum(labels) for etype, labels in edge_labels.items())
