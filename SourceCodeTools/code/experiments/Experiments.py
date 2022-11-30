@@ -255,11 +255,11 @@ class Experiments:
             else:
                 allowed = None
 
-            from SourceCodeTools.nlp.entity.type_prediction import filter_labels
             def read_dataset_file(path):
                 with open(path, "r") as source:
                     return [json.loads(line) for line in source]
 
+            from scripts.training.type_prediction.cnn_type_prediction import filter_labels
             train_data = filter_labels(
                 # pickle.load(open(dataset_dir.joinpath("type_prediction_dataset_no_defaults_train.pkl"), "rb")),
                 read_dataset_file(dataset_dir.joinpath("type_prediction_dataset_no_default_args_mapped_train.json")),
