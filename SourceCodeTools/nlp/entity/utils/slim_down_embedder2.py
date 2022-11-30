@@ -57,7 +57,7 @@ def main():
                 keys[key] = len(keys)
                 embs.append(emb)
 
-            if ind == 100000:
+            if ind % 100000 == 0:
                 print("Added", len(keys))
 
         print("After slimming:", len(keys))
