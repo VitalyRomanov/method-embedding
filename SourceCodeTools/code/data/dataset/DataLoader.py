@@ -713,6 +713,8 @@ class SGMisuseEdgesDataLoader(SGNodesDataLoader):
                 labels = []
 
                 for etype in edges_for_batching:
+                    if pair_graph.num_edges(etype) == 0:
+                        continue
                     src_nodes, dst_nodes = pair_graph.edges(etype=etype, form="uv")
                     src_node_slice_map.extend(map(node_id_to_position.get, src_nodes.tolist()))
                     dst_node_slice_map.extend(map(node_id_to_position.get, dst_nodes.tolist()))
