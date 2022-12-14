@@ -536,7 +536,7 @@ class PythonBatcher(Batcher):
         self._extra_signature_parameters = {
             "element_hash_size": element_hash_size,
             "mask_unlabeled_declarations": mask_unlabeled_declarations,
-            "graphmap": self._graphmap
+            "graphmap": self._graphmap if not hasattr(self._graphmap, "signature") else self._graphmap.signature()
         }
 
         super(PythonBatcher, self).__init__(*args, **kwargs)
@@ -648,7 +648,7 @@ class PythonBatcher(Batcher):
 
 class PythonBatcherWithGraphEmbeddings(PythonBatcher):
     def __init__(self, *args, **kwargs):
-        self._extra_signature_parameters_ignore_list = ["graphmap"]
+        # self._extra_signature_parameters_ignore_list = ["graphmap"]
         super(PythonBatcherWithGraphEmbeddings, self).__init__(*args, **kwargs)
 
     def _create_graph_encoder(self):

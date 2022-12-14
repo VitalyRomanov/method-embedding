@@ -50,6 +50,9 @@ class Embedder:
     def n_dims(self):
         return self.e.shape[1]
 
+    def signature(self):
+        return self.ind
+
     # @staticmethod
     # def load_word2vec(path):
     #     vecs = []
@@ -92,6 +95,9 @@ class EmbedderOnDisk:
 
     def get_embedding_table(self):
         return np.zeros((1, self.n_dims))
+
+    def signature(self):
+        return str(self._store.path)
 
     @property
     def n_embs(self):
