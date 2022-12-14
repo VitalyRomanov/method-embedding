@@ -240,11 +240,11 @@ class ModelTrainer:
 
     @classmethod
     def compute_loss_and_scores(
-            cls, model, token_ids, prefix, suffix, graph_ids, labels, lengths, extra_mask=None, class_weights=None,
-            scorer=None, finetune=False, vocab_mapping=None, training=False
+            cls, model, token_ids, prefix, suffix, graph_ids, labels, lengths, graph_embs=None, extra_mask=None,
+            class_weights=None, scorer=None, finetune=False, vocab_mapping=None, training=False
     ):
         seq_mask = tensorflow.sequence_mask(lengths, token_ids.shape[1])
-        logits = model(token_ids, prefix, suffix, graph_ids, target=None, training=training, mask=seq_mask)
+        logits = model(token_ids, prefix, suffix, graph_ids, graph_embs=graph_embs, target=None, training=training, mask=seq_mask)
         loss = model.loss(logits, labels, mask=seq_mask, class_weights=class_weights, extra_mask=extra_mask)
         # token_acc = tf.reduce_sum(tf.cast(tf.argmax(logits, axis=-1) == labels, tf.float32)) / (token_ids.shape[0] * token_ids.shape[1])
         scores = model.score(logits, labels, mask=seq_mask, scorer=scorer, extra_mask=extra_mask)
@@ -254,8 +254,8 @@ class ModelTrainer:
 
     @classmethod
     def make_step(
-            cls, model, optimizer, token_ids, prefix, suffix, graph_ids, labels, lengths, extra_mask=None,
-            class_weights=None, scorer=None, finetune=False, train=False, **kwargs
+            cls, model, optimizer, token_ids, prefix, suffix, graph_ids, labels, lengths, graph_embs=None,
+            extra_mask=None, class_weights=None, scorer=None, finetune=False, train=False, **kwargs
     ):
         """
         Make a train step
@@ -277,15 +277,15 @@ class ModelTrainer:
         if train is True:
             with tensorflow.GradientTape() as tape:
                 scores = cls.compute_loss_and_scores(
-                    model, token_ids, prefix, suffix, graph_ids, labels, lengths, extra_mask=extra_mask,
-                    class_weights=class_weights, scorer=scorer, finetune=finetune, training=train
+                    model, token_ids, prefix, suffix, graph_ids, labels, lengths, graph_embs=graph_embs,
+                    extra_mask=extra_mask, class_weights=class_weights, scorer=scorer, finetune=finetune, training=train
                 )
                 gradients = tape.gradient(scores["loss"], model.trainable_variables)
                 optimizer.apply_gradients(zip(gradients, model.trainable_variables))
         else:
             scores = cls.compute_loss_and_scores(
-                model, token_ids, prefix, suffix, graph_ids, labels, lengths, extra_mask=extra_mask,
-                class_weights=class_weights, scorer=scorer, finetune=finetune, training=train
+                model, token_ids, prefix, suffix, graph_ids, labels, lengths, graph_embs=graph_embs,
+                extra_mask=extra_mask, class_weights=class_weights, scorer=scorer, finetune=finetune, training=train
             )
 
         scores["loss"] = float(scores["loss"])
@@ -303,6 +303,7 @@ class ModelTrainer:
                 model=model, optimizer=self.optimizer, token_ids=batch['tok_ids'],
                 prefix=batch['prefix'], suffix=batch['suffix'],
                 graph_ids=batch['graph_ids'] if 'graph_ids' in batch else None,
+                graph_embs=batch['graph_embs'] if 'graph_embs' in batch else None,
                 labels=batch['tags'], lengths=batch['lens'],
                 extra_mask=batch['no_loc_mask'] if self.no_localization else batch['hide_mask'],
                 # class_weights=batch['class_weights'],

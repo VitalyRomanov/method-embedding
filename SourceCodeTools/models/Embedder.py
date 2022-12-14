@@ -1,4 +1,6 @@
 import numpy as np
+from nhkv import KVStore
+
 
 class Embedder:
     def __init__(self, id_map, embeddings):
@@ -6,7 +8,6 @@ class Embedder:
         self.ind = id_map
         aid, iid = zip(*id_map.items())
         self.inv = dict(zip(iid, aid))
-
 
     def __getitem__(self, key):
         # if not hasattr(self, "map_id"):
@@ -38,6 +39,9 @@ class Embedder:
     def get(self, item, default):
         return self[item] if item in self else default
 
+    def get_embedding_table(self):
+        return self.e
+
     @property
     def n_embs(self):
         return len(self.ind)
@@ -65,3 +69,38 @@ class Embedder:
     #
     #     embs = np.array(vecs)
     #     return Embedder(id_map, embs)
+
+
+class EmbedderOnDisk:
+    def __init__(self, embeddings_kv_store_path):
+        self._store = KVStore(embeddings_kv_store_path)
+
+    def __getitem__(self, key):
+        return self._store[key]
+
+    def __contains__(self, item):
+        return item in self._store
+
+    def keys(self):
+        return self._store.keys()
+
+    def get(self, item, default):
+        try:
+            return self[item]
+        except KeyError:
+            return default
+
+    def get_embedding_table(self):
+        return np.zeros((1, self.n_dims))
+
+    @property
+    def n_embs(self):
+        return len(self._store)
+
+    @property
+    def n_dims(self):
+        if not hasattr(self, "_n_dims"):
+            akey = next(iter(self._store.keys()))
+            anemb = self._store[akey]
+            self._n_dims = len(anemb)
+        return self._n_dims

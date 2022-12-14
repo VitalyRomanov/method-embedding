@@ -12,7 +12,7 @@ from SourceCodeTools.code.ast.ast_tools import get_declarations
 from SourceCodeTools.code.data.file_utils import write_mapping_to_json, read_mapping_from_json
 # from SourceCodeTools.models.ClassWeightNormalizer import ClassWeightNormalizer
 from SourceCodeTools.nlp import create_tokenizer, TagMap, ValueEncoder, \
-    HashingValueEncoder
+    HashingValueEncoder, ValueEmbedder
 from SourceCodeTools.nlp.entity import fix_incorrect_tags
 from SourceCodeTools.code.annotator_utils import adjust_offsets, biluo_tags_from_offsets
 from SourceCodeTools.nlp.entity.utils import overlap
@@ -73,7 +73,7 @@ class SampleEntry(object):
 
 
 class MapperSpec:
-    def __init__(self, field, target_field, encoder, dtype=np.int32, preproc_fn=None, encoder_fn="seq"):
+    def __init__(self, field, target_field, encoder, dtype=np.int32, preproc_fn=None, encoder_fn: Union[str, Callable]="seq"):
         self.field = field
         self.target_field = target_field
         self.encoder = encoder
@@ -166,7 +166,15 @@ class Batcher:
             "_no_localization": self._no_localization, "wordmap": self._wordmap, "class": self.__class__.__name__
         }
         if hasattr(self, "_extra_signature_parameters"):
-            signature_dict.update(self._extra_signature_parameters)
+            if hasattr(self, "_extra_signature_parameters_ignore_list"):
+                signature_dict.update(
+                    {
+                        key: val for key, val in self._extra_signature_parameters.items()
+                        if key not in self._extra_signature_parameters_ignore_list
+                    }
+                )
+            else:
+                signature_dict.update(self._extra_signature_parameters)
         defining_parameters = json.dumps(signature_dict)
         return self._compute_text_id(defining_parameters)
 
@@ -550,6 +558,29 @@ class PythonBatcher(Batcher):
             "unlabeled_dec": unlabeled_dec_tags
         }
 
+    def _strip_biluo_and_try_cast_to_int(self, graph_tag):
+        if "-" in graph_tag:
+            graph_tag = graph_tag.split("-")[-1]
+        try:
+            graph_tag = int(graph_tag)
+        except:
+            pass
+        return graph_tag
+
+    def _create_graph_encoder(self):
+        if self._graphmap is not None:
+            graphmap_enc = ValueEncoder(value_to_code=self._graphmap)
+            graphmap_enc.set_default(len(self._graphmap))
+            self._mappers.append(
+                MapperSpec(
+                    field="replacements", target_field="graph_ids", encoder=graphmap_enc,
+                    preproc_fn=self._strip_biluo_and_try_cast_to_int, dtype=np.int32
+                )
+            )
+            self.graphpad = graphmap_enc.default
+        else:
+            self.graphpad = 0
+
     def _create_additional_encoders(self):
 
         def suffix(word):
@@ -572,27 +603,7 @@ class PythonBatcher(Batcher):
             )
         )
 
-        def extract_graph_id(graph_tag):
-            if "-" in graph_tag:
-                graph_tag = graph_tag.split("-")[-1]
-            try:
-                graph_tag = int(graph_tag)
-            except:
-                pass
-            return graph_tag
-
-        if self._graphmap is not None:
-            graphmap_enc = ValueEncoder(value_to_code=self._graphmap)
-            graphmap_enc.set_default(len(self._graphmap))
-            self._mappers.append(
-                MapperSpec(
-                    field="replacements", target_field="graph_ids", encoder=graphmap_enc,
-                    preproc_fn=extract_graph_id, dtype=np.int32
-                )
-            )
-            self.graphpad = graphmap_enc.default
-        else:
-            self.graphpad = 0
+        self._create_graph_encoder()
 
         class NoMaskEncoder(ValueEncoder):
             def __init__(self, default=False, *args, **kwargs):
@@ -613,7 +624,7 @@ class PythonBatcher(Batcher):
         self._mappers.append(
             MapperSpec(
                 field="tags", target_field="no_loc_mask", encoder=NoMaskEncoder(),
-                preproc_fn=extract_graph_id, dtype=np.bool
+                preproc_fn=self._strip_biluo_and_try_cast_to_int, dtype=np.bool
             )
         )
 
@@ -630,6 +641,40 @@ class PythonBatcher(Batcher):
         self._mappers.append(
             MapperSpec(
                 field="unlabeled_dec", target_field="hide_mask", encoder=OMaskEncoder(),
-                preproc_fn=extract_graph_id, dtype=np.bool
+                preproc_fn=self._strip_biluo_and_try_cast_to_int, dtype=np.bool
             )
         )
+
+
+class PythonBatcherWithGraphEmbeddings(PythonBatcher):
+    def __init__(self, *args, **kwargs):
+        self._extra_signature_parameters_ignore_list = ["graphmap"]
+        super(PythonBatcherWithGraphEmbeddings, self).__init__(*args, **kwargs)
+
+    def _create_graph_encoder(self):
+        if self._graphmap is not None:
+
+            def encode_feat_vec_seq(seq, encoder, pad, preproc_fn=None):
+                if preproc_fn is None:
+                    def preproc_fn(x):
+                        return x
+                encoded = np.array([encoder[preproc_fn(w)] for w in seq], dtype=np.float32)
+                blank = np.ones((self._max_seq_len, encoded.shape[1]), dtype=np.float32) * pad
+                blank[0:min(encoded.shape[0], self._max_seq_len), :] = encoded[0:min(encoded.size, self._max_seq_len), :]
+                return blank
+
+            graphmap_enc = ValueEmbedder(
+                value_to_code=self._graphmap,
+                default=np.zeros(shape=(self._graphmap.n_dims,))
+            )
+
+            self._mappers.append(
+                MapperSpec(
+                    field="replacements", target_field="graph_embs", encoder=graphmap_enc,
+                    preproc_fn=self._strip_biluo_and_try_cast_to_int, dtype=np.float32,
+                    encoder_fn=encode_feat_vec_seq
+                )
+            )
+            self.graphpad = graphmap_enc.default
+        else:
+            self.graphpad = 0

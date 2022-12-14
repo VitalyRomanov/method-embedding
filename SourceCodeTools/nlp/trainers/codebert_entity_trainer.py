@@ -99,7 +99,8 @@ class CodeBertModelTrainer(ModelTrainer):
             'hide_mask': torch.BoolTensor,
             'no_loc_mask': torch.BoolTensor,
             'lens': torch.LongTensor,
-            'graph_ids': torch.LongTensor
+            'graph_ids': torch.LongTensor,
+            'graph_embs': torch.FloatTensor
         }
         for key, tf in key_types.items():
             if key in batch:
@@ -114,13 +115,13 @@ class CodeBertModelTrainer(ModelTrainer):
 
     @classmethod
     def compute_loss_and_scores(
-            cls, model, token_ids, prefix, suffix, graph_ids, labels, lengths,
+            cls, model, token_ids, prefix, suffix, graph_ids, labels, lengths, graph_embs=None,
             extra_mask=None, class_weights=None, scorer=None, finetune=False, vocab_mapping=None,
             training=False
     ):
         token_ids[token_ids == len(vocab_mapping)] = vocab_mapping["<unk>"]
         seq_mask = get_length_mask(token_ids, lengths)
-        logits = model(token_ids, graph_ids, mask=seq_mask, finetune=finetune)
+        logits = model(token_ids, graph_ids, graph_embs=graph_embs, mask=seq_mask, finetune=finetune)
         loss = model.loss(logits, labels, mask=seq_mask, class_weights=class_weights, extra_mask=extra_mask)
         scores = model.score(logits, labels, mask=seq_mask, scorer=scorer, extra_mask=extra_mask)
 
@@ -130,13 +131,13 @@ class CodeBertModelTrainer(ModelTrainer):
 
     @classmethod
     def make_step(
-            cls, model, optimizer, token_ids, prefix, suffix, graph_ids, labels, lengths, extra_mask=None,
-            class_weights=None, scorer=None, finetune=False, vocab_mapping=None, train=False
+            cls, model, optimizer, token_ids, prefix, suffix, graph_ids, labels, lengths, graph_embs=None,
+            extra_mask=None, class_weights=None, scorer=None, finetune=False, vocab_mapping=None, train=False
     ):
 
         if train is True:
             scores = cls.compute_loss_and_scores(
-                model, token_ids, prefix, suffix, graph_ids, labels, lengths,
+                model, token_ids, prefix, suffix, graph_ids, labels, lengths, graph_embs=graph_embs,
                 extra_mask=extra_mask, class_weights=class_weights, scorer=scorer, finetune=finetune,
                 vocab_mapping=vocab_mapping, training=True
             )
@@ -146,7 +147,7 @@ class CodeBertModelTrainer(ModelTrainer):
         else:
             with torch.no_grad():
                 scores = cls.compute_loss_and_scores(
-                    model, token_ids, prefix, suffix, graph_ids, labels, lengths,
+                    model, token_ids, prefix, suffix, graph_ids, labels, lengths, graph_embs=graph_embs,
                     extra_mask=extra_mask, class_weights=class_weights, scorer=scorer, finetune=finetune,
                     vocab_mapping=vocab_mapping, training=False
                 )

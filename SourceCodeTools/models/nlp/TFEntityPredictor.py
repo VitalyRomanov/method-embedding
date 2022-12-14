@@ -122,7 +122,7 @@ class TypePredictor(Model):
         self.use_graph = not no_graph
 
     # @tf.function
-    def __call__(self, token_ids, prefix_ids, suffix_ids, graph_ids, target=None, training=False, mask=None):
+    def __call__(self, token_ids, prefix_ids, suffix_ids, graph_ids, graph_embs=None, target=None, training=False, mask=None):
         """
         # Inference
         :param token_ids: ids for tokens, shape (?, seq_len)
@@ -149,8 +149,9 @@ class TypePredictor(Model):
         # else:
         if self.use_graph:
             assert graph_ids is not None, "Make sure you have provided graph embeddings"
-            graph_emb = self.graph_emb(graph_ids)
-            encoded = tf.concat([encoded, graph_emb], axis=-1)
+            if graph_embs is None:
+                graph_embs = self.graph_emb(graph_ids)
+            encoded = tf.concat([encoded, graph_embs], axis=-1)
         logits, _ = self.decoder((encoded, target), training=training, mask=mask) # consider sending input instead of target
 
         return logits

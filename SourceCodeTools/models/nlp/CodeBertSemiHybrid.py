@@ -16,15 +16,15 @@ class CodeBertSemiHybridModel(nn.Module):
         self.use_graph = not no_graph
 
         if self.use_graph:
-            num_emb = graph_padding_idx + 1  # padding id is usually not a real embedding
+            num_emb = graph_padding_idx if isinstance(graph_padding_idx, int) else 1 + 1  # padding id is usually not a real embedding
             assert graph_emb is not None, "Graph embeddings are not provided, but model requires them"
-            graph_emb_dim = graph_emb.e.shape[1]
+            graph_emb_dim = graph_emb.n_dims
             self.graph_emb = nn.Embedding(
-                num_embeddings=num_emb, embedding_dim=graph_emb_dim, padding_idx=graph_padding_idx
+                num_embeddings=num_emb, embedding_dim=graph_emb_dim, padding_idx=graph_padding_idx if isinstance(graph_padding_idx, int) else 1
             )
 
             pretrained_embeddings = torch.from_numpy(
-                np.concatenate([graph_emb.e, np.zeros((1, graph_emb_dim))], axis=0)
+                np.concatenate([graph_emb.get_embedding_table(), np.zeros((1, graph_emb_dim))], axis=0)
             ).float()
             new_param = torch.nn.Parameter(pretrained_embeddings)
             assert self.graph_emb.weight.shape == new_param.shape
@@ -59,7 +59,7 @@ class CodeBertSemiHybridModel(nn.Module):
         else:
             return token_embs, logits
 
-    def forward(self, token_ids, graph_ids, mask, finetune=False):
+    def forward(self, token_ids, graph_ids, mask, finetune=False, graph_embs=None):
         if finetune:
             x = self.codebert_model(input_ids=token_ids, attention_mask=mask).last_hidden_state
         else:
@@ -67,8 +67,9 @@ class CodeBertSemiHybridModel(nn.Module):
                 x = self.codebert_model(input_ids=token_ids, attention_mask=mask).last_hidden_state
 
         if self.use_graph:
-            graph_emb = self.graph_emb(graph_ids)
-            x = torch.cat([x, graph_emb], dim=-1)
+            if graph_embs is None:
+                graph_embs = self.graph_emb(graph_ids)
+            x = torch.cat([x, graph_embs], dim=-1)
 
         x = torch.relu(self.fc1(x))
         x = self.drop(x)

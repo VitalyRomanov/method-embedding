@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
+from nhkv import KVStore
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import ExponentialLR, ReduceLROnPlateau
 from time import time
@@ -877,79 +878,27 @@ class SamplingMultitaskTrainer:
             negative_sampling_strategy="w2v", embedding_table_size=self.trainer_params["embedding_table_size"]
         )
 
-        # if self.trainer_params["inference_ids_path"] is not None:
-        #     ids_constraint = set(pd.read_csv(self.trainer_params["inference_ids_path"])["id"])
-        # else:
-        #     ids_constraint = None
+        embedding_store = KVStore(join(self.model_base_path, "embeddings.kv"))
 
-        # id_maps = dict()
-        # embeddings = []
+        for batch in tqdm(
+                dataloader.get_dataloader("any"),
+                total=dataloader.train_num_batches,
+                desc="Computing final embeddings"
+        ):
 
-        with open(join(self.model_base_path, "embeddings.txt"), "w") as emb_sink:
+            with torch.no_grad():
+                graph_emb = self.graph_model(
+                    {"node_": self.node_embedder(batch["input_nodes"])},
+                    batch["blocks"]
+                )["node_"].to("cpu").numpy()
 
-            for batch in tqdm(
-                    dataloader.get_dataloader("any"),
-                    total=dataloader.train_num_batches,
-                    desc="Computing final embeddings"
-            ):
-                # indices_set = set(batch["indices"])
-                # if ids_constraint is not None and len(indices_set.intersection(ids_constraint)) == 0:
-                #     continue
+            for node_id, emb in zip(batch["indices"], graph_emb):
 
-                with torch.no_grad():
-                    graph_emb = self.graph_model(
-                        {"node_": self.node_embedder(batch["input_nodes"])},
-                        batch["blocks"]
-                    )["node_"].to("cpu").numpy()
+                embedding_store[node_id] = np.ravel(emb)
 
-                for node_id, emb in zip(batch["indices"], graph_emb):
+        embedding_store.save()
 
-                    # if ids_constraint is not None and node_id not in ids_constraint:
-                    #     continue
-
-                    emb_sink.write(f"{node_id}")
-                    for feat in emb:
-                        emb_sink.write(f" {feat}")
-                    emb_sink.write(f"\n")
-
-                    # if node_id not in id_maps:
-                    #     id_maps[node_id] = len(id_maps)
-                    #
-                    # ind_to_set = id_maps[node_id]
-                    #
-                    # if ind_to_set == len(embeddings):
-                    #     embeddings.append(emb)
-                    # elif ind_to_set < len(embeddings):
-                    #     embeddings[ind_to_set] = emb
-                    # else:
-                    #     raise ValueError()
-
-        # embedder = Embedder(id_maps, np.vstack(embeddings))
-
-        return None  # embedder
-
-    # def get_embeddings(self):
-    #     # self.graph_model.g.nodes["function"].data.keys()
-    #     nodes = self.graph_model.g.nodes
-    #     node_embs = {
-    #         ntype: self.node_embedder(node_type=ntype, node_ids=nodes[ntype].data['typed_id'], train_embeddings=False)
-    #         for ntype in self.graph_model.g.ntypes
-    #     }
-    #
-    #     logging.info("Computing all embeddings")
-    #     h = self.graph_model.inference(batch_size=2048, device='cpu', num_workers=0, x=node_embs)
-    #
-    #     original_id = []
-    #     global_id = []
-    #     embeddings = []
-    #     for ntype in self.graph_model.g.ntypes:
-    #         embeddings.append(h[ntype])
-    #         original_id.extend(nodes[ntype].data['original_id'].tolist())
-    #         global_id.extend(nodes[ntype].data['global_graph_id'].tolist())
-    #
-    #     embeddings = torch.cat(embeddings, dim=0).detach().numpy()
-    #
-    #     return [Embedder(dict(zip(original_id, global_id)), embeddings)]
+        return None
 
 
 def select_device(args):

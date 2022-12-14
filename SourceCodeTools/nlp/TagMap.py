@@ -92,6 +92,20 @@ class HashingValueEncoder:
 class TagMap(ValueEncoder):
     def __init__(self, values):
         super().__init__(values=values)
+        
+
+class ValueEmbedder(ValueEncoder):
+    def __init__(self, values=None, default=None, value_to_code=None):
+        assert value_to_code is not None
+        super(ValueEmbedder, self).__init__(
+            values=values, default=default, value_to_code=value_to_code
+        )
+
+    def _get_ordered_values(self, *args, **kwargs):
+        return None
+
+    def inverse(self, *args, **kwargs):
+        raise NotImplemented("This API is not available for this class")
 
 
 def tag_map_from_sentences(sentences):
