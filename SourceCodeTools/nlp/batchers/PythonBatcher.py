@@ -191,7 +191,7 @@ class Batcher:
             self._tmp_dir = tempfile.TemporaryDirectory()
             self._cache_dir = Path(self._tmp_dir.name)
 
-        self._cache_dir = self._cache_dir.joinpath(f"PythonBatcher{self._get_version_code()}")
+        self._cache_dir = self._cache_dir.joinpath(f"{self.__class__.__name__}{self._get_version_code()}")
         self._cache_dir.mkdir(parents=True, exist_ok=True)
 
         self._data_cache = KVStore(self._data_cache_path)  # dc.Cache(self._data_cache_path)
