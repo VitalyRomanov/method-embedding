@@ -5,14 +5,18 @@ import numpy as np
 
 from SourceCodeTools.code.annotator_utils import resolve_self_collisions2
 from SourceCodeTools.code.data.ast_graph.build_ast_graph import ast_graph_for_single_example
-from SourceCodeTools.code.data.dataset.Dataset import SimpleGraphCreator
+from SourceCodeTools.code.data.dataset.Dataset import SimpleGraphCreator, SourceGraphDataset
+from SourceCodeTools.models.training_config import get_config
 from SourceCodeTools.nlp.batchers import PythonBatcher
 from SourceCodeTools.nlp.batchers.PythonBatcher import MapperSpec
 
 
 class HybridBatcher(PythonBatcher):
     def __init__(self, *args, **kwargs):
-        self._graph_creator = SimpleGraphCreator()
+        dataset_config = get_config(data_path=kwargs["cache_dir"].parent)
+        self._graph_creator = SourceGraphDataset(
+            **dataset_config["DATASET"], **dataset_config["TOKENIZER"]
+        )
         super(HybridBatcher, self).__init__(*args, **kwargs)
 
     def _prepare_tokenized_sent(self, sent):
@@ -21,11 +25,13 @@ class HybridBatcher(PythonBatcher):
         nodes, edges, offsets = ast_graph_for_single_example(text, "/Users/LTV/dev/method-embeddings/examples/sentencepiece_bpe.model", track_offsets=True)
         edges = edges.rename({"source_node_id": "src", "target_node_id": "dst"}, axis=1)
         nodes = nodes.rename({"serialized_name": "name"}, axis=1)
-        graph = self._graph_creator._create_hetero_graph(nodes, edges)
+        graph = self._graph_creator.create_graph_from_nodes_and_edges(nodes, edges)
 
         doc = self._nlp(text)
         ents = annotations['entities']
-        annotations['replacements'] = resolve_self_collisions2(list(zip(offsets["start"], offsets["end"], offsets["node_id"])))
+        annotations['replacements'] = resolve_self_collisions2(
+            list(zip(offsets["start"], offsets["end"], offsets["node_id"]))
+        )
 
         tokens = doc
         try:

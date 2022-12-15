@@ -1,8 +1,10 @@
 import os
 import pickle
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
+from tqdm import tqdm
 from transformers import RobertaModel
 
 from SourceCodeTools.models.graph import RGCN
@@ -47,3 +49,34 @@ class HybridModelTrainer(CodeBertModelTrainer):
             ckpt_path = os.path.join(self.ckpt_path, "checkpoint")
             model = self.load_checkpoint(model, ckpt_path)
         return model
+
+    def iterate_batches(self, model, batches, epoch, num_train_batches, train_scores, scorer, train=True):
+        scores_for_averaging = defaultdict(list)
+
+        batch_count = 0
+
+        for ind, batch in enumerate(tqdm(batches, desc=f"Epoch {epoch}")):
+            self._format_batch(batch, self.device)
+            scores = self.make_step(
+                model=model, optimizer=self.optimizer, token_ids=batch['tok_ids'],
+                prefix=batch['prefix'], suffix=batch['suffix'],
+                graph_ids=batch['graph_ids'] if 'graph_ids' in batch else None,
+                graph_embs=batch['graph_embs'] if 'graph_embs' in batch else None,
+                labels=batch['tags'], lengths=batch['lens'],
+                extra_mask=batch['no_loc_mask'] if self.no_localization else batch['hide_mask'],
+                # class_weights=batch['class_weights'],
+                scorer=scorer, finetune=self.finetune and epoch / self.epochs > 0.6,
+                vocab_mapping=self.vocab_mapping,
+                train=train
+            )
+
+            batch_count += 1
+
+            scores["batch_size"] = batch['tok_ids'].shape[0]
+            for score, value in scores.items():
+                self._write_to_summary(f"{score}/{'Train' if train else 'Test'}", value,
+                                       epoch * num_train_batches + ind)
+                scores_for_averaging[score].append(value)
+            train_scores.append(scores_for_averaging)
+
+        return num_train_batches
