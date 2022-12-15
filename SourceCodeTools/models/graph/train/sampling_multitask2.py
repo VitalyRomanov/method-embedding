@@ -641,6 +641,8 @@ class SamplingMultitaskTrainer:
     def train_step_for_objective(self, step, objective, objective_iterator, longterm_metrics):
         batch = next(objective_iterator)
 
+        # print("Input Nodes:", len(batch["input_nodes"]))
+
         loss, scores = objective.make_step(
             step, batch, "train", longterm_metrics, scorer=None
         )
@@ -686,13 +688,13 @@ class SamplingMultitaskTrainer:
                     # loaders = [next(objective_iterator) for objective_iterator in objective_iterators]
                 except StopIteration:
                     break
-                except RuntimeError:
-                    with open(join(self.model_base_path, "batch_errors.log"), "a") as error_log:
-                        error_log.write(
-                            f"Runtime error at training step {step}\n"
-                        )
-                        torch.cuda.empty_cache()
-                        continue
+                # except RuntimeError:
+                #     with open(join(self.model_base_path, "batch_errors.log"), "a") as error_log:
+                #         error_log.write(
+                #             f"Runtime error at training step {step}\n"
+                #         )
+                #         torch.cuda.empty_cache()
+                #         continue
 
                 for groups in self.optimizer.param_groups:
                     for param in groups["params"]:
