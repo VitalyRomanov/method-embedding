@@ -180,6 +180,11 @@ def estimate_confusion(pred, true, save_path):
             text = ax.text(j, i, f"{confusion[i, j]: .2f}",
                            ha="center", va="center", color="w", fontsize="xx-small")
 
+    with open(os.path.join(save_path, "type_pred_breakdown.tsv"), "w") as tbreak:
+        tbreak.write("Type\tAcc\n")
+        for i in range(len(labels)):
+            tbreak.write(f"{labels[i]}\t{confusion[i, i]}\n")
+
     # ax.set_title("Confusion matrix for Python type prediction")
     fig.tight_layout()
     # plt.show()
@@ -351,7 +356,7 @@ if __name__ == "__main__":
     parser.add_argument("--trials", default=1, type=int, help="")
     parser.add_argument("--emb_out", default=False, action="store_true", help="")
     parser.add_argument("--only_popular_types", default=False, action="store_true", help="")
-    parser.add_argument("--popular_types", default="str,Optional,int,Any,Union,bool,Other,Callable,Dict,bytes,float,Description,List,Sequence,Namespace,T,Type,object,HTTPServerRequest,Future,Matcher", help="")
+    parser.add_argument("--popular_types", default="str,int,bool,Callable,Dict,bytes,float,Description,List,Namespace,HTTPServerRequest,Future,Matcher", help="")
     # parser.add_argument("--emb_out", default=None, type=str, help="")
     parser.add_argument("--embeddings", default=None)
     parser.add_argument('--random', action='store_true')
