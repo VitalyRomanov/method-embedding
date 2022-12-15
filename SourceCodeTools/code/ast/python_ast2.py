@@ -353,6 +353,9 @@ class GEdge:
     def __getitem__(self, item):
         return self.__dict__[item]
 
+    def get_hash_id(self):
+        return int(hashlib.md5(f"{self.src}_{self.dst}_{self.type}".encode('utf-8')).hexdigest()[:16], 16)
+
 
 class AstGraphGenerator(object):
 
