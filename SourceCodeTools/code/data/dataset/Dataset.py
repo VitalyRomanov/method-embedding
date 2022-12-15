@@ -406,7 +406,7 @@ class SourceGraphDataset:
         self.custom_reverse = custom_reverse
         self.subgraph_id_column = subgraph_id_column
         self.subgraph_partition = subgraph_partition
-        self.partition = PartitionIndex(unpersist(partition))
+        self.partition = PartitionIndex(unpersist(partition)) if partition is not None else None
         self._cache = DatasetCache(self.data_path)
         self._subgraph_cache_path = tempfile.TemporaryDirectory(suffix="SubgraphCache")
         self._subgraph_cache = dc.Cache(self._subgraph_cache_path.name)
@@ -569,12 +569,12 @@ class SourceGraphDataset:
             return data
 
         def unpack_node_data(nodes):
-            return unpack_table(nodes, {"id", "type", "name", "type_backup"}, reference=range(num_nodes))
+            return unpack_table(nodes, {"id", "type", "name", "type_backup", "mentioned_in", "string"}, reference=range(num_nodes))
 
         def unpack_edge_data(edges):
             return unpack_table(edges, {
                 "id", "type", "type_backup", "unique_file_id", "file_id", "package",
-                "src_type", "dst_type"
+                "src_type", "dst_type", "mentioned_in", "offset_start", "offset_end"
             }, reference=edges["id"])
 
         def assign_dense_node_ids(nodes, edges):
@@ -828,22 +828,55 @@ class SourceGraphDataset:
     def get_cache_key(self, how, group):
         return f"{how.name}_{group}"
 
+    def add_data_to_table(self, table, data_dict):
+        boolean_fields = {"train_mask", "test_mask", "val_mask", "has_label", "any_mask"}
+        for key in data_dict:
+            table.eval(
+                f"{key} = id.map(@mapper)",
+                local_dict={"mapper": lambda x: data_dict[key].get(x, pd.NA)},
+                inplace=True
+            )
+            if key in boolean_fields:
+                table[key].fillna(False, inplace=True)
+        if "label" in data_dict:
+            table["label"] = table["label"].astype("Int64")
+
+    def create_graph_from_nodes_and_edges(self, nodes, edges, node_data=None, edge_data=None, n_buckets=200000):
+        if node_data is None:
+            node_data = {}
+        if edge_data is None:
+            edge_data = {}
+
+        self._remove_edges_with_restricted_types(edges)
+
+        if self.custom_reverse is not None:
+            edges = self._add_custom_reverse(edges)
+        self.ensure_connectedness(nodes, edges)
+
+        node_name_mapping = self._get_embeddable_names(nodes)
+        node_data["embedding_id"] = self._get_node_name2bucket_mapping(node_name_mapping, n_buckets)
+        # node_type_pool = self._prepare_node_type_pool(nodes)
+
+        self._adjust_types(nodes, edges)
+
+        self.add_data_to_table(nodes, node_data)
+        self.add_data_to_table(edges, edge_data)
+
+        if len(edges) > 0:
+            cache_key = self._get_df_hash(nodes) + self._get_df_hash(edges)
+            subgraph = self._load_cache_if_exists(cache_key)
+            if subgraph is None:
+                subgraph = self._create_hetero_graph(nodes, edges)
+                self._write_to_cache(subgraph, cache_key)
+
+            return subgraph
+        else:
+            return None
+
+
     def iterate_subgraphs(self, how, groups, node_data, edge_data, subgraph_data, n_buckets):
 
         iterator = self.dataset_db.iterate_subgraphs(how, groups)
-
-        def add_data(table, data_dict):
-            boolean_fields = {"train_mask", "test_mask", "val_mask", "has_label", "any_mask"}
-            for key in data_dict:
-                table.eval(
-                    f"{key} = id.map(@mapper)",
-                    local_dict={"mapper": lambda x: data_dict[key].get(x, pd.NA)},
-                    inplace=True
-                )
-                if key in boolean_fields:
-                    table[key].fillna(False, inplace=True)
-            if "label" in data_dict:
-                table["label"] = table["label"].astype("Int64")
 
         for group, nodes, edges in iterator:
 
@@ -851,28 +884,11 @@ class SourceGraphDataset:
             for src, dst in zip(edges["src"], edges["dst"]):
                 edges_bloom_filter.add((src, dst))
 
-            self._remove_edges_with_restricted_types(edges)
+            subgraph = self.create_graph_from_nodes_and_edges(
+                nodes, edges, node_data, edge_data, n_buckets=n_buckets
+            )
 
-            if self.custom_reverse is not None:
-                edges = self._add_custom_reverse(edges)
-            self.ensure_connectedness(nodes, edges)
-
-            node_name_mapping = self._get_embeddable_names(nodes)
-            node_data["embedding_id"] = self._get_node_name2bucket_mapping(node_name_mapping, n_buckets)
-            # node_type_pool = self._prepare_node_type_pool(nodes)
-
-            self._adjust_types(nodes, edges)
-
-            add_data(nodes, node_data)
-            add_data(edges, edge_data)
-
-            if len(edges) > 0:
-                cache_key = self._get_df_hash(nodes) + self._get_df_hash(edges)
-                subgraph = self._load_cache_if_exists(cache_key)
-                if subgraph is None:
-                    subgraph = self._create_hetero_graph(nodes, edges)
-                    self._write_to_cache(subgraph, cache_key)
-
+            if subgraph is not None:
                 yield {
                     "group": group,
                     "nodes": nodes,
