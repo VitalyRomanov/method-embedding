@@ -2,6 +2,7 @@ import ast
 import json
 import logging
 import os
+from bisect import bisect_left
 from os.path import join
 
 import pandas as pd
@@ -530,13 +531,27 @@ def iterate_functions(offsets, nodes, filecontent):
     for package_id in offsets:
         content = filecontent[package_id]
 
+        lines = []
+        for ind, line in enumerate(content.split("\n")):
+            length = len(line)
+            if ind != 0:
+                length += lines[ind - 1] + 1
+            lines.append(length)
+
         # entry is a function or a class
         for (entity_start, entity_end, entity_node_id), entity_offsets in offsets[package_id].items():
             if nodes[entity_node_id][1] in allowed_entity_types:
                 body = content[entity_start: entity_end]
                 adjusted_entity_offsets = adjust_offsets2(entity_offsets, -entity_start)
 
-                yield body, adjusted_entity_offsets
+                yield {
+                    "body": body,
+                    "offsets": adjusted_entity_offsets,
+                    "package": package_id[0],
+                    "file_id": package_id[1],
+                    "line_start_python": bisect_left(lines, entity_start),
+                    "line_end_python": bisect_left(lines, entity_end-1) + 1
+                }
 
 
 def get_node_maps(nodes):
@@ -593,8 +608,10 @@ def create_from_dataset(args):
     data = []
     nlp = create_tokenizer("spacy")
 
-    for ind, (f_body, f_offsets) in enumerate(iterate_functions(offsets, node_maps, filecontent)):
-        data.append(process_body(nlp, f_body, replacements=f_offsets, require_labels=args.require_labels))
+    for ind, function_data in enumerate(iterate_functions(offsets, node_maps, filecontent)):
+        entry = process_body(nlp, function_data.pop("body"), replacements=function_data.pop("offsets"), require_labels=args.require_labels)
+        entry.update(function_data)
+        data.append(entry)
 
     store(data, args)
 
