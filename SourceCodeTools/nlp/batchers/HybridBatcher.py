@@ -4,7 +4,8 @@ import dgl
 import numpy as np
 
 from SourceCodeTools.code.annotator_utils import resolve_self_collisions2
-from SourceCodeTools.code.data.ast_graph.build_ast_graph import ast_graph_for_single_example
+from SourceCodeTools.code.ast.python_ast2_with_subwords import make_python_ast_graph_with_subwords
+# from SourceCodeTools.code.data.ast_graph.build_ast_graph import ast_graph_for_single_example
 from SourceCodeTools.code.data.dataset.Dataset import SimpleGraphCreator, SourceGraphDataset
 from SourceCodeTools.models.training_config import get_config
 from SourceCodeTools.nlp.batchers import PythonBatcher
@@ -22,16 +23,19 @@ class HybridBatcher(PythonBatcher):
     def _prepare_tokenized_sent(self, sent):
         text, annotations = sent
 
-        nodes, edges, offsets = ast_graph_for_single_example(text, "/Users/LTV/dev/method-embeddings/examples/sentencepiece_bpe.model", track_offsets=True)
-        edges = edges.rename({"source_node_id": "src", "target_node_id": "dst"}, axis=1)
-        nodes = nodes.rename({"serialized_name": "name"}, axis=1)
+        # nodes, edges, offsets = ast_graph_for_single_example(text, "/Users/LTV/dev/method-embeddings/examples/sentencepiece_bpe.model", track_offsets=True)
+        nodes, edges = make_python_ast_graph_with_subwords(text)
+        nodes = nodes[["id","name","type"]]
+        edges = edges[["id", "src", "dst", "type"]]
+        # edges = edges.rename({"source_node_id": "src", "target_node_id": "dst"}, axis=1)
+        # nodes = nodes.rename({"serialized_name": "name"}, axis=1)
         graph = self._graph_creator.create_graph_from_nodes_and_edges(nodes, edges)
 
         doc = self._nlp(text)
         ents = annotations['entities']
-        annotations['replacements'] = resolve_self_collisions2(
-            list(zip(offsets["start"], offsets["end"], offsets["node_id"]))
-        )
+        annotations['replacements'] = []  #resolve_self_collisions2(
+            # list(zip(offsets["start"], offsets["end"], offsets["node_id"]))
+        # )
 
         tokens = doc
         try:
@@ -45,7 +49,7 @@ class HybridBatcher(PythonBatcher):
         output = {
             "tokens": tokens,
             "tags": ents_tags,
-            "graph": graph,
+            # "graph": graph,
         }
 
         output.update(self._parse_additional_tags(text, annotations, doc, output))
