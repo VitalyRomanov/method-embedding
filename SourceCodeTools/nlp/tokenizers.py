@@ -1,4 +1,5 @@
 import hashlib
+from functools import lru_cache
 
 import spacy
 from spacy.tokens import Doc
@@ -119,6 +120,7 @@ class CodebertAdapter:
         return final_doc
 
 
+@lru_cache
 def create_tokenizer(type, bpe_path=None, regex=None):
     """
     Create tokenizer instance. Usage

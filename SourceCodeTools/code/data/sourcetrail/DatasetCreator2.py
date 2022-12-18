@@ -1,13 +1,14 @@
 import logging
 import os
 from os.path import join
+from pathlib import Path
 
 from SourceCodeTools.cli_arguments import DatasetCreatorArguments
 from SourceCodeTools.code.annotator_utils import map_offsets
 from SourceCodeTools.code.common import read_nodes
 from SourceCodeTools.code.data.AbstractDatasetCreator import AbstractDatasetCreator
 from SourceCodeTools.code.data.ast_graph.filter_type_edges import filter_type_edges_with_chunks
-from SourceCodeTools.code.data.file_utils import filenames, unpersist_if_present, read_element_component
+from SourceCodeTools.code.data.file_utils import filenames, unpersist_if_present, read_element_component, persist
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_filter_type_edges import filter_type_edges
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_merge_graphs import get_global_node_info, merge_global_with_local
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_node_local2global import get_local2global
@@ -179,9 +180,9 @@ class DatasetCreator(AbstractDatasetCreator):
 
         return global_nodes
 
-    def do_extraction(self):
-        global_nodes = set()
-        global_nodes_with_ast = set()
+    def do_extraction(self, output_directory):
+
+        output_directory = Path(output_directory)
 
         for env_path in self.environments:
             package_name = os.path.basename(env_path)
@@ -192,77 +193,74 @@ class DatasetCreator(AbstractDatasetCreator):
                 logging.info("Package not indexed")
                 continue
 
-            if not self.recompute_l2g:
+            nodes, edges, source_location, occurrence, filecontent, element_component = \
+                self.read_sourcetrail_files(env_path)
 
-                nodes, edges, source_location, occurrence, filecontent, element_component = \
-                    self.read_sourcetrail_files(env_path)
+            if nodes is None:
+                logging.info("Index is empty")
+                continue
 
-                if nodes is None:
-                    logging.info("Index is empty")
-                    continue
+            edges = filter_ambiguous_edges(edges, element_component)
 
-                edges = filter_ambiguous_edges(edges, element_component)
+            nodes, edges = self.filter_unsolved_symbols(nodes, edges)
 
-                nodes, edges = self.filter_unsolved_symbols(nodes, edges)
+            # bodies = process_bodies(nodes, edges, source_location, occurrence, filecontent, self.lang)
+            # call_seq = extract_call_seq(nodes, edges, source_location, occurrence)
 
-                bodies = process_bodies(nodes, edges, source_location, occurrence, filecontent, self.lang)
-                call_seq = extract_call_seq(nodes, edges, source_location, occurrence)
+            # edges = add_reverse_edges(edges)
 
-                edges = add_reverse_edges(edges)
+            files_ast = get_ast_from_modules(
+                nodes, edges, source_location, occurrence, filecontent,
+                self.bpe_tokenizer, self.create_subword_instances, self.connect_subwords, self.lang,
+                track_offsets=self.track_offsets, package_name=package_name
+            )
 
-                # if bodies is not None:
-                ast_nodes, ast_edges, offsets, name_mappings = get_ast_from_modules(
-                    nodes, edges, source_location, occurrence, filecontent,
-                    self.bpe_tokenizer, self.create_subword_instances, self.connect_subwords, self.lang,
-                    track_offsets=self.track_offsets, package_name=package_name
-                )
+            for file_id, (file_content, nodes, edges) in files_ast.items():
+                file_id_dir = output_directory.joinpath(package_name).joinpath(str(file_id))
+                file_id_dir.mkdir(parents=True, exist_ok=True)
+                persist(nodes, file_id_dir.joinpath("nodes.json.bz2"))
+                persist(edges, file_id_dir.joinpath("edges.json.bz2"))
+                with open(file_id_dir.joinpath("source.txt"), "w") as sink:
+                    sink.write(file_content)
 
-                if offsets is not None:
-                    offsets["package"] = package_name
-                filecontent["package"] = package_name
-                # edges["package"] = os.path.basename(env_path)
 
-                # need this check in situations when module has a single file and this file cannot be parsed
-                nodes_with_ast = nodes.append(ast_nodes) if ast_nodes is not None else nodes
-                edges_with_ast = edges.append(ast_edges) if ast_edges is not None else edges
-
-                if bodies is not None:
-                    vars = extract_var_names(nodes, bodies, self.lang)
-                else:
-                    vars = None
-            else:
-                nodes = unpersist_if_present(join(env_path, "nodes.bz2"))
-                nodes_with_ast = unpersist_if_present(join(env_path, "nodes_with_ast.bz2"))
-
-                if nodes is None or nodes_with_ast is None:
-                    continue
-
-                edges = bodies = call_seq = vars = edges_with_ast = offsets = name_mappings = filecontent = None
+            # if bodies is not None:
+            #     vars = extract_var_names(nodes, bodies, self.lang)
+            # else:
+            #     vars = None
+            # else:
+            #     nodes = unpersist_if_present(join(env_path, "nodes.bz2"))
+            #     nodes_with_ast = unpersist_if_present(join(env_path, "nodes_with_ast.bz2"))
+            #
+            #     if nodes is None or nodes_with_ast is None:
+            #         continue
+            #
+            #     edges = bodies = call_seq = vars = edges_with_ast = offsets = name_mappings = filecontent = None
 
             # global_nodes = self.merge_with_global(global_nodes, nodes)
             # global_nodes_with_ast = self.merge_with_global(global_nodes_with_ast, nodes_with_ast)
 
-            local2global = get_local2global(
-                global_nodes=global_nodes, local_nodes=nodes
-            )
-            local2global_with_ast = get_local2global(
-                global_nodes=global_nodes_with_ast, local_nodes=nodes_with_ast
-            )
+            # local2global = get_local2global(
+            #     global_nodes=global_nodes, local_nodes=nodes
+            # )
+            # local2global_with_ast = get_local2global(
+            #     global_nodes=global_nodes_with_ast, local_nodes=nodes_with_ast
+            # )
+            #
+            # global_nodes.update(local2global["global_id"])
+            # global_nodes_with_ast.update(local2global_with_ast["global_id"])
+            #
+            # self.write_type_annotation_flag(edges_with_ast, env_path)
 
-            global_nodes.update(local2global["global_id"])
-            global_nodes_with_ast.update(local2global_with_ast["global_id"])
-
-            self.write_type_annotation_flag(edges_with_ast, env_path)
-
-            self.write_local(
-                env_path, nodes=nodes, edges=edges, bodies=bodies, call_seq=call_seq, function_variable_pairs=vars,
-                nodes_with_ast=nodes_with_ast, edges_with_ast=edges_with_ast, offsets=offsets,
-                local2global=local2global, local2global_with_ast=local2global_with_ast,
-                name_mappings=name_mappings, filecontent_with_package=filecontent
-            )
-
-        self.compact_mapping_for_l2g(global_nodes, "local2global.bz2")
-        self.compact_mapping_for_l2g(global_nodes_with_ast, "local2global_with_ast.bz2")
+        #     self.write_local(
+        #         env_path, nodes=nodes, edges=edges, bodies=bodies, call_seq=call_seq, function_variable_pairs=vars,
+        #         nodes_with_ast=nodes_with_ast, edges_with_ast=edges_with_ast, offsets=offsets,
+        #         local2global=local2global, local2global_with_ast=local2global_with_ast,
+        #         name_mappings=name_mappings, filecontent_with_package=filecontent
+        #     )
+        #
+        # self.compact_mapping_for_l2g(global_nodes, "local2global.bz2")
+        # self.compact_mapping_for_l2g(global_nodes_with_ast, "local2global_with_ast.bz2")
 
     @staticmethod
     def extract_node_names(nodes_path, min_count):
@@ -277,14 +275,14 @@ class DatasetCreator(AbstractDatasetCreator):
 
         if self.extract:
             logging.info("Extracting...")
-            self.do_extraction()
+            self.do_extraction(output_directory)
 
-        no_ast_path, with_ast_path = self.create_output_dirs(output_directory)
+        # no_ast_path, with_ast_path = self.create_output_dirs(output_directory)
+        #
+        # if not self.only_with_annotations:
+        #     self.merge_graph_without_ast(no_ast_path)
 
-        if not self.only_with_annotations:
-            self.merge_graph_without_ast(no_ast_path)
-
-        self.merge_graph_with_ast(with_ast_path)
+        # self.merge_graph_with_ast(with_ast_path)
 
     def visualize_func(self, nodes, edges, output_path):
         from SourceCodeTools.code.data.sourcetrail.sourcetrail_draw_graph import visualize

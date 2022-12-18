@@ -1,18 +1,29 @@
 import ast
 import hashlib
 import logging
-from copy import copy
+from collections import defaultdict
 from enum import Enum
 from itertools import chain
 from pprint import pprint
-from time import time_ns
 from collections.abc import Iterable
+from typing import List, Optional
+
 import pandas as pd
-# import os
+
 from SourceCodeTools.code.IdentifierPool import IdentifierPool
+from SourceCodeTools.code.annotator_utils import get_cum_lens, to_offsets
+from SourceCodeTools.nlp.string_tools import get_byte_to_char_map
 
 
 class PythonNodeEdgeDefinitions:
+    node_type_enum = None
+    edge_type_enum = None
+
+    leaf_types = None
+    named_leaf_types = None
+    tokenizable_types_and_annotations = None
+    shared_node_types = None
+
     ast_node_type_edges = {
         "Assign": ["value", "targets"],
         "AugAssign": ["target", "op", "value"],
@@ -51,14 +62,14 @@ class PythonNodeEdgeDefinitions:
 
     overriden_node_type_edges = {
         "Module": [],  # overridden
-        "FunctionDef": ["function_name", "args", "decorator_list", "returned_by"], #  overridden, `function_name` replaces `name`, `returned_by` replaces `returns`
-        "AsyncFunctionDef": ["function_name", "args", "decorator_list", "returned_by"], #  overridden, `function_name` replaces `name`, `returned_by` replaces `returns`
+        "FunctionDef": ["function_name", "args", "decorator_list", "returned_by"],  # overridden, `function_name` replaces `name`, `returned_by` replaces `returns`
+        "AsyncFunctionDef": ["function_name", "args", "decorator_list", "returned_by"],  # overridden, `function_name` replaces `name`, `returned_by` replaces `returns`
         "ClassDef": ["class_name"],  # overridden, `class_name` replaces `name`
         "AnnAssign": ["target", "value", "annotation_for"],  # overridden, `annotation_for` replaces `annotation`
         "With": ["items"],  # overridden
         "AsyncWith": ["items"],  # overridden
         "arg": ["arg", "annotation_for"],  # overridden, `annotation_for` is custom
-        "Lambda": [],  # overridden
+        "Lambda": ["lambda"],  # overridden
         "IfExp": ["test", "if_true", "if_false"],  # overridden, `if_true` renamed from `body`, `if_false` renamed from `orelse`
         "keyword": ["arg", "value"],  # overridden
         "Attribute": ["value", "attr"],  # overridden
@@ -78,6 +89,10 @@ class PythonNodeEdgeDefinitions:
         "comprehension": ["target", "iter", "ifs"],  # overridden, `target_for` is custom, `iter_for` is customm `ifs_rev` is custom
     }
 
+    extra_node_type_edges = {
+        "mention": ["local_mention"]
+    }
+
     context_edge_names = {
         "Module": ["defined_in_module"],
         "FunctionDef": ["defined_in_function"],
@@ -92,7 +107,7 @@ class PythonNodeEdgeDefinitions:
     }
 
     extra_edge_types = {
-        "control_flow", "next", "local_mention",
+        "control_flow", "next",
     }
 
     # exceptions needed when we do not want to filter some edge types using a simple rule `_rev`
@@ -135,8 +150,14 @@ class PythonNodeEdgeDefinitions:
     # extra node types exist for keywords and attributes to prevent them from
     # getting mixed with local variable mentions
     extra_node_types = {
+        "mention",
         "#keyword#",
-        "#attr#"
+        "#attr#",
+        "astliteral",
+        "type_annotation",
+        "Op",
+        "CtlFlow", "CtlFlowInstance",
+        # "subword", "subword_instance"
     }
 
     @classmethod
@@ -153,7 +174,7 @@ class PythonNodeEdgeDefinitions:
             cls.regular_node_types() |
             cls.overridden_node_types() |
             cls.iterable_nodes | cls.named_nodes | cls.constant_nodes |
-            cls.operand_nodes | cls.control_flow_nodes | cls.extra_node_types
+            cls.extra_node_types  # | cls.operand_nodes | cls.control_flow_nodes
         )
 
     @classmethod
@@ -183,6 +204,7 @@ class PythonNodeEdgeDefinitions:
         direct_edges = list(
             set(chain(*cls.ast_node_type_edges.values())) |
             set(chain(*cls.overriden_node_type_edges.values())) |
+            set(chain(*cls.extra_node_type_edges.values())) |
             cls.scope_edges() |
             cls.extra_edge_types | cls.named_nodes | cls.constant_nodes |
             cls.operand_nodes | cls.control_flow_nodes | cls.extra_node_types
@@ -191,21 +213,80 @@ class PythonNodeEdgeDefinitions:
         reverse_edges = list(cls.compute_reverse_edges(direct_edges))
         return direct_edges + reverse_edges
 
+    @classmethod
+    def make_node_type_enum(cls):
+        if cls.node_type_enum is None:
+            cls.node_type_enum = Enum(
+                "NodeTypes",
+                " ".join(
+                    cls.node_types()
+                )
+            )
+        return cls.node_type_enum
 
-PythonAstNodeTypes = Enum(
-    "PythonAstNodeTypes",
-    " ".join(
-        PythonNodeEdgeDefinitions.node_types()
-    )
-)
+    @classmethod
+    def make_edge_type_enum(cls):
+        if cls.edge_type_enum is None:
+            cls.edge_type_enum = Enum(
+                "EdgeTypes",
+                " ".join(
+                    cls.edge_types()
+                )
+            )
+        return cls.edge_type_enum
+
+    @classmethod
+    def _initialize_shared_nodes(cls):
+        node_types_enum = cls.make_node_type_enum()
+        annotation_types = {node_types_enum["type_annotation"]}
+        tokenizable_types = {node_types_enum["Name"], node_types_enum["#attr#"], node_types_enum["#keyword#"]}
+        python_token_types = {
+            node_types_enum["Op"], node_types_enum["Constant"], node_types_enum["JoinedStr"],
+            node_types_enum["CtlFlow"], node_types_enum["astliteral"]
+        }
+        subword_types = set()  # {node_types_enum["subword"]}
+
+        # cls.leaf_types = annotation_types | subword_types | python_token_types
+        # cls.named_leaf_types = annotation_types | tokenizable_types | python_token_types
+        # cls.tokenizable_types_and_annotations = annotation_types | tokenizable_types
+
+        cls.shared_node_types = annotation_types | subword_types | tokenizable_types | python_token_types
+
+    @classmethod
+    def is_shared_name_type(cls, name, type):
+        if cls.shared_node_types is None:
+            cls._initialize_shared_nodes()
+
+        if type in cls.shared_node_types or \
+                (type == "subword_instance" and "0x" not in name):
+            return True
+        return False
+
+    @classmethod
+    def get_reverse_type(cls, type):
+        if cls.edge_type_enum is None:
+            cls.edge_type_enum = cls.make_edge_type_enum()
+
+        reverse_type = cls.reverse_edge_exceptions.get(type, type + "_rev")
+        if reverse_type is not None:
+            return cls.edge_type_enum[reverse_type]
+        return None
 
 
-PythonAstEdgeTypes = Enum(
-    "PythonAstEdgeTypes",
-    " ".join(
-        PythonNodeEdgeDefinitions.edge_types()
-    )
-)
+# PythonAstNodeTypes = Enum(
+#     "PythonAstNodeTypes",
+#     " ".join(
+#         PythonNodeEdgeDefinitions.node_types()
+#     )
+# )
+#
+#
+# PythonAstEdgeTypes = Enum(
+#     "PythonAstEdgeTypes",
+#     " ".join(
+#         PythonNodeEdgeDefinitions.edge_types()
+#     )
+# )
 
 
 class PythonCodeExamplesForNodes:
@@ -251,7 +332,7 @@ class PythonCodeExamplesForNodes:
             "finally:\n"
             "   print(a)\n",
         "While":
-            "while b = c:\n"
+            "while b == c:\n"
             "   do_iter(b)\n",
         "Dict": "{a:b, c:d}\n",
         "comprehension": "[i for i in list if i != 5]\n",
@@ -288,38 +369,41 @@ def generate_utilized_edges():
                     print(nt, f, sep=" ")
 
 
-class PythonSharedNodes:
-    annotation_types = {"type_annotation", "returned_by"}
-    tokenizable_types = {"Name", "#attr#", "#keyword#"}
-    python_token_types = {"Op", "Constant", "JoinedStr", "CtlFlow", "ast_Literal"}
-    subword_types = {'subword'}
-
-    subword_leaf_types = annotation_types | subword_types | python_token_types
-    named_leaf_types = annotation_types | tokenizable_types | python_token_types
-    tokenizable_types_and_annotations = annotation_types | tokenizable_types
-
-    shared_node_types = annotation_types | subword_types | tokenizable_types | python_token_types
-
-    # leaf_types = {'subword', "Op", "Constant", "JoinedStr", "CtlFlow", "ast_Literal", "Name", "type_annotation", "returned_by"}
-    # shared_node_types = {'subword', "Op", "Constant", "JoinedStr", "CtlFlow", "ast_Literal", "Name", "type_annotation", "returned_by", "#attr#", "#keyword#"}
-
-    @classmethod
-    def is_shared(cls, node):
-        # nodes that are of stared type
-        # nodes that are subwords of keyword arguments
-        return cls.is_shared_name_type(node.name, node.type)
-
-    @classmethod
-    def is_shared_name_type(cls, name, type):
-        if type in cls.shared_node_types or \
-                (type == "subword_instance" and "0x" not in name):
-            return True
-        return False
+# class PythonAstSharedNodes:
+#     node_types_enum = PythonAstNodeTypes
+#     annotation_types = {node_types_enum["type_annotation"]}
+#     tokenizable_types = {node_types_enum["Name"], node_types_enum["#attr#"], node_types_enum["#keyword#"]}
+#     python_token_types = {
+#         node_types_enum["Op"], node_types_enum["Constant"], node_types_enum["JoinedStr"],
+#         node_types_enum["CtlFlow"], node_types_enum["astliteral"]
+#     }
+#     subword_types = set()  # {node_types_enum["subword"]}
+#
+#     subword_leaf_types = annotation_types | subword_types | python_token_types
+#     named_leaf_types = annotation_types | tokenizable_types | python_token_types
+#     tokenizable_types_and_annotations = annotation_types | tokenizable_types
+#
+#     shared_node_types = annotation_types | subword_types | tokenizable_types | python_token_types
+#
+#     @classmethod
+#     def is_shared(cls, node):
+#         # nodes that are of stared type
+#         # nodes that are subwords of keyword arguments
+#         return cls.is_shared_name_type(node.name, node.type)
+#
+#     @classmethod
+#     def is_shared_name_type(cls, name, type):
+#         if type in cls.shared_node_types or \
+#                 (type == "subword_instance" and "0x" not in name):
+#             return True
+#         return False
 
 
 class GNode:
-    def __init__(self, **kwargs):
-        self.string = None
+    def __init__(self, name, type, string=None, **kwargs):
+        self.name = name
+        self.type = type
+        self.string = string
         for k, v in kwargs.items():
             setattr(self, k, v)
 
@@ -335,219 +419,276 @@ class GNode:
     def setprop(self, key, value):
         setattr(self, key, value)
 
-    def get_hash_id(self):
-        return int(hashlib.md5(f"{self.type.strip()}_{self.name.strip()}".encode('utf-8')).hexdigest()[:16], 16)
+    @property
+    def hash_id(self):
+        if not hasattr(self, "node_hash"):
+            self.node_hash = abs(int(hashlib.md5(f"{self.type.name.strip()}_{self.name.strip()}".encode('utf-8')).hexdigest()[:8], 16))
+        return self.node_hash
 
 
 class GEdge:
-    def __init__(self, src, dst, type, scope=None, line=None, end_line=None, col_offset=None, end_col_offset=None):
+    def __init__(
+            self, src: int, dst: int, type, scope: Optional[int] = None,
+    ):
         self.src = src
         self.dst = dst
         self.type = type
-        self.line = line
         self.scope = scope
-        self.end_line = end_line
-        self.col_offset = col_offset
-        self.end_col_offset = end_col_offset
+        self.positions = None
+
+    def assign_positions(self, positions, prefix: Optional[str] = None):
+            if prefix is None:
+                self.positions = positions
+            else:
+                if positions is not None:
+                    setattr(self, f"{prefix}_positions", positions)
+
+    def make_reverse(self, graph_definition):
+        reverse_type = graph_definition.get_reverse_type(self.type.name)
+        if reverse_type is not None:
+            return GEdge(src=self.dst, dst=self.src, type=reverse_type, scope=self.scope)
+        else:
+            return None
 
     def __getitem__(self, item):
         return self.__dict__[item]
 
-    def get_hash_id(self):
-        return int(hashlib.md5(f"{self.src}_{self.dst}_{self.type}".encode('utf-8')).hexdigest()[:16], 16)
+    @property
+    def hash_id(self):
+        if not hasattr(self, "edge_hash"):
+            self.edge_hash = abs(int(hashlib.md5(f"{self.src}_{self.dst}_{self.type}".encode('utf-8')).hexdigest()[:8], 16))
+        return self.edge_hash
 
 
-class AstGraphGenerator(object):
+def nodes_edges_to_df(nodes, edges):
+    edge_specification = {
+        "id": ("hash_id", "int64", None),
+        "src": ("src", "int64", None),
+        "dst": ("dst", "int64", None),
+        "type": ("type", "string", lambda x: x.name),
+        "scope": ("scope", "Int64", None),
+        "offset_start": ("positions", "Int64", lambda x: x[0] if isinstance(x, tuple) else x),
+        "offset_end": ("positions", "Int64", lambda x: x[1] if isinstance(x, tuple) else x),
+    }
 
-    def __init__(self, source, add_reverse_edges=True):
-        self.source = source.split("\n")  # lines of the source code
-        self.root = ast.parse(source)
-        self.current_condition = []
-        self.condition_status = []
-        self.scope = []
+    node_specification = {
+        "id": ("hash_id", "int64", None),
+        "name": ("name", "string", None),
+        "type": ("type", "string", lambda x: x.name),
+        "scope": ("scope", "Int64", None),
+        "string": ("string", "string", None),
+        "offset_start": ("positions", "Int64", lambda x: x[0] if isinstance(x, tuple) else x),
+        "offset_end": ("positions", "Int64", lambda x: x[1] if isinstance(x, tuple) else x),
+    }
+
+    def create_table(collection, specification):
+        entries = defaultdict(list)
+        for record in collection:
+            # entry = {}
+            for trg_col, (src_col, _, preproc_fn) in specification.items():
+                value = getattr(record, src_col)
+                if value is None:
+                    value = pd.NA
+                entries[trg_col].append(value if preproc_fn is None else preproc_fn(value))
+            # entries.append(entry)
+
+        table = pd.DataFrame(entries)
+
+        for trg_col, (_, dtype, _) in specification.items():
+            table = table.astype({trg_col: dtype})
+        return table
+
+    nodes = create_table(nodes, node_specification)
+    edges = create_table(edges, edge_specification)
+    edges.drop_duplicates("id", inplace=True)
+
+    return nodes, edges
+
+class PythonAstGraphBuilder(object):
+    def __init__(self, source, graph_definitions, add_reverse_edges=True, save_node_strings=True):
+        self._node_types = graph_definitions.make_node_type_enum()
+        self._edge_types = graph_definitions.make_edge_type_enum()
+        self._graph_definitions = graph_definitions
+        self._original_source = source
+        self._source_lines = source.split("\n")  # lines of the source code
+        self._root = ast.parse(source)
+        self._current_condition = []
+        self._condition_status = []
+        self._scope = []
         self._add_reverse_edges = add_reverse_edges
+        self._save_node_strings = save_node_strings
+        self._node_pool = dict()
+        self._cum_lens = get_cum_lens(self._original_source, as_bytes=True)
+        self._byte2char = get_byte_to_char_map(self._original_source)
 
         self._identifier_pool = IdentifierPool()
+        self._edges = self._parse(self._root)[0]
 
-    def get_source_from_ast_range(self, node, strip=True):
-        start_line = node.lineno
-        end_line = node.end_lineno
-        start_col = node.col_offset
-        end_col = node.end_col_offset
-
-        source = ""
-        num_lines = end_line - start_line + 1
-        if start_line == end_line:
-            section = self.source[start_line - 1].encode("utf8")[start_col:end_col].decode(
-                "utf8")
-            source += section.strip() if strip else section + "\n"
+    @property
+    def latest_scope(self):
+        if len(self._scope) > 0:
+            return self._scope[-1]
         else:
-            for ind, lineno in enumerate(range(start_line - 1, end_line)):
-                if ind == 0:
-                    section = self.source[lineno].encode("utf8")[start_col:].decode(
-                        "utf8")
-                    source += section.strip() if strip else section + "\n"
-                elif ind == num_lines - 1:
-                    section = self.source[lineno].encode("utf8")[:end_col].decode(
-                        "utf8")
-                    source += section.strip() if strip else section + "\n"
-                else:
-                    section = self.source[lineno]
-                    source += section.strip() if strip else section + "\n"
+            return None
 
-        return source.rstrip()
+    @property
+    def latest_scope_name(self):
+        if len(self._scope) > 0:
+            scope = self._node_pool[self._scope[-1]]
+            return scope.name
+        else:
+            return None
 
-    def get_name(self, *, node=None, name=None, type=None, add_random_identifier=False):
+    def _into_offset(self, range):
+        if isinstance(range, dict):
+            range = (range["line"], range["end_line"], range["col_offset"], range["end_col_offset"])
+
+        assert len(range) == 4
+
+        try:
+            return to_offsets(
+                self._original_source, [(*range, None)], cum_lens=self._cum_lens, b2c=self._byte2char, as_bytes=True
+            )[-1][:2]
+        except:
+            return None
+
+    def _get_positions_from_node(self, node):
+        if node is not None and hasattr(node, "lineno"):
+            positions = {
+                "line": node.lineno - 1,
+                "end_line": node.end_lineno - 1,
+                "col_offset": node.col_offset,
+                "end_col_offset": node.end_col_offset
+            }
+            positions = self._into_offset(positions)
+        else:
+            positions = None
+        return positions
+
+    def _get_source_from_range(self, start, end):
+        return self._original_source[start: end]
+
+    def _get_node(
+            self, *, node=None, name: Optional[str] = None, type=None,
+            positions=None, scope=None, add_random_identifier: bool = False
+    ) -> int:
 
         random_identifier = self._identifier_pool.get_new_identifier()
 
-        if node is not None:
-            name = f"{node.__class__.__name__}_{random_identifier}"
-            type = node.__class__.__name__
-        else:
+        if name is not None:
+            assert name is not None and type is not None
             if add_random_identifier:
                 name = f"{name}_{random_identifier}"
+        else:
+            assert node is not None
+            name = f"{node.__class__.__name__}_{random_identifier}"
+            type = self._node_types[node.__class__.__name__]
 
-        if hasattr(node, "lineno"):
-            node_string = self.get_source_from_ast_range(node, strip=False)
-            # if "\n" in node_string:
-            #     node_string = None
+        if positions is None:
+            positions = self._get_positions_from_node(node)
+        if self._save_node_strings:
+            node_string = self._get_source_from_range(*positions) if positions is not None else None
         else:
             node_string = None
 
-        if len(self.scope) > 0:
-            return GNode(name=name, type=type, scope=copy(self.scope[-1]), string=node_string)
-        else:
-            return GNode(name=name, type=type, string=node_string)
-        # return (node.__class__.__name__ + "_" + str(hex(int(time_ns()))), node.__class__.__name__)
+        if scope is None and self._graph_definitions.is_shared_name_type(name, type) is False:
+            scope = self.latest_scope
 
-    def get_edges(self, as_dataframe=True):
-        edges = []
-        for f_def_node in ast.iter_child_nodes(self.root):
-            if type(f_def_node) == ast.FunctionDef:
-                edges.extend(self.parse(f_def_node))
-                break  # to avoid going through nested definitions
+        new_node = GNode(name=name, type=type, scope=scope, string=node_string, positions=positions)
+        self._node_pool[new_node.hash_id] = new_node
+        return new_node.hash_id
 
-        if not as_dataframe:
-            return edges
-        df = pd.DataFrame(edges)
-        return df.astype({col: "Int32" for col in df.columns if col not in {"src", "dst", "type"}})
-
-    def parse(self, node):
+    def _parse(self, node):
         n_type = type(node).__name__
-        if n_type in PythonNodeEdgeDefinitions.ast_node_type_edges:
+        if n_type in self._graph_definitions.ast_node_type_edges:
             return self.generic_parse(
                 node,
-                PythonNodeEdgeDefinitions.ast_node_type_edges[n_type]
+                self._graph_definitions.ast_node_type_edges[n_type]
             )
-        elif n_type in PythonNodeEdgeDefinitions.overriden_node_type_edges:
+        elif n_type in self._graph_definitions.overriden_node_type_edges:
             method_name = "parse_" + n_type
             return self.__getattribute__(method_name)(node)
-        elif n_type in PythonNodeEdgeDefinitions.iterable_nodes:
+        elif n_type in self._graph_definitions.iterable_nodes:
             return self.parse_iterable(node)
-        elif n_type in PythonNodeEdgeDefinitions.named_nodes:
+        elif n_type in self._graph_definitions.named_nodes:
             return self.parse_name(node)
-        elif n_type in PythonNodeEdgeDefinitions.constant_nodes:
+        elif n_type in self._graph_definitions.constant_nodes:
             return self.parse_Constant(node)
-        elif n_type in PythonNodeEdgeDefinitions.operand_nodes:
+        elif n_type in self._graph_definitions.operand_nodes:
             return self.parse_op_name(node)
-        elif n_type in PythonNodeEdgeDefinitions.control_flow_nodes:
+        elif n_type in self._graph_definitions.control_flow_nodes:
             return self.parse_control_flow(node)
         else:
             print(type(node))
             print(ast.dump(node))
             print(node._fields)
-            pprint(self.source)
+            pprint(self._source_lines)
             return self.generic_parse(node, node._fields)
-            # raise Exception()
-            # return [type(node)]
 
-    def add_edge(
-            self, edges, src, dst, type, scope=None,
-            position_node=None, var_position_node=None
+    def _add_edge(
+            self, edges: List[GEdge], src: int, dst: int, type, scope: Optional[int] = None,
+            position_node=None, var_position_node=None, position=None
     ):
-        edges.append({
-            "src": src, "dst": dst, "type": type, "scope": scope,
-        })
+        new_edge = GEdge(src=src, dst=dst, type=type, scope=scope)
+        new_edge.assign_positions(self._get_positions_from_node(position_node))
+        new_edge.assign_positions(self._get_positions_from_node(var_position_node), prefix="var")
+        if position is not None:
+            assert position_node is None, "position conflict"
+            new_edge.assign_positions(position)
 
-        def get_positions(node):
-            if node is not None and hasattr(node, "lineno"):
-                line = node.lineno-1
-                end_line = node.end_lineno - 1
-                col_offset = node.col_offset
-                end_col_offset = node.end_col_offset
-            else:
-                line = end_line = col_offset = end_col_offset = None
-            return line, end_line, col_offset, end_col_offset
+        edges.append(new_edge)
 
-        line, end_line, col_offset, end_col_offset = get_positions(position_node)
-
-        if line is not None:
-            edges[-1].update({
-                "line": line, "end_line": end_line, "col_offset": col_offset, "end_col_offset": end_col_offset
-            })
-
-        var_line, var_end_line, var_col_offset, var_end_col_offset = get_positions(var_position_node)
-
-        if var_line is not None:
-            edges[-1].update({
-                "var_line": var_line, "var_end_line": var_end_line, "var_col_offset": var_col_offset, "var_end_col_offset": var_end_col_offset
-            })
-
-        reverse_type = PythonNodeEdgeDefinitions.reverse_edge_exceptions.get(type, type + "_rev")
-        if self._add_reverse_edges is True and reverse_type is not None:
-            edges.append({
-                "src": dst, "dst": src, "type": reverse_type, "scope": scope
-            })
+        if self._add_reverse_edges is True:
+            reverse = new_edge.make_reverse(self._graph_definitions)
+            if reverse is not None:
+                edges.append(reverse)
 
     def parse_body(self, nodes):
-        edges = []
+        edges: List[GEdge] = []
         last_node = None
         for node in nodes:
-            s = self.parse(node)
+            s = self._parse(node)
             if isinstance(s, tuple):
-                if s[1].type == "Constant":  # this happens when processing docstring, as a result a lot of nodes are connected to the node Constant_
+                if self._node_pool[s[1]].type == self._edge_types["Constant"]:  # this happens when processing docstring, as a result a lot of nodes are connected to the node Constant_
                     continue                    # in general, constant node has no affect as a body expression, can skip
                 # some parsers return edges and names?
                 edges.extend(s[0])
 
                 if last_node is not None:
-                    self.add_edge(edges, src=last_node, dst=s[1], type="next", scope=self.scope[-1])
+                    self._add_edge(edges, src=last_node, dst=s[1], type=self._edge_types["next"],
+                                   scope=self.latest_scope, position_node=node)
 
                 last_node = s[1]
 
-                for cond_name, cond_stat in zip(self.current_condition[-1:], self.condition_status[-1:]):
-                    self.add_edge(edges, src=last_node, dst=cond_name, type=cond_stat, scope=self.scope[-1])  # "defined_in_" +
+                for cond_name, cond_stat in zip(self._current_condition[-1:], self._condition_status[-1:]):
+                    self._add_edge(edges, src=last_node, dst=cond_name, type=cond_stat,
+                                   scope=self.latest_scope)  # "defined_in_" +
             else:
                 edges.extend(s)
         return edges
 
     def parse_in_context(self, cond_name, cond_stat, edges, body):
-        if isinstance(cond_name, str):
-            cond_name = [cond_name]
-            cond_stat = [cond_stat]
-        elif isinstance(cond_name, GNode):
+        if not isinstance(cond_name, list):
             cond_name = [cond_name]
             cond_stat = [cond_stat]
 
         for cn, cs in zip(cond_name, cond_stat):
-            self.current_condition.append(cn)
-            self.condition_status.append(cs)
+            self._current_condition.append(cn)
+            self._condition_status.append(cs)
 
         edges.extend(self.parse_body(body))
 
         for i in range(len(cond_name)):
-            self.current_condition.pop(-1)
-            self.condition_status.pop(-1)
+            self._current_condition.pop(-1)
+            self._condition_status.pop(-1)
 
     def parse_as_mention(self, name):
-        mention_name = GNode(name=name + "@" + self.scope[-1].name, type="mention", scope=copy(self.scope[-1]))
-        name = GNode(name=name, type="Name")
-        # mention_name = (name + "@" + self.scope[-1], "mention")
+        mention_name = self._get_node(name=name + "@" + self.latest_scope_name, type=self._node_types["mention"])
+        name = self._get_node(name=name, type=self._node_types["Name"])
 
-        # edge from name to mention in a function
         edges = []
-        self.add_edge(edges, src=name, dst=mention_name, type="local_mention", scope=self.scope[-1])
+        self._add_edge(edges, src=name, dst=mention_name, type=self._edge_types["local_mention"],
+                       scope=self.latest_scope)
         return edges, mention_name
 
     def parse_operand(self, node):
@@ -556,28 +697,24 @@ class AstGraphGenerator(object):
         if isinstance(node, str):
             # fall here when parsing attributes, they are given as strings; should attributes be parsed into subwords?
             if "@" in node:
-                parts = node.split("@")
-                node = GNode(name=parts[0], type=parts[1])
+                node_name, node_type = node.split("@")
+                node = self._get_node(name=node_name, type=self._node_types[node_type])
             else:
-                # node = GNode(name=node, type="Name")
                 node = ast.Name(node)
-                edges_, node = self.parse(node)
+                edges_, node = self._parse(node)
                 edges.extend(edges_)
             iter_ = node
         elif isinstance(node, int) or node is None:
-            iter_ = GNode(name=str(node), type="ast_Literal")
-            # iter_ = str(node)
-        elif isinstance(node, GNode):
-            iter_ = node
+            iter_ = self._get_node(name=str(node), type=self._node_types["astliteral"])
         else:
-            iter_e = self.parse(node)
+            iter_e = self._parse(node)
             if type(iter_e) == str:
                 iter_ = iter_e
-            elif isinstance(iter_e, GNode):
+            elif isinstance(iter_e, int):
                 iter_ = iter_e
             elif type(iter_e) == tuple:
                 ext_edges, name = iter_e
-                assert isinstance(name, GNode)
+                assert isinstance(name, int) and name in self._node_pool
                 edges.extend(ext_edges)
                 iter_ = name
             else:
@@ -586,8 +723,8 @@ class AstGraphGenerator(object):
                 print(ast.dump(node))
                 print(iter_e)
                 print(type(iter_e))
-                pprint(self.source)
-                print(self.source[node.lineno - 1].strip())
+                pprint(self._source_lines)
+                print(self._source_lines[node.lineno - 1].strip())
                 raise Exception()
 
         return iter_, edges
@@ -597,17 +734,18 @@ class AstGraphGenerator(object):
         operand_name, ext_edges = self.parse_operand(operand)
         edges.extend(ext_edges)
 
-        self.add_edge(
-            edges, src=operand_name, dst=node_name, type=type, scope=self.scope[-1],
-            position_node=operand
-        )
+        if not isinstance(type, self._edge_types):
+            type = self._edge_types[type]
+
+        self._add_edge(edges, src=operand_name, dst=node_name, type=type, scope=self.latest_scope,
+                       position_node=operand)
 
     def generic_parse(self, node, operands, with_name=None, ensure_iterables=False):
 
         edges = []
 
         if with_name is None:
-            node_name = self.get_name(node=node)
+            node_name = self._get_node(node=node)
         else:
             node_name = with_name
 
@@ -629,36 +767,36 @@ class AstGraphGenerator(object):
         # TODO
         # need to identify the benefit of this node
         # maybe it is better to use node types in the graph
-        # edges.append({"scope": copy(self.scope[-1]), "src": node.__class__.__name__, "dst": node_name, "type": "node_type"})
+        # edges.append({"scope": copy(self._scope[-1]), "src": node.__class__.__name__, "dst": node_name, "type": "node_type"})
 
         return edges, node_name
 
-    def parse_type_node(self, node):
-        if node.lineno == node.end_lineno:
-            type_str = self.source[node.lineno][node.col_offset - 1: node.end_col_offset]
-        else:
-            type_str = ""
-            for ln in range(node.lineno - 1, node.end_lineno):
-                if ln == node.lineno - 1:
-                    type_str += self.source[ln][node.col_offset - 1:].strip()
-                elif ln == node.end_lineno - 1:
-                    type_str += self.source[ln][:node.end_col_offset].strip()
-                else:
-                    type_str += self.source[ln].strip()
-        return type_str
+    # def parse_type_node(self, node):
+    #     if node.lineno == node.end_lineno:
+    #         type_str = self._source_lines[node.lineno][node.col_offset - 1: node.end_col_offset]
+    #     else:
+    #         type_str = ""
+    #         for ln in range(node.lineno - 1, node.end_lineno):
+    #             if ln == node.lineno - 1:
+    #                 type_str += self._source_lines[ln][node.col_offset - 1:].strip()
+    #             elif ln == node.end_lineno - 1:
+    #                 type_str += self._source_lines[ln][:node.end_col_offset].strip()
+    #             else:
+    #                 type_str += self._source_lines[ln].strip()
+    #     return type_str
 
     def parse_Module(self, node):
         edges, module_name = self.generic_parse(node, [])
-        self.scope.append(module_name)
-        self.parse_in_context(module_name, "defined_in_module", edges, node.body)
-        self.scope.pop(-1)
+        self._scope.append(module_name)
+        self.parse_in_context(module_name, self._edge_types["defined_in_module"], edges, node.body)
+        self._scope.pop(-1)
         return edges, module_name
 
     def parse_FunctionDef(self, node):
         # need to create function name before generic_parse so that the scope is set up correctly
         # scope is used to create local mentions of variable and function names
-        fdef_node_name = self.get_name(node=node)
-        self.scope.append(fdef_node_name)
+        fdef_node = self._get_node(node=node)
+        self._scope.append(fdef_node)
 
         to_parse = []
         if len(node.args.args) > 0 or node.args.vararg is not None:
@@ -666,32 +804,31 @@ class AstGraphGenerator(object):
         if len("decorator_list") > 0:
             to_parse.append("decorator_list")
 
-        edges, f_name = self.generic_parse(node, to_parse, with_name=fdef_node_name)
+        edges, f_name = self.generic_parse(node, to_parse, with_name=fdef_node)
 
         if node.returns is not None:
             # returns stores return type annotation
             # can contain quotes
             # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
             # https://www.python.org/dev/peps/pep-0484/#forward-references
-            annotation_string = self.get_source_from_ast_range(node.returns)
-            annotation = GNode(name=annotation_string,
-                               type="type_annotation")
-            self.add_edge(
-                edges, src=annotation, dst=f_name, type="returned_by", scope=self.scope[-1],
-                position_node=node.returns
+            annotation_position = self._get_positions_from_node(node.returns)
+            annotation_string = self._get_source_from_range(*annotation_position)
+            annotation = self._get_node(
+                name=annotation_string, type=self._node_types["type_annotation"]
             )
+            self._add_edge(edges, src=annotation, dst=f_name, type=self._edge_types["returned_by"],
+                           scope=self.latest_scope, position_node=node.returns)
 
-        self.parse_in_context(f_name, "defined_in_function", edges, node.body)
+        self.parse_in_context(f_name, self._edge_types["defined_in_function"], edges, node.body)
 
-        self.scope.pop(-1)
+        self._scope.pop(-1)
 
         ext_edges, func_name = self.parse_as_mention(name=node.name)
         edges.extend(ext_edges)
 
         assert isinstance(node.name, str)
-        self.add_edge(
-            edges, src=f_name, dst=func_name, type="function_name", scope=self.scope[-1],
-        )
+        self._add_edge(edges, src=func_name, dst=f_name, type=self._edge_types["function_name"],
+                       scope=self.latest_scope)
 
         return edges, f_name
 
@@ -702,22 +839,21 @@ class AstGraphGenerator(object):
 
         edges, class_node_name = self.generic_parse(node, [])
 
-        self.scope.append(class_node_name)
-        self.parse_in_context(class_node_name, "defined_in_class", edges, node.body)
-        self.scope.pop(-1)
+        self._scope.append(class_node_name)
+        self.parse_in_context(class_node_name, self._edge_types["defined_in_class"], edges, node.body)
+        self._scope.pop(-1)
 
         ext_edges, cls_name = self.parse_as_mention(name=node.name)
         edges.extend(ext_edges)
-        self.add_edge(
-            edges, src=class_node_name, dst=cls_name, type="class_name", scope=self.scope[-1],
-        )
+        self._add_edge(edges, src=class_node_name, dst=cls_name, type=self._edge_types["class_name"],
+                       scope=self.latest_scope)
 
         return edges, class_node_name
 
     def parse_With(self, node):
-        edges, with_name = self.generic_parse(node, ["items"])
+        edges, with_name = self.generic_parse(node, self._graph_definitions.overriden_node_type_edges["With"])
 
-        self.parse_in_context(with_name, "executed_inside_with", edges, node.body)
+        self.parse_in_context(with_name, self._edge_types["executed_inside_with"], edges, node.body)
 
         return edges, with_name
 
@@ -731,24 +867,26 @@ class AstGraphGenerator(object):
         #     print(node.arg)
 
         # # included mention
-        name = self.get_name(node=node)
+        name = self._get_node(node=node)
         edges, mention_name = self.parse_as_mention(node.arg)
-        self.add_edge(
-            edges, src=mention_name, dst=name, type="arg", scope=self.scope[-1],
+        self._add_edge(
+            edges, src=mention_name, dst=name, type=self._edge_types["arg"], scope=self.latest_scope,
+            position_node=node
         )
 
         if node.annotation is not None:
             # can contain quotes
             # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
             # https://www.python.org/dev/peps/pep-0484/#forward-references
-            annotation_string = self.get_source_from_ast_range(node.annotation)
-            annotation = GNode(name=annotation_string,
-                               type="type_annotation")
-            mention_name = GNode(name=node.arg + "@" + self.scope[-1].name, type="mention", scope=copy(self.scope[-1]))
-            self.add_edge(
-                edges, src=annotation, dst=mention_name, type="annotation_for", scope=self.scope[-1],
-                position_node=node.annotation, var_position_node=node
+            positions = self._get_positions_from_node(node.annotation)
+            annotation_string = self._get_source_from_range(*positions)
+            annotation = self._get_node(name=annotation_string, type=self._node_types["type_annotation"])
+            mention_name = self._get_node(
+                name=node.arg + "@" + self.latest_scope_name, type=self._node_types["mention"],
+                scope=self.latest_scope
             )
+            self._add_edge(edges, src=annotation, dst=mention_name, type=self._edge_types["annotation_for"],
+                           scope=self.latest_scope, position_node=node.annotation, var_position_node=node)
         return edges, name
 
     def parse_AnnAssign(self, node):
@@ -765,32 +903,35 @@ class AstGraphGenerator(object):
         # can contain quotes
         # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
         # https://www.python.org/dev/peps/pep-0484/#forward-references
-        annotation_string = self.get_source_from_ast_range(node.annotation)
-        annotation = GNode(name=annotation_string,
-                           type="type_annotation")
+        positions = self._get_positions_from_node(node.annotation)
+        annotation_string = self._get_source_from_range(*positions)
+        annotation = self._get_node(
+            name=annotation_string, type=self._node_types["type_annotation"]
+        )
         edges, name = self.generic_parse(node, ["target", "value"])
         try:
-            mention_name = GNode(name=node.target.id + "@" + self.scope[-1].name, type="mention", scope=copy(self.scope[-1]))
+            mention_name = self._get_node(
+                name=node.target.id + "@" + self.latest_scope_name, type=self._node_types["mention"],
+                scope=self.latest_scope
+            )
         except Exception as e:
             mention_name = name
 
-        self.add_edge(
-            edges, src=annotation, dst=mention_name, type="annotation_for", scope=self.scope[-1],
-            position_node=node.annotation, var_position_node=node
-        )
+        self._add_edge(edges, src=annotation, dst=mention_name, type=self._edge_types["annotation_for"],
+                       scope=self.latest_scope, position_node=node.annotation, var_position_node=node)
         return edges, name
 
     def parse_Lambda(self, node):
         # this is too ambiguous
         edges, lmb_name = self.generic_parse(node, [])
-        self.parse_and_add_operand(lmb_name, node.body, "lambda", edges)
+        self.parse_and_add_operand(lmb_name, node.body, self._edge_types["lambda"], edges)
 
         return edges, lmb_name
 
     def parse_IfExp(self, node):
         edges, ifexp_name = self.generic_parse(node, ["test"])
-        self.parse_and_add_operand(ifexp_name, node.body, "if_true", edges)
-        self.parse_and_add_operand(ifexp_name, node.orelse, "if_false", edges)
+        self.parse_and_add_operand(ifexp_name, node.body, self._edge_types["if_true"], edges)
+        self.parse_and_add_operand(ifexp_name, node.orelse, self._edge_types["if_false"], edges)
         return edges, ifexp_name
 
     def parse_ExceptHandler(self, node):
@@ -816,7 +957,7 @@ class AstGraphGenerator(object):
         if type(node) == ast.Name:
             return self.parse_as_mention(str(node.id))
         elif type(node) == ast.NameConstant:
-            return GNode(name=str(node.value), type="NameConstant")
+            return self._get_node(name=str(node.value), type=self._node_types["NameConstant"])
 
     def parse_Attribute(self, node):
         if node.attr is not None:
@@ -828,14 +969,14 @@ class AstGraphGenerator(object):
         # TODO
         # decide whether this name should be unique or not
         value_type = type(node.value).__name__
-        name = GNode(name=f"Constant_{value_type}", type="Constant")
+        name = self._get_node(name=f"Constant_{value_type}", type=self._node_types["Constant"])
         # name = "Constant_"
         # if node.kind is not None:
         #     name += ""
         return name
 
     def parse_op_name(self, node):
-        return GNode(name=node.__class__.__name__, type="Op")
+        return self._get_node(name=node.__class__.__name__, type=self._node_types["Op"])
         # return node.__class__.__name__
 
     def parse_Num(self, node):
@@ -852,8 +993,8 @@ class AstGraphGenerator(object):
 
         edges, if_name = self.generic_parse(node, ["test"])
 
-        self.parse_in_context(if_name, "executed_if_true", edges, node.body)
-        self.parse_in_context(if_name, "executed_if_false", edges, node.orelse)
+        self.parse_in_context(if_name, self._edge_types["executed_if_true"], edges, node.body)
+        self.parse_in_context(if_name, self._edge_types["executed_if_false"], edges, node.orelse)
 
         return edges, if_name
 
@@ -861,8 +1002,8 @@ class AstGraphGenerator(object):
 
         edges, for_name = self.generic_parse(node, ["target", "iter"])
         
-        self.parse_in_context(for_name, "executed_in_for", edges, node.body)
-        self.parse_in_context(for_name, "executed_in_for_orelse", edges, node.orelse)
+        self.parse_in_context(for_name, self._edge_types["executed_in_for"], edges, node.body)
+        self.parse_in_context(for_name, self._edge_types["executed_in_for_orelse"], edges, node.orelse)
         
         return edges, for_name
 
@@ -873,16 +1014,18 @@ class AstGraphGenerator(object):
 
         edges, try_name = self.generic_parse(node, [])
 
-        self.parse_in_context(try_name, "executed_in_try", edges, node.body)
+        self.parse_in_context(try_name, self._edge_types["executed_in_try"], edges, node.body)
         
         for h in node.handlers:
-            
             handler_name, ext_edges = self.parse_operand(h)
             edges.extend(ext_edges)
-            self.parse_in_context([try_name, handler_name], ["executed_in_try_except", "executed_with_try_handler"], edges, h.body)
+            self.parse_in_context(
+                [try_name, handler_name],
+                [self._edge_types["executed_in_try_except"], self._edge_types["executed_with_try_handler"]],
+                edges, h.body)
         
-        self.parse_in_context(try_name, "executed_in_try_final", edges, node.finalbody)
-        self.parse_in_context(try_name, "executed_in_try_else", edges, node.orelse)
+        self.parse_in_context(try_name, self._edge_types["executed_in_try_final"], edges, node.finalbody)
+        self.parse_in_context(try_name, self._edge_types["executed_in_try_else"], edges, node.orelse)
         
         return edges, try_name
         
@@ -893,7 +1036,11 @@ class AstGraphGenerator(object):
         cond_name, ext_edges = self.parse_operand(node.test)
         edges.extend(ext_edges)
 
-        self.parse_in_context([while_name, cond_name], ["executed_in_while", "executed_while_true"], edges, node.body)
+        self.parse_in_context(
+            [while_name, cond_name],
+            [self._edge_types["executed_in_while"], self._edge_types["executed_while_true"]],
+            edges, node.body
+        )
         
         return edges, while_name
 
@@ -912,12 +1059,12 @@ class AstGraphGenerator(object):
 
     def parse_control_flow(self, node):
         edges = []
-        ctrlflow_name = self.get_name(name="ctrl_flow", type="CtlFlowInstance", add_random_identifier=True)
-        self.add_edge(
-            edges,
-            src=GNode(name=node.__class__.__name__, type="CtlFlow"), dst=ctrlflow_name,
-            type="control_flow", scope=self.scope[-1]
+        ctrlflow_name = self._get_node(
+            name="ctrl_flow", type=self._node_types["CtlFlowInstance"], node=node, add_random_identifier=True
         )
+        self._add_edge(edges, src=self._get_node(name=node.__class__.__name__, type=self._node_types["CtlFlow"]),
+                       dst=ctrlflow_name, type=self._edge_types["control_flow"], scope=self.latest_scope,
+                       position_node=node)
 
         return edges, ctrlflow_name
 
@@ -928,7 +1075,9 @@ class AstGraphGenerator(object):
         return self.generic_parse(node, ["keys", "values"], ensure_iterables=True)
 
     def parse_JoinedStr(self, node):
-        joinedstr_name = GNode(name="JoinedStr_", type="JoinedStr")
+        joinedstr_name = self._get_node(
+            name="JoinedStr_", type=self._node_types["JoinedStr"], node=node
+        )
         return [], joinedstr_name
         # return self.generic_parse(node, [])
         # return self.generic_parse(node, ["values"])
@@ -949,49 +1098,53 @@ class AstGraphGenerator(object):
     def parse_comprehension(self, node):
         edges = []
 
-        cph_name = self.get_name(name="comprehension", type="comprehension", add_random_identifier=True)
+        cph_name = self._get_node(
+            name="comprehension", type=self._node_types["comprehension"], add_random_identifier=True
+        )
 
         target, ext_edges = self.parse_operand(node.target)
         edges.extend(ext_edges)
 
-        self.add_edge(
-            edges, src=target, dst=cph_name, type="target", scope=self.scope[-1],
-            position_node=node.target
-        )
+        self._add_edge(edges, src=target, dst=cph_name, type=self._edge_types["target"], scope=self.latest_scope,
+                       position_node=node.target)
 
         iter_, ext_edges = self.parse_operand(node.iter)
         edges.extend(ext_edges)
 
-        self.add_edge(
-            edges, src=iter_, dst=cph_name, type="iter", scope=self.scope[-1],
-            position_node=node.iter
-        )
+        self._add_edge(edges, src=iter_, dst=cph_name, type=self._edge_types["iter"], scope=self.latest_scope,
+                       position_node=node.iter)
 
         for if_ in node.ifs:
             if_n, ext_edges = self.parse_operand(if_)
             edges.extend(ext_edges)
-            self.add_edge(
-                edges, src=if_n, dst=cph_name, type="ifs", scope=self.scope[-1],
-            )
+            self._add_edge(edges, src=if_n, dst=cph_name, type=self._edge_types["ifs"], scope=self.latest_scope,
+                           position_node=if_)
 
         return edges, cph_name
 
-    # def parse_alias(self, node):
-    #     if isinstance(node.name, str):
-    #         node.name = ast.Name(node.name)
-    #     if isinstance(node.asname, str):
-    #         node.asname = ast.Name(node.asname)
-    #     return self.generic_parse(node, ["name", "asname"])
-    #
-    # def parse_ImportFrom(self, node):
-    #     if node.module is not None:
-    #         node.module = ast.Name(node.module)
-    #     return self.generic_parse(node, ["module", "names"])
+    def postprocess(self):
+        pass
+
+    def to_df(self):
+
+        self.postprocess()
+
+        nodes, edges = nodes_edges_to_df(self._node_pool.values(), self._edges)
+        return nodes, edges
+
+
+def make_python_ast_graph(source_code, add_reverse_edges=False, save_node_strings=False):
+    g = PythonAstGraphBuilder(
+        source_code, PythonNodeEdgeDefinitions, add_reverse_edges=add_reverse_edges, save_node_strings=save_node_strings
+    )
+    return g.to_df()
+
 
 if __name__ == "__main__":
+    for example in PythonCodeExamplesForNodes.examples.values():
+        nodes, edges = make_python_ast_graph(example.lstrip(), add_reverse_edges=False)
     c = "def f(a=5): f(a=4)"
-    g = AstGraphGenerator(c.lstrip())
-    g.parse(g.root)
+    g = make_python_ast_graph(c.lstrip())
     # import sys
     # f_bodies = pd.read_csv(sys.argv[1])
     # failed = 0
