@@ -102,7 +102,7 @@ def return_chunks(chunks, additional_dtypes):
 
 def read_nodes(node_path, as_chunks=False):
     dtypes = {
-        "id": "int32",
+        "id": "int64",
         "serialized_name": "string",
     }
 
@@ -110,7 +110,7 @@ def read_nodes(node_path, as_chunks=False):
 
     additional_dtypes = {
         'type': 'category',
-        "mentioned_in": "Int32",
+        "mentioned_in": "Int64",
         "string": "string"
     }
 
@@ -122,17 +122,17 @@ def read_nodes(node_path, as_chunks=False):
 
 def read_edges(edge_path, as_chunks=False):
     dtypes = {
-        "id": "int32",
-        "source_node_id": "int32",
-        "target_node_id": "int32",
+        "id": "int64",
+        "source_node_id": "int64",
+        "target_node_id": "int64",
     }
 
     edge_chunks = unpersist(edge_path, dtype=dtypes, chunksize=100000)
 
     additional_types = {
         "type": 'category',
-        "mentioned_in": "Int32",
-        "file_id": "Int32"
+        "mentioned_in": "Int64",
+        "file_id": "Int64"
     }
 
     if as_chunks:

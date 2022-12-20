@@ -43,10 +43,10 @@ def filter_type_edges_with_chunks(nodes_path, edges_path, kwarg_fn):
 
     node2name = {}
     for nodes in read_nodes(nodes_path, as_chunks=True):
-        node2name.update(dict(zip(nodes["id"], nodes["serialized_name"])))
+        node2name.update(dict(zip(nodes["id"], nodes["name"])))
 
     temp_edges = join(os.path.dirname(edges_path), "temp_" + os.path.basename(edges_path))
-    annotations_path = join(os.path.dirname(edges_path), "type_annotations.json")
+    annotations_path = join(os.path.dirname(edges_path), "type_annotations.json.bz2")
 
     annotations_written = False
 
@@ -59,10 +59,10 @@ def filter_type_edges_with_chunks(nodes_path, edges_path, kwarg_fn):
         annotations = annotations.query("type == 'annotation_for' or type == 'returned_by'")
 
         if annotations is not None and len(annotations) > 0:
-            annotations["type_string"] = annotations["source_node_id"].apply(node2name.get)
+            annotations["type_string"] = annotations["src"].apply(node2name.get)
             # rename columns to use as a dataset
-            annotations.rename({"target_node_id": "src", "type_string": "dst"}, axis=1, inplace=True)
-            annotations = annotations[["src", "dst"]]
+            annotations = annotations[["dst", "type_string"]]
+            annotations.rename({"dst": "src", "type_string": "dst"}, axis=1, inplace=True)
 
             kwargs = kwarg_fn(annotations_path.endswith("csv"), first_written=annotations_written)
             persist(annotations, annotations_path, **kwargs)

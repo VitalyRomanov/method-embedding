@@ -25,7 +25,7 @@ def visualize(nodes, edges, output_path):
     #
     # nodes, edges = remove_global_edges(nodes, edges)
 
-    id2name = dict(zip(nodes['id'], nodes['serialized_name']))
+    id2name = dict(zip(nodes['id'], nodes['name']))
     id2type = dict(zip(nodes['id'], nodes['type']))
 
     g = pgv.AGraph(strict=False, directed=True)
@@ -34,8 +34,8 @@ def visualize(nodes, edges, output_path):
     auxiliaty_edge_types = PythonNodeEdgeDefinitions.auxiliary_edges()
 
     for ind, edge in edges.iterrows():
-        src = edge['source_node_id']
-        dst = edge['target_node_id']
+        src = edge['src']
+        dst = edge['dst']
         src_name = id2name[src]
         dst_name = id2name[dst]
         g.add_node(src_name, color="blue" if id2type[src] in global_types else "black")

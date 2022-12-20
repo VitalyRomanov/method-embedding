@@ -215,8 +215,9 @@ class DatasetCreator(AbstractDatasetCreator):
                 track_offsets=self.track_offsets, package_name=package_name
             )
 
+            package_path = output_directory.joinpath(package_name)
             for file_id, (file_content, nodes, edges) in files_ast.items():
-                file_id_dir = output_directory.joinpath(package_name).joinpath(str(file_id))
+                file_id_dir = package_path.joinpath(str(file_id))
                 file_id_dir.mkdir(parents=True, exist_ok=True)
                 persist(nodes, file_id_dir.joinpath("nodes.json.bz2"))
                 persist(edges, file_id_dir.joinpath("edges.json.bz2"))
@@ -264,11 +265,11 @@ class DatasetCreator(AbstractDatasetCreator):
 
     @staticmethod
     def extract_node_names(nodes_path, min_count):
-        logging.info("Extract node names")
+        # logging.info("Extract node names")
         return extract_node_names(read_nodes(nodes_path), min_count=min_count)
 
     def filter_type_edges(self, nodes_path, edges_path):
-        logging.info("Filter type edges")
+        # logging.info("Filter type edges")
         filter_type_edges_with_chunks(nodes_path, edges_path, kwarg_fn=self.get_writing_mode)
 
     def merge(self, output_directory):
@@ -283,6 +284,7 @@ class DatasetCreator(AbstractDatasetCreator):
         #     self.merge_graph_without_ast(no_ast_path)
 
         # self.merge_graph_with_ast(with_ast_path)
+        self.postprocessing(output_directory)
 
     def visualize_func(self, nodes, edges, output_path):
         from SourceCodeTools.code.data.sourcetrail.sourcetrail_draw_graph import visualize

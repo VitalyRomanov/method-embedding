@@ -8,6 +8,7 @@ from collections import defaultdict
 from copy import copy
 from functools import partial
 from os.path import join
+from pathlib import Path
 
 from tqdm import tqdm
 
@@ -22,27 +23,27 @@ class AbstractDatasetCreator:
     Merges several environments indexed with Sourcetrail into a single graph.
     """
 
-    merging_specification = {
-        "nodes.bz2": {"columns": ['id'], "output_path": "common_nodes.jsonl", "ensure_unique_with": ['type', 'serialized_name']},
-        "edges.bz2": {"columns": ['target_node_id', 'source_node_id'], "output_path": "common_edges.jsonl"},
-        "source_graph_bodies.bz2": {"columns": ['id'], "output_path": "common_source_graph_bodies.jsonl", "columns_special": [("replacement_list", map_offsets)]},
-        "function_variable_pairs.bz2": {"columns": ['src'], "output_path": "common_function_variable_pairs.jsonl"},
-        "call_seq.bz2": {"columns": ['src', 'dst'], "output_path": "common_call_seq.jsonl"},
-
-        "nodes_with_ast.bz2": {"columns": ['id', 'mentioned_in'], "output_path": "common_nodes.jsonl", "ensure_unique_with": ['type', 'serialized_name']},
-        "edges_with_ast.bz2": {"columns": ['target_node_id', 'source_node_id', 'mentioned_in'], "output_path": "common_edges.jsonl"},
-        "offsets.bz2": {"columns": ['node_id'], "output_path": "common_offsets.jsonl", "columns_special": [("mentioned_in", map_offsets)]},
-        "filecontent_with_package.bz2": {"columns": [], "output_path": "common_filecontent.jsonl"},
-        "name_mappings.bz2": {"columns": [], "output_path": "common_name_mappings.jsonl"},
-    }
-
-    files_for_merging = [
-        "nodes.bz2", "edges.bz2", "source_graph_bodies.bz2", "function_variable_pairs.bz2", "call_seq.bz2"
-    ]
-    files_for_merging_with_ast = [
-        "nodes_with_ast.bz2", "edges_with_ast.bz2", "source_graph_bodies.bz2", "function_variable_pairs.bz2",
-        "call_seq.bz2", "offsets.bz2", "filecontent_with_package.bz2", "name_mappings.bz2"
-    ]
+    # merging_specification = {
+    #     "nodes.bz2": {"columns": ['id'], "output_path": "common_nodes.jsonl", "ensure_unique_with": ['type', 'serialized_name']},
+    #     "edges.bz2": {"columns": ['target_node_id', 'source_node_id'], "output_path": "common_edges.jsonl"},
+    #     "source_graph_bodies.bz2": {"columns": ['id'], "output_path": "common_source_graph_bodies.jsonl", "columns_special": [("replacement_list", map_offsets)]},
+    #     "function_variable_pairs.bz2": {"columns": ['src'], "output_path": "common_function_variable_pairs.jsonl"},
+    #     "call_seq.bz2": {"columns": ['src', 'dst'], "output_path": "common_call_seq.jsonl"},
+    #
+    #     "nodes_with_ast.bz2": {"columns": ['id', 'mentioned_in'], "output_path": "common_nodes.jsonl", "ensure_unique_with": ['type', 'serialized_name']},
+    #     "edges_with_ast.bz2": {"columns": ['target_node_id', 'source_node_id', 'mentioned_in'], "output_path": "common_edges.jsonl"},
+    #     "offsets.bz2": {"columns": ['node_id'], "output_path": "common_offsets.jsonl", "columns_special": [("mentioned_in", map_offsets)]},
+    #     "filecontent_with_package.bz2": {"columns": [], "output_path": "common_filecontent.jsonl"},
+    #     "name_mappings.bz2": {"columns": [], "output_path": "common_name_mappings.jsonl"},
+    # }
+    #
+    # files_for_merging = [
+    #     "nodes.bz2", "edges.bz2", "source_graph_bodies.bz2", "function_variable_pairs.bz2", "call_seq.bz2"
+    # ]
+    # files_for_merging_with_ast = [
+    #     "nodes_with_ast.bz2", "edges_with_ast.bz2", "source_graph_bodies.bz2", "function_variable_pairs.bz2",
+    #     "call_seq.bz2", "offsets.bz2", "filecontent_with_package.bz2", "name_mappings.bz2"
+    # ]
 
     restricted_edges = {}
     restricted_in_types = {}
@@ -109,7 +110,7 @@ class AbstractDatasetCreator:
         # os.remove(self.local2global_cache_filename) # TODO nofile on linux, need to check
 
     def handle_parallel_edges(self, edges_path):
-        logging.info("Handle parallel edges")
+        # logging.info("Handle parallel edges")
         last_id = 0
 
         global_edge_types = set(special_mapping.keys()) | set(special_mapping.values())
@@ -123,7 +124,7 @@ class AbstractDatasetCreator:
 
             edge_bank = defaultdict(list)
             ids_to_remove = set()
-            for id_, type_, src, dst in edges[["id", "type", "source_node_id", "target_node_id"]].values:
+            for id_, type_, src, dst in edges[["id", "type", "src", "dst"]].values:
                 if type_ in global_edge_types:
                     global_edge = (type_, src, dst)
                     if global_edge not in existing_global_edges:
@@ -152,7 +153,7 @@ class AbstractDatasetCreator:
         os.rename(temp_edges, edges_path)
 
     def post_pruning(self, nodes_path, edges_path):
-        logging.info("Post pruning")
+        # logging.info("Post pruning")
 
         restricted_nodes = set()
 
@@ -171,7 +172,7 @@ class AbstractDatasetCreator:
             ]
 
             edges = edges[
-                edges["target_node_id"].apply(lambda type_: type_ not in restricted_nodes)
+                edges["dst"].apply(lambda type_: type_ not in restricted_nodes)
             ]
 
             kwargs = self.get_writing_mode(temp_edges.endswith("csv"), first_written=ind != 0)
@@ -329,12 +330,12 @@ class AbstractDatasetCreator:
     #         persist(global_table, output_path)
 
     def filter_orphaned_nodes(self, nodes_path, edges_path):
-        logging.info("Filter orphaned nodes")
+        # logging.info("Filter orphaned nodes")
         active_nodes = set()
 
         for edges in read_edges(edges_path, as_chunks=True):
-            active_nodes.update(edges['source_node_id'])
-            active_nodes.update(edges['target_node_id'])
+            active_nodes.update(edges['src'])
+            active_nodes.update(edges['dst'])
 
         temp_nodes = join(os.path.dirname(nodes_path), "temp_" + os.path.basename(nodes_path))
 
@@ -382,39 +383,48 @@ class AbstractDatasetCreator:
                 get_path("visualization.pdf")
             )
 
-    def merge_graph_with_ast(self, output_path):
+    # def merge_graph_with_ast(self, output_path):
+    #
+    #     self.join_files(self.files_for_merging_with_ast, "local2global_with_ast.bz2", output_path)
+    #
+    #     get_path = partial(join, output_path)
+    #
+    #     nodes_path = get_path("common_nodes.json")
+    #     edges_path = get_path("common_edges.json")
 
-        self.join_files(self.files_for_merging_with_ast, "local2global_with_ast.bz2", output_path)
+    def postprocessing(self, dataset_location):
+        dataset_location = Path(dataset_location)
+        for package_path in dataset_location.iterdir():
+            if package_path.is_dir() and not package_path.name.startswith("."):
+                for file_id_path in package_path.iterdir():
+                    if file_id_path.is_dir() and not file_id_path.name.startswith("."):
+                        nodes_path = file_id_path.joinpath("nodes.json.bz2")
+                        edges_path = file_id_path.joinpath("edges.json.bz2")
 
-        get_path = partial(join, output_path)
+                        if self.remove_type_annotations:
+                            self.filter_type_edges(nodes_path, edges_path)
 
-        nodes_path = get_path("common_nodes.json")
-        edges_path = get_path("common_edges.json")
+                        self.handle_parallel_edges(edges_path)
 
-        if self.remove_type_annotations:
-            self.filter_type_edges(nodes_path, edges_path)
+                        self.post_pruning(nodes_path, edges_path)
 
-        self.handle_parallel_edges(edges_path)
+                        self.filter_orphaned_nodes(
+                            nodes_path,
+                            edges_path,
+                        )
+                        # persist(global_nodes, get_path("common_nodes.json"))
+                        node_names = self.extract_node_names(
+                            nodes_path, min_count=2
+                        )
+                        if node_names is not None:
+                            persist(node_names, file_id_path.joinpath("node_names.json.bz2"))
 
-        self.post_pruning(nodes_path, edges_path)
-
-        self.filter_orphaned_nodes(
-            nodes_path,
-            edges_path,
-        )
-        # persist(global_nodes, get_path("common_nodes.json"))
-        node_names = self.extract_node_names(
-            nodes_path, min_count=2
-        )
-        if node_names is not None:
-            persist(node_names, get_path("node_names.json"))
-
-        if self.visualize:
-            self.visualize_func(
-                read_nodes(nodes_path),
-                read_edges(edges_path),
-                get_path("visualization.pdf")
-            )
+                        if self.visualize:
+                            self.visualize_func(
+                                read_nodes(nodes_path),
+                                read_edges(edges_path),
+                                file_id_path.joinpath("visualization.pdf")
+                            )
 
     @abstractmethod
     def create_output_dirs(self, output_path):

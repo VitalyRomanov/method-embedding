@@ -63,16 +63,16 @@ class SourcetrailPythonAstEdgeDefinitions(PythonNodeEdgeDefinitions):
 
 class SourcetrailPythonAstWithSubwordsEdgeDefinitions(PythonAstWithSubwordsEdgeDefinitions):
 
-    extra_node_types = PythonNodeEdgeDefinitions.extra_node_types | set(
+    extra_node_types = PythonAstWithSubwordsEdgeDefinitions.extra_node_types | set(
         node_types.values()
     )
 
-    extra_edge_types = PythonNodeEdgeDefinitions.extra_edge_types | {
+    extra_edge_types = PythonAstWithSubwordsEdgeDefinitions.extra_edge_types | {
         "global_mention"
     }
 
     reverse_edge_exceptions = {
-        **PythonNodeEdgeDefinitions.reverse_edge_exceptions, **{
+        **PythonAstWithSubwordsEdgeDefinitions.reverse_edge_exceptions, **{
             "global_mention": None,
         }
     }
