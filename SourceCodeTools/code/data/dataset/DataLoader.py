@@ -725,7 +725,7 @@ class SGMisuseEdgesDataLoader(SGNodesDataLoader):
                     "src_slice_map": torch.LongTensor(src_node_slice_map).to(self.device),
                     "dst_slice_map": torch.LongTensor(dst_node_slice_map).to(self.device),
                     "labels": torch.LongTensor(labels).to(self.device),
-                    "input_nodes": input_nodes,
+                    "input_nodes": input_nodes.to(self.device),
                     "input_mask": input_mask,
                     "blocks": [block.to(self.device) for block in blocks],
                     "labels_loader": labels_loader,
