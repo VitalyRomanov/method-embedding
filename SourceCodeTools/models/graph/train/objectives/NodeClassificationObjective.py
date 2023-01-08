@@ -128,7 +128,7 @@ class NodeClassifierObjective(AbstractObjective):
         return state_dict
 
     def custom_load_state_dict(self, state_dicts):
-        self.link_scorer.load_state_dict(
+        self.classifier.load_state_dict(
             self.get_prefix("classifier", state_dicts)
         )
 
