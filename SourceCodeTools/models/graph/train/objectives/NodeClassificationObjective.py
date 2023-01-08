@@ -127,6 +127,11 @@ class NodeClassifierObjective(AbstractObjective):
             state_dict[f"classifier.{k}"] = v
         return state_dict
 
+    def custom_load_state_dict(self, state_dicts):
+        self.link_scorer.load_state_dict(
+            self.get_prefix("classifier", state_dicts)
+        )
+
 
 class NodeNameClassifier(NodeClassifierObjective):
     def __init__(
