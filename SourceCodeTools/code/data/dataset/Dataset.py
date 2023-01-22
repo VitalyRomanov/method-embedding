@@ -966,12 +966,21 @@ class SourceGraphDataset:
         ntypes = self.dataset_db.get_node_type_descriptions()
         etypes = self.dataset_db.get_edge_type_descriptions()
 
-        return list(
+        def only_unique(elements):
+            new_list = []
+            for ind, element in enumerate(elements):
+                if ind != 0 and element == new_list[-1]:
+                    continue
+                new_list.append(element)
+            return new_list
+
+
+        return only_unique(
             map(
                 partial(self._strip_types_if_needed, stripping_flag=self.use_node_types, stripped_type="node_"),
                 ntypes
             )
-        ), list(
+        ), only_unique(
             map(
                 partial(self._strip_types_if_needed, stripping_flag=self.use_edge_types, stripped_type="edge_"),
                 etypes
