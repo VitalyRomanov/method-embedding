@@ -272,7 +272,7 @@ def unpersist(path: Union[str, Path, bytes], **kwargs) -> pd.DataFrame:
         path = str(path.absolute())
 
     cached_path = get_cached_path(path)
-    if os.path.isfile(cached_path):
+    if os.path.isfile(cached_path) and "chunksize" not in kwargs:
         return read_pickle(cached_path)
 
     format, kwargs = likely_format(path, kwargs)
