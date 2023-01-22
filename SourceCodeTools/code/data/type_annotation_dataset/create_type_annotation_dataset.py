@@ -547,10 +547,10 @@ def iterate_functions(offsets, nodes, filecontent):
                 yield {
                     "body": body,
                     "offsets": adjusted_entity_offsets,
-                    "package": package_id[0],
-                    "file_id": package_id[1],
-                    "line_start_python": bisect_left(lines, entity_start),
-                    "line_end_python": bisect_left(lines, entity_end-1) + 1
+                    # "package": package_id[0],
+                    # "file_id": package_id[1],
+                    # "line_start_python": bisect_left(lines, entity_start),
+                    # "line_end_python": bisect_left(lines, entity_end-1) + 1
                 }
 
 
