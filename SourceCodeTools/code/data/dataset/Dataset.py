@@ -717,7 +717,8 @@ class SourceGraphDataset:
     @staticmethod
     def _get_embeddable_name(name):
         if "@" in name:
-            return name.split("@")[0]
+            return "mention"
+            # return name.split("@")[0]
         elif "_0x" in name:
             return name.split("_0x")[0]
         else:
