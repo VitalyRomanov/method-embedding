@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import dgl.nn as dglnn
@@ -29,6 +30,17 @@ class CkptGATConv(dglnn.GATConv):
             return checkpoint.checkpoint(self.custom(graph), feat[0], feat[1], self.dummy_tensor)  # .squeeze(1)
         else:
             return super(CkptGATConv, self).forward(graph, feat)  # .squeeze(1)
+
+
+def get_tensor_metrics(tensor, path):
+    output_metrics = {}
+    with torch.no_grad():
+        output_metrics[f"{path}/mean"] = tensor.mean()
+        output_metrics[f"{path}/max"] = tensor.max()
+        output_metrics[f"{path}/quantile_0.75"] = torch.quantile(tensor, 0.75)
+        output_metrics[f"{path}/quantile_0.5"] = torch.quantile(tensor, 0.5)
+
+    return output_metrics
 
 
 class RelGraphConvLayer(nn.Module):
@@ -119,7 +131,7 @@ class RelGraphConvLayer(nn.Module):
         hs = self.conv(g, inputs_src, mod_kwargs=wdict)
         return hs
 
-    def forward(self, g, inputs):
+    def forward(self, g, inputs, layer_id=None, tensor_metrics=None):
         """Forward computation
 
         Parameters
@@ -158,8 +170,12 @@ class RelGraphConvLayer(nn.Module):
             if self.bias:
                 h = h + self.bias_dict[ntype]
                 # h = h + self.h_bias
+            if tensor_metrics is not None:
+                tensor_metrics.update(get_tensor_metrics(h, f"layer_{layer_id}/{ntype}/logits"))
             if self.activation:
                 h = self.activation(h)
+            if tensor_metrics is not None:
+                tensor_metrics.update(get_tensor_metrics(h, f"layer_{layer_id}/{ntype}/activation"))
             return self.dropout(h)
 
         return {ntype: _apply(ntype, h) for ntype, h in hs.items()}
@@ -168,7 +184,7 @@ class RelGraphConvLayer(nn.Module):
 class RGCN(nn.Module):
     def __init__(
             self, ntypes, etypes, h_dim, node_emb_size, num_bases, n_layers=1, dropout=0, use_self_loop=False,
-            activation=F.relu, use_gcn_checkpoint=False, **kwargs
+            activation=F.relu, use_gcn_checkpoint=False, collect_tensor_metrics=False, **kwargs
     ):
         super(RGCN, self).__init__()
         self.ntypes = list(set(ntypes))
@@ -183,6 +199,7 @@ class RGCN(nn.Module):
         self.dropout = dropout
         self.use_self_loop = use_self_loop
         self.use_gcn_checkpoint = use_gcn_checkpoint
+        self.tensor_metrics = {} if collect_tensor_metrics else None
 
         self._initialize()
 
@@ -221,19 +238,26 @@ class RGCN(nn.Module):
     def num_layers(self):
         return len(self.layers)
 
-    def apply_norm_layer(self, h, layer):
-        return {key: layer(val) for key, val in h.items()}
+    def apply_norm_layer(self, h, layer, layer_id):
+        out = {}
+        for key, val in h.items():
+            norm_ = layer(val)
+            if self.tensor_metrics is not None:
+                self.tensor_metrics.update(get_tensor_metrics(norm_, f"layer_{layer_id}/{key}/norm"))
+            out[key] = norm_
+        return out
+        # return {key: layer(val) for key, val in h.items()}
 
     def forward(self, h, blocks=None, graph=None):
 
         if blocks is None:
             # full graph training
-            for layer, norm in zip(self.layers, self.layer_norm):
-                h = layer(graph, h)
-                h = self.apply_norm_layer(h, norm)
+            for ind, (layer, norm) in enumerate(zip(self.layers, self.layer_norm)):
+                h = layer(graph, h, layer_id=ind, tensor_metrics=self.tensor_metrics)
+                # h = self.apply_norm_layer(h, norm, ind)
         else:
             # minibatch training
-            for layer, norm, block in zip(self.layers, self.layer_norm, blocks):
-                h = layer(block, h)
-                h = self.apply_norm_layer(h, norm)
+            for ind, (layer, norm, block) in enumerate(zip(self.layers, self.layer_norm, blocks)):
+                h = layer(block, h, layer_id=ind, tensor_metrics=self.tensor_metrics)
+                # h = self.apply_norm_layer(h, norm, ind)
         return h

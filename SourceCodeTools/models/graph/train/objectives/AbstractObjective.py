@@ -426,6 +426,8 @@ class AbstractObjective(nn.Module):
         if partition == "train":
             scores = {"Loss": loss.item()} #, "Accuracy": acc}
             scores.update(scores_)
+            if hasattr(self.graph_model, "tensor_metrics") and self.graph_model.tensor_metrics is not None:
+                scores.update(self.graph_model.tensor_metrics)
             longterm_metrics[f"Loss/{partition}_avg/{self.name}"].append(loss.item())
             for key, val in scores_.items():
                 longterm_metrics[f"{key}/{partition}_avg/{self.name}"].append(val)

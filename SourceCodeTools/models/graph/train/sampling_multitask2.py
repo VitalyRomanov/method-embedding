@@ -67,7 +67,9 @@ class SamplingMultitaskTrainer:
             pretrained_path=pretrained_embeddings_path, n_buckets=trainer_params["embedding_table_size"]
         )
 
-        self.graph_model = model_name(trainer_params["ntypes"], trainer_params["etypes"], **model_params).to(device)
+        self.graph_model = model_name(
+            trainer_params["ntypes"], trainer_params["etypes"], collect_tensor_metrics=True, **model_params
+        ).to(device)
 
         self.create_objectives(dataset, tokenizer_path)
 
@@ -322,7 +324,7 @@ class SamplingMultitaskTrainer:
                 dataset=dataset,
                 labels_fn=dataset.load_type_prediction,
                 tokenizer_path=tokenizer_path,
-                masker_fn=None,
+                masker_fn=dataset.create_subword_masker,
                 preload_for="package",
             )
         )
