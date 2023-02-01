@@ -245,8 +245,9 @@ class SGNodesDataLoader:
 
             for ind, (input_nodes, seeds, blocks) in enumerate(loader):  # 2-3gb consumed here
                 if masker is not None:
-                    logging.warning("Masker needs testing, possibly masking incorrect nodes")
-                    input_mask = masker.get_mask(mask_for=seeds, input_nodes=input_nodes).to(self.device)
+                    input_mask = masker.get_mask(
+                        mask_for=blocks[-1].dstdata["original_id"], input_nodes=blocks[0].srcdata["original_id"]
+                    ).to(self.device)
                 else:
                     input_mask = None
 
