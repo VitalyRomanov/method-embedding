@@ -1,4 +1,6 @@
+import hashlib
 import tempfile
+from abc import ABC, abstractmethod
 from functools import partial
 from os.path import join, isfile
 from enum import Enum
@@ -150,7 +152,46 @@ def start_worker(config, inbox_queue, outbox_queue, *args, **kwargs):
         worker.handle_incoming()
 
 
-class OnDiskGraphStorage:
+class AbstractGraphStorage(ABC):
+    ...
+    @abstractmethod
+    def get_node_type_descriptions(self):
+        ...
+
+    @abstractmethod
+    def get_edge_type_descriptions(self):
+        ...
+
+    @abstractmethod
+    def get_num_nodes(self):
+        ...
+
+    @abstractmethod
+    def get_num_edges(self):
+        ...
+
+    @abstractmethod
+    def get_info_for_node_ids(self, node_ids):
+        ...
+
+    @abstractmethod
+    def get_nodes(self, type_filter=None):
+        ...
+
+    @abstractmethod
+    def get_edges(self, type_filter=None):
+        ...
+
+    @abstractmethod
+    def iterate_subgraphs(self, how, ids):
+        ...
+
+    @abstractmethod
+    def get_nodes_with_subwords(self):
+        ...
+
+
+class OnDiskGraphStorage(AbstractGraphStorage):
     storage_class = SQLiteStorage  # can change this between PostgresStorage and SQLiteStorage
 
     def __init__(self, path):
@@ -291,7 +332,15 @@ class OnDiskGraphStorage:
                     mapping[val] = len(mapping)
 
         def add_unique_file_id(table):
-            table["unique_file_id"] = list(zip(table["file_id"], table["package"]))
+            table["unique_file_id"] = list(
+                map(
+                    lambda x: int(hashlib.md5(x.encode('utf-8')).hexdigest()[:16], 16) % 2147483000,
+                    map(
+                        lambda x: f"{x[0]}_{x[1]}",
+                        zip(table["file_id"], table["package"])
+                    )
+                )
+            )
 
         for edges in tqdm(read_edges(path, as_chunks=True), desc="Importing edges"):
             if "package" not in edges.columns:
@@ -301,11 +350,11 @@ class OnDiskGraphStorage:
 
             update_mapping(edges["type"], type_map)
             update_mapping(edges["package"].dropna(), package_map)
-            update_mapping(edges["unique_file_id"], file_id_map)
+            # update_mapping(edges["unique_file_id"], file_id_map)
 
             edges["type"] = edges["type"].apply(type_map.get)
             edges["package"] = edges["package"].apply(package_map.get)
-            edges["unique_file_id"] = edges["unique_file_id"].apply(file_id_map.get)
+            # edges["unique_file_id"] = edges["unique_file_id"].apply(file_id_map.get)
 
             edges.rename({"source_node_id": "src", "target_node_id": "dst"}, axis=1, inplace=True)
 
@@ -758,63 +807,115 @@ class OnDiskGraphStorageWithFastIteration(OnDiskGraphStorage):
                 break
 
 
-# class N4jGraphStorage:
-#     def __init__(self):
-#         import neo4j
-#         self.database = neo4j.GraphDatabase.driver("bolt://localhost:7687", auth=("neo4j", "1111"))
-#         self.session = self.database.session()
-#         self.tx = self.session.begin_transaction()
-#
-#     def query(self, query):
-#         return self.tx.run(query)
-#
-#     def get_node_type_descriptions(self):
-#         results = self.query("call db.labels()")["type_desc"]
-#         return [r["label"] for r in results]
-#
-#     def get_edge_type_descriptions(self):
-#         results = self.query("match ()-[r]->() return distinct type(r)")
-#         return [r["type(r)"] for r in results]
-#
-#     def get_edge_types(self):
-#         table = self.database.query("SELECT * from edge_types")
-#         return dict(zip(table["type_id"], table["type_desc"]))
-#
-#     def get_node_types(self):
-#         table = self.database.query("SELECT * from node_types")
-#         return dict(zip(table["type_id"], table["type_desc"]))
-#
-#     def iterate_nodes_with_chunks(self):
-#         return self.database.query("SELECT * FROM nodes", chunksize=10000)
-#
-#     def get_inbound_neighbors(self, ids):
-#         ids_query = ",".join(f'"{id_}"' for id_ in ids)
-#         results = self.query(f"MATCH (n)<--(connected) WHERE n.id in [{ids_query}] RETURN n, connected")
-#         return [r["connected"]["id"] for r in results]
-#
-#     def get_subgraph_from_node_ids(self, ids):
-#         ids_query = ",".join(f'"{id_}"' for id_ in ids)
-#         results = self.query(f"MATCH p=(n)-->(m) WHERE n.id in [{ids_query}] and m.id in [{ids_query}] RETURN p")
-#         # nodes = self.database.query(f"SELECT id, type FROM nodes WHERE id IN ({ids_query})")
-#         # edges = self.database.query(f"SELECT type, src, dst FROM edges WHERE dst IN ({ids_query}) and src IN ({ids_query})")
-#         nodes = []
-#         edges = []
-#         for r in results:
-#             r = r["p"]
-#             nodes.append({
-#                 "id": int(r.start_node["id"]),
-#                 "type": next(iter(r.start_node.labels))
-#             })
-#             nodes.append({
-#                 "id": int(r.end_node["id"]),
-#                 "type": next(iter(r.end_node.labels))
-#             })
-#             edges.append({
-#                 "type": r.relationships[0].type,
-#                 "src": nodes[-2]["id"],
-#                 "dst": nodes[-1]["id"]
-#             })
-#
-#         nodes = pd.DataFrame.from_records(nodes, columns=["id", "type"]).drop_duplicates()
-#         edges = pd.DataFrame.from_records(edges, columns=["type", "src", "dst"]).drop_duplicates()
-#         return nodes, edges
+class InMemoryGraphStorage(AbstractGraphStorage):
+    def __init__(self, nodes, edges):
+        nodes, edges = self._add_type_nodes(nodes, edges)
+        self._nodes = nodes
+        self._edges = edges
+
+    @staticmethod
+    def _add_type_nodes(nodes, edges):
+        node_new_id = nodes["id"].max() + 1
+        edge_new_id = edges["id"].max() + 1
+
+        new_nodes = []
+        new_edges = []
+        added_type_nodes = {}
+
+        node_slice = nodes[["id", "type"]].values
+
+        for id, type in node_slice:
+            if type not in added_type_nodes:
+                added_type_nodes[type] = node_new_id
+                node_new_id += 1
+
+                new_nodes.append({
+                    "id": added_type_nodes[type],
+                    "name": type,
+                    "type": "type_node",
+                })
+
+            new_edges.append({
+                "id": edge_new_id,
+                "type": "node_type",
+                "src": added_type_nodes[type],
+                "dst": id,
+            })
+            edge_new_id += 1
+
+        new_nodes, new_edges = pd.DataFrame(new_nodes), pd.DataFrame(new_edges)
+
+        return nodes.append(new_nodes), edges.append(new_edges)
+
+    @classmethod
+    def get_node_type_descriptions(cls):
+        return [
+            "module", "global_variable", "non_indexed_symbol", "class", "function", "class_field", "class_method",
+            "subword", "mention", "Module", "ImportFrom", "alias", "Import", "Attribute", "#attr#", "Call", "Subscript",
+            "Index", "FunctionDef", "arg", "arguments", "Compare", "Op", "Constant", "BoolOp", "If", "BinOp", "Tuple",
+            "Assign", "Raise", "Return", "#keyword#", "keyword", "For", "List", "Try", "ExceptHandler", "UnaryOp",
+            "ListComp", "comprehension", "ClassDef", "IfExp", "Slice", "CtlFlow", "CtlFlowInstance", "Dict",
+            "GeneratorExp", "Yield", "While", "Starred", "Global", "withitem", "With", "AugAssign", "Delete", "Lambda",
+            "DictComp", "Set", "Assert", "SetComp", "ExtSlice", "AsyncFunctionDef", "Await", "AnnAssign", "JoinedStr",
+            "AsyncWith", "Nonlocal", "ast_Literal", "YieldFrom", "AsyncFor"
+        ]
+
+    @classmethod
+    def get_edge_type_descriptions(cls):
+        return [
+            "defines", "uses", "imports", "calls", "uses_type", "inheritance", "defined_in", "used_by", "imported_by",
+            "called_by", "type_used_by", "inherited_by", "subword", "module", "global_mention", "module_rev", "name",
+            "name_rev", "names", "names_rev", "defined_in_module", "defined_in_module_rev", "next", "prev", "value",
+            "value_rev", "attr", "func", "func_rev", "slice", "slice_rev", "args", "args_rev", "arg", "arg_rev", "left",
+            "left_rev", "ops", "comparators", "values", "values_rev", "op", "test", "test_rev", "elts", "elts_rev",
+            "right", "right_rev", "targets", "targets_rev", "executed_if_true", "executed_if_true_rev", "exc",
+            "exc_rev", "defined_in_function", "defined_in_function_rev", "function_name", "function_name_rev",
+            "keywords", "keywords_rev", "kwarg", "kwarg_rev", "executed_if_false", "executed_if_false_rev", "target",
+            "target_rev", "iter", "iter_rev", "executed_in_for", "executed_in_for_rev", "comparators_rev",
+            "executed_in_try", "executed_in_try_rev", "type", "type_rev", "executed_with_try_handler",
+            "executed_with_try_handler_rev", "operand", "operand_rev", "elt", "elt_rev", "generators", "generators_rev",
+            "defined_in_class", "defined_in_class_rev", "class_name", "class_name_rev", "decorator_list",
+            "decorator_list_rev", "if_true", "if_true_rev", "if_false", "if_false_rev", "lower", "upper", "upper_rev",
+            "control_flow", "lower_rev", "executed_while_true", "executed_while_true_rev", "asname", "asname_rev",
+            "keys", "vararg", "vararg_rev", "executed_in_try_final", "executed_in_try_final_rev", "ifs", "ifs_rev",
+            "context_expr", "context_expr_rev", "optional_vars", "optional_vars_rev", "items", "items_rev",
+            "executed_inside_with", "executed_inside_with_rev", "lambda", "lambda_rev", "key", "key_rev",
+            "executed_in_try_else", "executed_in_try_else_rev", "msg", "msg_rev", "keys_rev", "step", "step_rev",
+            "executed_in_for_orelse", "executed_in_for_orelse_rev", "dims", "dims_rev", "kwonlyargs", "kwonlyargs_rev",
+            "cause", "cause_rev"
+        ]
+
+    def get_num_nodes(self):
+        return len(self._nodes)
+
+    def get_num_edges(self):
+        return len(self._edges)
+
+    def get_nodes(self, type_filter=None):
+        if type_filter is not None:
+            return self._nodes.query("type in @type_filter", local_dict={"type_filter": type_filter})
+        else:
+            return self._nodes.copy()
+
+    def get_edges(self, type_filter=None):
+        if type_filter is not None:
+            return self._edges.query("type in @type_filter", local_dict={"type_filter": type_filter})
+        else:
+            return self._edges.copy()
+
+    def iterate_subgraphs(self, how, ids):
+        yield 0, self._nodes.copy(), self._edges.copy()
+
+    def get_nodes_with_subwords(self):
+        return list(set(self._edges.query("type == 'subword'")["dst"]))
+
+    def get_info_for_node_ids(self, node_ids, group_by):
+        pd.DataFrame({"ids": node_ids, "group": [0] * len(node_ids)})
+        node_info = self._nodes[["id"]]
+        node_info["group"] = 0
+        return node_info
+
+    def get_info_for_edge_ids(self, edge_ids, group_by):
+        edge_info = self._edges.query("id in @edge_ids", local_dict={"edge_ids": edge_ids})[["id"]].rename({"id": "src"}, axis=1)
+        edge_info["group"] = 0
+        return edge_info, "group"
