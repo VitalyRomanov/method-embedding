@@ -1,6 +1,6 @@
 def extract_node_names(nodes, min_count):
 
-    data = nodes.copy().rename({"id": "src", "serialized_name": "dst", "name": "dst"}, axis=1)
+    data = nodes.copy().rename({"id": "src", "serialized_name": "dst"}, axis=1)
 
     corrected_names = []
     for type_, name_ in data[["type", "dst"]].values:
