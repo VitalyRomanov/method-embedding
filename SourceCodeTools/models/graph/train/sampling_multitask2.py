@@ -67,9 +67,7 @@ class SamplingMultitaskTrainer:
             pretrained_path=pretrained_embeddings_path, n_buckets=trainer_params["embedding_table_size"]
         )
 
-        self.graph_model = model_name(
-            trainer_params["ntypes"], trainer_params["etypes"], collect_tensor_metrics=True, **model_params
-        ).to(device)
+        self.create_graph_model(model_name, model_params, trainer_params, device)
 
         self.create_objectives(dataset, tokenizer_path)
 
@@ -166,7 +164,7 @@ class SamplingMultitaskTrainer:
     def _create_edge_level_objective(
             self, *, objective_name, objective_class, dataset, labels_fn, tokenizer_path,
             masker_fn=None, preload_for="package", label_loader_class=None, label_loader_params=None,
-            dataloader_class=SGNodesDataLoader
+            dataloader_class=SGNodesDataLoader, **kwargs
     ):
         if label_loader_class is None:
             label_loader_class = TargetLoader
@@ -187,7 +185,7 @@ class SamplingMultitaskTrainer:
             early_stopping=False, early_stopping_tolerance=20, nn_index=self.trainer_params["nn_index"],
             model_base_path=self.model_base_path, force_w2v=self.trainer_params["force_w2v_ns"],
             neg_sampling_factor=self.neg_sampling_factor,
-            embedding_table_size=self.trainer_params["embedding_table_size"]
+            embedding_table_size=self.trainer_params["embedding_table_size"], **kwargs
         )
 
     def _create_subgraph_objective(
@@ -520,6 +518,11 @@ class SamplingMultitaskTrainer:
             n_buckets=n_buckets
         ).to(self.device)
 
+    def create_graph_model(self, model_name, model_params, trainer_params, device):
+        self.graph_model = model_name(
+            trainer_params["ntypes"], trainer_params["etypes"], collect_tensor_metrics=True, **model_params
+        ).to(device)
+
     @property
     def lr(self):
         return self.trainer_params['learning_rate']
@@ -678,7 +681,8 @@ class SamplingMultitaskTrainer:
 
                 batch_summary = {}
                 self.optimizer.zero_grad()
-                self.sparse_optimizer.zero_grad()
+                if hasattr(self, "sparse_optimizer"):
+                    self.sparse_optimizer.zero_grad()
 
                 try:
                     for objective, objective_iterator in zip(self.objectives, objective_iterators):
@@ -726,7 +730,8 @@ class SamplingMultitaskTrainer:
                 )
 
                 self.optimizer.step()
-                self.sparse_optimizer.step()
+                if hasattr(self, "sparse_optimizer"):
+                    self.sparse_optimizer.step()
 
                 self.write_summary(batch_summary, self.batch)
 
