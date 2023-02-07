@@ -859,6 +859,12 @@ class SourceGraphDataset(AbstractDataset):
         else:
             return None
 
+    def get_num_nodes(self):
+        return self._graph_storage.get_num_nodes()
+
+    def get_num_edges(self):
+        return self._graph_storage.get_num_edges()
+
     def get_partition_size(self, partition):
         return self._partition.get_partition_size(partition)
 
@@ -1035,8 +1041,8 @@ class SourceGraphDataset(AbstractDataset):
         return types
 
     def get_graph_types(self):
-        ntypes = self.dataset_db.get_node_type_descriptions()
-        etypes = self.dataset_db.get_edge_type_descriptions()
+        ntypes = self._graph_storage.get_node_type_descriptions()
+        etypes = self._graph_storage.get_edge_type_descriptions()
 
         def only_unique(elements):
             new_list = []
