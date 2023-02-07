@@ -5,7 +5,7 @@ import pandas as pd
 def visualize(nodes, edges, output_path, show_reverse=False):
     import pygraphviz as pgv
 
-    nodes = nodes.rename({"seialized_name": "name"}, axis=1)
+    nodes = nodes.rename({"serialized_name": "name"}, axis=1)
     edges = edges.rename({"source_node_id": "src", "target_node_id": "dst"}, axis=1)
 
     if show_reverse is False:
