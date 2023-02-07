@@ -2,20 +2,15 @@ import ast
 import json
 import logging
 import os
-from bisect import bisect_left
 from os.path import join
 
 import pandas as pd
-from tqdm import tqdm
 
-from SourceCodeTools.code.data.file_utils import unpersist, unpersist_if_present
+from SourceCodeTools.code.data.file_utils import unpersist
 from SourceCodeTools.nlp import create_tokenizer
 from SourceCodeTools.code.annotator_utils import to_offsets, adjust_offsets2, \
     resolve_self_collisions2
 from SourceCodeTools.nlp.spacy_tools import isvalid
-
-# allowed = {'str', 'bool', 'Optional', 'None', 'int', 'Any', 'Union', 'List', 'Dict', 'Callable', 'ndarray',
-#            'FrameOrSeries', 'bytes', 'DataFrame', 'Matcher', 'float', 'Tuple', 'bool_t', 'Description', 'Type'}
 
 
 def preprocess(ent):
@@ -215,11 +210,14 @@ def unpack_returns(body: str, labels: pd.DataFrame):
 
 def get_defaults_spans(body):
     root = ast.parse(body)
-    defaults_offsets = to_offsets(
-        body,
-        [(arg.lineno-1, arg.end_lineno-1, arg.col_offset, arg.end_col_offset, "default") for arg in root.body[0].args.defaults],
-        as_bytes=True
-    )
+    defaults_offsets = []
+    for node in ast.walk(root):
+        if isinstance(node, ast.FunctionDef):
+            defaults_offsets.extend(to_offsets(
+                body,
+                [(arg.lineno-1, arg.end_lineno-1, arg.col_offset, arg.end_col_offset, "default") for arg in node.args.defaults],
+                as_bytes=True
+            ))
 
     extended = []
     for start, end, label in defaults_offsets:
@@ -229,17 +227,16 @@ def get_defaults_spans(body):
     return extended
 
 
-def unpack_annotations(body, labels):
+def unpack_annotations(body, labels, remove_default=False):
     """
     Use information from ast package to strip type annotation from function body
     :param body:
     :param labels: DataFrame with information about type annotations
+    :param remove_default:
     :return: Trimmed body and list of annotations.
     """
     if labels is None:
         return [], []
-
-    global remove_default
 
     variables = []
     annotations = []
@@ -295,12 +292,14 @@ def body_valid(body):
         return False
 
 
-def process_body(nlp, body: str, replacements=None, require_labels=False):
+def process_body(nlp, body: str, replacements=None, require_labels=False, remove_default=False):
     """
     Extract annotation information, strip documentation and type annotations.
     :param nlp: Spacy tokenizer
     :param body: Function body
     :param replacements: Optional. Additional replacements that need to be adjusted for modified function
+    :param remove_default:
+    :param require_labels:
     :return: Entry with modified function body. Returns None if not annotations in the function
     """
 
@@ -318,6 +317,9 @@ def process_body(nlp, body: str, replacements=None, require_labels=False):
 
     replacements = correct_entities(replacements, [(0, len(initial_strip))])
 
+    if body_valid(body_) is False:
+        return None
+
     docsting_offsets = get_docstring(body_)
 
     body_, replacements, docstrings = remove_offsets(body_, replacements, docsting_offsets)
@@ -330,7 +332,7 @@ def process_body(nlp, body: str, replacements=None, require_labels=False):
         return None
 
     returns, return_cuts = unpack_returns(body_, initial_labels)
-    annotations, annotation_cuts = unpack_annotations(body_, initial_labels)
+    annotations, annotation_cuts = unpack_annotations(body_, initial_labels, remove_default=remove_default)
 
     body_, replacements_annotations, _ = remove_offsets(body_, replacements + annotations,
                                                         return_cuts + annotation_cuts)
@@ -448,11 +450,13 @@ def load_names(nodes_path):
     return names
 
 
-def process_package(working_directory, global_names=None, require_labels=False):
+def process_package(working_directory, global_names=None, require_labels=False, remove_default=False):
     """
     Find functions with annotations, extract annotation information, strip documentation and type annotations.
     :param working_directory: location of package related files
     :param global_names: optional, mapping from global node ids to names
+    :param remove_default:
+    :param require_labels:
     :return: list of entries in spacy compatible format
     """
     # bodies = unpersist_if_present(os.path.join(working_directory, "source_graph_bodies.bz2"))
@@ -489,7 +493,9 @@ def process_package(working_directory, global_names=None, require_labels=False):
 
     for ind, (f_body, f_offsets) in enumerate(iterate_functions(offsets, node_maps, filecontent)):
         try:
-            entry = process_body(nlp, f_body, replacements=f_offsets, require_labels=require_labels)
+            entry = process_body(
+                nlp, f_body, replacements=f_offsets, require_labels=require_labels, remove_default=remove_default
+            )
         except Exception as e:
             logging.warning("Error during processing")
             print(working_directory)
@@ -499,27 +505,6 @@ def process_package(working_directory, global_names=None, require_labels=False):
         if entry is not None:
             entry = to_global_ids(entry, id_maps, global_names, local_names)
             data.append(entry)
-
-    # nlp = create_tokenizer("spacy")
-    #
-    # data = []
-    #
-    # for ind, (_, row) in tqdm(
-    #         enumerate(bodies.iterrows()), total=len(bodies),
-    #         leave=True, desc=os.path.basename(working_directory)
-    # ):
-    #     body = row['body']
-    #
-    #     if offsets is not None:
-    #         graph_node_spans = offsets_for_func(offsets, body, row["id"])
-    #     else:
-    #         graph_node_spans = []
-    #
-    #     entry = process_body(nlp, body, replacements=graph_node_spans)
-    #
-    #     if entry is not None:
-    #         entry = to_global_ids(entry, id_maps, global_names, local_names)
-    #         data.append(entry)
 
     return data
 
@@ -589,16 +574,6 @@ def group_offsets(offsets):
 
 
 def create_from_dataset(args):
-    from argparse import ArgumentParser
-    # parser = ArgumentParser()
-    # parser.add_argument("dataset_path", type=str, help="")
-    # parser.add_argument("output_path", type=str, help="")
-    # parser.add_argument("--format", "-f", dest="format", default="json", help="json|csv")
-    # parser.add_argument("--remove_default", action="store_true", default=False)
-    #
-    # args = parser.parse_args()
-
-    global remove_default
     remove_default = args.remove_default
 
     node_maps = get_node_maps(unpersist(join(args.dataset_path, "common_nodes.json.bz2")))
@@ -609,7 +584,10 @@ def create_from_dataset(args):
     nlp = create_tokenizer("spacy")
 
     for ind, function_data in enumerate(iterate_functions(offsets, node_maps, filecontent)):
-        entry = process_body(nlp, function_data.pop("body"), replacements=function_data.pop("offsets"), require_labels=args.require_labels)
+        entry = process_body(
+            nlp, function_data.pop("body"), replacements=function_data.pop("offsets"),
+            require_labels=args.require_labels, remove_default=remove_default
+        )
         entry.update(function_data)
         data.append(entry)
 
@@ -617,19 +595,8 @@ def create_from_dataset(args):
 
 
 def create_from_environments(args):
-    # from argparse import ArgumentParser
-    # parser = ArgumentParser()
-    # parser.add_argument("packages", type=str, help="")
-    # parser.add_argument("output_path", type=str, help="")
-    # parser.add_argument("--format", "-f", dest="format", default="json", help="json|csv")
-    # parser.add_argument("--global_nodes", "-g", dest="global_nodes", default=None)
-    # parser.add_argument("--remove_default", default=False, action="store_true")
-
-    # args = parser.parse_args()
-
     global_names = load_names(args.global_nodes)
 
-    global remove_default
     remove_default = args.remove_default
 
     data = []
@@ -639,7 +606,12 @@ def create_from_environments(args):
         if not os.path.isdir(pkg_path):
             continue
 
-        data.extend(process_package(working_directory=pkg_path, global_names=global_names, require_labels=args.require_labels))
+        data.extend(
+            process_package(
+                working_directory=pkg_path, global_names=global_names, require_labels=args.require_labels,
+                remove_default=remove_default
+            )
+        )
 
     store(data, args)
 
