@@ -25,7 +25,7 @@ class HybridBatcher(PythonBatcher):
         nodes, edges, offsets = ast_graph_for_single_example(text, "/Users/LTV/dev/method-embeddings/examples/sentencepiece_bpe.model", track_offsets=True)
         edges = edges.rename({"source_node_id": "src", "target_node_id": "dst"}, axis=1)
         nodes = nodes.rename({"serialized_name": "name"}, axis=1)
-        graph = self._graph_creator.create_graph_from_nodes_and_edges(nodes, edges)
+        graph = self._graph_creator._create_graph_from_nodes_and_edges(nodes, edges)
 
         doc = self._nlp(text)
         ents = annotations['entities']
