@@ -218,4 +218,29 @@ class TransRLinkScorer(AbstractL2LinkScorer):
         return torch.norm(transl - m_t, dim=-1, keepdim=True)
 
 
+class DistMultLinkScorer(AbstractLinkScorer):
+    # https://github.com/awslabs/dgl-ke/blob/73eabeb887509de7eb493b8409eda7468cff226d/python/dglke/models/pytorch/score_fun.py
+    def __init__(self, input_dim1, num_classes, pretrained_weights=None, finetune=True, edge_type_mapping=None):
+        super().__init__(input_dim1, input_dim1, num_classes, h_dim=None)
+        self._edge_type_mapping = edge_type_mapping
+        self._default_positive_label = 1.0
+        self._default_negative_label = 0.0
+
+        if pretrained_weights is not None:
+            assert num_classes == pretrained_weights.shape[0]
+            assert input_dim1 == pretrained_weights.shape[1]
+            self._edge_type_params = nn.Parameter(torch.from_numpy(pretrained_weights))
+            if not finetune:
+                self._edge_type_params.requires_grad = False
+        else:
+            self._edge_type_params = nn.Parameter(torch.Tensor(num_classes, input_dim1))
+            nn.init.xavier_normal_(self._edge_type_params)
+
+    def forward(self, x1, x2, labels=None, **kwargs):
+        if labels is None:
+            raise NotImplementedError()
+
+        labels_ = torch.LongTensor(list(self._edge_type_mapping[k] for k in labels))
+
+        return (x1 * self._edge_type_params[labels_] * x2).sum(-1)
 

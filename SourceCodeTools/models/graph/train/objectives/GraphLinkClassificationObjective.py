@@ -12,7 +12,8 @@ from SourceCodeTools.code.data.dataset.SubwordMasker import SubwordMasker
 from SourceCodeTools.mltools.torch import compute_accuracy
 from SourceCodeTools.models.graph.ElementEmbedder import GraphLinkSampler
 from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
-from SourceCodeTools.models.graph.LinkPredictor import BilinearLinkClassifier, TransRLinkScorer, LinkClassifier
+from SourceCodeTools.models.graph.LinkPredictor import BilinearLinkClassifier, TransRLinkScorer, LinkClassifier, \
+    DistMultLinkScorer
 from SourceCodeTools.models.graph.train.Scorer import Scorer
 from SourceCodeTools.models.graph.train.objectives.GraphLinkObjective import GraphLinkObjective
 from SourceCodeTools.tabular.common import compact_property
@@ -227,3 +228,61 @@ class TransRObjective(GraphLinkClassificationObjective):
 #             negative = Scorer.sample_closest_negative(self, ids, k=size // len(ids))
 #             assert len(negative) == size
 #         return negative
+
+
+class RelationalDistMult(GraphLinkClassificationObjective):
+    def __init__(self, *args, **kwargs):
+        self.edge_type_params = kwargs.pop("edge_type_params")
+        super(RelationalDistMult, self).__init__(*args, **kwargs)
+
+    def _create_link_scorer(self):
+        edge_type_params = self.edge_type_params[1]
+        edge_type_mapping = self.edge_type_params[0]
+        self.link_scorer = DistMultLinkScorer(
+            edge_type_params.shape[1], edge_type_params.shape[0], edge_type_params, finetune=False, edge_type_mapping=edge_type_mapping
+        ).to(self.device)
+        self._loss_op = nn.BCELoss()
+
+        def compute_average_score(scores, labels=None):
+            scores = scores.cpu()
+            labels = labels.cpu()
+            return torch.cat([scores[labels == 1.], 1. - scores[labels != 1.]]).mean().item()
+            # return compute_accuracy(scores.argmax(dim=-1), labels)
+
+        self._compute_average_score = compute_average_score
+
+    def _compute_scores_loss(self, node_embs, positive_embs, negative_embs, positive_labels, negative_labels):
+
+        pos_scores = self.link_scorer(node_embs, positive_embs, positive_labels)
+        neg_scores = self.link_scorer(node_embs, negative_embs, negative_labels)
+
+        edge_scores = torch.sigmoid(torch.cat([pos_scores, neg_scores], dim=0))
+        labels = torch.cat([torch.ones(len(positive_labels), dtype=torch.float32), torch.zeros(len(negative_labels), dtype=torch.float32)], dim=0)
+        loss = self._loss_op(
+            edge_scores,
+            labels
+        )
+        with torch.no_grad():
+            scores = {
+                f"positive_score/{self.link_scorer_type.name}": self._compute_average_score(edge_scores, labels),
+            }
+        return (pos_scores, neg_scores), scores, loss
+
+    def forward(
+            self, input_nodes, input_mask, blocks, src_slice_map, dst_slice_map, labels,
+            neg_src_slice_map, neg_dst_slice_map, neg_labels,
+            update_ns_callback=None, subgraph=None, **kwargs
+    ):
+        unique_embeddings = self._extract_embed(blocks[0].dstdata["original_id"])
+
+        src_embeddings = unique_embeddings[src_slice_map]
+        dst_embeddings = unique_embeddings[dst_slice_map]
+        neg_dst_embeddings = unique_embeddings[neg_dst_slice_map]
+
+        assert (src_slice_map == neg_src_slice_map).all()
+
+        pos_neg_scores, avg_scores, loss = self._compute_scores_loss(
+            src_embeddings, dst_embeddings, neg_dst_embeddings, kwargs["original_edge_types"], kwargs["original_edge_types"]
+        )
+
+        return None, pos_neg_scores, (labels, neg_labels), loss, avg_scores
