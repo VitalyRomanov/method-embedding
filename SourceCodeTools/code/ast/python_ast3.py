@@ -34,19 +34,19 @@ class PythonNodeEdgeDefinitions:
         "Global": ["names"],
         "Nonlocal": ["names"],
         "withitem": ["context_expr", "optional_vars"],
-        "Subscript": ["value", "slice"],
+        "Subscript": ["value", "slice", "ctx"],
         "Slice": ["lower", "upper", "step"],
         "ExtSlice": ["dims"],
         "Index": ["value"],
-        "Starred": ["value"],
+        "Starred": ["value", "ctx"],
         "Yield": ["value"],
         "ExceptHandler": ["type"],
         "Call": ["func", "args", "keywords"],
         "Compare": ["left", "ops", "comparators"],
         "BoolOp": ["values", "op"],
         "Assert": ["test", "msg"],
-        "List": ["elts"],
-        "Tuple": ["elts"],
+        "List": ["elts", "ctx"],
+        "Tuple": ["elts", "ctx"],
         "Set": ["elts"],
         "UnaryOp": ["operand", "op"],
         "BinOp": ["left", "right", "op"],
@@ -75,7 +75,7 @@ class PythonNodeEdgeDefinitions:
         "IfExp": ["test", "if_true", "if_false"],
         # overridden, `if_true` renamed from `body`, `if_false` renamed from `orelse`
         "keyword": ["arg", "value"],  # overridden
-        "Attribute": ["value", "attr"],  # overridden
+        "Attribute": ["value", "attr", "ctx"],  # overridden
         "Num": [],  # overridden
         "Str": [],  # overridden
         "Bytes": [],  # overridden
@@ -124,6 +124,7 @@ class PythonNodeEdgeDefinitions:
         "control_flow": None,  # for control flow
         "op": None,  # for operations
         "attr": None,  # for attributes
+        "ctx": None  # for context
     }
 
     iterable_nodes = {  # parse_iterable
@@ -148,6 +149,10 @@ class PythonNodeEdgeDefinitions:
         "Continue", "Break", "Pass"
     }
 
+    ctx_nodes = {  # parse_ctx
+        "Load", "Store"
+    }
+
     # extra node types exist for keywords and attributes to prevent them from
     # getting mixed with local variable mentions
     extra_node_types = {
@@ -157,7 +162,7 @@ class PythonNodeEdgeDefinitions:
         "astliteral",
         "type_annotation",
         "Op",
-        "CtlFlow", "CtlFlowInstance", "instance"
+        "CtlFlow", "CtlFlowInstance", "instance", "ctx"
         # "subword", "subword_instance"
     }
 
@@ -206,9 +211,9 @@ class PythonNodeEdgeDefinitions:
             set(chain(*cls.ast_node_type_edges.values())) |
             set(chain(*cls.overriden_node_type_edges.values())) |
             set(chain(*cls.extra_node_type_edges.values())) |
-            cls.scope_edges() |
-            cls.extra_edge_types | cls.named_nodes | cls.constant_nodes |
-            cls.operand_nodes | cls.control_flow_nodes | cls.extra_node_types
+            cls.scope_edges() | cls.extra_edge_types
+             # | cls.named_nodes | cls.constant_nodes |
+            # cls.operand_nodes | cls.control_flow_nodes | cls.extra_node_types
         )
 
         reverse_edges = list(cls.compute_reverse_edges(direct_edges))
@@ -594,6 +599,8 @@ class PythonAstGraphBuilder(object):
             return self.parse_op_name(node)
         elif n_type in self._graph_definitions.control_flow_nodes:
             return self.parse_control_flow(node)
+        elif n_type in self._graph_definitions.ctx_nodes:
+            return self.parse_ctx(node)
         else:
             print(type(node))
             print(ast.dump(node))
@@ -625,7 +632,7 @@ class PythonAstGraphBuilder(object):
         for node in nodes:
             s = self._parse(node)
             if isinstance(s, tuple):
-                if self._node_pool[s[1]].type == self._edge_types["Constant"]:
+                if self._node_pool[s[1]].type == self._node_types["Constant"]:
                     # this happens when processing docstring, as a result a lot of nodes are connected to the node
                     # Constant_
                     continue  # in general, constant node has no affect as a body expression, can skip
@@ -660,7 +667,7 @@ class PythonAstGraphBuilder(object):
             self._current_condition.pop(-1)
             self._condition_status.pop(-1)
 
-    def parse_as_mention(self, name):
+    def parse_as_mention(self, name, ctx=None):
         mention_name = self._get_node(name=name + "@" + self.latest_scope_name, type=self._node_types["mention"])
         name_ = self._get_node(name=name, type=self._node_types["Name"])
 
@@ -678,6 +685,13 @@ class PythonAstGraphBuilder(object):
                 scope=self.latest_scope
             )
             mention_name = mention_instance
+
+            if ctx is not None:
+                ctx_node = self._parse(ctx)
+                self._add_edge(
+                    edges, src=ctx_node, dst=mention_instance, type=self._edge_types["ctx"],
+                    scope=self.latest_scope
+                )
         return edges, mention_name
 
     def parse_operand(self, node):
@@ -933,7 +947,7 @@ class PythonAstGraphBuilder(object):
         if isinstance(node.arg, str):
             # change arg name so that it does not mix with variable names
             node.arg += "@#keyword#"
-            return self.generic_parse(node, ["arg", "value"])
+            return self.generic_parse(node, self._graph_definitions.overriden_node_type_edges["keyword"])
         else:
             return self.generic_parse(node, ["value"])
 
@@ -944,7 +958,7 @@ class PythonAstGraphBuilder(object):
         #     right = node.attr
         #     return self.parse(node.value) + "___" + node.attr
         if type(node) == ast.Name:
-            return self.parse_as_mention(str(node.id))
+            return self.parse_as_mention(str(node.id), ctx=node.ctx)
         elif type(node) == ast.NameConstant:
             return self._get_node(name=str(node.value), type=self._node_types["NameConstant"])
 
@@ -952,7 +966,7 @@ class PythonAstGraphBuilder(object):
         if node.attr is not None:
             # change attr name so that it does not mix with variable names
             node.attr += "@#attr#"
-        return self.generic_parse(node, ["value", "attr"])
+        return self.generic_parse(node, self._graph_definitions.overriden_node_type_edges["Attribute"])
 
     def parse_Constant(self, node):
         # TODO
@@ -1060,8 +1074,14 @@ class PythonAstGraphBuilder(object):
 
         return edges, ctrlflow_name
 
+    def parse_ctx(self, node):
+        ctx_name = self._get_node(
+            name=node.__class__.__name__, type=self._node_types["ctx"], node=node, scope=None
+        )
+        return ctx_name
+
     def parse_iterable(self, node):
-        return self.generic_parse(node, ["elts"], ensure_iterables=True)
+        return self.generic_parse(node, ["elts", "ctx"], ensure_iterables=True)
 
     def parse_Dict(self, node):
         return self.generic_parse(node, ["keys", "values"], ensure_iterables=True)
@@ -1143,8 +1163,8 @@ def make_python_ast_graph(
 
 if __name__ == "__main__":
     for example in PythonCodeExamplesForNodes.examples.values():
-        nodes, edges = make_python_ast_graph(example.lstrip(), add_reverse_edges=False, add_mention_instances=False)
-    c = "def f(a=5): f(a=4)"
+        nodes, edges = make_python_ast_graph(example.lstrip(), add_reverse_edges=False, add_mention_instances=True)
+    c = "def f(a=5): a = f([1,2])"
     g = make_python_ast_graph(c.lstrip())
     # import sys
     # f_bodies = pd.read_csv(sys.argv[1])

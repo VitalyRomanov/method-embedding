@@ -30,15 +30,15 @@ class PythonNodeEdgeCFDefinitions(PythonNodeEdgeDefinitions):
         # "Slice": ["lower", "upper", "step"],
         # "ExtSlice": ["dims"],
         # "Index": ["value"],
-        "Starred": ["value"],
+        "Starred": ["value", "ctx"],
         "Yield": ["value"],
         "ExceptHandler": ["type"],
         # "Call": ["func", "args", "keywords"],
         # "Compare": ["left", "ops", "comparators"],
         "BoolOp": ["values", "op"],
         "Assert": ["test", "msg"],
-        "List": ["elts"],
-        "Tuple": ["elts"],
+        "List": ["elts", "ctx"],
+        "Tuple": ["elts", "ctx"],
         "Set": ["elts"],
         "UnaryOp": ["operand", "op"],
         "BinOp": ["left", "right", "op"],
@@ -83,7 +83,7 @@ class PythonNodeEdgeCFDefinitions(PythonNodeEdgeDefinitions):
         "IfExp": ["test", "if_true", "if_false"],
         # overridden, `if_true` renamed from `body`, `if_false` renamed from `orelse`
         "keyword": ["arg", "value"],  # overridden
-        "Attribute": ["value", "attr"],  # overridden
+        "Attribute": ["value", "attr", "ctx"],  # overridden
         "Num": [],  # overridden
         "Str": [],  # overridden
         "Bytes": [],  # overridden
@@ -132,7 +132,8 @@ class PythonNodeEdgeCFDefinitions(PythonNodeEdgeDefinitions):
         "control_flow": None,  # for control flow
         "op": None,  # for operations
         "attr": None,  # for attributes
-        "node_type": None
+        "node_type": None,
+        "ctx": None
     }
 
     iterable_nodes = {  # parse_iterable
@@ -157,6 +158,10 @@ class PythonNodeEdgeCFDefinitions(PythonNodeEdgeDefinitions):
         "Continue", "Break", "Pass"
     }
 
+    ctx_nodes = {  # parse_ctx
+        "Load", "Store"
+    }
+
     # extra node types exist for keywords and attributes to prevent them from
     # getting mixed with local variable mentions
     extra_node_types = {
@@ -166,7 +171,7 @@ class PythonNodeEdgeCFDefinitions(PythonNodeEdgeDefinitions):
         "astliteral",
         "type_annotation",
         "Op",
-        "CtlFlow", "CtlFlowInstance", "instance", "type_node"
+        "CtlFlow", "CtlFlowInstance", "instance", "type_node", "ctx"
         # "subword", "subword_instance"
     }
 
@@ -216,9 +221,9 @@ class PythonNodeEdgeCFDefinitions(PythonNodeEdgeDefinitions):
             set(chain(*cls.overriden_node_type_edges.values())) |
             set(chain(*cls.overriden_collapsing_inside.values())) |
             set(chain(*cls.extra_node_type_edges.values())) |
-            cls.scope_edges() |
-            cls.extra_edge_types | cls.named_nodes | cls.constant_nodes |
-            cls.operand_nodes | cls.control_flow_nodes | cls.extra_node_types
+            cls.scope_edges() | cls.extra_edge_types
+             # | cls.named_nodes | cls.constant_nodes |
+            # cls.operand_nodes | cls.control_flow_nodes | cls.extra_node_types
         )
 
         reverse_edges = list(cls.compute_reverse_edges(direct_edges))
@@ -269,6 +274,8 @@ class PythonCFGraphBuilder(PythonAstGraphBuilder):
             out = self.parse_op_name(node)
         elif n_type in self._graph_definitions.control_flow_nodes:
             out = self.parse_control_flow(node)
+        elif n_type in self._graph_definitions.ctx_nodes:
+            out = self.parse_ctx(node)
         else:
             print(type(node))
             print(ast.dump(node))
@@ -291,7 +298,7 @@ class PythonCFGraphBuilder(PythonAstGraphBuilder):
         positions = {}
         for e in edges:
             if self._node_pool[e.src].type.name in {"type_annotation", "returned_by"} or \
-                    e.type.name in {"local_mention"}:
+                    e.type.name in {"local_mention", "instance", "ctx"}:
                 edges_.append(e)
             else:
                 nodes_inside.add(e.src)
@@ -300,7 +307,7 @@ class PythonCFGraphBuilder(PythonAstGraphBuilder):
                 positions[e.src] = e.positions
 
         for n in nodes_inside:
-            if self._node_pool[n].type == self._node_types["mention"] or self._node_pool[n].name in {
+            if self._node_pool[n].type.name in {"mention", "instance"} or self._node_pool[n].name in {
                 "mention", "comprehension", "FormattedValue", "JoinedStr", "Dict", "Expr", "Bytes", "Str",
                 "Num", "IfExp", "Lambda", "YieldFrom", "DictComp", "SetComp", "ListComp", "BoolOp", "Starred",
                 "Subscript", "Slice", "ExtSlice", "Index"
@@ -380,7 +387,7 @@ class PythonCFGraphBuilder(PythonAstGraphBuilder):
     def postprocess(self):
         for i in range(len(self._edges)):
             edge = self._edges[i]
-            if self._node_pool[edge.src].type.name == "mention":
+            if self._node_pool[edge.src].type.name in {"mention", "instance"}:
                 reverse = edge.make_reverse(self._graph_definitions, self._node_pool[edge.src])
                 if reverse is not None:
                     self._edges.append(reverse)
