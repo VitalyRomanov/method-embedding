@@ -10,9 +10,10 @@ from SourceCodeTools.code.data.file_utils import unpersist
 
 class SQLTable:
     def __init__(self, df, filename, table_name):
-        self.conn = sqlite3.connect(filename)
+        self.conn = sqlite3.connect(filename, check_same_thread=False)
         self.path = filename
         self.table_name = table_name
+        self.length = len(df)
 
         df.to_sql(self.table_name, con=self.conn, if_exists='replace', index=False, index_label=df.columns)
 
@@ -23,6 +24,15 @@ class SQLTable:
         self.conn.close()
         if os.path.isfile(self.path):
             os.remove(self.path)
+
+    def __getitem__(self, item):
+        if isinstance(item, str):
+            return self.query(f"select {item} from {self.table_name}")[item]
+        elif isinstance(item, list):
+            return self.query(f"select {','.join(item)} from {self.table_name}")[item]
+
+    def __len__(self):
+        return self.length
 
 
 def create_node_repr(nodes):
