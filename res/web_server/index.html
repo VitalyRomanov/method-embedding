@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+    body {
+      margin: 0;
+    }
+
+    circle {
+        fill: steelblue;
+    }
+
+    line.route {
+    }
+
+    svg {
+        border: 3px solid black;
+    }
+
+    .node circle {
+      cursor: pointer;
+      stroke: #3182bd;
+      stroke-width: 1.5px;
+    }
+
+    .node text {
+      font: 10px sans-serif;
+      pointer-events: none;
+      text-anchor: middle;
+    }
+
+    line.link {
+      fill: none;
+      stroke: #9ecae1;
+      stroke-width: 1.5px;
+    }
+
+    #wrapper {
+        border: 1px solid blue;
+    }
+    #codetext {
+        display: inline-block;
+<!--        width:120px;-->
+<!--        height:120px;-->
+        border: 1px solid red;
+    }
+    #graphtype {
+        display: inline-block;
+<!--        width:160px;-->
+<!--        height:160px;-->
+        border: 1px solid green;
+    }
+
+</style>
+<body>
+<div id="wrapper">
+    <center>
+        <div id="codetext">
+            <textarea id="code_input" name="code_input" rows="10" cols="80">import http.server
+import socketserver
+
+PORT = 8000
+
+Handler = http.server.SimpleHTTPRequestHandler
+
+with socketserver.TCPServer(("", PORT), Handler) as httpd:
+    print("serving at port", PORT)
+    httpd.serve_forever()
+        </textarea>
+        </div>
+        <div id="graphtype">
+            <form id="graphtype_form">
+                <input type="radio" id="ast_graph" name="fav_language" value="AST Graph" checked="checked">
+                <label for="ast_graph">AST Graph</label><br>
+                <input type="radio" id="ast_graph_with_instances" name="fav_language" value="AST Graph with Instances">
+                <label for="ast_graph_with_instances">AST Graph with Instances</label><br>
+                <input type="radio" id="cf_graph" name="fav_language" value="CF Graph">
+                <label for="cf_graph">CF Graph</label>
+            </form>
+        </div>
+        <br>
+        <button type="button" id="build_graph_button">Build graph</button>
+    </center>
+</div><br>
+<!--<div>-->
+<!--    <input type="tel" name="firstname" id="inputField"><input type="checkbox" id="delCheck"><br><br><br>-->
+<!--</div>-->
+<script src="d3.v3.min.js"></script>
+<!-- <script src="//d3js.org/d3.v3.min.js"></script> -->
+<!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script> -->
+
+<div>
+<script>
+    var response;
+
+    var input = document.getElementById("code_input");
+<!--    input.addEventListener("keyup", function(event) {-->
+<!--      // Number 13 is the "Enter" key on the keyboard-->
+<!--      if (event.keyCode === 13) {-->
+<!--        // Cancel the default action, if needed-->
+<!--        event.preventDefault();-->
+<!--        // Trigger the button element with a click-->
+<!--        console.log("clearing")-->
+<!--        data.nodes.length = 0-->
+<!--        data.links.length = 0-->
+<!--        response = send_request(input.value, true);-->
+<!--      }-->
+<!--    });-->
+
+    function get_checked_radio_form(form){
+    for(const radio of document.getElementById("graphtype_form")){
+        if (radio.checked) {
+            return radio.id
+        }
+    }
+    return null
+    }
+
+
+    var build_graph_button = document.getElementById("build_graph_button");
+    build_graph_button.addEventListener("click", function(event) {
+        data.nodes.length = 0;
+        data.links.length = 0;
+        request_data = JSON.stringify({
+            source_code: document.getElementById("code_input").value,
+            variation: get_checked_radio_form(document.getElementById("graphtype_form"))
+        });
+        response = send_request(request_data, true);
+    });
+
+    function send_request(request_data){
+        console.log("Requesting: ", request_data)
+        var oReq = new XMLHttpRequest();
+        oReq.open("POST", "request", true);
+        oReq.setRequestHeader('Content-Type', 'application/json');
+        oReq.send(request_data);
+        oReq.onreadystatechange = (e) => {
+        // console.log(oReq.responseText)
+        responseText = oReq.responseText
+        response = JSON.parse(responseText)
+
+        data.nodes = response.nodes
+        data.links = response.edges
+
+        update()
+        }
+    }
+
+    var width = Math.max(950, window.innerWidth),
+        height = Math.max(500, window.innerHeight) - 40,
+        data;
+
+    var link_color = d3.scale.category20();
+
+
+    var force = d3.layout.force()
+        .linkDistance(60)
+        .charge(-1000)
+        .gravity(.05)
+        .size([width, height])
+        .on("tick", tick);
+
+
+    var zoom = d3.behavior.zoom()
+        .translate([0, 0])
+        .scale(1)
+        .scaleExtent([0.1, 10])
+        .on("zoom", zoomed)
+
+    var svg = d3.select("body").append("svg")
+        // .attr("id", "map")
+        .attr("width", width)
+        .attr("height", height)
+        .call(zoom);
+
+    var map = svg.append("g");
+    map.append("rect")
+        .attr("width", width)
+        .attr("height", height)
+        .attr("fill", "#fff");
+
+
+    map.append("svg:defs").selectAll("marker")
+        .data(["end"])      // Different link/path types can be defined here
+        .enter().append("svg:marker")    // This section adds in the arrows
+        .attr("id", String)
+        .attr("viewBox", "0 -5 10 10")
+        .attr("refX", 15)
+        .attr("refY", 0)
+        .attr("markerWidth", 6)
+        .attr("markerHeight", 6)
+        .attr("orient", "auto")
+        .append("svg:path")
+        .attr("d", "M0,-5L10,0L0,5");
+
+        // var link = map.selectAll(".link")
+      // .data(graph.links)
+    // .enter().append("line")
+      // .attr("class", "link")
+      // .style("stroke-width", function(d) { return Math.sqrt(40); })
+      //   .attr("marker-end", "url(#end)");
+
+    var link = map.selectAll(".link"),
+        node = map.selectAll(".node");
+
+
+<!--    d3.json("part.json", function(error, json) {-->
+<!--      if (error) throw error;-->
+<!--      // console.log(json)-->
+<!--      data = json;-->
+<!--      update();-->
+<!--    });-->
+    var data = Object()
+    data.nodes = []
+    data.links = []
+
+    function zoomed(){
+        map.attr("transform", "translate(" + d3.event.translate + ")scale(" + d3.event.scale + ")");
+    }
+
+    function update() {
+      var nodes = data.nodes;
+      var links = data.links
+      only_names = new Set(nodes.map(n => n.name))
+      relevant_links = data.links.filter(l => only_names.has(l.source) && only_names.has(l.target))
+      // relevant_links = relevant_links.filter(l => l.type != "pattern_neighbour")
+      // console.log(only_names)
+      // console.log(relevant_links)
+      var links = data.links.map(
+        function(d){
+          no = Object()
+          no.source = nodes.find(el => d.src == el.id);
+          no.target = nodes.find(el => d.dst == el.id);
+          no.weight = 100
+          return no
+        })
+
+      //   console.log(nodes);
+      console.log(links);
+
+      // Restart the force layout.
+      force
+          .nodes(nodes)
+          .links(links)
+          .start();
+
+      // Update links.
+      link = link.data(links);
+
+      link.exit().remove();
+
+      link.enter().insert("line", ".node")
+          .attr("class", "link");
+
+      // Update nodes.
+      node = node.data(nodes, function(d) { return d.name; });
+
+      node.exit().remove();
+
+      var nodeEnter = node.enter().append("g")
+          .attr("class", "node")
+          .on("click", click)
+          .call(force.drag);
+
+      nodeEnter.append("circle")
+          .attr("r", function(d) { return Math.sqrt(d.size) / 10 || 4.5; });
+
+      nodeEnter.append("text")
+          .attr("x", 12)
+          .attr("y", 12)
+          .attr("dy", ".35em")
+          .text(function(d) { return d.name; });
+
+      node.select("circle")
+          .style("fill", color);
+    }
+
+    function tick() {
+      link.attr("x1", function(d) { return d.source.x; })
+          .attr("y1", function(d) { return d.source.y; })
+          .attr("x2", function(d) { return d.target.x; })
+          .attr("y2", function(d) { return d.target.y; })
+          //.style("stroke", function(d) {if (d.group==2){return "#1c7cdb1F"} else if (d.group==1){return "#ff49221F"} else return "#ace1dd1F"})
+          //.style("stroke-width", function(d) {return 1})// { if (d.weight < 10) {return d.weight / 10 + 0.5} else {return Math.log10(d.weight)} + 0.5; })
+          // .style("stroke", function(d) {return link_color(d.group)})
+          // .attr("class", "link")
+          // .style("stroke-width", 4)
+          link.attr("marker-end", function(d) {return (d.group!=3)?"url(#end)":""});
+
+
+      node.attr("transform", function(d) { return "translate(" + d.x + "," + d.y + ")"; });
+    }
+
+    function color(d) {
+      return d._children ? "#3182bd" // collapsed package
+          : d.children ? "#c6dbef" // expanded package
+          : "#fd8d3c"; // leaf node
+    }
+
+    // Toggle children on click.
+    function click(d) {
+<!--      if (d3.event.defaultPrevented) return; // ignore drag-->
+<!--      if (document.getElementById("delCheck").checked){-->
+<!--        send_request(d.name)-->
+<!--      } else {-->
+<!--        // console.log(d)-->
+<!--        // console.log(data.nodes)-->
+<!--        data.nodes = data.nodes.filter(l => l.name != d.name)-->
+<!--        // console.log(data.nodes)-->
+<!--        update()-->
+<!--      }-->
+<!--      if (d.children) {-->
+<!--        d._children = d.children;-->
+<!--        d.children = null;-->
+<!--      } else {-->
+<!--        d.children = d._children;-->
+<!--        d._children = null;-->
+<!--        // d3.json("part2.json", function(error, json) {-->
+<!--        //     if (error) throw error;-->
+<!--        //     data.nodes = data.nodes.concat(json.nodes);-->
+<!--        //     data.links = data.links.concat(json.links);-->
+<!--        //     console.log(data);-->
+<!--        //     update();-->
+<!--        //   });-->
+<!--      }-->
+      // update();
+    }
+
+    // Returns a list of all nodes under the root.
+    function flatten(root) {
+      var nodes = [], i = 0;
+
+      function recurse(node) {
+        if (node.children) node.children.forEach(recurse);
+        if (!node.name) node.name = ++i;
+        nodes.push(node);
+      }
+
+      recurse(root);
+      return nodes;
+    }
+</script>
+</div>
+</body>
