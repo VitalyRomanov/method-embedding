@@ -1,5 +1,5 @@
-import logging
 import pickle
+from abc import ABC, abstractmethod
 from collections import Counter
 from functools import partial
 from os.path import join
@@ -9,17 +9,14 @@ import dgl
 import numpy
 import pandas
 import torch
-import diskcache as dc
 
 from SourceCodeTools.code.ast.python_ast2 import PythonSharedNodes
-from SourceCodeTools.code.data.GraphStorage import OnDiskGraphStorage, OnDiskGraphStorageWithFastIteration
+from SourceCodeTools.code.data.GraphStorage import OnDiskGraphStorageWithFastIteration, InMemoryGraphStorage
 from SourceCodeTools.code.data.DBStorage import SQLiteStorage
 from SourceCodeTools.code.data.dataset.SubwordMasker import SubwordMasker, NodeNameMasker, NodeClfMasker
 from SourceCodeTools.code.data.dataset.partition_strategies import SGPartitionStrategies, SGLabelSpec
 from SourceCodeTools.code.data.file_utils import *
-# from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import node_types
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_extract_node_names import extract_node_names
-# from SourceCodeTools.code.ast.python_ast import PythonSharedNodes
 from SourceCodeTools.models.graph.TargetLoader import TargetLoader
 from SourceCodeTools.nlp import token_hasher
 from SourceCodeTools.nlp.embed.bpe import make_tokenizer, load_bpe_model
@@ -34,6 +31,37 @@ def filter_dst_by_freq(elements, freq=1):
     allowed = {item for item, count in counter.items() if count >= freq}
     target = elements.query("dst in @allowed", local_dict={"allowed": allowed})
     return target
+
+
+class AbstractDataset(ABC):
+    use_node_types = False
+    use_edge_types = False
+    _graph_storage = None
+
+    @abstractmethod
+    def get_num_nodes(self):
+        ...
+
+    @abstractmethod
+    def get_num_edges(self):
+        ...
+
+    @abstractmethod
+    def get_partition_size(self, partition):
+        ...
+
+    @abstractmethod
+    def get_partition_slice(self, partition):
+        ...
+
+    @abstractmethod
+    def iterate_subgraphs(
+            self, *args, **kwargs
+    ):
+        ...
+
+    def _create_hetero_graph(self, nodes, edges):
+        ...
 
 
 class DatasetCache:
@@ -130,6 +158,9 @@ class PartitionIndex:
 
         self._any_set = self._train_set | self._test_set | self._val_set
 
+    def get_partition_size(self, partition):
+        return len(getattr(self, f"_{partition}_set"))
+
     def create_exclusive(self, exclusive_label):
         new_index = self.__class__()
         new_index._index = self._index
@@ -210,8 +241,8 @@ class SimpleGraphCreator:
             return f"{value}_"
 
     def get_graph_types(self):
-        ntypes = self.dataset_db.get_node_type_descriptions()
-        etypes = self.dataset_db.get_edge_type_descriptions()
+        ntypes = InMemoryGraphStorage.get_node_type_descriptions()
+        etypes = InMemoryGraphStorage.get_edge_type_descriptions()
 
         return list(
             map(
@@ -336,17 +367,10 @@ class SimpleGraphCreator:
         return graph
 
 
-class SourceGraphDataset:
-    node_types = None
-    edge_types = None
-
-    train_frac = None
-    random_seed = None
-    labels_from = None
+class SourceGraphDataset(AbstractDataset):
     use_node_types = None
     use_edge_types = None
     filter_edges = None
-    self_loops = None
 
     partition_columns_names = {
         "train": "train_mask",
@@ -357,45 +381,10 @@ class SourceGraphDataset:
 
     def __init__(
             self, data_path: Union[str, Path], partition, use_node_types: bool = False, use_edge_types: bool = False,
-            filter_edges: Optional[List[str]] = None, self_loops: bool = False,
-            train_frac: float = 0.6, random_seed: Optional[int] = None, tokenizer_path: Union[str, Path] = None,
-            min_count_for_objectives: int = 1,
-            no_global_edges: bool = False, remove_reverse: bool = False, custom_reverse: Optional[List[str]] = None,
-            # package_names: Optional[List[str]] = None,
-            restricted_id_pool: Optional[List[int]] = None, use_ns_groups: bool = False,
-            subgraph_id_column=None, subgraph_partition=None
+            filter_edges: Optional[List[str]] = None, tokenizer_path: Union[str, Path] = None,
+            min_count_for_objectives: int = 1, no_global_edges: bool = False, remove_reverse: bool = False,
+            custom_reverse: Optional[List[str]] = None, use_ns_groups: bool = False, type_nodes=False, **kwargs
     ):
-        """
-        Prepares the data for training GNN model. The graph is prepared in the following way:
-            1. Edges are split into the train set and holdout set. Holdout set is used in the future experiments.
-                Without holdout set the results of the future experiments may be biased. After removing holdout edges
-                from the main graph, the disconnected nodes are filtered, so that he graph remain connected.
-            2. Since training objective will be defined on the node embeddings, the nodes are split into train, test,
-                and validation sets. The test set should be used in the future experiments for training. Validation and
-                test sets are equal in size and constitute 40% of all nodes.
-            3. The default label is assumed to be node type. Node types can be incorporated into the model by setting
-                node_types flag to True.
-            4. Graphs require contiguous indexing of nodes. For this reason additional mapping is created that tracks
-                the relationship between the new graph id and the original node id from the training data
-        :param data_path: path to the directory with dataset files stored in `bz2` format
-        :param use_node_types:  whether to use node types in the graph
-        :param use_edge_types:  whether to use edge types in the graph
-        :param filter_edges: edge types to be removed from the graph
-        :param self_loops: whether to include self-loops
-        :param train_frac: fraction of the nodes that will be used for training
-        :param random_seed: seed for generating random splits
-        :param tokenizer_path:  path to bpe tokenizer, needed to process op names correctly
-        :param min_count_for_objectives: minimum degree of nodes, after which they are excluded from training data
-        :param no_global_edges: whether to remove global edges from the dataset
-        :param remove_reverse: whether to remove reverse edges from the dataset
-        :param custom_reverse: list of edges for which reverse types should be added.
-            Used together with `remove_reverse`
-        :param restricted_id_pool: path to csv file with column `node_id` that stores nodes that should be involved into
-            training and testing
-        :param use_ns_groups: currently not used
-
-        """
-        self.random_seed = random_seed
         self.use_node_types = use_node_types
         self.use_edge_types = use_edge_types
         self.data_path = data_path
@@ -404,16 +393,13 @@ class SourceGraphDataset:
         self.no_global_edges = no_global_edges
         self.remove_reverse = remove_reverse
         self.custom_reverse = custom_reverse
-        self.subgraph_id_column = subgraph_id_column
-        self.subgraph_partition = subgraph_partition
-        self.partition = PartitionIndex(unpersist(partition)) if partition is not None else None
-        self._cache = DatasetCache(self.data_path)
-        self._subgraph_cache_path = tempfile.TemporaryDirectory(suffix="SubgraphCache")
-        self._subgraph_cache = dc.Cache(self._subgraph_cache_path.name)
-
         self.use_ns_groups = use_ns_groups
+        self.type_nodes = type_nodes
 
-        self._open_dataset_db()
+        self._cache = DatasetCache(self.data_path)
+
+        self._initialize_storage(**kwargs)
+        self._initialize_partition_index(partition)
 
         self.edge_types_to_remove = set()
         if filter_edges is not None:
@@ -425,22 +411,25 @@ class SourceGraphDataset:
         if self.no_global_edges:
             self._remove_global_edges()
 
+    def _initialize_partition_index(self, partition):
+        self._partition = PartitionIndex(unpersist(partition)) if partition is not None else None
+
     def _remove_edges_with_restricted_types(self, edges):
         edges.query(
             "type not in @restricted_types", local_dict={"restricted_types": self.edge_types_to_remove}, inplace=True
         )
 
-    def _open_dataset_db(self):
+    def _initialize_storage(self, **kwargs):
         StorageClass = OnDiskGraphStorageWithFastIteration
 
-        dataset_db_path = StorageClass.get_storage_file_name(self.data_path)
-        if not StorageClass.verify_imported(dataset_db_path):
-            self.dataset_db = StorageClass(dataset_db_path)
-            self.dataset_db.import_from_files(self.data_path)
-            self.dataset_db.add_import_completed_flag(dataset_db_path)
+        _graph_storage_path = StorageClass.get_storage_file_name(self.data_path)
+        if not StorageClass.verify_imported(_graph_storage_path):
+            self._graph_storage = StorageClass(_graph_storage_path)
+            self._graph_storage.import_from_files(self.data_path)
+            self._graph_storage.add_import_completed_flag(_graph_storage_path)
         else:
-            self.dataset_db = StorageClass(dataset_db_path)
-        self._num_nodes = self.dataset_db.get_num_nodes()
+            self._graph_storage = StorageClass(_graph_storage_path)
+        self._num_nodes = self._graph_storage.get_num_nodes()
 
     def _filter_edges(self, types_to_filter):
         # logging.info(f"Filtering edge types: {types_to_filter}")
@@ -502,7 +491,7 @@ class SourceGraphDataset:
         global_reverse = {key for key, val in special_mapping.items()}
         self.edge_types_to_remove.update(global_reverse)
 
-        all_edge_types = self.dataset_db.get_edge_type_descriptions()
+        all_edge_types = self._graph_storage.get_edge_type_descriptions()
         self.edge_types_to_remove.update(filter(lambda edge_type: edge_type.endswith("_rev"), all_edge_types))
 
     def _add_custom_reverse(self, edges):
@@ -762,16 +751,17 @@ class SourceGraphDataset:
 
     def _get_partition_ids(self, partition_label):
         partition_label = self.partition_columns_names[partition_label]  # get name for the partition mask
-        return self.partition.get_partition_ids(partition_label)
+        return self._partition.get_partition_ids(partition_label)
 
     def _attach_info_to_label(self, labels, labels_for, group_by):
         if labels_for == SGLabelSpec.nodes:
-            labels, new_col_name = self.dataset_db.get_info_for_node_ids(labels["src"], group_by)
+            labels, new_col_name = self._graph_storage.get_info_for_node_ids(labels["src"], group_by)
             labels.rename({new_col_name: "group", "id": "src"}, axis=1, inplace=True)
         elif labels_for == SGLabelSpec.edges:
-            raise NotImplementedError("Grouping labels for edges is currently not supported")
+            labels, new_col_name = self._graph_storage.get_info_for_edge_ids(labels["src"], group_by)
+            labels.rename({new_col_name: "group"}, axis=1, inplace=True)
         elif labels_for == SGLabelSpec.subgraphs:
-            labels, new_col_name = self.dataset_db.get_info_for_subgraphs(labels["src"], group_by)
+            labels, new_col_name = self._graph_storage.get_info_for_subgraphs(labels["src"], group_by)
             labels.rename({new_col_name: "group"}, axis=1, inplace=True)
         else:
             raise ValueError()
@@ -786,6 +776,94 @@ class SourceGraphDataset:
 
     def _load_cache_if_exists(self, cache_key, level=None):
         return self._cache.load_cached(cache_key, level)
+
+    def _add_data_to_table(self, table, data_dict):
+        boolean_fields = {"train_mask", "test_mask", "val_mask", "has_label", "any_mask"}
+        for key in data_dict:
+            table.eval(
+                f"{key} = id.map(@mapper)",
+                local_dict={"mapper": lambda x: data_dict[key].get(x, pd.NA)},
+                inplace=True
+            )
+            if key in boolean_fields:
+                table[key].fillna(False, inplace=True)
+        if "label" in data_dict:
+            table["label"] = table["label"].astype("Int64")
+
+    @staticmethod
+    def _add_type_nodes(nodes, edges):
+        node_new_id = nodes["id"].max() + 1
+        edge_new_id = edges["id"].max() + 1
+
+        new_nodes = []
+        new_edges = []
+        added_type_nodes = {}
+
+        node_slice = nodes[["id", "type"]].values
+
+        for id, type in node_slice:
+            if type not in added_type_nodes:
+                added_type_nodes[type] = node_new_id
+                node_new_id += 1
+
+                new_nodes.append({
+                    "id": added_type_nodes[type],
+                    "name": type,
+                    "type": "type_node",
+                })
+
+            new_edges.append({
+                "id": edge_new_id,
+                "type": "node_type",
+                "src": added_type_nodes[type],
+                "dst": id,
+            })
+            edge_new_id += 1
+
+        new_nodes, new_edges = pd.DataFrame(new_nodes), pd.DataFrame(new_edges)
+
+        return nodes.append(new_nodes), edges.append(new_edges)
+
+    def _create_graph_from_nodes_and_edges(self, nodes, edges, node_data=None, edge_data=None, n_buckets=200000):
+        if node_data is None:
+            node_data = {}
+        if edge_data is None:
+            edge_data = {}
+
+        self._remove_edges_with_restricted_types(edges)
+
+        if self.custom_reverse is not None:
+            edges = self._add_custom_reverse(edges)
+        self.ensure_connectedness(nodes, edges)
+
+        # if self.type_nodes:
+        #     nodes, edges = self._add_type_nodes(nodes, edges)
+
+        node_name_mapping = self._get_embeddable_names(nodes)
+        node_data["embedding_id"] = self._get_node_name2bucket_mapping(node_name_mapping, n_buckets)
+        # node_type_pool = self._prepare_node_type_pool(nodes)
+
+        self._adjust_types(nodes, edges)
+
+        self._add_data_to_table(nodes, node_data)
+        self._add_data_to_table(edges, edge_data)
+
+        if len(edges) > 0:
+            cache_key = self._get_df_hash(nodes) + self._get_df_hash(edges)
+            subgraph = self._load_cache_if_exists(cache_key)
+            if subgraph is None:
+                subgraph = self._create_hetero_graph(nodes, edges)
+                self._write_to_cache(subgraph, cache_key)
+
+            return subgraph
+        else:
+            return None
+
+    def get_partition_size(self, partition):
+        return self._partition.get_partition_size(partition)
+
+    def get_partition_slice(self, partition):
+        return self._partition.create_exclusive(f"{partition}_mask")
 
     def get_proper_partition_column_name(self, partition_label):
         return self.partition_columns_names[partition_label]
@@ -814,70 +892,65 @@ class SourceGraphDataset:
         self._write_to_cache(labels_, cache_key)
         return labels_
 
+    def get_cache_key(self, how, group):
+        return f"{how.name}_{group}"
+
+    @staticmethod
+    def get_global_edges():
+        """
+        :return: Set of global edges and their reverses
+        """
+        from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import special_mapping, node_types
+        types = set()
+
+        for key, value in special_mapping.items():
+            types.add(key)
+            types.add(value)
+
+        for _, value in node_types.items():
+            types.add(value + "_name")
+
+        return types
+
+    def get_graph_types(self):
+        ntypes = self._graph_storage.get_node_type_descriptions()
+        etypes = self._graph_storage.get_edge_type_descriptions()
+
+        def only_unique(elements):
+            new_list = []
+            for ind, element in enumerate(elements):
+                if ind != 0 and element == new_list[-1]:
+                    continue
+                new_list.append(element)
+            return new_list
+
+        return only_unique(
+            map(
+                partial(self._strip_types_if_needed, stripping_flag=self.use_node_types, stripped_type="node_"),
+                ntypes
+            )
+        ), only_unique(
+            map(
+                partial(self._strip_types_if_needed, stripping_flag=self.use_edge_types, stripped_type="edge_"),
+                etypes
+            )
+        )
+
     def inference_mode(self):
         shared_node_types = PythonSharedNodes.shared_node_types
-        type_filter = [ntype for ntype in self.dataset_db.get_node_type_descriptions() if ntype not in shared_node_types]
-        nodes = self.dataset_db.get_nodes(type_filter=type_filter)
+        type_filter = [ntype for ntype in self._graph_storage.get_node_type_descriptions() if ntype not in shared_node_types]
+        nodes = self._graph_storage.get_nodes(type_filter=type_filter)
         nodes["train_mask"] = True
         nodes["test_mask"] = True
         nodes["val_mask"] = True
 
-        self.train_partition = self.partition
-        self.partition = PartitionIndex(nodes)
+        self.train_partition = self._partition
+        self._partition = PartitionIndex(nodes)
         self.inference_labels = nodes[["id", "type"]].rename({"id": "src", "type": "dst"}, axis=1)
-
-    def get_cache_key(self, how, group):
-        return f"{how.name}_{group}"
-
-    def add_data_to_table(self, table, data_dict):
-        boolean_fields = {"train_mask", "test_mask", "val_mask", "has_label", "any_mask"}
-        for key in data_dict:
-            table.eval(
-                f"{key} = id.map(@mapper)",
-                local_dict={"mapper": lambda x: data_dict[key].get(x, pd.NA)},
-                inplace=True
-            )
-            if key in boolean_fields:
-                table[key].fillna(False, inplace=True)
-        if "label" in data_dict:
-            table["label"] = table["label"].astype("Int64")
-
-    def create_graph_from_nodes_and_edges(self, nodes, edges, node_data=None, edge_data=None, n_buckets=200000):
-        if node_data is None:
-            node_data = {}
-        if edge_data is None:
-            edge_data = {}
-
-        self._remove_edges_with_restricted_types(edges)
-
-        if self.custom_reverse is not None:
-            edges = self._add_custom_reverse(edges)
-        self.ensure_connectedness(nodes, edges)
-
-        node_name_mapping = self._get_embeddable_names(nodes)
-        node_data["embedding_id"] = self._get_node_name2bucket_mapping(node_name_mapping, n_buckets)
-        # node_type_pool = self._prepare_node_type_pool(nodes)
-
-        self._adjust_types(nodes, edges)
-
-        self.add_data_to_table(nodes, node_data)
-        self.add_data_to_table(edges, edge_data)
-
-        if len(edges) > 0:
-            cache_key = self._get_df_hash(nodes) + self._get_df_hash(edges)
-            subgraph = self._load_cache_if_exists(cache_key)
-            if subgraph is None:
-                subgraph = self._create_hetero_graph(nodes, edges)
-                self._write_to_cache(subgraph, cache_key)
-
-            return subgraph
-        else:
-            return None
-
 
     def iterate_subgraphs(self, how, groups, node_data, edge_data, subgraph_data, n_buckets):
 
-        iterator = self.dataset_db.iterate_subgraphs(how, groups)
+        iterator = self._graph_storage.iterate_subgraphs(how, groups)
 
         for group, nodes, edges in iterator:
 
@@ -885,9 +958,7 @@ class SourceGraphDataset:
             for src, dst in zip(edges["src"], edges["dst"]):
                 edges_bloom_filter.add((src, dst))
 
-            subgraph = self.create_graph_from_nodes_and_edges(
-                nodes, edges, node_data, edge_data, n_buckets=n_buckets
-            )
+            subgraph = self._create_graph_from_nodes_and_edges(nodes, edges, node_data, edge_data, n_buckets=n_buckets)
 
             if subgraph is not None:
                 yield {
@@ -1057,7 +1128,7 @@ class SourceGraphDataset:
 
         if nodes is None:
             logging.info("Loading node names from database")
-            nodes = self.dataset_db.get_nodes(type_filter=[names_for])
+            nodes = self._graph_storage.get_nodes(type_filter=[names_for])
 
         if "train_mask" in nodes.columns:
             for_training = nodes.query(
@@ -1092,7 +1163,7 @@ class SourceGraphDataset:
         # functions = self.nodes.query(
         #     "id in @functions", local_dict={"functions": set(self.nodes["mentioned_in"])}
         # ).query("type_backup == 'FunctionDef'")
-        functions = self.dataset_db.get_nodes(type_filter=['FunctionDef'])
+        functions = self._graph_storage.get_nodes(type_filter=['FunctionDef'])
 
         cache_key = f"{self._get_df_hash(names)}_{self._get_df_hash(functions)}"
         result = self._load_cache_if_exists(cache_key)
@@ -1130,7 +1201,7 @@ class SourceGraphDataset:
             only to nodes that have subwords and have appeared in a scope (names have `@` in their names)
         """
 
-        target_nodes = self.dataset_db.get_nodes_with_subwords()
+        target_nodes = self._graph_storage.get_nodes_with_subwords()
 
         cache_key = f"{self._get_df_hash(target_nodes)}_{self.min_count_for_objectives}"
         result = self._load_cache_if_exists(cache_key)
@@ -1161,7 +1232,7 @@ class SourceGraphDataset:
         cache_key = self._get_df_hash(pd.Series(sorted(list(global_edges))))
         result = self._load_cache_if_exists(cache_key)
         if result is None:
-            edges = self.dataset_db.get_edges(type_filter=global_edges)
+            edges = self._graph_storage.get_edges(type_filter=global_edges)
 
             result = edges[["src", "dst"]]
             self._write_to_cache(result, cache_key)
@@ -1170,7 +1241,7 @@ class SourceGraphDataset:
 
     def load_edge_prediction(self):
 
-        edge_types = self.dataset_db.get_edge_type_descriptions()
+        edge_types = self._graph_storage.get_edge_type_descriptions()
 
         # when using this objective remove following edges
         # defined_in_*, executed_*, prev, next, *global_edges
@@ -1181,7 +1252,7 @@ class SourceGraphDataset:
         cache_key = self._get_df_hash(pd.Series(sorted(list(edge_types_for_prediction))))
         result = self._load_cache_if_exists(cache_key)
         if result is None:
-            edges = self.dataset_db.get_edges(type_filter=edge_types_for_prediction)
+            edges = self._graph_storage.get_edges(type_filter=edge_types_for_prediction)
 
             # if self.use_ns_groups:
             #     groups = self.get_negative_sample_groups()
@@ -1200,7 +1271,7 @@ class SourceGraphDataset:
         result = self._load_cache_if_exists(cache_key)
 
         if result is None:
-            node2id = self.dataset_db.get_node_types()
+            node2id = self._graph_storage.get_node_types()
 
             type_ann["src_type"] = type_ann["src"].apply(lambda x: node2id[x])
 
@@ -1244,8 +1315,8 @@ class SourceGraphDataset:
 
     def load_node_classes(self):
         # TODO
-        labels = self.dataset_db.get_nodes_for_classification()
-        labels.query("src.map(@in_partition)", local_dict={"in_partition": lambda x: x in self.partition}, inplace=True)
+        labels = self._graph_storage.get_nodes_for_classification()
+        labels.query("src.map(@in_partition)", local_dict={"in_partition": lambda x: x in self._partition}, inplace=True)
 
         return labels
 
@@ -1288,6 +1359,36 @@ def read_or_create_gnn_dataset(args, model_base, force_new=False, restore_state=
         save_config(args, join(model_base, "dataset.config"))
 
     return dataset
+
+
+class ProxyDataset(SourceGraphDataset):
+    def __init__(self, *args, **kwargs):
+        super(ProxyDataset, self).__init__(*args, **kwargs)
+
+    def _initialize_storage(self, **kwargs):
+        storage_kwargs = kwargs.get("storage_kwargs")
+        if storage_kwargs is None:
+            raise ValueError("Storage arguments are not provided")
+
+        self._graph_storage = InMemoryGraphStorage(**storage_kwargs)
+
+    def _initialize_partition_index(self, partition):
+        # if self.type_nodes:
+        #     nodes, edges = self._add_type_nodes(self._graph_storage._nodes, self._graph_storage._edges)
+        # else:
+        #     nodes, edges = self._graph_storage._nodes, self._graph_storage._edges
+        all_ids = set(self._graph_storage.get_nodes()["id"]) | set(self._graph_storage.get_edges()["id"])
+        partition = pd.DataFrame.from_dict({"id": list(all_ids)}, orient="columns")
+        partition["train_mask"] = True
+        partition["test_mask"] = True
+        partition["val_mask"] = True
+        self._partition = PartitionIndex(partition)
+
+    def get_num_nodes(self):
+        return self._graph_storage.get_num_nodes()
+
+    def get_num_edges(self):
+        return self._graph_storage.get_num_edges()
 
 
 def test_dataset():
