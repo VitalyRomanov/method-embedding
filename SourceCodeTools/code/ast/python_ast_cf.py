@@ -9,9 +9,9 @@ from SourceCodeTools.code.annotator_utils import to_offsets
 
 
 class GNode:
-    # name = None
-    # type = None
-    # id = None
+    name = None
+    type = None
+    id = None
 
     def __init__(self, **kwargs):
         self.string = None
@@ -36,7 +36,7 @@ class GNode:
 
 class AstGraphGenerator(object):
 
-    def __init__(self, source):
+    def __init__(self, source, **kwargs):
         self.source = source.split("\n")  # lines of the source code
         self.full_source = source
         self.root = ast.parse(source)
@@ -153,12 +153,22 @@ class AstGraphGenerator(object):
                             as_bytes=True)
         offset, = offset
         line = self.full_source[offset[0]: offset[1]].replace("@","##at##")
-        name = GNode(name=line, type="Name")
+        # name = GNode(name=line, type="Name")
         # expr = GNode(name="Expression" + "_" + str(hex(int(time_ns()))), type="mention")
+
         expr = GNode(name=f"{line}@{self.scope[-1].name}", type="mention")
-        edges = [
-            {"scope": copy(self.scope[-1]), "src": name, "dst": expr, "type": "local_mention", "line": node.lineno - 1, "end_line": node.end_lineno - 1, "col_offset": node.col_offset, "end_col_offset": node.end_col_offset},
-        ]
+        edges = []
+        from nltk import RegexpTokenizer
+        tok = RegexpTokenizer("\w+|\W")
+        for t in tok.tokenize(line):
+            edges.append(
+                {"scope": copy(self.scope[-1]), "src": GNode(name=t, type="Name"), "dst": expr,
+                 "type": "local_mention"},
+                # {"scope": copy(self.scope[-1]), "src": self.scope[-1], "dst": mention_name, "type": "mention_scope"}
+            )
+        # edges = [
+        #     {"scope": copy(self.scope[-1]), "src": name, "dst": expr, "type": "local_mention", "line": node.lineno - 1, "end_line": node.end_lineno - 1, "col_offset": node.col_offset, "end_col_offset": node.end_col_offset},
+        # ]
 
         return edges, expr
 
@@ -235,9 +245,9 @@ class AstGraphGenerator(object):
         else:
             node_name = with_name
 
-        if len(self.scope) > 0:
-            edges.append({"scope": copy(self.scope[-1]), "src": node_name, "dst": self.scope[-1], "type": "mention_scope"})
-            edges.append({"scope": copy(self.scope[-1]), "src": self.scope[-1], "dst": node_name, "type": "mention_scope_rev"})
+        # if len(self.scope) > 0:
+        #     edges.append({"scope": copy(self.scope[-1]), "src": node_name, "dst": self.scope[-1], "type": "mention_scope"})
+        #     edges.append({"scope": copy(self.scope[-1]), "src": self.scope[-1], "dst": node_name, "type": "mention_scope_rev"})
 
         for operand in operands:
             if operand in ["body", "orelse", "finalbody"]:
@@ -457,7 +467,11 @@ class AstGraphGenerator(object):
             
             handler_name, ext_edges = self.parse_operand(h)
             edges.extend(ext_edges)
-            self.parse_in_context([try_name, handler_name], ["try_except", "try_handler"], edges, h.body)
+            # self.parse_in_context([try_name, handler_name], ["try_except", "try_handler"], edges, h.body)
+            self.parse_in_context([handler_name], ["try_handler"], edges, h.body)
+            edges.append({
+                "scope": copy(self.scope[-1]), "src": handler_name, "dst": try_name, "type": 'try_except'
+            })
         
         self.parse_in_context(try_name, "try_final", edges, node.finalbody)
         self.parse_in_context(try_name, "try_else", edges, node.orelse)
@@ -466,12 +480,13 @@ class AstGraphGenerator(object):
         
     def parse_While(self, node):
 
-        edges, while_name = self.generic_parse(node, [])
+        edges, while_name = self.generic_parse(node, ["test"])
         
-        cond_name, ext_edges = self.parse_operand(node.test)
-        edges.extend(ext_edges)
+        # cond_name, ext_edges = self.parse_operand(node.test)
+        # edges.extend(ext_edges)
 
-        self.parse_in_context([while_name, cond_name], ["while", "if_true"], edges, node.body)
+        # self.parse_in_context([while_name, cond_name], ["while", "if_true"], edges, node.body)
+        self.parse_in_context([while_name], ["while"], edges, node.body)
         
         return edges, while_name
 

@@ -2,10 +2,8 @@ import ast
 from copy import copy
 from enum import Enum
 from pprint import pprint
-from time import time_ns
 from collections.abc import Iterable
 import pandas as pd
-# import os
 from SourceCodeTools.code.IdentifierPool import IdentifierPool
 
 
@@ -78,6 +76,8 @@ class GNode:
 
     def __init__(self, **kwargs):
         self.string = None
+        self.type = None
+        self.name = None
         for k, v in kwargs.items():
             setattr(self, k, v)
 
@@ -99,7 +99,7 @@ class GNode:
 
 class AstGraphGenerator(object):
 
-    def __init__(self, source):
+    def __init__(self, source, **kwargs):
         self.source = source.split("\n")  # lines of the source code
         self.root = ast.parse(source)
         self.current_condition = []
@@ -769,10 +769,13 @@ class AstGraphGenerator(object):
         self.parse_in_context(try_name, "try", edges, node.body)
         
         for h in node.handlers:
-            
             handler_name, ext_edges = self.parse_operand(h)
             edges.extend(ext_edges)
-            self.parse_in_context([try_name, handler_name], ["try_except", "try_handler"], edges, h.body)
+            # self.parse_in_context([try_name, handler_name], ["try_except", "try_handler"], edges, h.body)
+            self.parse_in_context([handler_name], ["try_handler"], edges, h.body)
+            edges.append({
+                "scope": copy(self.scope[-1]), "src": handler_name, "dst": try_name, "type": 'try_except'
+            })
         
         self.parse_in_context(try_name, "try_final", edges, node.finalbody)
         self.parse_in_context(try_name, "try_else", edges, node.orelse)
@@ -781,12 +784,13 @@ class AstGraphGenerator(object):
         
     def parse_While(self, node):
 
-        edges, while_name = self.generic_parse(node, [])
+        edges, while_name = self.generic_parse(node, ["test"])
         
-        cond_name, ext_edges = self.parse_operand(node.test)
-        edges.extend(ext_edges)
+        # cond_name, ext_edges = self.parse_operand(node.test)
+        # edges.extend(ext_edges)
 
-        self.parse_in_context([while_name, cond_name], ["while", "if_true"], edges, node.body)
+        # self.parse_in_context([while_name, cond_name], ["while", "if_true"], edges, node.body)
+        self.parse_in_context([while_name], ["while"], edges, node.body)
         
         return edges, while_name
 

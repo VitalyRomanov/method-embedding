@@ -240,80 +240,83 @@ class NodeIdResolver:
             node["mentioned_in"] = mapping.get(node["mentioned_in"], node["mentioned_in"])
 
 
-class AstProcessor(AstGraphGenerator):
-    def get_edges(self, as_dataframe=True):
-        edges = []
-        all_edges, top_node_name = self.parse(self.root)
-        edges.extend(all_edges)
+def get_ast_generator_class(base_class):
+    class AstProcessor(base_class):
+        def get_edges(self, as_dataframe=True):
+            edges = []
+            all_edges, top_node_name = self.parse(self.root)
+            edges.extend(all_edges)
 
-        if as_dataframe:
-            df = pd.DataFrame(edges)
-            df = df.astype({col: "Int32" for col in df.columns if col not in {"src", "dst", "type"}})
+            if as_dataframe:
+                df = pd.DataFrame(edges)
+                df = df.astype({col: "Int32" for col in df.columns if col not in {"src", "dst", "type"}})
 
-            body = "\n".join(self.source)
-            cum_lens = get_cum_lens(body, as_bytes=True)
-            byte2char = get_byte_to_char_map(body)
+                body = "\n".join(self.source)
+                cum_lens = get_cum_lens(body, as_bytes=True)
+                byte2char = get_byte_to_char_map(body)
 
-            def format_offsets(edges: pd.DataFrame):
-                edges["start_line__end_line__start_column__end_column"] = list(
-                    zip(edges["line"], edges["end_line"], edges["col_offset"], edges["end_col_offset"])
-                )
-
-                def into_offset(range):
-                    try:
-                        return to_offsets(body, [(*range, None)], cum_lens=cum_lens, b2c=byte2char, as_bytes=True)[-1][:2]
-                    except:
-                        return None
-
-                edges["offsets"] = edges["start_line__end_line__start_column__end_column"].apply(into_offset)
-                edges.drop(
-                    axis=1,
-                    labels=[
-                        "start_line__end_line__start_column__end_column",
-                        "line",
-                        "end_line",
-                        "col_offset",
-                        "end_col_offset"
-                    ], inplace=True
-                )
-
-            format_offsets(df)
-            return df
-        else:
-            body = "\n".join(self.source)
-            cum_lens = get_cum_lens(body, as_bytes=True)
-            byte2char = get_byte_to_char_map(body)
-
-            def format_offsets(edge):
-                def into_offset(range):
-                    try:
-                        return to_offsets(body, [(*range, None)], cum_lens=cum_lens, b2c=byte2char, as_bytes=True)[-1][:2]
-                    except:
-                        return None
-
-                if "line" in edge:
-                    edge["offsets"] = into_offset(
-                        (edge["line"], edge["end_line"], edge["col_offset"], edge["end_col_offset"])
+                def format_offsets(edges: pd.DataFrame):
+                    edges["start_line__end_line__start_column__end_column"] = list(
+                        zip(edges["line"], edges["end_line"], edges["col_offset"], edges["end_col_offset"])
                     )
-                    edge.pop("line")
-                    edge.pop("end_line")
-                    edge.pop("col_offset")
-                    edge.pop("end_col_offset")
-                else:
-                    edge["offsets"] = None
-                if "var_line" in edge:
-                    edge["var_offsets"] = into_offset(
-                        (edge["var_line"], edge["var_end_line"], edge["var_col_offset"], edge["var_end_col_offset"])
+
+                    def into_offset(range):
+                        try:
+                            return to_offsets(body, [(*range, None)], cum_lens=cum_lens, b2c=byte2char, as_bytes=True)[-1][:2]
+                        except:
+                            return None
+
+                    edges["offsets"] = edges["start_line__end_line__start_column__end_column"].apply(into_offset)
+                    edges.drop(
+                        axis=1,
+                        labels=[
+                            "start_line__end_line__start_column__end_column",
+                            "line",
+                            "end_line",
+                            "col_offset",
+                            "end_col_offset"
+                        ], inplace=True
                     )
-                    edge.pop("var_line")
-                    edge.pop("var_end_line")
-                    edge.pop("var_col_offset")
-                    edge.pop("var_end_col_offset")
 
-            for edge in edges:
-                format_offsets(edge)
+                format_offsets(df)
+                return df
+            else:
+                body = "\n".join(self.source)
+                cum_lens = get_cum_lens(body, as_bytes=True)
+                byte2char = get_byte_to_char_map(body)
 
-            return edges
+                def format_offsets(edge):
+                    def into_offset(range):
+                        try:
+                            return to_offsets(body, [(*range, None)], cum_lens=cum_lens, b2c=byte2char, as_bytes=True)[-1][:2]
+                        except:
+                            return None
+
+                    if "line" in edge:
+                        edge["offsets"] = into_offset(
+                            (edge["line"], edge["end_line"], edge["col_offset"], edge["end_col_offset"])
+                        )
+                        edge.pop("line")
+                        edge.pop("end_line")
+                        edge.pop("col_offset")
+                        edge.pop("end_col_offset")
+                    else:
+                        edge["offsets"] = None
+                    if "var_line" in edge:
+                        edge["var_offsets"] = into_offset(
+                            (edge["var_line"], edge["var_end_line"], edge["var_col_offset"], edge["var_end_col_offset"])
+                        )
+                        edge.pop("var_line")
+                        edge.pop("var_end_line")
+                        edge.pop("var_col_offset")
+                        edge.pop("var_end_col_offset")
+
+                for edge in edges:
+                    format_offsets(edge)
+
+                return edges
+
+    return AstProcessor
 
 
 def standardize_new_edges(edges, node_resolver, mention_tokenizer):
@@ -348,9 +351,19 @@ def standardize_new_edges(edges, node_resolver, mention_tokenizer):
     return edges
 
 
-def process_code_without_index(source_code, node_resolver, mention_tokenizer, track_offsets=False):
+def process_code_without_index(
+        source_code, node_resolver, mention_tokenizer, track_offsets=False, mention_instances=False,
+        reverse_edges=True, base_class=None
+):
+    if base_class is None:
+        base_class = AstGraphGenerator
+
+    AstGeneratorClass = get_ast_generator_class(base_class)
+
     try:
-        ast_processor = AstProcessor(source_code)
+        ast_processor = AstGeneratorClass(
+            source_code, add_reverse_edges=reverse_edges, add_mention_instances=mention_instances
+        )
     except:
         return None, None, None
     try: # TODO recursion error does not appear consistently. The issue is probably with library versions...
@@ -398,7 +411,8 @@ def process_code_without_index(source_code, node_resolver, mention_tokenizer, tr
 
 
 def ast_graph_for_single_example(
-        source_code, bpe_tokenizer_path, create_subword_instances=False, connect_subwords=False, track_offsets=False
+        source_code, bpe_tokenizer_path, create_subword_instances=False, connect_subwords=False, track_offsets=False,
+        mention_instances=False, reverse_edges=True, ast_generator_base_class=None
 ):
     node_resolver = NodeIdResolver()
     mention_tokenizer = MentionTokenizer(bpe_tokenizer_path, create_subword_instances, connect_subwords)
@@ -412,7 +426,8 @@ def ast_graph_for_single_example(
         raise SyntaxError()
 
     edges, ast_offsets = process_code_without_index(
-        source_code, node_resolver, mention_tokenizer, track_offsets=track_offsets
+        source_code, node_resolver, mention_tokenizer, track_offsets=track_offsets, base_class=ast_generator_base_class,
+        mention_instances=mention_instances, reverse_edges=reverse_edges
     )
 
     if ast_offsets is not None:
@@ -464,7 +479,12 @@ def ast_graph_for_single_example(
         all_ast_edges = all_ast_edges.query("src != dst")
         all_ast_edges["id"] = 0
 
-        all_ast_edges = all_ast_edges[["id", "type", "src", "dst", "file_id", "scope", "offset_start", "offset_end"]] \
+        column_order = ["id", "type", "src", "dst", "file_id", "scope"]
+        if "offset_start" in all_ast_edges.columns:
+            column_order.append("offset_start")
+            column_order.append("offset_end")
+
+        all_ast_edges = all_ast_edges[column_order] \
             .rename({'src': 'source_node_id', 'dst': 'target_node_id', 'scope': 'mentioned_in'}, axis=1) \
             .astype({'file_id': 'Int32', "mentioned_in": 'string'})
 
@@ -493,7 +513,8 @@ def ast_graph_for_single_example(
         dense_columns=["source_node_id", "target_node_id"],
         sparse_columns=["mentioned_in"]
     )
-    map_columns_to_int(all_offsets, dense_columns=["node_id"], sparse_columns=["mentioned_in"])
+    if all_offsets is not None:
+        map_columns_to_int(all_offsets, dense_columns=["node_id"], sparse_columns=["mentioned_in"])
 
     return all_ast_nodes, all_ast_edges, all_offsets
 
@@ -566,7 +587,12 @@ def build_ast_only_graph(
         all_ast_edges = all_ast_edges.query("src != dst")
         all_ast_edges["id"] = 0
 
-        all_ast_edges = all_ast_edges[["id", "type", "src", "dst", "file_id", "scope", "offset_start", "offset_end"]] \
+        column_order = ["id", "type", "src", "dst", "file_id", "scope"]
+        if "offset_start" in all_ast_edges.columns:
+            column_order.append("offset_start")
+            column_order.append("offset_end")
+
+        all_ast_edges = all_ast_edges[column_order] \
             .rename({'src': 'source_node_id', 'dst': 'target_node_id', 'scope': 'mentioned_in'}, axis=1) \
             .astype({'file_id': 'Int32', "mentioned_in": 'string'})
 

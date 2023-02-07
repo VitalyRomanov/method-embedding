@@ -5,10 +5,8 @@ from copy import copy
 from enum import Enum
 from itertools import chain
 from pprint import pprint
-from time import time_ns
 from collections.abc import Iterable
 import pandas as pd
-# import os
 from SourceCodeTools.code.IdentifierPool import IdentifierPool
 
 
@@ -191,6 +189,9 @@ class PythonNodeEdgeDefinitions:
         reverse_edges = list(cls.compute_reverse_edges(direct_edges))
         return direct_edges + reverse_edges
 
+    def __init__(self):
+        raise Exception(f"{self.__class__.__name__} is a static class")
+
 
 PythonAstNodeTypes = Enum(
     "PythonAstNodeTypes",
@@ -206,60 +207,6 @@ PythonAstEdgeTypes = Enum(
         PythonNodeEdgeDefinitions.edge_types()
     )
 )
-
-
-class PythonCodeExamplesForNodes:
-    examples = {
-        "FunctionDef":
-            "def f(a):\n"
-            "   return a\n",
-        "ClassDef":
-            "class C:\n"
-            "   def m():\n"
-            "       pass\n",
-        "AnnAssign": "a: int = 5\n",
-        "With":
-            "with open(a) as b:\n"
-            "   do_stuff(b)\n",
-        "arg":
-            "def f(a: int = 5):\n"
-            "   return a\n",
-        "Lambda": "lambda x: x + 3\n",
-        "IfExp": "a = 5 if True else 0\n",
-        "keyword": "fn(a=5, b=4)\n",
-        "Attribute": "a.b.c\n",
-        "If":
-            "if d is True:\n"
-            "   a = b\n"
-            "else:\n"
-            "   a = c\n",
-        "For":
-            "for i in list:\n"
-            "   k = fn(i)\n"
-            "   if k == 4:\n"
-            "       fn2(k)\n"
-            "       break\n"
-            "else:\n"
-            "   fn2(0)\n",
-        "Try":
-            "try:\n"
-            "   a = b\n"
-            "except Exception as e:\n"
-            "   a = c\n"
-            "else:\n"
-            "   a = d\n"
-            "finally:\n"
-            "   print(a)\n",
-        "While":
-            "while b = c:\n"
-            "   do_iter(b)\n",
-        "Dict": "{a:b, c:d}\n",
-        "comprehension": "[i for i in list if i != 5]\n",
-        "BinOp": "c = a + b\n",
-        "ImportFrom": "from module import Class\n",
-        "alias": "import module as m\n",
-        "List": "a = [1, 2, 3, 4]\n"
-    }
 
 
 def generate_available_edges():
@@ -320,6 +267,8 @@ class PythonSharedNodes:
 class GNode:
     def __init__(self, **kwargs):
         self.string = None
+        self.name = None
+        self.type = None
         for k, v in kwargs.items():
             setattr(self, k, v)
 
@@ -354,18 +303,20 @@ class GEdge:
         return self.__dict__[item]
 
     def get_hash_id(self):
+        # TODO need to compute hash based on the hash of src and dst nodes
         return int(hashlib.md5(f"{self.src}_{self.dst}_{self.type}".encode('utf-8')).hexdigest()[:16], 16)
 
 
 class AstGraphGenerator(object):
 
-    def __init__(self, source, add_reverse_edges=True):
+    def __init__(self, source, add_reverse_edges=True, add_mention_instances=False, **kwargs):
         self.source = source.split("\n")  # lines of the source code
         self.root = ast.parse(source)
         self.current_condition = []
         self.condition_status = []
         self.scope = []
         self._add_reverse_edges = add_reverse_edges
+        self._add_mention_instances = add_mention_instances
 
         self._identifier_pool = IdentifierPool()
 
@@ -495,7 +446,8 @@ class AstGraphGenerator(object):
             })
 
         reverse_type = PythonNodeEdgeDefinitions.reverse_edge_exceptions.get(type, type + "_rev")
-        if self._add_reverse_edges is True and reverse_type is not None:
+        if self._add_reverse_edges is True and reverse_type is not None and \
+                not PythonSharedNodes.is_shared_name_type(src.name, src.type):
             edges.append({
                 "src": dst, "dst": src, "type": reverse_type, "scope": scope
             })
@@ -542,12 +494,19 @@ class AstGraphGenerator(object):
 
     def parse_as_mention(self, name):
         mention_name = GNode(name=name + "@" + self.scope[-1].name, type="mention", scope=copy(self.scope[-1]))
-        name = GNode(name=name, type="Name")
+        name_ = GNode(name=name, type="Name")
         # mention_name = (name + "@" + self.scope[-1], "mention")
 
         # edge from name to mention in a function
         edges = []
-        self.add_edge(edges, src=name, dst=mention_name, type="local_mention", scope=self.scope[-1])
+        self.add_edge(edges, src=name_, dst=mention_name, type="local_mention", scope=self.scope[-1])
+
+        if self._add_mention_instances:
+            mention_instance = self.get_name(name="instance", type="instance", add_random_identifier=True)
+            mention_instance.string = name
+            self.add_edge(edges, src=mention_name, dst=mention_instance, type="instance", scope=self.scope[-1])
+            mention_name = mention_instance
+
         return edges, mention_name
 
     def parse_operand(self, node):
@@ -876,10 +835,11 @@ class AstGraphGenerator(object):
         self.parse_in_context(try_name, "executed_in_try", edges, node.body)
         
         for h in node.handlers:
-            
             handler_name, ext_edges = self.parse_operand(h)
             edges.extend(ext_edges)
-            self.parse_in_context([try_name, handler_name], ["executed_in_try_except", "executed_with_try_handler"], edges, h.body)
+            # self.parse_in_context([try_name, handler_name], ["executed_in_try_except", "executed_with_try_handler"], edges, h.body)
+            self.parse_in_context([handler_name], ["executed_with_try_handler"], edges, h.body)
+            self.add_edge(edges, src=handler_name, dst=try_name, type="executed_in_try_except", scope=self.scope[-1])
         
         self.parse_in_context(try_name, "executed_in_try_final", edges, node.finalbody)
         self.parse_in_context(try_name, "executed_in_try_else", edges, node.orelse)
@@ -888,12 +848,13 @@ class AstGraphGenerator(object):
         
     def parse_While(self, node):
 
-        edges, while_name = self.generic_parse(node, [])
+        edges, while_name = self.generic_parse(node, ["test"])
         
-        cond_name, ext_edges = self.parse_operand(node.test)
-        edges.extend(ext_edges)
+        # cond_name, ext_edges = self.parse_operand(node.test)
+        # edges.extend(ext_edges)
 
-        self.parse_in_context([while_name, cond_name], ["executed_in_while", "executed_while_true"], edges, node.body)
+        # self.parse_in_context([while_name, cond_name], ["executed_in_while", "executed_while_true"], edges, node.body)
+        self.parse_in_context([while_name], ["executed_in_while"], edges, node.body)
         
         return edges, while_name
 
