@@ -28,17 +28,17 @@ class DatasetCreator(AbstractDatasetCreator):
     """
 
     merging_specification = {
-        "nodes.bz2": {"columns": ['id'], "output_path": "common_nodes.json", "ensure_unique_with": ['type', 'serialized_name']},
-        "edges.bz2": {"columns": ['target_node_id', 'source_node_id'], "output_path": "common_edges.json"},
-        "bodies.bz2": {"columns": ['id'], "output_path": "common_bodies.json", "columns_special": [("replacement_list", map_offsets)]},
-        "function_variable_pairs.bz2": {"columns": ['src'], "output_path": "common_function_variable_pairs.json"},
-        "call_seq.bz2": {"columns": ['src', 'dst'], "output_path": "common_call_seq.json"},
+        "nodes.bz2": {"columns_to_map": ['id'], "output_path": "common_nodes.json", "ensure_unique_with": ['type', 'serialized_name']},
+        "edges.bz2": {"columns_to_map": ['target_node_id', 'source_node_id'], "output_path": "common_edges.json"},
+        "bodies.bz2": {"columns_to_map": ['id'], "output_path": "common_bodies.json", "columns_special": [("replacement_list", map_offsets)]},
+        "function_variable_pairs.bz2": {"columns_to_map": ['src'], "output_path": "common_function_variable_pairs.json"},
+        "call_seq.bz2": {"columns_to_map": ['src', 'dst'], "output_path": "common_call_seq.json"},
 
-        "nodes_with_ast.bz2": {"columns": ['id', 'mentioned_in'], "output_path": "common_nodes.json", "ensure_unique_with": ['type', 'serialized_name']},
-        "edges_with_ast.bz2": {"columns": ['target_node_id', 'source_node_id', 'mentioned_in'], "output_path": "common_edges.json"},
-        "offsets.bz2": {"columns": ['node_id'], "output_path": "common_offsets.json", "columns_special": [("mentioned_in", map_offsets)]},
-        "filecontent_with_package.bz2": {"columns": [], "output_path": "common_filecontent.json"},
-        "name_mappings.bz2": {"columns": [], "output_path": "common_name_mappings.json"},
+        "nodes_with_ast.bz2": {"columns_to_map": ['id', 'mentioned_in'], "output_path": "common_nodes.json", "ensure_unique_with": ['type', 'serialized_name']},
+        "edges_with_ast.bz2": {"columns_to_map": ['target_node_id', 'source_node_id', 'mentioned_in'], "output_path": "common_edges.json"},
+        "offsets.bz2": {"columns_to_map": ['node_id'], "output_path": "common_offsets.json", "columns_special": [("mentioned_in", map_offsets)]},
+        "filecontent_with_package.bz2": {"columns_to_map": [], "output_path": "common_filecontent.json"},
+        "name_mappings.bz2": {"columns_to_map": [], "output_path": "common_name_mappings.json"},
     }
 
     files_for_merging = [
@@ -255,7 +255,7 @@ class DatasetCreator(AbstractDatasetCreator):
             self.write_type_annotation_flag(edges_with_ast, env_path)
 
             self.write_local(
-                env_path, nodes=nodes, edges=edges, bodies=bodies, call_seq=call_seq, function_variable_pairs=vars,
+                env_path, global_nodes=nodes, global_edges=edges, ast_nodes=ast_nodes, ast_edges=ast_edges, bodies=bodies, call_seq=call_seq, function_variable_pairs=vars,
                 nodes_with_ast=nodes_with_ast, edges_with_ast=edges_with_ast, offsets=offsets,
                 local2global=local2global, local2global_with_ast=local2global_with_ast,
                 name_mappings=name_mappings, filecontent_with_package=filecontent
@@ -286,9 +286,9 @@ class DatasetCreator(AbstractDatasetCreator):
 
         self.merge_graph_with_ast(with_ast_path)
 
-    def visualize_func(self, nodes, edges, output_path):
+    def visualize_func(self, nodes, edges, output_path, **kwargs):
         from SourceCodeTools.code.data.sourcetrail.sourcetrail_draw_graph import visualize
-        visualize(nodes, edges, output_path)
+        visualize(nodes, edges, output_path, **kwargs)
 
 
 if __name__ == "__main__":

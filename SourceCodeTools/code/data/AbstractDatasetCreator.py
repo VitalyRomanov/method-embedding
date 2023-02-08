@@ -23,17 +23,17 @@ class AbstractDatasetCreator:
     """
 
     merging_specification = {
-        "nodes.bz2": {"columns": ['id'], "output_path": "common_nodes.jsonl", "ensure_unique_with": ['type', 'serialized_name']},
-        "edges.bz2": {"columns": ['target_node_id', 'source_node_id'], "output_path": "common_edges.jsonl"},
-        "source_graph_bodies.bz2": {"columns": ['id'], "output_path": "common_source_graph_bodies.jsonl", "columns_special": [("replacement_list", map_offsets)]},
-        "function_variable_pairs.bz2": {"columns": ['src'], "output_path": "common_function_variable_pairs.jsonl"},
-        "call_seq.bz2": {"columns": ['src', 'dst'], "output_path": "common_call_seq.jsonl"},
+        "nodes.bz2": {"columns_to_map": ['id'], "output_path": "common_nodes.jsonl", "ensure_unique_with": ['type', 'serialized_name']},
+        "edges.bz2": {"columns_to_map": ['target_node_id', 'source_node_id'], "output_path": "common_edges.jsonl"},
+        "source_graph_bodies.bz2": {"columns_to_map": ['id'], "output_path": "common_source_graph_bodies.jsonl", "columns_special": [("replacement_list", map_offsets)]},
+        "function_variable_pairs.bz2": {"columns_to_map": ['src'], "output_path": "common_function_variable_pairs.jsonl"},
+        "call_seq.bz2": {"columns_to_map": ['src', 'dst'], "output_path": "common_call_seq.jsonl"},
 
-        "nodes_with_ast.bz2": {"columns": ['id', 'mentioned_in'], "output_path": "common_nodes.jsonl", "ensure_unique_with": ['type', 'serialized_name']},
-        "edges_with_ast.bz2": {"columns": ['target_node_id', 'source_node_id', 'mentioned_in'], "output_path": "common_edges.jsonl"},
-        "offsets.bz2": {"columns": ['node_id'], "output_path": "common_offsets.jsonl", "columns_special": [("mentioned_in", map_offsets)]},
-        "filecontent_with_package.bz2": {"columns": [], "output_path": "common_filecontent.jsonl"},
-        "name_mappings.bz2": {"columns": [], "output_path": "common_name_mappings.jsonl"},
+        "nodes_with_ast.bz2": {"columns_to_map": ['id', 'mentioned_in'], "output_path": "common_nodes.jsonl", "ensure_unique_with": ['type', 'serialized_name']},
+        "edges_with_ast.bz2": {"columns_to_map": ['target_node_id', 'source_node_id', 'mentioned_in'], "output_path": "common_edges.jsonl"},
+        "offsets.bz2": {"columns_to_map": ['node_id'], "output_path": "common_offsets.jsonl", "columns_special": [("mentioned_in", map_offsets)]},
+        "filecontent_with_package.bz2": {"columns_to_map": [], "output_path": "common_filecontent.jsonl"},
+        "name_mappings.bz2": {"columns_to_map": [], "output_path": "common_name_mappings.jsonl"},
     }
 
     files_for_merging = [
@@ -249,7 +249,7 @@ class AbstractDatasetCreator:
         else:
             return original
 
-    def read_mapped_local(self, env_path, filename, map_filename, columns_to_map, columns_special=None):
+    def read_mapped_local(self, env_path, filename, map_filename, columns_to_map, columns_special=None, **kwargs):
         input_table_path = join(env_path, filename)
         local2global = self.get_local2global(join(env_path, map_filename))
         if os.path.isfile(input_table_path) and local2global is not None:
