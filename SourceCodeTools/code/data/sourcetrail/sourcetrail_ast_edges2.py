@@ -1193,6 +1193,18 @@ def get_ast_from_modules(
 
     all_ast_edges = prepare_edges(all_ast_edges)
 
+    def additional_filtration(nodes, edges):
+        id2type = dict(zip(nodes["id"], nodes["type"]))
+        edges = edges.query("type != 'global_mention_rev'")
+
+        def inbound_allowed(id_):
+            return id2type[id_] not in PythonSharedNodes.tokenizable_types_and_annotations
+
+        edges = edges[edges["target_node_id"].apply(inbound_allowed)]
+        return nodes, edges
+
+    all_ast_nodes, all_ast_edges = additional_filtration(all_ast_nodes, all_ast_edges)
+
     if len(all_offsets) > 0:
         all_offsets = pd.DataFrame(all_offsets)
     else:
