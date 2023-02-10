@@ -255,7 +255,7 @@ class DatasetCreator(AbstractDatasetCreator):
             self.write_type_annotation_flag(edges_with_ast, env_path)
 
             self.write_local(
-                env_path, global_nodes=nodes, global_edges=edges, ast_nodes=ast_nodes, ast_edges=ast_edges, bodies=bodies, call_seq=call_seq, function_variable_pairs=vars,
+                env_path, nodes=nodes, edges=edges, bodies=bodies, call_seq=call_seq, function_variable_pairs=vars,
                 nodes_with_ast=nodes_with_ast, edges_with_ast=edges_with_ast, offsets=offsets,
                 local2global=local2global, local2global_with_ast=local2global_with_ast,
                 name_mappings=name_mappings, filecontent_with_package=filecontent
