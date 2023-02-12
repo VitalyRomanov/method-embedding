@@ -2,6 +2,7 @@ import ast
 import json
 import logging
 import os
+from bisect import bisect_left
 from os.path import join
 
 import pandas as pd
@@ -491,10 +492,10 @@ def process_package(working_directory, global_names=None, require_labels=False, 
     data = []
     nlp = create_tokenizer("spacy")
 
-    for ind, (f_body, f_offsets) in enumerate(iterate_functions(offsets, node_maps, filecontent)):
+    for ind, function_data in enumerate(iterate_functions(offsets, node_maps, filecontent)):
         try:
             entry = process_body(
-                nlp, f_body, replacements=f_offsets, require_labels=require_labels, remove_default=remove_default
+                nlp, function_data.pop("body"), replacements=function_data.pop("offsets"), require_labels=require_labels, remove_default=remove_default
             )
         except Exception as e:
             logging.warning("Error during processing")
@@ -504,6 +505,7 @@ def process_package(working_directory, global_names=None, require_labels=False, 
 
         if entry is not None:
             entry = to_global_ids(entry, id_maps, global_names, local_names)
+            entry.update(function_data)
             data.append(entry)
 
     return data
@@ -532,10 +534,10 @@ def iterate_functions(offsets, nodes, filecontent):
                 yield {
                     "body": body,
                     "offsets": adjusted_entity_offsets,
-                    # "package": package_id[0],
-                    # "file_id": package_id[1],
-                    # "line_start_python": bisect_left(lines, entity_start),
-                    # "line_end_python": bisect_left(lines, entity_end-1) + 1
+                    "package": package_id[0],
+                    "file_id": package_id[1],
+                    "line_start_python": bisect_left(lines, entity_start),
+                    "line_end_python": bisect_left(lines, entity_end-1) + 1
                 }
 
 
@@ -576,9 +578,9 @@ def group_offsets(offsets):
 def create_from_dataset(args):
     remove_default = args.remove_default
 
-    node_maps = get_node_maps(unpersist(join(args.dataset_path, "common_nodes.json.bz2")))
-    filecontent = get_filecontent_maps(unpersist(join(args.dataset_path, "common_filecontent.json.bz2")))
-    offsets = group_offsets(unpersist(join(args.dataset_path, "common_offsets.json.bz2")))
+    node_maps = get_node_maps(unpersist(join(args.dataset_path, "common_nodes.json")))
+    filecontent = get_filecontent_maps(unpersist(join(args.dataset_path, "common_filecontent.json")))
+    offsets = group_offsets(unpersist(join(args.dataset_path, "common_offsets.json")))
 
     data = []
     nlp = create_tokenizer("spacy")
@@ -588,8 +590,10 @@ def create_from_dataset(args):
             nlp, function_data.pop("body"), replacements=function_data.pop("offsets"),
             require_labels=args.require_labels, remove_default=remove_default
         )
-        entry.update(function_data)
-        data.append(entry)
+
+        if entry is not None:
+            entry.update(function_data)
+            data.append(entry)
 
     store(data, args)
 
