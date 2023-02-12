@@ -241,14 +241,14 @@ class DatasetCreator:
         else:
             return original
 
-    def create_global_file(self, local_file, local2global_file, columns, output_path, message, ensure_unique_with=None):
+    def create_global_file(self, local_file, local2global_file, columns_to_map, output_path, message, ensure_unique_with=None):
         global_table = None
         for ind, env_path in tqdm(
                 enumerate(self.environments), desc=message, leave=True,
                 dynamic_ncols=True, total=len(self.environments)
         ):
             global_table = self.merge_files(
-                env_path, local_file, local2global_file, columns, global_table
+                env_path, local_file, local2global_file, columns_to_map, global_table
             )
 
         if ensure_unique_with is not None:

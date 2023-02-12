@@ -271,7 +271,7 @@ class AbstractDatasetCreator:
         return kwargs
 
     def create_global_file(
-            self, local_file, local2global_file, columns, output_path, message, ensure_unique_with=None,
+            self, local_file, local2global_file, columns_to_map, output_path, message, ensure_unique_with=None,
             columns_special=None
     ):
         assert output_path.endswith("json") or output_path.endswith("csv")
@@ -288,7 +288,7 @@ class AbstractDatasetCreator:
                 dynamic_ncols=True, total=len(self.environments)
         ):
             mapped_local = self.read_mapped_local(
-                env_path, local_file, local2global_file, columns, columns_special=columns_special
+                env_path, local_file, local2global_file, columns_to_map, columns_special=columns_special
             )
 
             if mapped_local is not None:
