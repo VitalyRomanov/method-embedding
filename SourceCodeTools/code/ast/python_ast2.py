@@ -6,8 +6,12 @@ from enum import Enum
 from itertools import chain
 from pprint import pprint
 from collections.abc import Iterable
+
+import astunparse
 import pandas as pd
 from SourceCodeTools.code.IdentifierPool import IdentifierPool
+from SourceCodeTools.code.annotator_utils import get_cum_lens, to_offsets
+from SourceCodeTools.nlp.string_tools import get_byte_to_char_map
 
 
 class PythonNodeEdgeDefinitions:
@@ -319,32 +323,261 @@ class AstGraphGenerator(object):
         self._add_mention_instances = add_mention_instances
 
         self._identifier_pool = IdentifierPool()
+        self._prepare_offset_structures()
+
+    def _prepare_offset_structures(self):
+        self._body = "\n".join(self.source)
+        self._cum_lens = get_cum_lens(self._body, as_bytes=True)
+        self._byte2char = get_byte_to_char_map(self._body)
+
+    def _range_to_offset(self, line, end_line, col_offset, end_col_offset):
+        if line is None:
+            return None
+        return to_offsets(self._body, [(line, end_line, col_offset, end_col_offset, None)], cum_lens=self._cum_lens,
+                   b2c=self._byte2char, as_bytes=True)[-1][:2]
+
+    def is_span_exception(self, node):
+        return isinstance(node, ast.ExceptHandler) or isinstance(node, ast.Try)
+
+    def find_comparator(self, str_):
+        comparators = ["==", "!=", ">", "<", ">=", "<=", " in ", " not in ", " is ", " not is "]
+        for cmp in comparators:
+            if cmp in str_:
+                start = str_.index(cmp)
+                break
+        else:
+            raise Exception("Comparator not found")
+
+        len_ = len(cmp)
+        if cmp in {" in ", " not in ", " is ", " not is "}:
+            start += 1
+            len_ -= 1
+        return start, len_
+
+    def handle_span_exceptions(self, node, line, end_line, col_offset, end_col_offset):
+        exception_handled = False
+        handling_async = False
+        if isinstance(node, ast.ExceptHandler):
+            end_line = line
+            end_col_offset = col_offset + 6
+            exception_handled = True
+        elif isinstance(node, ast.Try):
+            end_line = line
+            end_col_offset = col_offset + 3
+            exception_handled = True
+        elif isinstance(node, ast.If):
+            end_line = line
+            end_col_offset = col_offset + 2
+            exception_handled = True
+        elif isinstance(node, ast.For):
+            end_line = line
+            end_col_offset = col_offset + 3
+            exception_handled = True
+        elif isinstance(node, ast.AsyncFor):
+            end_line = line
+            end_col_offset = col_offset + 9
+            exception_handled = True
+            handling_async = True
+        elif isinstance(node, ast.While):
+            end_line = line
+            end_col_offset = col_offset + 5
+            exception_handled = True
+        elif isinstance(node, ast.With):
+            end_line = line
+            end_col_offset = col_offset + 4
+            exception_handled = True
+        elif isinstance(node, ast.AsyncWith):
+            end_line = line
+            end_col_offset = col_offset + 10
+            exception_handled = True
+            handling_async = True
+        elif isinstance(node, ast.FunctionDef):
+            # assert "(" in self.source[line] and self.source[line].count("def ") == 1
+            end_line = line
+            end_col_offset = col_offset + 3
+            # end_col_offset = col_offset + 4 + len(self.source[line].split("def ")[1].split("(")[0])
+            exception_handled = True
+        elif isinstance(node, ast.AsyncFunctionDef):
+            # assert "(" in self.source[line] and self.source[line].count("async def ") == 1
+            end_line = line
+            end_col_offset = col_offset + 9
+            # end_col_offset = col_offset + 10 + len(self.source[line].split("async def ")[1].split("(")[0])
+            exception_handled = True
+            handling_async = True
+        elif isinstance(node, ast.ClassDef):
+            # assert (":" in self.source[line] or ":" in self.source[line]) and self.source[line].count("class ") == 1
+            # if "(" in self.source[line]:
+            #     def_len = len(self.source[line].split("class ")[1].split("(")[0])
+            # else:
+            #     def_len = len(self.source[line].split("class ")[1].split(":")[0])
+            end_line = line
+            # end_col_offset = col_offset + 6 + def_len
+            end_col_offset = col_offset + 5
+            exception_handled = True
+        elif isinstance(node, ast.Import):
+            end_line = line
+            end_col_offset = col_offset + 6
+            exception_handled = True
+            handling_async = True
+        elif isinstance(node, ast.Delete):
+            end_line = line
+            end_col_offset = col_offset + 3
+            exception_handled = True
+        elif isinstance(node, ast.ImportFrom):
+            end_line = line
+            end_col_offset = col_offset + 4
+            exception_handled = True
+        elif isinstance(node, ast.List):
+            end_line = line
+            end_col_offset = col_offset + 1
+            exception_handled = True
+        elif isinstance(node, ast.Dict):
+            end_line = line
+            end_col_offset = col_offset + 1
+            exception_handled = True
+        elif isinstance(node, ast.Set):
+            end_line = line
+            end_col_offset = col_offset + 1
+            exception_handled = True
+        elif isinstance(node, ast.Tuple):
+            end_line = line
+            end_col_offset = col_offset + 1
+            exception_handled = True
+        elif isinstance(node, ast.GeneratorExp):
+            end_line = line
+            end_col_offset = col_offset + 1
+            exception_handled = True
+        elif isinstance(node, ast.ListComp):
+            end_line = line
+            end_col_offset = col_offset + 1
+            exception_handled = True
+        elif isinstance(node, ast.DictComp):
+            end_line = line
+            end_col_offset = col_offset + 1
+            exception_handled = True
+        elif isinstance(node, ast.SetComp):
+            end_line = line
+            end_col_offset = col_offset + 1
+            exception_handled = True
+        elif isinstance(node, ast.Starred):
+            assert "*" in self.source[line]
+            end_line = line
+            end_col_offset = col_offset + 1
+            exception_handled = True
+        elif isinstance(node, ast.Return):
+            end_line = line
+            end_col_offset = col_offset + 6
+            exception_handled = True
+        elif isinstance(node, ast.Global):
+            end_line = line
+            end_col_offset = col_offset + 6
+            exception_handled = True
+        elif isinstance(node, ast.Nonlocal):
+            end_line = line
+            end_col_offset = col_offset + 8
+            exception_handled = True
+        elif isinstance(node, ast.Assert):
+            end_line = line
+            end_col_offset = col_offset + 6
+            exception_handled = True
+        elif isinstance(node, ast.Lambda):
+            end_line = line
+            end_col_offset = col_offset + 6
+            exception_handled = True
+        elif isinstance(node, ast.Raise):
+            end_line = line
+            end_col_offset = col_offset + 5
+            exception_handled = True
+        elif isinstance(node, ast.Await):
+            end_line = line
+            end_col_offset = col_offset + 5
+            exception_handled = True
+        elif isinstance(node, ast.Yield):
+            end_line = line
+            end_col_offset = col_offset + 5
+            exception_handled = True
+        elif isinstance(node, ast.YieldFrom):
+            end_line = line
+            end_col_offset = col_offset + 10
+            exception_handled = True
+            handling_async = True
+        elif type(node) in {
+            ast.Name,
+            ast.Constant,
+            ast.arg,
+            ast.JoinedStr
+        }:  # do not bother
+            pass
+        elif type(node) in {
+            ast.Compare,  # can use comparator operator
+            ast.BoolOp,  # could be multiline
+            ast.BinOp,  # could be multiline
+            ast.Assign,  # could be multiline
+            ast.AnnAssign,  # could be multiline
+            ast.AugAssign,  # could be multiline
+            ast.Subscript,  # could be multiline
+            ast.Attribute,  # could be multiline
+            ast.Call,  # need to parse
+            ast.UnaryOp,  # need to parse
+            ast.IfExp
+        }:  # potential
+            pass
+        # else:
+        #     assert False
+
+        char_offset = self._range_to_offset(line, end_line, col_offset, end_col_offset)
+
+        if exception_handled is False:
+            try:
+                ast.parse(self._body[char_offset[0]: char_offset[1]])
+            except SyntaxError:
+                try:
+                    ast.parse("(" + self._body[char_offset[0]: char_offset[1]] + ")")
+                except:
+                    raise Exception("Range parsed incorrectly")
+        elif handling_async is False:
+            assert " " not in self._body[char_offset[0]: char_offset[1]]
+
+        return line, end_line, col_offset, end_col_offset, char_offset
+
+    def get_positions(self, node, full=False):
+        if node is not None and hasattr(node, "lineno"):
+            line = node.lineno - 1
+            end_line = node.end_lineno - 1
+            col_offset = node.col_offset
+            end_col_offset = node.end_col_offset
+            char_offset = None
+            if full is False:
+                line, end_line, col_offset, end_col_offset, char_offset = self.handle_span_exceptions(node, line, end_line, col_offset, end_col_offset)
+        else:
+            line = end_line = col_offset = end_col_offset = char_offset = None
+        return line, end_line, col_offset, end_col_offset, char_offset
 
     def get_source_from_ast_range(self, node, strip=True):
-        start_line = node.lineno
-        end_line = node.end_lineno
-        start_col = node.col_offset
-        end_col = node.end_col_offset
+        try:
+            source = astunparse.unparse(node).strip()
+        except:
+            start_line, end_line, start_col, end_col, char_offset = self.get_positions(node, full=True)
 
-        source = ""
-        num_lines = end_line - start_line + 1
-        if start_line == end_line:
-            section = self.source[start_line - 1].encode("utf8")[start_col:end_col].decode(
-                "utf8")
-            source += section.strip() if strip else section + "\n"
-        else:
-            for ind, lineno in enumerate(range(start_line - 1, end_line)):
-                if ind == 0:
-                    section = self.source[lineno].encode("utf8")[start_col:].decode(
-                        "utf8")
-                    source += section.strip() if strip else section + "\n"
-                elif ind == num_lines - 1:
-                    section = self.source[lineno].encode("utf8")[:end_col].decode(
-                        "utf8")
-                    source += section.strip() if strip else section + "\n"
-                else:
-                    section = self.source[lineno]
-                    source += section.strip() if strip else section + "\n"
+            source = ""
+            num_lines = end_line - start_line + 1
+            if start_line == end_line:
+                section = self.source[start_line].encode("utf8")[start_col: end_col].decode(
+                    "utf8")
+                source += section.strip() if strip else section + "\n"
+            else:
+                for ind, lineno in enumerate(range(start_line, end_line + 1)):
+                    if ind == 0:
+                        section = self.source[lineno].encode("utf8")[start_col:].decode(
+                            "utf8")
+                        source += section.strip() if strip else section + "\n"
+                    elif ind == num_lines - 1:
+                        section = self.source[lineno].encode("utf8")[:end_col].decode(
+                            "utf8")
+                        source += section.strip() if strip else section + "\n"
+                    else:
+                        section = self.source[lineno]
+                        source += section.strip() if strip else section + "\n"
 
         return source.rstrip()
 
@@ -421,24 +654,16 @@ class AstGraphGenerator(object):
             "src": src, "dst": dst, "type": type, "scope": scope,
         })
 
-        def get_positions(node):
-            if node is not None and hasattr(node, "lineno"):
-                line = node.lineno-1
-                end_line = node.end_lineno - 1
-                col_offset = node.col_offset
-                end_col_offset = node.end_col_offset
-            else:
-                line = end_line = col_offset = end_col_offset = None
-            return line, end_line, col_offset, end_col_offset
-
-        line, end_line, col_offset, end_col_offset = get_positions(position_node)
+        line, end_line, col_offset, end_col_offset, _ = self.get_positions(position_node)
+        if self.is_span_exception(position_node):
+            line = end_line = col_offset = end_col_offset = None
 
         if line is not None:
             edges[-1].update({
                 "line": line, "end_line": end_line, "col_offset": col_offset, "end_col_offset": end_col_offset
             })
 
-        var_line, var_end_line, var_col_offset, var_end_col_offset = get_positions(var_position_node)
+        var_line, var_end_line, var_col_offset, var_end_col_offset, _ = self.get_positions(var_position_node)
 
         if var_line is not None:
             edges[-1].update({
@@ -592,19 +817,26 @@ class AstGraphGenerator(object):
 
         return edges, node_name
 
-    def parse_type_node(self, node):
-        if node.lineno == node.end_lineno:
-            type_str = self.source[node.lineno][node.col_offset - 1: node.end_col_offset]
-        else:
-            type_str = ""
-            for ln in range(node.lineno - 1, node.end_lineno):
-                if ln == node.lineno - 1:
-                    type_str += self.source[ln][node.col_offset - 1:].strip()
-                elif ln == node.end_lineno - 1:
-                    type_str += self.source[ln][:node.end_col_offset].strip()
-                else:
-                    type_str += self.source[ln].strip()
-        return type_str
+    # def parse_type_node(self, node):
+    #     _start_line = node.lineno
+    #     _end_line = node.end_lineno
+    #     _start_col = node.col_offset
+    #     _end_col = node.end_col_offset
+    #
+    #     start_line, end_line, start_col, end_col, _ = self.get_positions(node)
+    #
+    #     if node.lineno == node.end_lineno:
+    #         type_str = self.source[node.lineno][start_col - 1: end_col]
+    #     else:
+    #         type_str = ""
+    #         for ln in range(node.lineno - 1, node.end_lineno):
+    #             if ln == node.lineno - 1:
+    #                 type_str += self.source[ln][node.col_offset - 1:].strip()
+    #             elif ln == node.end_lineno - 1:
+    #                 type_str += self.source[ln][:node.end_col_offset].strip()
+    #             else:
+    #                 type_str += self.source[ln].strip()
+    #     return type_str
 
     def parse_Module(self, node):
         edges, module_name = self.generic_parse(node, [])

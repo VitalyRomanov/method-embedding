@@ -20,7 +20,8 @@ requirements = [
       'diskcache==5.4.0',
       'transformers==4.10.3',
       'sqlalchemy==1.4.39',
-      'matplotlib==3.5.2'
+      'matplotlib==3.5.2',
+      'astunparse==1.6.3'
       # 'pygraphviz'
       # 'javac_parser'
 ]
