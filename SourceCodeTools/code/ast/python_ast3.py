@@ -412,7 +412,7 @@ def nodes_edges_to_df(nodes, edges):
 class PythonAstGraphBuilder(object):
     def __init__(
             self, source, graph_definitions, add_reverse_edges=True, save_node_strings=True,
-            add_mention_instances=False, **kwargs
+            add_mention_instances=False, parse_constants=False, **kwargs
     ):
         self._node_types = graph_definitions.make_node_type_enum()
         self._edge_types = graph_definitions.make_edge_type_enum()
@@ -425,6 +425,7 @@ class PythonAstGraphBuilder(object):
         self._scope = []
         self._add_reverse_edges = add_reverse_edges
         self._add_mention_instances = add_mention_instances
+        self._parse_constants = parse_constants
         self._save_node_strings = save_node_strings
         self._node_pool = dict()
         self._cum_lens = get_cum_lens(self._original_source, as_bytes=True)
@@ -971,8 +972,12 @@ class PythonAstGraphBuilder(object):
     def parse_Constant(self, node):
         # TODO
         # decide whether this name should be unique or not
-        value_type = type(node.value).__name__
-        name = self._get_node(name=f"Constant_{value_type}", type=self._node_types["Constant"])
+        if self._parse_constants:
+            name_ = str(node.value)
+        else:
+            value_type = type(node.value).__name__
+            name_ = f"Constant_{value_type}"
+        name = self._get_node(name=name_, type=self._node_types["Constant"])
         # name = "Constant_"
         # if node.kind is not None:
         #     name += ""
