@@ -1,16 +1,15 @@
 from SourceCodeTools.code.data.file_utils import unpersist
 
 
-try:
-    import pygraphviz as pgv
-except ModuleNotFoundError:
-    raise Exception("Install 'pygraphviz'")
-
-
 def visualize(
         nodes, edges, output_path, show_reverse=False,
         special_node_types=None, special_edge_types=None
 ):
+    # do not import unless necessary, not installed by default
+    try:
+        import pygraphviz as pgv
+    except ModuleNotFoundError:
+        raise Exception("Install 'pygraphviz'")
 
     nodes = nodes.rename({"serialized_name": "name"}, axis=1)
     edges = edges.rename({"source_node_id": "src", "target_node_id": "dst"}, axis=1)
