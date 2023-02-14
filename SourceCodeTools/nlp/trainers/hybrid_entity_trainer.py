@@ -65,7 +65,7 @@ class HybridModelTrainer(CodeBertModelTrainer):
                 labels=batch['tags'], lengths=batch['lens'],
                 extra_mask=batch['no_loc_mask'] if self.no_localization else batch['hide_mask'],
                 # class_weights=batch['class_weights'],
-                scorer=scorer, finetune=self.finetune and epoch / self.epochs > 0.6,
+                scorer=scorer, finetune=self.finetune and (epoch >= self.pretraining_epochs),
                 vocab_mapping=self.vocab_mapping,
                 train=train
             )
