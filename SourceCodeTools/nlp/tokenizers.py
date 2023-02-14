@@ -4,6 +4,7 @@ import spacy
 from spacy.tokens import Doc
 
 from SourceCodeTools.nlp.spacy_tools.SpacyPythonBpeTokenizer import SpacyPythonBpe
+from SourceCodeTools.nlp.string_tools import get_byte_to_char_map
 
 
 def token_hasher(token: str, buckets: int):
@@ -29,15 +30,29 @@ def _inject_tokenizer(nlp):
 
 
 class AdapterDoc:
-    def __init__(self, tokens, replacements=None):
+    def __init__(
+            self, tokens,
+            # plain_tokens=None,
+            original_text=None,
+            reverse_tokenization_fn=None,
+            tokens_as_bytes=False,
+            start_token_adjustment_amount=0,
+            tokens_for_alignment=None,
+    ):
         """
         A simple wrapper for tokens that also stores additional data such as character span adjustment and
         tokens compatible with `biluo_tags_from_offsets`
         """
         self.tokens = tokens
         self.adjustment_amount = 0
-        self.tokens_for_biluo_alignment = None
-        self._replacements = replacements
+        # self.tokens_for_biluo_alignment = None
+        # self._replacements = replacements
+        self._original_text = original_text
+        self._reverse_tokenization_fn = reverse_tokenization_fn
+        # self._plain_tokens = plain_tokens  # without service tokens such as <s>
+        self._tokens_for_alignment = tokens_for_alignment  # without service tokens such as <s>
+        self._tokens_as_bytes = tokens_as_bytes
+        self._start_token_adjustment_amount = start_token_adjustment_amount
 
     def __iter__(self):
         return iter(self.tokens)
@@ -49,12 +64,34 @@ class AdapterDoc:
         return len(self.tokens)
 
     @property
+    def requires_offset_adjustment(self):
+        return self._start_token_adjustment_amount > 0 or self._tokens_as_bytes
+
+    @property
     def text(self):
-        r = self.__repr__()
-        if self._replacements is not None:
-            for rc, c in self._replacements.items():
-                r = r.replace(rc, c)
+        if self._reverse_tokenization_fn is None:
+            r = "".join(self.tokens)
+            # if self._replacements is not None:
+            #     for rc, c in self._replacements.items():
+            #         r = r.replace(rc, c)
+        else:
+            r = self._reverse_tokenization_fn(self.tokens)
         return r
+
+    def adjust_offsets(self, offsets):
+        if self._tokens_as_bytes:
+            _b2c = get_byte_to_char_map(self._original_text)
+            _c2b = dict(zip(_b2c.values(), _b2c.keys()))
+
+            offsets = [(_c2b[o[0]], _c2b[o[1]], o[2]) for o in offsets]
+
+        if self._start_token_adjustment_amount != 0:
+            offsets = [(o[0] + self._start_token_adjustment_amount, o[1] + self._start_token_adjustment_amount, o[2]) for o in offsets]
+
+        return offsets
+
+    def get_tokens_for_alignment(self):
+        return self._tokens_for_alignment
 
 
 class CodebertAdapter:
@@ -86,6 +123,8 @@ class CodebertAdapter:
             original string: 'a + b'
             codebert tokenized: '<s>', 'a', 'Ġ+', 'Ġb', '</s>'
         """
+        # TODO
+        # there is a bug when there is " <s> " in the input it is stripped of surrounding spaces "<s>"
         tokens = self.primary_tokenization(text)
         tokens = self.secondary_tokenization(tokens)
         doc = Doc(self.nlp.vocab, tokens, spaces=[False] * len(tokens))
@@ -112,9 +151,16 @@ class CodebertAdapter:
         assert len(doc) - 2 == len(backup_tokens)
         assert len(doc.text) - 7 == len(backup_tokens.text)
 
-        final_doc = AdapterDoc(["<s>"] + [t.text for t in backup_tokens] + ["</s>"], {"Ċ": "\n", "Ġ": " ", "<s>": "", "</s>": ""})
-        final_doc.adjustment_amount = -3
-        final_doc.tokens_for_biluo_alignment = doc
+        final_doc = AdapterDoc(
+            ["<s>"] + [t.text for t in backup_tokens] + ["</s>"],
+            original_text=text,
+            reverse_tokenization_fn=self.tokenizer.convert_tokens_to_string,
+            tokens_as_bytes=True,
+            start_token_adjustment_amount=3,
+            tokens_for_alignment=doc
+        )
+        # final_doc.adjustment_amount = -3
+        # final_doc.tokens_for_biluo_alignment = doc
 
         return final_doc
 
