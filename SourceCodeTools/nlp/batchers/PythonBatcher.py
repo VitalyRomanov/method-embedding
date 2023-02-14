@@ -287,23 +287,30 @@ class Batcher:
 
         return output
 
-    def _get_adjustment(self, doc):
-        if hasattr(doc, "tokens_for_biluo_alignment"):
-            entity_adjustment_amount = doc.adjustment_amount
-            tokens_for_biluo_alignment = doc.tokens_for_biluo_alignment
+    def _get_adjustment(self, doc, offsets):
+        if hasattr(doc, "requires_offset_adjustment") and doc.requires_offset_adjustment:
+            adjusted_offsets = doc.adjust_offsets(offsets)
+            tokens_for_biluo_alignment = doc.get_tokens_for_alignment()
         else:
-            entity_adjustment_amount = 0
+            adjusted_offsets = offsets
             tokens_for_biluo_alignment = doc
-        return entity_adjustment_amount, tokens_for_biluo_alignment
+        return tokens_for_biluo_alignment, adjusted_offsets
+        # if hasattr(doc, "tokens_for_biluo_alignment"):
+        #     entity_adjustment_amount = doc.adjustment_amount
+        #     tokens_for_biluo_alignment = doc.tokens_for_biluo_alignment
+        # else:
+        #     entity_adjustment_amount = 0
+        #     tokens_for_biluo_alignment = doc
+        # return entity_adjustment_amount, tokens_for_biluo_alignment
 
     def _biluo_tags_from_offsets(self, doc, tags, check_localization_parameter=False):
         if check_localization_parameter is True:
             no_localization = self._no_localization
         else:
             no_localization = False
-        entity_adjustment_amount, tokens_for_biluo_alignment = self._get_adjustment(doc)
+        tokens_for_biluo_alignment, adjusted_offsets = self._get_adjustment(doc, tags)
         ents_tags = biluo_tags_from_offsets(
-            tokens_for_biluo_alignment, adjust_offsets(tags, entity_adjustment_amount),
+            tokens_for_biluo_alignment, adjusted_offsets,
             no_localization
         )
         fix_incorrect_tags(ents_tags)
