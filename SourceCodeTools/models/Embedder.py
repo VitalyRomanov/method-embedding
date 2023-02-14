@@ -1,5 +1,13 @@
+import sys
+
 import numpy as np
-from nhkv import KVStore
+
+
+try:
+    from nhkv import KVStore
+except ImportError:
+    print("Install NHKV: pip install git+https://github.com/VitalyRomanov/nhkv.git")
+    sys.exit()
 
 
 class Embedder:

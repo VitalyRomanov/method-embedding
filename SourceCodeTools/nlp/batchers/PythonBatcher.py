@@ -1,6 +1,7 @@
 import hashlib
 import json
 import random
+import sys
 import tempfile
 from collections import defaultdict
 from copy import copy
@@ -18,8 +19,14 @@ from SourceCodeTools.code.annotator_utils import adjust_offsets, biluo_tags_from
 from SourceCodeTools.nlp.entity.utils import overlap
 import numpy as np
 
-from nhkv import KVStore
 from tqdm import tqdm
+
+
+try:
+    from nhkv import KVStore
+except ImportError:
+    print("Install NHKV: pip install git+https://github.com/VitalyRomanov/nhkv.git")
+    sys.exit()
 
 
 def filter_unlabeled(entities, declarations):

@@ -1,4 +1,5 @@
 import os
+import sys
 from collections import defaultdict
 from copy import copy
 from pathlib import Path
@@ -9,7 +10,6 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from nhkv import KVStore
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import ExponentialLR, ReduceLROnPlateau
 from time import time
@@ -33,6 +33,13 @@ from SourceCodeTools.models.graph.train.objectives.NodeClassificationObjective i
     ClassifierTargetMapper
 from SourceCodeTools.models.graph.train.objectives.SubgraphClassifierObjective import SubgraphClassifierObjective, \
     SubgraphEmbeddingObjective, SubgraphClassifierObjectiveWithUnetPool, SubgraphClassifierObjectiveWithAttentionPooling
+
+
+try:
+    from nhkv import KVStore
+except ImportError:
+    print("Install NHKV: pip install git+https://github.com/VitalyRomanov/nhkv.git")
+    sys.exit()
 
 
 class EarlyStopping(Exception):

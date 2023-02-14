@@ -21,7 +21,8 @@ requirements = [
       'transformers==4.10.3',
       'sqlalchemy==1.4.39',
       'matplotlib==3.5.2',
-      'astunparse==1.6.3'
+      'astunparse==1.6.3',
+      'setuptools==59.5.0'
       # 'pygraphviz'
       # 'javac_parser'
 ]
