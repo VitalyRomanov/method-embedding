@@ -418,8 +418,8 @@ class Batcher:
     # @lru_cache(maxsize=200000)
     def _encode_for_batch(self, record):
 
-        if record.id in self._batch_cache:
-            return self._batch_cache[record.id]
+        # if record.id in self._batch_cache:
+        #     return self._batch_cache[record.id]
 
         def encode_seq(seq, encoder, pad, preproc_fn=None):
             if preproc_fn is None:
@@ -464,8 +464,8 @@ class Batcher:
         output["lens"] = np.array(num_tokens if num_tokens < self._max_seq_len else self._max_seq_len, dtype=np.int32)
         output["id"] = record.id
 
-        self._batch_cache[record.id] = output
-        self._batch_cache.save()
+        # self._batch_cache[record.id] = output
+        # self._batch_cache.save()
 
         return output
 
@@ -504,10 +504,10 @@ class Batcher:
             records = self._iterate_records(limit_max_length=True, shuffle=False)
 
         for id_ in records:
-            if id_ in self._batch_cache:
-                batch.append(self._batch_cache[id_])
-            else:
-                batch.append(self._encode_for_batch(self.get_record_with_id(id_)))
+            # if id_ in self._batch_cache:
+            #     batch.append(self._batch_cache[id_])
+            # else:
+            batch.append(self._encode_for_batch(self.get_record_with_id(id_)))
             if len(batch) >= self._batch_size:
                 yield self.format_batch(batch)
                 batch.clear()
