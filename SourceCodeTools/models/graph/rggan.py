@@ -1,7 +1,7 @@
 import torch
 from torch.utils import checkpoint
 
-from SourceCodeTools.models.graph.rgcn import RGCN, RelGraphConvLayer, CkptGATConv
+from SourceCodeTools.models.graph.rgcn import RGCN, RelGraphConvLayer, CkptGATConv, get_tensor_metrics
 
 import torch.nn as nn
 import torch.nn.functional as F
@@ -95,7 +95,7 @@ class RGAN(RGCN):
 
         super(RGAN, self).__init__(
             ntypes, etypes, h_dim, node_emb_size, num_bases, n_layers=n_layers, dropout=dropout,
-            use_self_loop=use_self_loop, activation=activation, use_gcn_checkpoint=use_gcn_checkpoint
+            use_self_loop=use_self_loop, activation=activation, use_gcn_checkpoint=use_gcn_checkpoint, **kwargs
         )
 
     def _initialize(self):
@@ -183,19 +183,30 @@ class RGGANLayer(RGANLayer):
         )
         self.gru = nn.GRUCell(input_size=out_feat, hidden_size=out_feat, bias=True)
 
-    def forward(self, g, inputs):
+    def forward(self, g, inputs, layer_id=None, tensor_metrics=None):
         if g.is_block:
             inputs_dst = {k: v[:g.number_of_dst_nodes(k)] for k, v in inputs.items()}
         else:
             inputs_dst = inputs
 
-        hs = super().forward(g, inputs)
+        hs = super().forward(g, inputs, layer_id=layer_id, tensor_metrics=tensor_metrics)
 
-        return {
-            dsttype: self.gru(
+        out = {}
+        for dsttype, h_dst in hs.items():
+            gru_out = self.gru(
                 h_dst, inputs_dst[dsttype]
-            ) for dsttype, h_dst in hs.items()
-        }
+            )
+            out[dsttype] = gru_out
+            if tensor_metrics is not None:
+                tensor_metrics.update(get_tensor_metrics(gru_out, f"layer_{layer_id}/{dsttype}/norm"))
+
+        return out
+
+        # return {
+        #     dsttype: self.gru(
+        #         h_dst, inputs_dst[dsttype]
+        #     )
+        # }
 
 
 class RGGAN(RGAN):
@@ -208,7 +219,7 @@ class RGGAN(RGAN):
         super(RGGAN, self).__init__(
             ntypes, etypes, h_dim, node_emb_size, num_bases, n_layers=n_layers, dropout=dropout,
             use_self_loop=use_self_loop, activation=activation, use_gcn_checkpoint=use_gcn_checkpoint,
-            use_att_checkpoint=use_att_checkpoint
+            use_att_checkpoint=use_att_checkpoint, **kwargs
         )
 
     def _initialize(self):
