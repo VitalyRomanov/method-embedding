@@ -32,7 +32,8 @@ def get_mentions(function, root, mention):
                     else:
                         # TODO
                         # disable variable search inside fstrings to avoid these errors
-                        logging.warning("Skipping offset, does not align with the source code")
+                        # logging.warning("Skipping offset, does not align with the source code")
+                        pass
 
     # hack for deduplication
     # the origin of duplicates is still unknown
@@ -70,7 +71,8 @@ def get_descendants(function, children):
             if function[offset[-1][0]:offset[-1][1]] == actual_name:
                 descendants.append((function[offset[-1][0]:offset[-1][1]], offset[-1]))
             else:
-                logging.warning("Skipping offset, does not align with the source code")
+                # logging.warning("Skipping offset, does not align with the source code")
+                pass
         # elif isinstance(node, ast.Tuple):
         #     descendants.extend(get_descendants(function, node.elts))
         elif isinstance(node, ast.Subscript) or isinstance(node, ast.Tuple) or isinstance(node, ast.List):

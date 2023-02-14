@@ -94,7 +94,7 @@ def to_offsets(
                 r_ = (b2c[r_[0]], b2c[r_[1]], r_[2])
                 repl.append(r_)
         except KeyError:
-            logging.warning("Skipping offset, does not align with the source code")
+            # logging.warning("Skipping offset, does not align with the source code")
             continue
 
     return repl
