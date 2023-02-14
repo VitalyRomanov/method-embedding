@@ -1,4 +1,7 @@
 import ast
+import logging
+
+import astunparse
 
 from SourceCodeTools.code.annotator_utils import to_offsets, resolve_self_collision, adjust_offsets2
 
@@ -16,10 +19,18 @@ def get_mentions(function, root, mention):
     for node in ast.walk(root):
         if isinstance(node, ast.Name): # a variable or a ...
             if node.id == mention:
-                offset = to_offsets(function,
-                                    [(node.lineno-1, node.end_lineno-1, node.col_offset, node.end_col_offset, "mention")], as_bytes=True)
+                offset = to_offsets(
+                    function, [
+                        (node.lineno-1, node.end_lineno-1, node.col_offset, node.end_col_offset, "mention")
+                    ],
+                    as_bytes=True,
+                )
 
-                mentions.extend(offset)
+                if len(offset) > 0:
+                    if function[offset[-1][0]: offset[-1][1]] == node.id:
+                        mentions.extend(offset)
+                    else:
+                        logging.warning("Skipping offset, does not align with the source code")
 
     # hack for deduplication
     # the origin of duplicates is still unknown
@@ -50,7 +61,14 @@ def get_descendants(function, children):
             offset = to_offsets(function,
                                 [(node.lineno-1, node.end_lineno-1, node.col_offset, node.end_col_offset, "new_var")], as_bytes=True)
             # descendants.append((node.id, offset[-1]))
-            descendants.append((function[offset[-1][0]:offset[-1][1]], offset[-1]))
+            if isinstance(node, ast.Attribute):
+                actual_name = astunparse.unparse(node).strip()
+            else:
+                actual_name = node.id
+            if function[offset[-1][0]:offset[-1][1]] == actual_name:
+                descendants.append((function[offset[-1][0]:offset[-1][1]], offset[-1]))
+            else:
+                logging.warning("Skipping offset, does not align with the source code")
         # elif isinstance(node, ast.Tuple):
         #     descendants.extend(get_descendants(function, node.elts))
         elif isinstance(node, ast.Subscript) or isinstance(node, ast.Tuple) or isinstance(node, ast.List):
@@ -81,8 +99,12 @@ def get_declarations(function_):
             # TODO
             # not quite sure why this if statement was needed, but there should be no annotations in the code
             if node.annotation is None:
-                offset = to_offsets(function,
-                                    [(node.lineno-1, node.end_lineno-1, node.col_offset, node.end_col_offset, "arg")], as_bytes=True)
+                offset = to_offsets(
+                    function, [
+                        (node.lineno-1, node.end_lineno-1, node.col_offset, node.end_col_offset, "arg")
+                    ],
+                    as_bytes=True
+                )
 
                 assert function[offset[-1][0]:offset[-1][1]] == node.arg, f"{function[offset[-1][0]:offset[-1][1]]} != {node.arg}"
 

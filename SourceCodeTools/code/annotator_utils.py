@@ -1,3 +1,4 @@
+import logging
 from copy import copy, deepcopy
 from typing import List, Tuple, Iterable
 
@@ -57,7 +58,9 @@ from SourceCodeTools.nlp.string_tools import get_byte_to_char_map
 #     return response
 
 
-def to_offsets(body: str, entities: Iterable[Iterable], as_bytes=False, cum_lens=None, b2c=None):
+def to_offsets(
+        body: str, entities: Iterable[Iterable], as_bytes=False, cum_lens=None, b2c=None
+):
     """
     Transform entity annotation format from (line, end_line, col, end_col)
     to (char_ind, end_char_ind).
@@ -69,17 +72,30 @@ def to_offsets(body: str, entities: Iterable[Iterable], as_bytes=False, cum_lens
     if cum_lens is None:
         cum_lens = get_cum_lens(body, as_bytes=as_bytes)
 
-    # b2c = [get_byte_to_char_map(line) for line in body.split("\n")]
-
-    # repl = [(cum_lens[line] + b2c[line][start], cum_lens[end_line] + b2c[end_line][end], annotation) for
+    # # b2c = [get_byte_to_char_map(line) for line in body.split("\n")]
+    #
+    # # repl = [(cum_lens[line] + b2c[line][start], cum_lens[end_line] + b2c[end_line][end], annotation) for
+    # #         ind, (line, end_line, start, end, annotation) in enumerate(entities)]
+    # repl = [(cum_lens[line] + start, cum_lens[end_line] + end, annotation) for
     #         ind, (line, end_line, start, end, annotation) in enumerate(entities)]
-    repl = [(cum_lens[line] + start, cum_lens[end_line] + end, annotation) for
-            ind, (line, end_line, start, end, annotation) in enumerate(entities)]
+    #
+    # if as_bytes:
+    #     if b2c is None:
+    #         b2c = get_byte_to_char_map(body)
+    #     repl = list(map(lambda x: (b2c[x[0]], b2c[x[1]], x[2]), repl))
 
-    if as_bytes:
-        if b2c is None:
-            b2c = get_byte_to_char_map(body)
-        repl = list(map(lambda x: (b2c[x[0]], b2c[x[1]], x[2]), repl))
+    repl = []
+    for ind, (line, end_line, start, end, annotation) in enumerate(entities):
+        try:
+            r_ = (cum_lens[line] + start, cum_lens[end_line] + end, annotation)
+            if as_bytes:
+                if b2c is None:
+                    b2c = get_byte_to_char_map(body)
+                r_ = (b2c[r_[0]], b2c[r_[1]], r_[2])
+                repl.append(r_)
+        except KeyError:
+            logging.warning("Skipping offset, does not align with the source code")
+            continue
 
     return repl
 
