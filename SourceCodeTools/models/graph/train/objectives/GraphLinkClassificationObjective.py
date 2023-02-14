@@ -96,12 +96,16 @@ class GraphLinkMisuseObjective(GraphLinkClassificationObjective):
 
         def compute_binary_precision(scores, labels=None):
             scores = scores.cpu().argmax(dim=-1)
+            if labels is not None:
+                labels = labels.cpu()
             if scores.sum() == 0.:
                 return 0.
             return ((labels * scores).sum() / scores.sum()).item()
 
         def compute_binary_recall(scores, labels=None):
             labels_sum = labels.sum()
+            if labels is not None:
+                labels = labels.cpu()
             if labels_sum == 0:
                 logging.warning("Trying to compute recall for batch without positive labels. Skipping.")
                 labels_sum = 1.0
