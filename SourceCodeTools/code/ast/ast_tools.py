@@ -30,6 +30,8 @@ def get_mentions(function, root, mention):
                     if function[offset[-1][0]: offset[-1][1]] == node.id:
                         mentions.extend(offset)
                     else:
+                        # TODO
+                        # disable variable search inside fstrings to avoid these errors
                         logging.warning("Skipping offset, does not align with the source code")
 
     # hack for deduplication
