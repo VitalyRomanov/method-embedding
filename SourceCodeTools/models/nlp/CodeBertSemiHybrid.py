@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import torch
 from SourceCodeTools.mltools.torch import to_numpy
@@ -16,7 +18,7 @@ class CodeBertSemiHybridModel(nn.Module):
         self.use_graph = not no_graph
 
         if self.use_graph:
-            num_emb = graph_padding_idx if isinstance(graph_padding_idx, int) else 1 + 1  # padding id is usually not a real embedding
+            num_emb = (graph_padding_idx if isinstance(graph_padding_idx, int) else 1) + 1  # padding id is usually not a real embedding
             assert graph_emb is not None, "Graph embeddings are not provided, but model requires them"
             graph_emb_dim = graph_emb.n_dims
             self.graph_emb = nn.Embedding(
@@ -30,6 +32,7 @@ class CodeBertSemiHybridModel(nn.Module):
             assert self.graph_emb.weight.shape == new_param.shape
             self.graph_emb.weight = new_param
             self.graph_emb.weight.requires_grad = False
+            logging.warning("Graph embeddings are not finetuned")
         else:
             graph_emb_dim = 0
 
