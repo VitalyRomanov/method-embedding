@@ -1,8 +1,10 @@
 import logging
 from abc import abstractmethod
 from collections import defaultdict
+from dataclasses import dataclass
 from enum import Enum
 from os.path import join
+from typing import Dict, Union, Tuple, Optional
 
 import dgl
 import torch
@@ -15,6 +17,23 @@ import torch.nn as nn
 
 from SourceCodeTools.models.graph.TargetEmbedder import TargetEmbedder
 from SourceCodeTools.models.graph.train.Scorer import Scorer
+
+
+@dataclass
+class GNNOutput:
+    output: Union[Dict, torch.Tensor]
+    node_embeddings: Union[Dict, torch.Tensor]
+    input_embeddings: Union[Dict, torch.Tensor]
+
+
+@dataclass
+class ObjectiveOutput:
+    gnn_output: GNNOutput
+    logits: Tuple[torch.Tensor, Optional[torch.Tensor]]
+    labels: Tuple[torch.Tensor, Optional[torch.Tensor]]
+    loss: torch.Tensor
+    scores: Dict
+    prediction: Tuple[torch.Tensor, Optional[torch.Tensor]]
 
 
 class ZeroEdges(Exception):
@@ -320,10 +339,14 @@ class AbstractObjective(nn.Module):
         else:
             return input
 
-    def _graph_embeddings(self, input_nodes, blocks, mask=None):
-        emb = self._extract_embed(input_nodes, mask=mask)
-        graph_emb = self.graph_model(self._wrap_into_dict(emb), blocks)
-        return graph_emb["node_"]
+    def _graph_embeddings(self, input_nodes, blocks, mask=None) -> GNNOutput:
+        emb = self._wrap_into_dict(self._extract_embed(input_nodes, mask=mask))
+        graph_emb = self.graph_model(emb, blocks)
+        return GNNOutput(
+            output=graph_emb["node_"],
+            node_embeddings=graph_emb,
+            input_embeddings=emb
+        )
 
     def _create_positive_labels(self, ids, positive_targets=None):
         return torch.full((len(ids),), self.positive_label, dtype=self.label_dtype).to(self.device)
@@ -411,7 +434,8 @@ class AbstractObjective(nn.Module):
         #     return None, None
 
         # try:
-        graph_emb, logits, labels, loss, scores_ = self(
+        # graph_emb, logits, labels, loss, scores_ = self(
+        objective_output = self(
             # input_nodes, input_mask, blocks, positive_indices, negative_indices,
             # update_ns_callback=update_ns_callback  #, graph=graph  # do not pass graph, possibly increases cache size
             update_ns_callback=update_ns_callback, **batch
@@ -424,24 +448,27 @@ class AbstractObjective(nn.Module):
         # loss.backward()  # create_graph = True
 
         if partition == "train":
-            scores = {"Loss": loss.item()} #, "Accuracy": acc}
-            scores.update(scores_)
+            scores = {"Loss": objective_output.loss.item()} #, "Accuracy": acc}
+            scores.update(objective_output.scores)
             if hasattr(self.graph_model, "tensor_metrics") and self.graph_model.tensor_metrics is not None:
                 scores.update(self.graph_model.tensor_metrics)
-            longterm_metrics[f"Loss/{partition}_avg/{self.name}"].append(loss.item())
-            for key, val in scores_.items():
+            longterm_metrics[f"Loss/{partition}_avg/{self.name}"].append(objective_output.loss.item())
+            for key, val in objective_output.scores.items():
                 longterm_metrics[f"{key}/{partition}_avg/{self.name}"].append(val)
         else:
             scores = {}
             if self.measure_scores:
                 if batch_ind % self.dilate_scores == 0:
-                    self._do_score_measurement(batch, graph_emb, longterm_metrics, scorer, y_true=labels, logits=logits)
-            longterm_metrics["Loss"].append(loss.item())
-            for key, val in scores_.items():
+                    self._do_score_measurement(
+                        batch, objective_output.gnn_output.output, longterm_metrics, scorer,
+                        y_true=objective_output.labels, logits=objective_output.logits
+                    )
+            longterm_metrics["Loss"].append(objective_output.loss.item())
+            for key, val in objective_output.scores.items():
                 longterm_metrics[f"{key}"].append(val)
             # longterm_metrics["Accuracy"].append(acc)
 
-        return loss, scores
+        return objective_output.loss, scores
 
     def _evaluate_objective(self, data_split):
         longterm_scores = defaultdict(list)
@@ -507,7 +534,7 @@ class AbstractObjective(nn.Module):
             assert dst_seeds.tolist() == unique_dst.tolist()
             input_ = blocks[0].srcnodes["node_"].data["embedding_id"].to(self.device)
             assert -1 not in input_.cpu().tolist()
-            unique_dst_embeddings = self._graph_embeddings(input_, blocks)  # use_types, ntypes)
+            unique_dst_embeddings = self._graph_embeddings(input_, blocks).output  # use_types, ntypes)
             dst_embeddings = unique_dst_embeddings[slice_map.to(self.device)]
 
             if self.update_embeddings_for_queries and update_ns_callback is not None:
@@ -546,16 +573,27 @@ class AbstractObjective(nn.Module):
             self, input_nodes, input_mask, blocks, positive_indices, negative_indices,
             update_ns_callback=None, **kwargs
     ):
-        graph_emb = self._graph_embeddings(input_nodes, blocks, mask=input_mask)
+        gnn_output = self._graph_embeddings(input_nodes, blocks, mask=input_mask)
+
         _, positive_emb, negative_emb, labels_pos, labels_neg = self._prepare_for_prediction(
-            graph_emb, positive_indices, negative_indices, self.target_embedding_fn, update_ns_callback  # , subgraph
+            gnn_output.output, positive_indices, negative_indices, self.target_embedding_fn, update_ns_callback  # , subgraph
         )
 
         pos_neg_scores, avg_scores, loss  = self._compute_scores_loss(
-            graph_emb, positive_emb, negative_emb, labels_pos, labels_neg
+            gnn_output.output, positive_emb, negative_emb, labels_pos, labels_neg
         )
 
-        return graph_emb, pos_neg_scores, (labels_pos, labels_neg), loss, avg_scores
+        return ObjectiveOutput(
+            gnn_output=gnn_output,
+            logits=pos_neg_scores,
+            labels=(labels_pos, labels_neg),
+            loss=loss,
+            scores=avg_scores,
+            prediction=(
+                torch.softmax(pos_neg_scores[0], dim=-1),
+                torch.softmax(pos_neg_scores[1], dim=-1) if pos_neg_scores[1] is not None else None
+            )
+        )
 
     def evaluate(self, data_split, *, neg_sampling_strategy=None, early_stopping=False, early_stopping_tolerance=20):
         scores = self._evaluate_objective(data_split)

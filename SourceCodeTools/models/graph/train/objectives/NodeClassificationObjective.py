@@ -1,13 +1,15 @@
 import logging
 from collections import OrderedDict
 from itertools import chain
+from typing import Tuple, Optional, Dict
 
 import torch
 from sklearn.metrics import ndcg_score, top_k_accuracy_score
 from torch import nn
 
 from SourceCodeTools.models.graph.TargetLoader import TargetLoader
-from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective, ScoringMethods
+from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective, ScoringMethods, \
+    ObjectiveOutput
 
 import numpy as np
 
@@ -45,7 +47,9 @@ class NodeClassifierObjective(AbstractObjective):
 
         self._compute_average_score = compute_average_score
 
-    def _compute_scores_loss(self, graph_emb, positive_emb, negative_emb, labels_pos, labels_neg):
+    def _compute_scores_loss(
+            self, graph_emb, positive_emb, negative_emb, labels_pos, labels_neg
+    ) -> Tuple[Tuple[torch.Tensor, Optional[torch.Tensor]], Dict, torch.Tensor]:
         pos_scores = self.classifier(graph_emb)
         loss = self._loss_op(pos_scores, labels_pos)
         with torch.no_grad():
@@ -132,7 +136,9 @@ class MisuseNodeClassifierObjective(NodeClassifierObjective):
         self._compute_precision = compute_precision
         self._compute_recall = compute_recall
 
-    def _compute_scores_loss(self, graph_emb, positive_emb, negative_emb, labels_pos, labels_neg):
+    def _compute_scores_loss(
+            self, graph_emb, positive_emb, negative_emb, labels_pos, labels_neg
+    ) -> Tuple[Tuple[torch.Tensor, Optional[torch.Tensor]], Dict, torch.Tensor]:
         pos_scores = self.classifier(graph_emb)
         loss = self._loss_op(pos_scores, labels_pos)
         with torch.no_grad():
@@ -147,7 +153,9 @@ class MisuseNodeClassifierObjective(NodeClassifierObjective):
             self, input_nodes, input_mask, blocks, positive_indices, negative_indices,
             update_ns_callback=None, misuse_node_mask=None, **kwargs
     ):
-        graph_emb = self._graph_embeddings(input_nodes, blocks, mask=input_mask)
+        gnn_output = self._graph_embeddings(input_nodes, blocks, mask=input_mask)
+        graph_emb = gnn_output.output
+
         _, positive_emb, negative_emb, labels_pos, labels_neg = self._prepare_for_prediction(
             graph_emb, positive_indices, negative_indices, self.target_embedding_fn, update_ns_callback  # , subgraph
         )
@@ -160,7 +168,17 @@ class MisuseNodeClassifierObjective(NodeClassifierObjective):
             graph_emb, positive_emb, negative_emb, labels_pos, labels_neg
         )
 
-        return graph_emb, pos_neg_scores, (labels_pos, labels_neg), loss, avg_scores
+        return ObjectiveOutput(
+            gnn_output=gnn_output,
+            logits=pos_neg_scores,
+            labels=(labels_pos, labels_neg),
+            loss=loss,
+            scores=avg_scores,
+            prediction=(
+                torch.softmax(pos_neg_scores[0], dim=-1),
+                torch.softmax(pos_neg_scores[1], dim=-1) if pos_neg_scores[1] is not None else None
+            )
+        )
 
 
 class ClassifierTargetMapper(TargetLoader):

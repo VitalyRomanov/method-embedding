@@ -1,7 +1,8 @@
 from collections import OrderedDict
 
+import torch
 
-from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective
+from SourceCodeTools.models.graph.train.objectives.AbstractObjective import AbstractObjective, ObjectiveOutput
 
 
 class GraphLinkObjective(AbstractObjective):
@@ -29,7 +30,8 @@ class GraphLinkObjective(AbstractObjective):
             self, input_nodes, input_mask, blocks, positive_indices, negative_indices,
             update_ns_callback=None, subgraph=None, **kwargs
     ):
-        unique_embeddings = self._graph_embeddings(input_nodes, blocks, mask=input_mask)
+        gnn_output = self._graph_embeddings(input_nodes, blocks, mask=input_mask)
+        unique_embeddings = gnn_output.output
 
         all_embeddings = unique_embeddings[kwargs["slice_map"]]
 
@@ -42,14 +44,24 @@ class GraphLinkObjective(AbstractObjective):
         non_src_embeddings = all_embeddings[non_src_nodes_mask].cpu().detach().numpy()
         update_ns_callback(non_src_ids, non_src_embeddings)
 
-        pos_labels = self._create_positive_labels(positive_indices).to(self.device)
-        neg_labels = self._create_negative_labels(negative_embeddings).to(self.device)
+        labels_pos = self._create_positive_labels(positive_indices).to(self.device)
+        labels_neg = self._create_negative_labels(negative_embeddings).to(self.device)
 
         pos_neg_scores, avg_scores, loss = self._compute_scores_loss(
-            graph_embeddings, positive_embeddings, negative_embeddings, pos_labels, neg_labels
+            graph_embeddings, positive_embeddings, negative_embeddings, labels_pos, labels_neg
         )
 
-        return graph_embeddings, pos_neg_scores, (pos_labels, neg_labels), loss, avg_scores
+        return ObjectiveOutput(
+            gnn_output=gnn_output,
+            logits=pos_neg_scores,
+            labels=(labels_pos, labels_neg),
+            loss=loss,
+            scores=avg_scores,
+            prediction=(
+                torch.softmax(pos_neg_scores[0], dim=-1),
+                torch.softmax(pos_neg_scores[1], dim=-1) if pos_neg_scores[1] is not None else None
+            )
+        )
 
     def parameters(self, recurse: bool = True):
         return self.link_scorer.parameters()

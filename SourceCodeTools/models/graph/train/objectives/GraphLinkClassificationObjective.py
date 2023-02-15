@@ -1,22 +1,13 @@
 import logging
-import sys
-from collections import defaultdict
+from typing import Tuple, Optional, Dict
 
-import numpy as np
-import random as rnd
 import torch
 from torch import nn
-from torch.nn import CrossEntropyLoss
 
-from SourceCodeTools.code.data.dataset.SubwordMasker import SubwordMasker
-from SourceCodeTools.mltools.torch import compute_accuracy
-from SourceCodeTools.models.graph.ElementEmbedder import GraphLinkSampler
-from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
 from SourceCodeTools.models.graph.LinkPredictor import BilinearLinkClassifier, TransRLinkScorer, LinkClassifier, \
     DistMultLinkScorer
-from SourceCodeTools.models.graph.train.Scorer import Scorer
+from SourceCodeTools.models.graph.train.objectives.AbstractObjective import ObjectiveOutput
 from SourceCodeTools.models.graph.train.objectives.GraphLinkObjective import GraphLinkObjective
-from SourceCodeTools.tabular.common import compact_property
 
 
 class GraphLinkClassificationObjective(GraphLinkObjective):
@@ -52,7 +43,9 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
     # def _create_positive_labels(self, ids):
     #     return torch.LongTensor(self.target_embedder.get_labels(ids))
 
-    def _compute_scores_loss(self, node_embs, positive_embs, negative_embs, positive_labels, negative_labels):
+    def _compute_scores_loss(
+            self, node_embs, positive_embs, negative_embs, positive_labels, negative_labels
+    ) -> Tuple[Tuple[torch.Tensor, Optional[torch.Tensor]], Dict, torch.Tensor]:
         pos_scores = self.link_scorer(node_embs, positive_embs)
         loss = self._loss_op(pos_scores, positive_labels)
         with torch.no_grad():
@@ -65,7 +58,8 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
             self, input_nodes, input_mask, blocks, positive_indices, negative_indices,
             update_ns_callback=None, subgraph=None, **kwargs
     ):
-        unique_embeddings = self._graph_embeddings(input_nodes, blocks, mask=input_mask)
+        gnn_output = self._graph_embeddings(input_nodes, blocks, mask=input_mask)
+        unique_embeddings = gnn_output.output
 
         all_embeddings = unique_embeddings[kwargs["slice_map"]]
 
@@ -77,14 +71,24 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
         # non_src_ids = kwargs["compute_embeddings_for"][non_src_nodes_mask]
         # non_src_embeddings = all_embeddings[non_src_nodes_mask].cpu().detach().numpy()
 
-        pos_labels = kwargs["positive_labels"]  #  self._create_positive_labels(positive_indices).to(self.device)
-        neg_labels = kwargs["negative_labels"]  # self._create_negative_labels(negative_embeddings).to(self.device)
+        labels_pos = kwargs["positive_labels"]  #  self._create_positive_labels(positive_indices).to(self.device)
+        labels_neg = kwargs["negative_labels"]  # self._create_negative_labels(negative_embeddings).to(self.device)
 
         pos_neg_scores, avg_scores, loss = self._compute_scores_loss(
-            graph_embeddings, positive_embeddings, negative_embeddings, pos_labels, neg_labels
+            graph_embeddings, positive_embeddings, negative_embeddings, labels_pos, labels_neg
         )
 
-        return graph_embeddings, pos_neg_scores, (pos_labels, neg_labels), loss, avg_scores
+        return ObjectiveOutput(
+            gnn_output=gnn_output,
+            logits=pos_neg_scores,
+            labels=(labels_pos, labels_neg),
+            loss=loss,
+            scores=avg_scores,
+            prediction=(
+                torch.softmax(pos_neg_scores[0], dim=-1),
+                torch.softmax(pos_neg_scores[1], dim=-1) if pos_neg_scores[1] is not None else None
+            )
+        )
 
 
 class GraphLinkMisuseObjective(GraphLinkClassificationObjective):
@@ -115,7 +119,9 @@ class GraphLinkMisuseObjective(GraphLinkClassificationObjective):
         self._compute_precision = compute_binary_precision
         self._compute_recall = compute_binary_recall
 
-    def _compute_scores_loss(self, node_embs, positive_embs, negative_embs, positive_labels, negative_labels):
+    def _compute_scores_loss(
+            self, node_embs, positive_embs, negative_embs, positive_labels, negative_labels
+    ) -> Tuple[Tuple[torch.Tensor, Optional[torch.Tensor]], Dict, torch.Tensor]:
 
         pos_scores = self.link_scorer(node_embs[:len(positive_labels)], positive_embs)
         # neg_scores = self.link_scorer(node_embs[len(positive_labels):], negative_embs)
@@ -137,10 +143,11 @@ class GraphLinkMisuseObjective(GraphLinkClassificationObjective):
         return (pos_scores, None), scores, loss
 
     def forward(
-            self, input_nodes, input_mask, blocks, src_slice_map, dst_slice_map, labels,
+            self, input_nodes, input_mask, blocks, src_slice_map, dst_slice_map, labels=None,
             update_ns_callback=None, subgraph=None, **kwargs
     ):
-        unique_embeddings = self._graph_embeddings(input_nodes, blocks, mask=input_mask)
+        gnn_output = self._graph_embeddings(input_nodes, blocks, mask=input_mask)
+        unique_embeddings = gnn_output.output
 
         src_embeddings = unique_embeddings[src_slice_map]
         dst_embeddings = unique_embeddings[dst_slice_map]
@@ -149,8 +156,17 @@ class GraphLinkMisuseObjective(GraphLinkClassificationObjective):
             src_embeddings, dst_embeddings, None, labels, None
         )
 
-        return src_embeddings, pos_neg_scores, (labels, None), loss, avg_scores
-
+        return ObjectiveOutput(
+            gnn_output=gnn_output,
+            logits=pos_neg_scores,
+            labels=(labels, None),
+            loss=loss,
+            scores=avg_scores,
+            prediction=(
+                torch.softmax(pos_neg_scores[0], dim=-1),
+                torch.softmax(pos_neg_scores[1], dim=-1) if pos_neg_scores[1] is not None else None
+            )
+        )
 
 
 class TransRObjective(GraphLinkClassificationObjective):
@@ -255,7 +271,9 @@ class RelationalDistMult(GraphLinkClassificationObjective):
 
         self._compute_average_score = compute_average_score
 
-    def _compute_scores_loss(self, node_embs, positive_embs, negative_embs, positive_labels, negative_labels):
+    def _compute_scores_loss(
+            self, node_embs, positive_embs, negative_embs, positive_labels, negative_labels
+    ) -> Tuple[Tuple[torch.Tensor, Optional[torch.Tensor]], Dict, torch.Tensor]:
 
         pos_scores = self.link_scorer(node_embs, positive_embs, positive_labels)
         neg_scores = self.link_scorer(node_embs, negative_embs, negative_labels)
