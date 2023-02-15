@@ -130,7 +130,23 @@ class PythonCodeExamplesForNodes:
         "Tuple": "a = (1, 2, 3, 4)\n",
         "JoinedStr": "f'{a}'\n",
         "FormattedValue": "f'{an:.2f}'\n",
-        "Bytes": "b'abc'\n",
-        "Num": "1\n",
-        "Str": "'abc'\n",
+        "Bytes": "a = b'abc'\n",
+        "Num": "a = 1\n",
+        "Str": "a = 'abc'\n",
+        "FunctionDef2": "@decorator\n"
+                        "def function_name(\n"
+                        "       arg0, /,\n"
+                        "       arg1,\n"
+                        "       arg2:int,\n"
+                        "       \n"
+                        "       key1:str='value1',\n"
+                        "       key2=2,*,\n"
+                        "       key3=value3,\n"
+                        "       key4=4,\n"
+                        "       **kwargs\n"
+                        ") -> returnedtype:\n"
+                        "   pass\n",
+        "FunctionDef3": "@decorator\n"
+                        "def function_name(*args, **kwargs):\n"
+                        "   pass\n"
     }
