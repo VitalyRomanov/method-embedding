@@ -684,15 +684,15 @@ def build_ast_graph_from_modules():
 class AstDatasetCreator(AbstractDatasetCreator):
 
     merging_specification = {
-        "source_graph_bodies.bz2": {"columns": ['id'], "output_path": "common_source_graph_bodies.json", "columns_special": [("replacement_list", map_offsets)]},
-        "function_variable_pairs.bz2": {"columns": ['src'], "output_path": "common_function_variable_pairs.json"},
-        "call_seq.bz2": {"columns": ['src', 'dst'], "output_path": "common_call_seq.json"},
+        "source_graph_bodies.bz2": {"columns_to_map": ['id'], "output_path": "common_source_graph_bodies.json", "columns_special": [("replacement_list", map_offsets)]},
+        "function_variable_pairs.bz2": {"columns_to_map": ['src'], "output_path": "common_function_variable_pairs.json"},
+        "call_seq.bz2": {"columns_to_map": ['src', 'dst'], "output_path": "common_call_seq.json"},
 
-        "nodes_with_ast.bz2": {"columns": ['id', 'mentioned_in'], "output_path": "common_nodes.json", "ensure_unique_with": ['type', 'serialized_name']},
-        "edges_with_ast.bz2": {"columns": ['target_node_id', 'source_node_id', 'mentioned_in'], "output_path": "common_edges.json"},
-        "offsets.bz2": {"columns": ['node_id', 'mentioned_in'], "output_path": "common_offsets.json"},
-        "filecontent_with_package.bz2": {"columns": [], "output_path": "common_filecontent.json"},
-        "name_mappings.bz2": {"columns": [], "output_path": "common_name_mappings.json"},
+        "nodes_with_ast.bz2": {"columns_to_map": ['id', 'mentioned_in'], "output_path": "common_nodes.json", "ensure_unique_with": ['type', 'serialized_name']},
+        "edges_with_ast.bz2": {"columns_to_map": ['target_node_id', 'source_node_id', 'mentioned_in'], "output_path": "common_edges.json"},
+        "offsets.bz2": {"columns_to_map": ['node_id', 'mentioned_in'], "output_path": "common_offsets.json"},
+        "filecontent_with_package.bz2": {"columns_to_map": [], "output_path": "common_filecontent.json"},
+        "name_mappings.bz2": {"columns_to_map": [], "output_path": "common_name_mappings.json"},
     }
 
     files_for_merging_with_ast = [
