@@ -8,6 +8,10 @@ from SourceCodeTools.code.ast.python_examples import PythonCodeExamplesForNodes
 
 
 class PythonNodeEdgeCFDefinitions(PythonNodeEdgeDefinitions):
+    node_type_enum_initialized = False
+    edge_type_enum_initialized = False
+    shared_node_types_initialized = False
+
     node_type_enum = None
     edge_type_enum = None
 
@@ -78,7 +82,7 @@ class PythonNodeEdgeCFDefinitions(PythonNodeEdgeDefinitions):
         "AnnAssign": ["target", "value", "annotation_for"],  # overridden, `annotation_for` replaces `annotation`
         "With": ["items"],  # overridden
         "AsyncWith": ["items"],  # overridden
-        "arg": ["arg", "annotation_for"],  # overridden, `annotation_for` is custom
+        "arg": ["arg", "annotation_for", "default"],  # overridden, `annotation_for` is custom
         "Lambda": ["lambda"],  # overridden
         "IfExp": ["test", "if_true", "if_false"],
         # overridden, `if_true` renamed from `body`, `if_false` renamed from `orelse`
@@ -96,7 +100,7 @@ class PythonNodeEdgeCFDefinitions(PythonNodeEdgeDefinitions):
         "Dict": ["keys", "values"],  # overridden
         "JoinedStr": [],  # overridden
         "FormattedValue": ["value"],  # overridden
-        "arguments": ["args", "vararg", "kwarg", "kwonlyargs", "posonlyargs"],  # overridden
+        "arguments": ["vararg", "posonlyarg", "arg", "kwonlyarg", "kwarg"],  # ["args", "vararg", "kwarg", "kwonlyargs", "posonlyargs"],  # overridden
         "comprehension": ["target", "iter", "ifs"],
         # overridden, `target_for` is custom, `iter_for` is customm `ifs_rev` is custom
     }
@@ -133,7 +137,8 @@ class PythonNodeEdgeCFDefinitions(PythonNodeEdgeDefinitions):
         "op": None,  # for operations
         "attr": None,  # for attributes
         "node_type": None,
-        "ctx": None
+        "ctx": None,  # for context
+        "default": None,  # for default value for arg
     }
 
     iterable_nodes = {  # parse_iterable
@@ -159,7 +164,7 @@ class PythonNodeEdgeCFDefinitions(PythonNodeEdgeDefinitions):
     }
 
     ctx_nodes = {  # parse_ctx
-        "Load", "Store"
+        "Load", "Store", "Del"
     }
 
     # extra node types exist for keywords and attributes to prevent them from
@@ -246,6 +251,8 @@ class PythonNodeEdgeCFDefinitions(PythonNodeEdgeDefinitions):
         # cls.tokenizable_types_and_annotations = annotation_types | tokenizable_types
 
         cls.shared_node_types = annotation_types | subword_types | tokenizable_types | python_token_types | type_nodes
+
+        cls.shared_node_types_initialized = True
 
 
 class PythonCFGraphBuilder(PythonAstGraphBuilder):
@@ -385,6 +392,7 @@ class PythonCFGraphBuilder(PythonAstGraphBuilder):
         return edges, node_
 
     def postprocess(self):
+        super(PythonCFGraphBuilder, self).postprocess()
         for i in range(len(self._edges)):
             edge = self._edges[i]
             if self._node_pool[edge.src].type.name in {"mention", "instance"}:
@@ -399,7 +407,9 @@ class PythonCFGraphBuilder(PythonAstGraphBuilder):
         edges = edges[edges['src'] != edges['dst']]  # remove self-loops
         remaining = set(edges['src']) | set(edges['dst'])
         nodes = nodes[nodes["id"].apply(lambda x: x in remaining)]
-        return nodes, edges
+
+        edges, offsets = self._get_offsets(edges)
+        return nodes, edges, offsets
 
 
 def make_python_cf_graph(

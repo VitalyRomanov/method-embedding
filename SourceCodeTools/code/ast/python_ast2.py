@@ -59,7 +59,7 @@ class PythonNodeEdgeDefinitions:
         "AnnAssign": ["target", "value", "annotation_for"],  # overridden, `annotation_for` replaces `annotation`
         "With": ["items"],  # overridden
         "AsyncWith": ["items"],  # overridden
-        "arg": ["arg", "annotation_for"],  # overridden, `annotation_for` is custom
+        "arg": ["arg", "annotation_for", "default"],  # overridden, `annotation_for` is custom
         "Lambda": [],  # overridden
         "IfExp": ["test", "if_true", "if_false"],  # overridden, `if_true` renamed from `body`, `if_false` renamed from `orelse`
         "keyword": ["arg", "value"],  # overridden
@@ -76,7 +76,7 @@ class PythonNodeEdgeDefinitions:
         "Dict": ["keys", "values"],  # overridden
         "JoinedStr": [],  # overridden
         "FormattedValue": ["value"],  # overridden
-        "arguments": ["args", "vararg", "kwarg", "kwonlyargs", "posonlyargs"],  # overridden
+        "arguments": ["vararg", "posonlyarg", "arg", "kwonlyarg", "kwarg"],  # ["args", "vararg", "kwarg", "kwonlyargs", "posonlyargs"],  # overridden
         "comprehension": ["target", "iter", "ifs"],  # overridden, `target_for` is custom, `iter_for` is customm `ifs_rev` is custom
     }
 
@@ -110,6 +110,7 @@ class PythonNodeEdgeDefinitions:
         "op": None,  # for operations
         "attr": None,  # for attributes
         # "arg": None  # for keywords ???
+        "default": None,  # for default value for arg
     }
 
     iterable_nodes = {  # parse_iterable
@@ -683,6 +684,8 @@ class AstGraphGenerator(object):
         for node in nodes:
             s = self.parse(node)
             if isinstance(s, tuple):
+                # it appears that the rule below will remove all the constants form the function body
+                # we actually do not need edges next and prev pointing to constants
                 if s[1].type == "Constant":  # this happens when processing docstring, as a result a lot of nodes are connected to the node Constant_
                     continue                    # in general, constant node has no affect as a body expression, can skip
                 # some parsers return edges and names?
@@ -852,7 +855,13 @@ class AstGraphGenerator(object):
         self.scope.append(fdef_node_name)
 
         to_parse = []
-        if len(node.args.args) > 0 or node.args.vararg is not None:
+        if (
+                len(node.args.posonlyargs) > 0 or
+                len(node.args.args) > 0 or
+                len(node.args.kwonlyargs) > 0 or
+                node.args.vararg is not None or
+                node.args.kwarg is not None
+        ):
             to_parse.append("args")
         if len("decorator_list") > 0:
             to_parse.append("decorator_list")
@@ -915,7 +924,7 @@ class AstGraphGenerator(object):
     def parse_AsyncWith(self, node):
         return self.parse_With(node)
 
-    def parse_arg(self, node):
+    def parse_arg(self, node, default_value=None):
         # node.annotation stores type annotation
         # if node.annotation:
         #     print(self.source[node.lineno-1]) # can get definition string here
@@ -940,6 +949,16 @@ class AstGraphGenerator(object):
                 edges, src=annotation, dst=mention_name, type="annotation_for", scope=self.scope[-1],
                 position_node=node.annotation, var_position_node=node
             )
+
+        if default_value is not None:
+            deflt_ = self.parse(default_value)
+            if isinstance(deflt_, tuple):
+                edges.extend(deflt_[0])
+                default_val = deflt_[1]
+            else:
+                default_val = deflt_
+            self.add_edge(edges, default_val, name, type="default", position_node=default_value,
+                          scope=copy(self.scope[-1]))
         return edges, name
 
     def parse_AnnAssign(self, node):
@@ -1136,8 +1155,41 @@ class AstGraphGenerator(object):
         # have missing fields. example:
         #    arguments(args=[arg(arg='self', annotation=None), arg(arg='tqdm_cls', annotation=None), arg(arg='sleep_interval', annotation=None)], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[])
 
-        # vararg constains type annotations
-        return self.generic_parse(node, ["args", "vararg", "kwarg", "kwonlyargs", "posonlyargs"])
+        edges, arguments = self.generic_parse(node, [])
+
+        if node.vararg is not None:
+            ext_edges_, vararg = self.parse_arg(node.vararg)
+            edges.extend(ext_edges_)
+            self.add_edge(edges, vararg, arguments, type="vararg", position_node=node.vararg, scope=copy(self.scope[-1]))
+
+        for i in range(len(node.posonlyargs)):
+            ext_edges_, posarg = self.parse_arg(node.posonlyargs[i])
+            edges.extend(ext_edges_)
+            self.add_edge(edges, posarg, arguments, type="posonlyarg", position_node=node.posonlyargs[i], scope=copy(self.scope[-1]))
+
+        without_default = len(node.args) - len(node.defaults)
+        for i in range(without_default):
+            ext_edges_, just_arg = self.parse_arg(node.args[i])
+            edges.extend(ext_edges_)
+            self.add_edge(edges, just_arg, arguments, type="arg", position_node=node.args[i], scope=copy(self.scope[-1]))
+
+        for ind, i in enumerate(range(without_default, len(node.args))):
+            ext_edges_, just_arg = self.parse_arg(node.args[i], default_value=node.defaults[ind])
+            edges.extend(ext_edges_)
+            self.add_edge(edges, just_arg, arguments, type="arg", position_node=node.args[i], scope=copy(self.scope[-1]))
+
+        for i in range(len(node.kwonlyargs)):
+            ext_edges_, kw_arg = self.parse_arg(node.kwonlyargs[i], default_value=node.kw_defaults[i])
+            edges.extend(ext_edges_)
+            self.add_edge(edges, kw_arg, arguments, type="kwonlyarg", position_node=node.kwonlyargs[i], scope=copy(self.scope[-1]))
+
+        if node.kwarg is not None:
+            ext_edges_, kwarg = self.parse_arg(node.kwarg)
+            edges.extend(ext_edges_)
+            self.add_edge(edges, kwarg, arguments, type="kwarg", position_node=node.kwarg, scope=copy(self.scope[-1]))
+
+        return edges, arguments
+        # return self.generic_parse(node, ["args", "vararg", "kwarg", "kwonlyargs", "posonlyargs"])
 
     def parse_comprehension(self, node):
         edges = []
