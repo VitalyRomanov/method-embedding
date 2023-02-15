@@ -170,7 +170,7 @@ class NodeIdResolver:
         :param kwargs:
         :return: updated node (return object with the save reference as input)
         """
-        if not hasattr(node, "id"):
+        if not hasattr(node, "id") or node.id is None:
             node_repr = f"{node.name.strip()}_{node.type.strip()}"
 
             if node_repr in self.node_ids:
@@ -331,7 +331,7 @@ def standardize_new_edges(edges, node_resolver, mention_tokenizer):
     edges = mention_tokenizer.replace_mentions_with_subwords(edges)
 
     resolve_node_id = lambda node: node_resolver.resolve_node_id(node)
-    extract_id = lambda node: node.id
+    extract_id = lambda node: node if isinstance(node, str) else node.id
 
     for edge in edges:
         edge["src"] = resolve_node_id(edge["src"])
@@ -365,14 +365,14 @@ def process_code_without_index(
             source_code, add_reverse_edges=reverse_edges, add_mention_instances=mention_instances
         )
     except:
-        return None, None, None
+        return None, None
     try: # TODO recursion error does not appear consistently. The issue is probably with library versions...
         edges = ast_processor.get_edges(as_dataframe=False)
     except RecursionError:
-        return None, None, None
+        return None, None
 
     if len(edges) == 0:
-        return None, None, None
+        return None, None
 
     # tokenize names, replace nodes with their ids
     edges = standardize_new_edges(edges, node_resolver, mention_tokenizer)
