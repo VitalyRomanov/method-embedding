@@ -36,8 +36,12 @@ def visualize(
         dst = edge['dst']
         src_name = id2name[src]
         dst_name = id2name[dst]
+        if src_name.startswith("%"):
+            src_name = "▁" + src_name
+        if dst_name.startswith("%"):
+            dst_name = "▁" + dst_name
         g.add_node(src_name, color="blue" if id2type[src] in auxiliaty_node_types else "black")
-        g.add_node(dst_name, color="blue" if id2type[src] in auxiliaty_node_types else "black")
+        g.add_node(dst_name, color="blue" if id2type[dst] in auxiliaty_node_types else "black")
         g.add_edge(src_name, dst_name, color="blue" if edge['type'] in auxiliaty_edge_types else "black")
         g_edge = g.get_edge(src_name, dst_name)
         g_edge.attr['label'] = edge['type']
