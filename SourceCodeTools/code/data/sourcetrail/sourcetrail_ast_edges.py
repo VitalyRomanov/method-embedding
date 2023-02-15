@@ -112,7 +112,7 @@ class NodeResolver:
         return GNode(name=real_name, type=node.type)
 
     def resolve_node_id(self, node, function_id):
-        if not hasattr(node, "id"):
+        if not hasattr(node, "id") or node.id is None:
             node_repr = (node.name.strip(), node.type.strip())
 
             if node_repr in self.node_ids:

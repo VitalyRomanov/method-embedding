@@ -514,7 +514,7 @@ class ReplacementNodeResolver(NodeResolver):
         :param kwargs:
         :return: updated node (return object with the save reference as input)
         """
-        if not hasattr(node, "id"):
+        if not hasattr(node, "id") or node.id is None:
             node_repr = (node.name.strip(), node.type.strip())
 
             if node_repr in self.node_ids:
