@@ -696,51 +696,72 @@ def build_ast_only_graph2(
         if not has_valid_syntax(source_code):
             continue
 
+        # First wanted to return pandas tables here directly. But it turns out it is very slow and much better to
+        # work with lists of dictionaries
         graph = source_code_to_graph(
             source_code, variety=graph_variety, bpe_tokenizer_path=bpe_tokenizer_path, reverse_edges=True,
-            mention_instances=mention_instances, save_node_strings=True
+            mention_instances=mention_instances, save_node_strings=True, make_table=False
         )
 
         nodes_ = graph["nodes"]
         edges_ = graph["edges"]
         offsets_ = graph["offsets"]
 
-        if nodes_ is not None and len(nodes_) > 0:
-            all_nodes.append(nodes_)
+        if nodes_ is not None:  # and len(nodes_) > 0:
+            for node in nodes_:
+                node["type"] = node["type"].name
+                all_nodes.append(node)
+            # all_nodes.append(nodes_)
 
-        if edges_ is not None and len(edges_) > 0:
-            edges_["file_id"] = source_code_id
-            edges_["package"] = package
-            if "offset_start" in edges_.columns and initial_strip != 0:
-                edges_["offset_start"] += len(initial_strip)
-                edges_["offset_end"] += len(initial_strip)
-            all_edges.append(edges_)
+        if edges_ is not None:  # and len(edges_) > 0:
+            for edge in edges_:
+                edge["file_id"] = source_code_id
+                edge["package"] = package
+                edge["type"] = edge["type"].name
+                if "offset_start" in edge and edge["offset_start"] is not None and initial_strip != 0:
+                    edge["offset_start"] += len(initial_strip)
+                    edge["offset_end"] += len(initial_strip)
+                all_edges.append(edge)
+            # edges_["file_id"] = source_code_id
+            # edges_["package"] = package
+            # if "offset_start" in edges_.columns and initial_strip != 0:
+            #     edges_["offset_start"] += len(initial_strip)
+            #     edges_["offset_end"] += len(initial_strip)
+            # all_edges.append(edges_)
 
         if offsets_ is not None and len(offsets_) > 0:
-            offsets_["file_id"] = source_code_id
-            offsets_["package"] = package
-            if initial_strip != 0:
-                offsets_["offset_start"] += len(initial_strip)
-                offsets_["offset_end"] += len(initial_strip)
-            all_offsets.append(offsets_)
+            for offset in offsets_:
+                offset["file_id"] = source_code_id
+                offset["package"] = package
+                if initial_strip != 0:
+                    offset["offset_start"] += len(initial_strip)
+                    offset["offset_end"] += len(initial_strip)
+                all_offsets.append(offset)
+            # offsets_["file_id"] = source_code_id
+            # offsets_["package"] = package
+            # if initial_strip != 0:
+            #     offsets_["offset_start"] += len(initial_strip)
+            #     offsets_["offset_end"] += len(initial_strip)
+            # all_offsets.append(offsets_)
 
     if len(all_nodes) == 0:
         return None, None, None
 
     def prepare_edges(all_ast_edges):
-        all_ast_edges = pd.concat(all_ast_edges)
+        all_ast_edges = pd.DataFrame.from_records(all_ast_edges)
+        # all_ast_edges = pd.concat(all_ast_edges)
 
         all_ast_edges.drop_duplicates(["type", "src", "dst"], inplace=True)
         all_ast_edges = all_ast_edges.query("src != dst")
 
-        column_order = ["id", "type", "src", "dst", "file_id", "package", "scope"]
+        column_order = ["edge_hash", "type", "src", "dst", "file_id", "package", "scope"]
         if "offset_start" in all_ast_edges.columns:
             column_order.append("offset_start")
             column_order.append("offset_end")
 
         all_ast_edges = all_ast_edges[column_order] \
             .rename({
-                'src': 'source_node_id', 'dst': 'target_node_id', 'scope': 'mentioned_in',
+                'src': 'source_node_id', 'dst': 'target_node_id', 'scope': 'mentioned_in', "edge_hash": "id"
             }, axis=1)
 
         if "id" not in all_ast_edges.columns or all_ast_edges["id"].nunique() < len(all_ast_edges):
@@ -749,21 +770,23 @@ def build_ast_only_graph2(
         return all_ast_edges
 
     def prepare_nodes(all_ast_nodes_):
-        all_ast_nodes = pd.concat(all_ast_nodes_)
-        all_ast_nodes.drop_duplicates(["id", "type", "name"], inplace=True)
+        all_ast_nodes = pd.DataFrame.from_records(all_ast_nodes_)
+        # all_ast_nodes = pd.concat(all_ast_nodes_)
+        all_ast_nodes.drop_duplicates(["node_hash", "type", "name"], inplace=True)
 
-        column_order = ["id", "type", "name", "string"]
+        column_order = ["node_hash", "type", "name", "string"]
         if "offset_start" in all_ast_nodes.columns:
             column_order.append("offset_start")
             column_order.append("offset_end")
 
         all_ast_nodes = all_ast_nodes[column_order] \
-            .rename({'name': 'serialized_name', 'offset_start': "start", "offset_end": "end"}, axis=1)
+            .rename({'name': 'serialized_name', 'offset_start': "start", "offset_end": "end", "node_hash": "id"}, axis=1)
 
         return all_ast_nodes
 
     def prepare_offsets(all_ast_offsets):
-        all_ast_offsets = pd.concat(all_ast_offsets)
+        all_ast_offsets = pd.DataFrame.from_records(all_ast_offsets)
+        # all_ast_offsets = pd.concat(all_ast_offsets)
         all_ast_offsets.drop_duplicates(["offset_start", "offset_end", "node_id"], inplace=True)
 
         column_order = ["node_id", "offset_start", "offset_end", "scope", "file_id", "package"]
@@ -785,7 +808,7 @@ def build_ast_only_graph2(
 
 def source_code_to_graph(
         source_code, variety, bpe_tokenizer_path=None, reverse_edges=False, mention_instances=False,
-        save_node_strings = False
+        save_node_strings = False, make_table=True
 ):
     if variety == "v1.0":
         raise NotImplementedError()
@@ -807,12 +830,12 @@ def source_code_to_graph(
         if bpe_tokenizer_path is None:
             nodes, edges, offsets = make_python_ast_graph_without_subwords(
                 source_code, add_reverse_edges=reverse_edges, add_mention_instances=mention_instances,
-                save_node_strings=save_node_strings
+                save_node_strings=save_node_strings, make_table=make_table
             )
         else:
             nodes, edges, offsets = make_python_graph_with_subwords(
                 source_code, add_reverse_edges=reverse_edges, add_mention_instances=mention_instances,
-                bpe_tokenizer_path=bpe_tokenizer_path, save_node_strings=save_node_strings
+                bpe_tokenizer_path=bpe_tokenizer_path, save_node_strings=save_node_strings, make_table=make_table
             )
     elif variety == "v3.5_control_flow":
         from SourceCodeTools.code.ast.python_ast3_cf import make_python_cf_graph
@@ -820,7 +843,7 @@ def source_code_to_graph(
         if bpe_tokenizer_path is None:
             nodes, edges, offsets = make_python_cf_graph(
                 source_code, add_reverse_edges=reverse_edges, add_mention_instances=mention_instances,
-                save_node_strings=save_node_strings
+                save_node_strings=save_node_strings, make_table=make_table
             )
         else:
             from SourceCodeTools.code.ast.python_ast3_cf import PythonCFGraphBuilder
@@ -828,7 +851,8 @@ def source_code_to_graph(
             nodes, edges, offsets = make_python_graph_with_subwords(
                 source_code, add_reverse_edges=reverse_edges, add_mention_instances=mention_instances,
                 bpe_tokenizer_path=bpe_tokenizer_path, graph_builder_base_class=PythonCFGraphBuilder,
-                node_edge_base_definition_class=PythonNodeEdgeCFDefinitions, save_node_strings=save_node_strings
+                node_edge_base_definition_class=PythonNodeEdgeCFDefinitions, save_node_strings=save_node_strings,
+                make_table=make_table
             )
     else:
         raise ValueError()
@@ -955,7 +979,8 @@ class AstDatasetCreator(AbstractDatasetCreator):
                 nodes_with_ast, edges_with_ast, offsets = build_ast_only_graph2(
                     zip(source_code["package"], source_code["id"], source_code["filecontent"]), self.bpe_tokenizer,
                     create_subword_instances=self.create_subword_instances, connect_subwords=self.connect_subwords,
-                    lang=self.lang, track_offsets=self.track_offsets, mention_instances=self.create_mention_instances
+                    lang=self.lang, track_offsets=self.track_offsets, mention_instances=self.create_mention_instances,
+                    graph_variety=self.graph_format_version
                 )
 
             else:
