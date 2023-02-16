@@ -1,7 +1,6 @@
 import ast
 import hashlib
 import logging
-from collections import defaultdict
 from enum import Enum
 from itertools import chain
 from pprint import pprint
@@ -227,24 +226,14 @@ class PythonNodeEdgeDefinitions:
     @classmethod
     def make_node_type_enum(cls) -> Enum:
         if not cls.node_type_enum_initialized:
-            cls.node_type_enum = Enum(
-                "NodeTypes",
-                " ".join(
-                    cls.node_types()
-                )
-            )
+            cls.node_type_enum = Enum("NodeTypes", " ".join(cls.node_types()))
             cls.node_type_enum_initialized = True
         return cls.node_type_enum
 
     @classmethod
     def make_edge_type_enum(cls) -> Enum:
         if not cls.edge_type_enum_initialized:
-            cls.edge_type_enum = Enum(
-                "EdgeTypes",
-                " ".join(
-                    cls.edge_types()
-                )
-            )
+            cls.edge_type_enum = Enum("EdgeTypes", " ".join(cls.edge_types()))
             cls.edge_type_enum_initialized = True
         return cls.edge_type_enum
 
@@ -380,49 +369,106 @@ def generate_utilized_edges(node_edge_definition_class: Type[PythonNodeEdgeDefin
                     print(nt, f, sep=" ")
 
 
-def nodes_edges_to_df(nodes, edges):
+def nodes_edges_to_df(nodes, edges, make_table=True):
     edge_specification = {
-        "id": ("hash_id", "int64", None),
-        "src": ("src", "int64", None),
-        "dst": ("dst", "int64", None),
+        "id": ("edge_hash", "string", None),
+        "src": ("src", "string", None),
+        "dst": ("dst", "string", None),
         "type": ("type", "string", lambda x: x.name),
-        "scope": ("scope", "Int64", None),
-        "offset_start": ("positions", "Int64", lambda x: x[0] if isinstance(x, tuple) else x),
-        "offset_end": ("positions", "Int64", lambda x: x[1] if isinstance(x, tuple) else x),
+        "scope": ("scope", "string", None),
+        "offset_start": ("offset_start", "Int64", None),
+        "offset_end": ("offset_end", "Int64", None),
+        # "offset_start": ("positions", "Int64", lambda x: x[0] if isinstance(x, tuple) else x),
+        # "offset_end": ("positions", "Int64", lambda x: x[1] if isinstance(x, tuple) else x),
     }
 
     node_specification = {
-        "id": ("hash_id", "int64", None),
+        "id": ("node_hash", "string", None),
         "name": ("name", "string", None),
         "type": ("type", "string", lambda x: x.name),
-        "scope": ("scope", "Int64", None),
+        "scope": ("scope", "string", None),
         "string": ("string", "string", None),
-        "offset_start": ("positions", "Int64", lambda x: x[0] if isinstance(x, tuple) else x),
-        "offset_end": ("positions", "Int64", lambda x: x[1] if isinstance(x, tuple) else x),
+        "offset_start": ("offset_start", "Int64", None),
+        "offset_end": ("offset_end", "Int64", None),
+        # "offset_start": ("positions", "Int64", lambda x: x[0] if isinstance(x, tuple) else x),
+        # "offset_end": ("positions", "Int64", lambda x: x[1] if isinstance(x, tuple) else x),
     }
 
-    def create_table(collection, specification):
-        entries = defaultdict(list)
+    offset_specification = {
+        "node_id": ("node_id", "string", None),
+        "offset_start": ("offset_start", "Int64", None),
+        "offset_end": ("offset_end", "Int64", None),
+        "scope": ("scope", "string", None),
+    }
+
+    def format_for_table(collection):
+        entries = []
         for record in collection:
-            # entry = {}
-            for trg_col, (src_col, _, preproc_fn) in specification.items():
-                value = getattr(record, src_col)
-                if value is None:
-                    value = pd.NA
-                entries[trg_col].append(value if preproc_fn is None else preproc_fn(value))
-            # entries.append(entry)
+            # yield record.__dict__
+            entries.append(record.__dict__)
+        return entries
 
-        table = pd.DataFrame(entries)
+    def create_table(collection, specification):
+        table = pd.DataFrame.from_records(collection)
 
-        for trg_col, (_, dtype, _) in specification.items():
-            table = table.astype({trg_col: dtype})
-        return table
+        column_order = []
+        for trg_col, (src_col, dtype, preproc_fn) in specification.items():
+            trg = table[src_col]
+            if preproc_fn is not None:
+                trg = trg.apply(preproc_fn)
+            table[trg_col] = trg.astype(dtype)
+            column_order.append(trg_col)
+        return table[column_order]
 
-    nodes = create_table(nodes, node_specification)
-    edges = create_table(edges, edge_specification)
-    edges.drop_duplicates("id", inplace=True)
+        # # entries = defaultdict(list)
+        # entries = []
+        # for record in collection:
+        #     entries.append(record.__dict__)
+        #     # entry = {}
+        #     # for trg_col, (src_col, _, preproc_fn) in specification.items():
+        #     #     value = getattr(record, src_col)
+        #     #     if value is None:
+        #     #         value = pd.NA
+        #     #     entry[trg_col] = value if preproc_fn is None else preproc_fn(value)
+        #     #     # entries[trg_col].append(value if preproc_fn is None else preproc_fn(value))
+        #     # entries.append(entry)
+        #
+        # return entries
 
-    return nodes, edges
+        # table = pd.DataFrame(entries)
+        #
+        # for trg_col, (_, dtype, _) in specification.items():
+        #     table = table.astype({trg_col: dtype})
+        # return table
+
+    def get_offsets(edges):
+        offsets = []
+        for edge in edges:
+            if edge["offset_start"] is not None:
+                offsets.append({
+                    "node_id": edge["src"],
+                    "offset_start": edge["offset_start"],
+                    "offset_end": edge["offset_end"],
+                    "scope": edge["scope"],
+                })
+        return offsets
+
+    nodes = format_for_table(nodes)
+    edges = format_for_table(edges)
+    offsets = get_offsets(edges)
+
+    if make_table is True:
+        nodes = create_table(nodes, node_specification) if len(nodes) > 0 else None
+        edges = create_table(edges, edge_specification) if len(edges) > 0 else None
+        offsets = create_table(offsets, offset_specification) if len(offsets) > 0 else None
+        edges.drop_duplicates("id", inplace=True)
+
+    return nodes, edges, offsets
+
+
+def string_hash(str_):
+    return hashlib.md5(str_.encode('utf-8')).hexdigest()
+    # return abs(int(hashlib.md5(str_.encode('utf-8')).hexdigest()[:8], 16))
 
 
 class PythonAstGraphBuilder(object):
@@ -479,9 +525,10 @@ class PythonAstGraphBuilder(object):
             @property
             def hash_id(self):
                 if not hasattr(self, "node_hash"):
-                    self.node_hash = abs(
-                        int(hashlib.md5(f"{self.type.name.strip()}_{self.name.strip()}".encode('utf-8')).hexdigest()[
-                            :8], 16))
+                    self.node_hash = string_hash(f"{self.type.name.strip()}_{self.name.strip()}")
+                    # self.node_hash = abs(
+                    #     int(hashlib.md5(f"{self.type.name.strip()}_{self.name.strip()}".encode('utf-8')).hexdigest()[
+                    #         :8], 16))
                 return self.node_hash
 
         self._make_node = GNode
@@ -489,20 +536,27 @@ class PythonAstGraphBuilder(object):
     def _set_edge_class(builderself):
         class GEdge:
             def __init__(
-                    self, src: int, dst: int, type, scope: Optional[int] = None,
+                    self, src: str, dst: str, type, scope: Optional[str] = None,
             ):
                 self.src = src
                 self.dst = dst
                 self.type = type
                 self.scope = scope
-                self.positions = None
+                self.offset_start = None
+                self.offset_end = None
+                id = self.hash_id
 
             def assign_positions(self, positions, prefix: Optional[str] = None):
                 if prefix is None:
-                    self.positions = positions
+                    if positions is not None:
+                        self.offset_start = positions[0]
+                        self.offset_end = positions[1]
+                    # self.positions = positions
                 else:
                     if positions is not None:
-                        setattr(self, f"{prefix}_positions", positions)
+                        setattr(self, f"{prefix}_offset_start", positions[0])
+                        setattr(self, f"{prefix}_offset_end", positions[1])
+                        # setattr(self, f"{prefix}_positions", positions)
 
             def make_reverse(self, *args, **kwargs):
                 reverse_type = builderself._graph_definitions.get_reverse_type(self.type.name)
@@ -519,8 +573,9 @@ class PythonAstGraphBuilder(object):
             @property
             def hash_id(self):
                 if not hasattr(self, "edge_hash"):
-                    self.edge_hash = abs(
-                        int(hashlib.md5(f"{self.src}_{self.dst}_{self.type}".encode('utf-8')).hexdigest()[:8], 16))
+                    self.edge_hash = string_hash(f"{self.src}_{self.dst}_{self.type}")
+                    # self.edge_hash = abs(
+                    #     int(hashlib.md5(f"{self.src}_{self.dst}_{self.type}".encode('utf-8')).hexdigest()[:8], 16))
                 return self.edge_hash
 
         builderself._make_edge = GEdge
@@ -569,10 +624,12 @@ class PythonAstGraphBuilder(object):
     def _get_source_from_range(self, start, end):
         return self._original_source[start: end]
 
+    # @lru_cache
     def _get_node(
             self, *, node=None, name: Optional[str] = None, type=None,
-            positions=None, scope=None, add_random_identifier: bool = False
-    ) -> int:
+            positions=None, scope=None, add_random_identifier: bool = False,
+            node_string=None
+    ) -> str:
 
         random_identifier = self._identifier_pool.get_new_identifier()
 
@@ -587,15 +644,27 @@ class PythonAstGraphBuilder(object):
 
         if positions is None:
             positions = self._get_positions_from_node(node)
-        if self._save_node_strings:
-            node_string = self._get_source_from_range(*positions) if positions is not None else None
+
+        if positions is not None:
+            offset_start = positions[0]
+            offset_end = positions[1]
         else:
-            node_string = None
+            offset_start = None
+            offset_end = None
+
+        if self._save_node_strings:
+            if node_string is None:
+                node_string = self._get_source_from_range(*positions) if positions is not None else None
+            else:
+                assert isinstance(node_string, str)
 
         if scope is None and self._graph_definitions.is_shared_name_type(name, type) is False:
             scope = self.latest_scope
 
-        new_node = self._make_node(name=name, type=type, scope=scope, string=node_string, positions=positions)
+        new_node = self._make_node(
+            name=name, type=type, scope=scope, string=node_string,  # positions=positions,
+            offset_start=offset_start, offset_end=offset_end
+        )
         self._node_pool[new_node.hash_id] = new_node
         return new_node.hash_id
 
@@ -629,7 +698,7 @@ class PythonAstGraphBuilder(object):
             return self.generic_parse(node, node._fields)
 
     def _add_edge(
-            self, edges, src: int, dst: int, type, scope: Optional[int] = None,
+            self, edges, src: str, dst: str, type, scope: Optional[str] = None,
             position_node=None, var_position_node=None, position=None
     ):
         new_edge = self._make_edge(src=src, dst=dst, type=type, scope=scope)
@@ -652,9 +721,9 @@ class PythonAstGraphBuilder(object):
         for node in nodes:
             s = self._parse(node)
             if isinstance(s, tuple):
-                if self._node_pool[s[1]].type == self._node_types["Constant"]:
+                if self._node_pool[s[1]].type in (self._node_types["Constant"], self._node_types["mention"], self._node_types["instance"]):
                     # this happens when processing docstring, as a result a lot of nodes are connected to the node
-                    # Constant_
+                    # Constant_  TEST EXAMPLE: "@mock.patch('time.sleep', autospec=True)\n@mock.patch('paasta_tools.cli.cmds.local_run.run_healthcheck_on_container', autospec=True)\ndef test_simulate_healthcheck_on_service_enabled_failure(mock_run_healthcheck_on_container, mock_sleep):\n    mock_docker_client = mock.MagicMock(spec_set=docker.Client)\n    mock_service_manifest = MarathonServiceConfig(service='fake_name', cluster='fake_cluster', instance='fake_instance', config_dict={\n        'healthcheck_grace_period_seconds': 0,\n    }, branch_dict={\n        \n    })\n    mock_service_manifest\n    fake_container_id = 'fake_container_id'\n    fake_mode = 'http'\n    fake_url = 'http://fake_host/fake_status_path'\n    mock_run_healthcheck_on_container.return_value = (False, 'it failed')\n    actual = simulate_healthcheck_on_service(mock_service_manifest, fake_url, fake_container_id, fake_mode, fake_url, True)\n    assert (actual[0] is False)"
                     continue  # in general, constant node has no affect as a body expression, can skip
                 # some parsers return edges and names?
                 edges.extend(s[0])
@@ -697,7 +766,7 @@ class PythonAstGraphBuilder(object):
 
         if self._add_mention_instances:
             mention_instance = self._get_node(
-                name="instance", type=self._node_types["instance"], add_random_identifier=True
+                name="instance", type=self._node_types["instance"], add_random_identifier=True, node_string=name
             )
             self._node_pool[mention_instance].string = name
             self._add_edge(
@@ -737,7 +806,7 @@ class PythonAstGraphBuilder(object):
                 iter_ = iter_e
             elif type(iter_e) == tuple:
                 ext_edges, name = iter_e
-                assert isinstance(name, int) and name in self._node_pool
+                assert isinstance(name, str) and name in self._node_pool
                 edges.extend(ext_edges)
                 iter_ = name
             else:
@@ -1149,38 +1218,39 @@ class PythonAstGraphBuilder(object):
         if node.vararg is not None:
             ext_edges_, vararg = self.parse_arg(node.vararg)
             edges.extend(ext_edges_)
-            self._add_edge(edges, vararg, arguments, type=self._edge_types["vararg"], position_node=node.vararg,
+            self._add_edge(edges, vararg, arguments, type=self._edge_types["vararg"],  # position_node=node.vararg,
                           scope=self.latest_scope)
 
         for i in range(len(node.posonlyargs)):
             ext_edges_, posarg = self.parse_arg(node.posonlyargs[i])
             edges.extend(ext_edges_)
-            self._add_edge(edges, posarg, arguments, type=self._edge_types["posonlyarg"], position_node=node.posonlyargs[i],
+            self._add_edge(edges, posarg, arguments, type=self._edge_types["posonlyarg"],  # position_node=node.posonlyargs[i],
                           scope=self.latest_scope)
 
         without_default = len(node.args) - len(node.defaults)
         for i in range(without_default):
             ext_edges_, just_arg = self.parse_arg(node.args[i])
             edges.extend(ext_edges_)
-            self._add_edge(edges, just_arg, arguments, type=self._edge_types["arg"], position_node=node.args[i],
+            self._add_edge(edges, just_arg, arguments, type=self._edge_types["arg"],  # position_node=node.args[i],
                           scope=self.latest_scope)
 
         for ind, i in enumerate(range(without_default, len(node.args))):
             ext_edges_, just_arg = self.parse_arg(node.args[i], default_value=node.defaults[ind])
             edges.extend(ext_edges_)
-            self._add_edge(edges, just_arg, arguments, type=self._edge_types["arg"], position_node=node.args[i],
+            self._add_edge(edges, just_arg, arguments, type=self._edge_types["arg"],  # position_node=node.args[i],
                           scope=self.latest_scope)
 
         for i in range(len(node.kwonlyargs)):
             ext_edges_, kw_arg = self.parse_arg(node.kwonlyargs[i], default_value=node.kw_defaults[i])
             edges.extend(ext_edges_)
-            self._add_edge(edges, kw_arg, arguments, type=self._edge_types["kwonlyarg"], position_node=node.kwonlyargs[i],
+            self._add_edge(edges, kw_arg, arguments, type=self._edge_types["kwonlyarg"],  # position_node=node.kwonlyargs[i],
                           scope=self.latest_scope)
 
         if node.kwarg is not None:
             ext_edges_, kwarg = self.parse_arg(node.kwarg)
             edges.extend(ext_edges_)
-            self._add_edge(edges, kwarg, arguments, type=self._edge_types["kwarg"], position_node=node.kwarg, scope=self.latest_scope)
+            self._add_edge(edges, kwarg, arguments, type=self._edge_types["kwarg"],  # position_node=node.kwarg,
+                           scope=self.latest_scope)
 
         return edges, arguments
 
@@ -1235,18 +1305,71 @@ class PythonAstGraphBuilder(object):
 
         return edges, offsets
 
-    def to_df(self):
+    def _assign_node_strings(self, nodes, offsets):
+        start_map = {}
+        end_map = {}
+        for node_id, part in offsets.groupby("node_id"):
+            if len(part) > 1:
+                continue
+            start_map[node_id] = part["offset_start"].iloc[0]
+            end_map[node_id] = part["offset_end"].iloc[0]
+
+        existing_string = dict(zip(nodes["id"], nodes["string"]))
+        existing_start = dict(zip(nodes["id"], nodes["offset_start"]))
+        existing_end = dict(zip(nodes["id"], nodes["offset_end"]))
+
+        def assign_string(id_):
+            if id_ in start_map:
+                node_string = self._original_source[start_map[id_]: end_map[id_]]
+                if id_ not in existing_string:
+                    assert node_string == existing_string[id_]
+            elif id_ in existing_string:
+                node_string = existing_string[id_]
+            else:
+                node_string = pd.NA
+            return node_string
+
+        def assign_start(id_):
+            if id_ in start_map:
+                start = existing_start[id_]
+                if id_ not in existing_start:
+                    assert start == existing_start[id_]
+            elif id_ in existing_start:
+                start = existing_start[id_]
+            else:
+                start = pd.NA
+            return start
+
+        def assign_end(id_):
+            if id_ in end_map:
+                end = existing_end[id_]
+                if id_ not in existing_end:
+                    assert end == existing_end[id_]
+            elif id_ in existing_end:
+                end = existing_end[id_]
+            else:
+                end = pd.NA
+            return end
+
+        nodes["string"] = nodes["id"].apply(assign_string)
+        nodes["offset_start"] = nodes["id"].apply(assign_start)
+        nodes["offset_end"] = nodes["id"].apply(assign_end)
+
+        return nodes
+
+    def to_df(self, make_table=True):
 
         self.postprocess()
 
-        nodes, edges = nodes_edges_to_df(self._node_pool.values(), self._edges)
-        edges, offsets = self._get_offsets(edges)  # TODO should include offsets from table with nodes?
+        nodes, edges, offsets = nodes_edges_to_df(self._node_pool.values(), self._edges, make_table=make_table)
+        # edges, offsets = self._get_offsets(edges)  # TODO should include offsets from table with nodes?
+        # nodes = self._assign_node_strings(nodes, offsets)
         return nodes, edges, offsets
 
 
 def make_python_ast_graph(
         source_code, add_reverse_edges=False, save_node_strings=False, add_mention_instances=False,
-        graph_builder_class=None, node_edge_definition_class=None, **kwargs
+        graph_builder_class=None, node_edge_definition_class=None, make_table=True, **kwargs
 ):
     if graph_builder_class is None:
         graph_builder_class = PythonAstGraphBuilder
@@ -1257,7 +1380,7 @@ def make_python_ast_graph(
         source_code, node_edge_definition_class, add_reverse_edges=add_reverse_edges,
         save_node_strings=save_node_strings, add_mention_instances=add_mention_instances,  **kwargs
     )
-    return g.to_df()
+    return g.to_df(make_table)
 
 
 if __name__ == "__main__":

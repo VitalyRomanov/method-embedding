@@ -311,8 +311,8 @@ class PythonCFGraphBuilder(PythonAstGraphBuilder):
             else:
                 nodes_inside.add(e.src)
                 nodes_inside.add(e.dst)
-            if e.positions is not None:
-                positions[e.src] = e.positions
+            if e.offset_start is not None:
+                positions[e.src] = (e.offset_start, e.offset_end)
 
         for n in nodes_inside:
             if self._node_pool[n].type.name in {"mention", "instance"} or self._node_pool[n].name in {
@@ -401,15 +401,24 @@ class PythonCFGraphBuilder(PythonAstGraphBuilder):
                 if reverse is not None:
                     self._edges.append(reverse)
 
-    def to_df(self):
+    def to_df(self, make_table=True):
         self.postprocess()
-        nodes, edges = nodes_edges_to_df(self._node_pool.values(), self._edges)
-        nodes, edges.drop_duplicates(["type", "src", "dst"])
-        edges = edges[edges['src'] != edges['dst']]  # remove self-loops
-        remaining = set(edges['src']) | set(edges['dst'])
-        nodes = nodes[nodes["id"].apply(lambda x: x in remaining)]
+        edges = [edge for edge in self._edges if edge.src != edge.dst]
 
-        edges, offsets = self._get_offsets(edges)
+        allowed_nodes = set()
+        for edge in edges:
+            allowed_nodes.add(edge.src)
+            allowed_nodes.add(edge.dst)
+        nodes = (node for node in self._node_pool.values() if node.node_hash in allowed_nodes)
+
+        nodes, edges, offsets = nodes_edges_to_df(nodes, edges, make_table=make_table)
+        # nodes, edges.drop_duplicates(["type", "src", "dst"])
+        # edges = edges[edges['src'] != edges['dst']]  # remove self-loops
+        # remaining = set(edges['src']) | set(edges['dst'])
+        # nodes = nodes[nodes["id"].apply(lambda x: x in remaining)]
+
+        # edges, offsets = self._get_offsets(edges)
+        # nodes = self._assign_node_strings(nodes, offsets)
         return nodes, edges, offsets
 
 
