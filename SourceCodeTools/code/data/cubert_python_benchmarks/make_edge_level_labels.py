@@ -5,26 +5,27 @@ import pandas as pd
 from tqdm import tqdm
 
 from SourceCodeTools.code.common import read_nodes, read_edges
-from SourceCodeTools.code.data.cubert_python_benchmarks.partitioning import add_splits
 from SourceCodeTools.code.data.file_utils import unpersist, persist
 
 
-def create_edge_labels(dataset_directory):
+def create_edge_labels(dataset_directory, use_mention_instances):
 
     dataset = Path(dataset_directory)
-    filecontent_path = dataset.joinpath("common_filecontent.json.bz2")
-    nodes_path = dataset.joinpath("common_nodes.json.bz2")
-    edges_path = dataset.joinpath("common_edges.json.bz2")
+    filecontent_path = dataset.joinpath("common_filecontent.json")
+    nodes_path = dataset.joinpath("common_nodes.json")
+    edges_path = dataset.joinpath("common_edges.json")
 
     def get_node_names():
         id2node_name = dict()
         id2node_type = dict()
+        id2node_str = dict()
         for nodes in read_nodes(nodes_path, as_chunks=True):
             id2node_name.update(dict(zip(nodes["id"], nodes["serialized_name"])))
             id2node_type.update(dict(zip(nodes["id"], nodes["type"])))
-        return id2node_name, id2node_type
+            id2node_str.update(dict(zip(nodes["id"], nodes["string"])))
+        return id2node_name, id2node_type, id2node_str
 
-    id2node_name, id2node_type = get_node_names()
+    id2node_name, id2node_type, id2node_str = get_node_names()
 
     def get_misuse_spans():
         filecontent = unpersist(filecontent_path)
@@ -48,8 +49,8 @@ def create_edge_labels(dataset_directory):
     total = 0
     for chunk_ind, edges in tqdm(enumerate(read_edges(edges_path, as_chunks=True)), desc="Extracting misuse edges"):
         edges = edges.astype({"offset_start": "Int32", "offset_end": "Int32"})
-        for edge_id, file_id, source_node_id, target_node_id, type, offset_start, offset_end in \
-                edges[["id", "file_id", "source_node_id", "target_node_id", "type", "offset_start", "offset_end"]].values:
+        for edge_id, file_id, package, source_node_id, target_node_id, type, offset_start, offset_end in \
+                edges[["id", "file_id", "package", "source_node_id", "target_node_id", "type", "offset_start", "offset_end"]].values:
             if last_file_id != file_id:
                 total += 1
                 if last_file_id is not None and last_file_id not in file_id2incorrect_edge:
@@ -68,8 +69,10 @@ def create_edge_labels(dataset_directory):
                 if needed_span == given_span:
                     replacement = file_id2replacement_var[file_id]
                     if replacement is not None:
-                        node_name = id2node_name[source_node_id]
-                        assert node_name.startswith(replacement)
+                        if use_mention_instances is False:
+                            assert id2node_name[source_node_id].startswith(replacement)
+                        else:
+                            assert id2node_str[source_node_id] == replacement
                         file_id2incorrect_edge.add(file_id)
                         file_id2labeled_edges.append({
                             "id": edge_id,
@@ -77,17 +80,23 @@ def create_edge_labels(dataset_directory):
                             "dst": target_node_id,
                             "type": type,
                             "file_id": file_id,
+                            "package": package,
                             "label": "misuse"
                         })
                 else:
                     node_type = id2node_type[source_node_id]
-                    if node_type == "mention":
+                    if use_mention_instances is False:
+                        use_this_edge = node_type == "mention"
+                    else:
+                        use_this_edge = node_type == "instance"
+                    if use_this_edge:
                         file_id2labeled_edges.append({
                             "id": edge_id,
                             "src": source_node_id,
                             "dst": target_node_id,
                             "type": type,
                             "file_id": file_id,
+                            "package": package,
                             "label": "correct"
                         })
 
@@ -113,7 +122,8 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("dataset_directory")
+    parser.add_argument('--use_mention_instances', action='store_true', default=False, help="")
 
     args = parser.parse_args()
 
-    create_edge_labels(args.dataset_directory)
+    create_edge_labels(args.dataset_directory, args.use_mention_instances)

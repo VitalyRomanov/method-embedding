@@ -681,6 +681,165 @@ def build_ast_graph_from_modules():
         visualize(nodes, edges, os.path.join(output_dir, "visualization.pdf"))
 
 
+def build_ast_only_graph2(
+        source_codes, bpe_tokenizer_path, create_subword_instances, connect_subwords, lang, track_offsets=False,
+        graph_variety="v3.5", mention_instances=True
+):
+    all_nodes = []
+    all_edges = []
+    all_offsets = []
+
+    for package, source_code_id, source_code in tqdm(source_codes, desc="Processing modules"):
+        source_code_ = source_code.lstrip()
+        initial_strip = source_code[:len(source_code) - len(source_code_)]
+
+        if not has_valid_syntax(source_code):
+            continue
+
+        graph = source_code_to_graph(
+            source_code, variety=graph_variety, bpe_tokenizer_path=bpe_tokenizer_path, reverse_edges=True,
+            mention_instances=mention_instances, save_node_strings=True
+        )
+
+        nodes_ = graph["nodes"]
+        edges_ = graph["edges"]
+        offsets_ = graph["offsets"]
+
+        if nodes_ is not None and len(nodes_) > 0:
+            all_nodes.append(nodes_)
+
+        if edges_ is not None and len(edges_) > 0:
+            edges_["file_id"] = source_code_id
+            edges_["package"] = package
+            if "offset_start" in edges_.columns and initial_strip != 0:
+                edges_["offset_start"] += len(initial_strip)
+                edges_["offset_end"] += len(initial_strip)
+            all_edges.append(edges_)
+
+        if offsets_ is not None and len(offsets_) > 0:
+            offsets_["file_id"] = source_code_id
+            offsets_["package"] = package
+            if initial_strip != 0:
+                offsets_["offset_start"] += len(initial_strip)
+                offsets_["offset_end"] += len(initial_strip)
+            all_offsets.append(offsets_)
+
+    if len(all_nodes) == 0:
+        return None, None, None
+
+    def prepare_edges(all_ast_edges):
+        all_ast_edges = pd.concat(all_ast_edges)
+
+        all_ast_edges.drop_duplicates(["type", "src", "dst"], inplace=True)
+        all_ast_edges = all_ast_edges.query("src != dst")
+
+        column_order = ["id", "type", "src", "dst", "file_id", "package", "scope"]
+        if "offset_start" in all_ast_edges.columns:
+            column_order.append("offset_start")
+            column_order.append("offset_end")
+
+        all_ast_edges = all_ast_edges[column_order] \
+            .rename({
+                'src': 'source_node_id', 'dst': 'target_node_id', 'scope': 'mentioned_in',
+            }, axis=1)
+
+        if "id" not in all_ast_edges.columns or all_ast_edges["id"].nunique() < len(all_ast_edges):
+            all_ast_edges["id"] = range(len(all_ast_edges))
+
+        return all_ast_edges
+
+    def prepare_nodes(all_ast_nodes_):
+        all_ast_nodes = pd.concat(all_ast_nodes_)
+        all_ast_nodes.drop_duplicates(["id", "type", "name"], inplace=True)
+
+        column_order = ["id", "type", "name", "string"]
+        if "offset_start" in all_ast_nodes.columns:
+            column_order.append("offset_start")
+            column_order.append("offset_end")
+
+        all_ast_nodes = all_ast_nodes[column_order] \
+            .rename({'name': 'serialized_name', 'offset_start': "start", "offset_end": "end"}, axis=1)
+
+        return all_ast_nodes
+
+    def prepare_offsets(all_ast_offsets):
+        all_ast_offsets = pd.concat(all_ast_offsets)
+        all_ast_offsets.drop_duplicates(["offset_start", "offset_end", "node_id"], inplace=True)
+
+        column_order = ["node_id", "offset_start", "offset_end", "scope", "file_id", "package"]
+
+        all_ast_offsets = all_ast_offsets[column_order] \
+            .rename({
+                'name': 'serialized_name', 'offset_start': 'start', 'offset_end': 'end',
+                'scope': 'mentioned_in'
+            }, axis=1)
+
+        return all_ast_offsets
+
+    all_ast_edges = prepare_edges(all_edges)
+    all_ast_nodes = prepare_nodes(all_nodes)
+    all_ast_offset = prepare_offsets(all_offsets)
+
+    return all_ast_nodes, all_ast_edges, all_ast_offset if track_offsets is True else None
+
+
+def source_code_to_graph(
+        source_code, variety, bpe_tokenizer_path=None, reverse_edges=False, mention_instances=False,
+        save_node_strings = False
+):
+    if variety == "v1.0":
+        raise NotImplementedError()
+    elif variety == "v2.5":
+        nodes, edges, offsets = ast_graph_for_single_example(
+            source_code=source_code, bpe_tokenizer_path=bpe_tokenizer_path, create_subword_instances=False, connect_subwords=False,
+            track_offsets=True, reverse_edges=reverse_edges
+        )
+    elif variety == "v1.0_control_flow":
+        from SourceCodeTools.code.ast.python_ast_cf import AstGraphGenerator
+        nodes, edges, offsets = ast_graph_for_single_example(
+            source_code=source_code, bpe_tokenizer_path=None, create_subword_instances=False, connect_subwords=False,
+            track_offsets=True, reverse_edges=reverse_edges,
+            ast_generator_base_class=AstGraphGenerator
+        )
+    elif variety == "v3.5":
+        from SourceCodeTools.code.ast.python_ast3 import make_python_ast_graph as make_python_ast_graph_without_subwords
+        from SourceCodeTools.code.ast.python_graph_subwords import make_python_graph_with_subwords
+        if bpe_tokenizer_path is None:
+            nodes, edges, offsets = make_python_ast_graph_without_subwords(
+                source_code, add_reverse_edges=reverse_edges, add_mention_instances=mention_instances,
+                save_node_strings=save_node_strings
+            )
+        else:
+            nodes, edges, offsets = make_python_graph_with_subwords(
+                source_code, add_reverse_edges=reverse_edges, add_mention_instances=mention_instances,
+                bpe_tokenizer_path=bpe_tokenizer_path, save_node_strings=save_node_strings
+            )
+    elif variety == "v3.5_control_flow":
+        from SourceCodeTools.code.ast.python_ast3_cf import make_python_cf_graph
+        from SourceCodeTools.code.ast.python_graph_subwords import make_python_graph_with_subwords
+        if bpe_tokenizer_path is None:
+            nodes, edges, offsets = make_python_cf_graph(
+                source_code, add_reverse_edges=reverse_edges, add_mention_instances=mention_instances,
+                save_node_strings=save_node_strings
+            )
+        else:
+            from SourceCodeTools.code.ast.python_ast3_cf import PythonCFGraphBuilder
+            from SourceCodeTools.code.ast.python_ast3_cf import PythonNodeEdgeCFDefinitions
+            nodes, edges, offsets = make_python_graph_with_subwords(
+                source_code, add_reverse_edges=reverse_edges, add_mention_instances=mention_instances,
+                bpe_tokenizer_path=bpe_tokenizer_path, graph_builder_base_class=PythonCFGraphBuilder,
+                node_edge_base_definition_class=PythonNodeEdgeCFDefinitions, save_node_strings=save_node_strings
+            )
+    else:
+        raise ValueError()
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "offsets": offsets
+    }
+
+
 class AstDatasetCreator(AbstractDatasetCreator):
 
     merging_specification = {
@@ -736,11 +895,14 @@ class AstDatasetCreator(AbstractDatasetCreator):
     def __init__(
             self, path, lang, bpe_tokenizer, create_subword_instances, connect_subwords, only_with_annotations,
             do_extraction=False, visualize=False, track_offsets=False, remove_type_annotations=False,
-            recompute_l2g=False, chunksize=10000, keep_frac=1.0, seed=None
+            recompute_l2g=False, chunksize=10000, keep_frac=1.0, seed=None, create_mention_instances=True,
+            graph_format_version="v3.5"
     ):
         self.chunksize = chunksize
         self.keep_frac = keep_frac
         self.seed = seed
+        self.graph_format_version = graph_format_version
+        self.create_mention_instances = create_mention_instances
         super().__init__(
             path, lang, bpe_tokenizer, create_subword_instances, connect_subwords, only_with_annotations,
             do_extraction, visualize, track_offsets, remove_type_annotations, recompute_l2g
@@ -790,10 +952,10 @@ class AstDatasetCreator(AbstractDatasetCreator):
 
                 source_code = unpersist(join(env_path, "source_code.bz2"))
 
-                nodes_with_ast, edges_with_ast, offsets = build_ast_only_graph(
+                nodes_with_ast, edges_with_ast, offsets = build_ast_only_graph2(
                     zip(source_code["package"], source_code["id"], source_code["filecontent"]), self.bpe_tokenizer,
                     create_subword_instances=self.create_subword_instances, connect_subwords=self.connect_subwords,
-                    lang=self.lang, track_offsets=self.track_offsets
+                    lang=self.lang, track_offsets=self.track_offsets, mention_instances=self.create_mention_instances
                 )
 
             else:
@@ -858,6 +1020,7 @@ if __name__ == "__main__":
     dataset = AstDatasetCreator(
         args.source_code, args.language, args.bpe_tokenizer, args.create_subword_instances,
         args.connect_subwords, args.only_with_annotations, args.do_extraction, args.visualize, args.track_offsets,
-        args.remove_type_annotations, args.recompute_l2g, args.chunksize, args.keep_frac, args.seed
+        args.remove_type_annotations, args.recompute_l2g, args.chunksize, args.keep_frac, args.seed,
+        args.use_mention_instances, args.graph_format_version
     )
     dataset.merge(args.output_directory)

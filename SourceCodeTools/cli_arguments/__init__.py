@@ -49,6 +49,8 @@ class AstDatasetCreatorArguments(Arguments):
     def additional_arguments(self):
         self.parser.add_argument('--chunksize', default=10000, type=int, help='Chunksize for preparing dataset. Larger chunks are faster to process, but they take more memory.')
         self.parser.add_argument('--keep_frac', default=1.0, type=float, help="Fraction of the dataset to keep")
+        self.parser.add_argument('--use_mention_instances', action='store_true', default=False, help="")
+        self.parser.add_argument('--graph_format_version', default="v3.5", type=str, help="Possible options: v2.5 | v1.0_control_flow | v3.5 | v3.5_control_flow")
 
     def parse(self):
         return self.parser.parse_args()
