@@ -237,6 +237,7 @@ class PythonNodeEdgeCFDefinitions(PythonNodeEdgeDefinitions):
     @classmethod
     def _initialize_shared_nodes(cls):
         node_types_enum = cls.make_node_type_enum()
+        ctx = {node_types_enum["ctx"]}
         type_nodes = {node_types_enum["type_node"]}
         annotation_types = {node_types_enum["type_annotation"]}
         tokenizable_types = {node_types_enum["Name"], node_types_enum["#attr#"], node_types_enum["#keyword#"]}
@@ -250,7 +251,7 @@ class PythonNodeEdgeCFDefinitions(PythonNodeEdgeDefinitions):
         # cls.named_leaf_types = annotation_types | tokenizable_types | python_token_types
         # cls.tokenizable_types_and_annotations = annotation_types | tokenizable_types
 
-        cls.shared_node_types = annotation_types | subword_types | tokenizable_types | python_token_types | type_nodes
+        cls.shared_node_types = annotation_types | subword_types | tokenizable_types | python_token_types | type_nodes | ctx
 
         cls.shared_node_types_initialized = True
 

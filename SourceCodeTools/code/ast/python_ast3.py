@@ -251,6 +251,7 @@ class PythonNodeEdgeDefinitions:
     @classmethod
     def _initialize_shared_nodes(cls):
         node_types_enum = cls.make_node_type_enum()
+        ctx = {node_types_enum["ctx"]}
         annotation_types = {node_types_enum["type_annotation"]}
         tokenizable_types = {node_types_enum["Name"], node_types_enum["#attr#"], node_types_enum["#keyword#"]}
         python_token_types = {
@@ -263,7 +264,7 @@ class PythonNodeEdgeDefinitions:
         # cls.named_leaf_types = annotation_types | tokenizable_types | python_token_types
         # cls.tokenizable_types_and_annotations = annotation_types | tokenizable_types
 
-        cls.shared_node_types = annotation_types | subword_types | tokenizable_types | python_token_types
+        cls.shared_node_types = annotation_types | subword_types | tokenizable_types | python_token_types | ctx
 
         cls.shared_node_types_initialized = True
 
@@ -1227,12 +1228,11 @@ class PythonAstGraphBuilder(object):
         offsets = edges[["src", "offset_start", "offset_end", "scope"]] \
             .dropna() \
             .rename({
-                "src": "node_id", "offset_start": "start", "offset_end": "end" #, "scope": "mentioned_in"
+                "src": "node_id" #, "offset_start": "start", "offset_end": "end" #, "scope": "mentioned_in"
             }, axis=1)
 
         # assert len(offsets) == offsets["node_id"].nunique()  # there can be several offsets for constants
 
-        edges = edges.drop(["offset_start", "offset_end"], axis=1)
         return edges, offsets
 
     def to_df(self):
