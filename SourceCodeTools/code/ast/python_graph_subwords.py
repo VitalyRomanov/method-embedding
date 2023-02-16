@@ -1,10 +1,12 @@
 import logging
+from functools import lru_cache
 
 from SourceCodeTools.code.ast.python_ast3 import PythonAstGraphBuilder, make_python_ast_graph, PythonNodeEdgeDefinitions
 from SourceCodeTools.code.data.ast_graph.draw_graph import visualize
 from SourceCodeTools.nlp import create_tokenizer
 
 
+@lru_cache
 def make_node_edge_definitions_with_subwords(base_class):
     class PythonGraphWithSubwordsEdgeDefinitions(base_class):
         node_type_enum_initialized = False
@@ -76,6 +78,7 @@ def make_node_edge_definitions_with_subwords(base_class):
     return PythonGraphWithSubwordsEdgeDefinitions
 
 
+@lru_cache
 def make_graph_bilder_class(base_class):
     class PythonWithSubwordsGraphBuilder(base_class):
         def __init__(
