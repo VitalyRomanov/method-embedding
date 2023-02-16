@@ -24,8 +24,7 @@ def create_subword_tokenizer(lang, vs):
 def load_bpe_model(path):
     from sentencepiece import SentencePieceProcessor
     spm = SentencePieceProcessor()
-    spm.Load(path)
-    if spm.Load(path):
+    if spm.Load(str(path)):
         return spm
     else:
         raise Exception("Error loading model")
