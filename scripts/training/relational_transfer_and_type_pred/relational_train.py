@@ -81,11 +81,11 @@ def train_model(args):
 
     train_path_out = model_base.joinpath("type_pred_relational_train")
     train_path_out.mkdir(exist_ok=True)
-    process_data(model_base.joinpath("train_relaitonal_type_pred.pt"), train_path_out)
+    process_data(model_base.joinpath("train_relational_type_pred.pt"), train_path_out)
 
-    test_path_out = model_base.joinpath("type_pred_relational_train")
+    test_path_out = model_base.joinpath("type_pred_relational_test")
     test_path_out.mkdir(exist_ok=True)
-    process_data(model_base.joinpath("test_relaitonal_type_pred.pt"), test_path_out)
+    process_data(model_base.joinpath("test_relational_type_pred.pt"), test_path_out)
 
     # print("Saving...")
     #

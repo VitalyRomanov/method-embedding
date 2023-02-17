@@ -266,27 +266,42 @@ class RelationalDistMult(GraphLinkClassificationObjective):
         def compute_average_score(scores, labels=None):
             scores = scores.cpu()
             labels = labels.cpu()
-            return torch.cat([scores[labels == 1.], 1. - scores[labels != 1.]]).mean().item()
+            return scores.mean().item()
+            # return (((scores > 0.) == labels).sum() / len(scores)).item()
             # return compute_accuracy(scores.argmax(dim=-1), labels)
 
         self._compute_average_score = compute_average_score
 
     def _compute_scores_loss(
-            self, node_embs, positive_embs, negative_embs, positive_labels, negative_labels
+            self, node_embs, positive_embs, negative_node_embs, negative_embs, positive_labels, negative_labels
     ) -> Tuple[Tuple[torch.Tensor, Optional[torch.Tensor]], Dict, torch.Tensor]:
 
         pos_scores = self.link_scorer(node_embs, positive_embs, positive_labels)
-        neg_scores = self.link_scorer(node_embs, negative_embs, negative_labels)
+        neg_scores = self.link_scorer(negative_node_embs, negative_embs, negative_labels)
 
-        edge_scores = torch.sigmoid(torch.cat([pos_scores, neg_scores], dim=0))
-        labels = torch.cat([torch.ones(len(positive_labels), dtype=torch.float32), torch.zeros(len(negative_labels), dtype=torch.float32)], dim=0)
-        loss = self._loss_op(
-            edge_scores,
-            labels
+        pos_labels = torch.ones(len(positive_labels), dtype=torch.float32)
+        neg_labels = torch.zeros(len(negative_labels), dtype=torch.float32)
+
+        edge_scores = torch.cat([torch.sigmoid(pos_labels), torch.sigmoid(neg_labels)], dim=0)
+        labels = torch.cat([pos_labels, neg_labels], dim=0)
+
+        pos_loss = self._loss_op(
+            torch.sigmoid(pos_scores),
+            pos_labels
         )
+        neg_loss = self._loss_op(
+            torch.sigmoid(neg_scores),
+            neg_labels
+        ) / len(neg_labels)
+        # loss = self._loss_op(
+        #     edge_scores,
+        #     labels
+        # )
+        loss = pos_loss.mean() + neg_loss.mean()
         with torch.no_grad():
             scores = {
-                f"positive_score/{self.link_scorer_type.name}": self._compute_average_score(edge_scores, labels),
+                f"positive_score/{self.link_scorer_type.name}": self._compute_average_score(pos_scores, pos_labels),
+                f"negative_score/{self.link_scorer_type.name}": self._compute_average_score(neg_scores, neg_labels),
             }
         return (pos_scores, neg_scores), scores, loss
 
@@ -299,12 +314,23 @@ class RelationalDistMult(GraphLinkClassificationObjective):
 
         src_embeddings = unique_embeddings[src_slice_map]
         dst_embeddings = unique_embeddings[dst_slice_map]
+        neg_src_embeddings = unique_embeddings[neg_src_slice_map]
         neg_dst_embeddings = unique_embeddings[neg_dst_slice_map]
 
-        assert (src_slice_map == neg_src_slice_map).all()
+        # assert (src_slice_map == neg_src_slice_map).all()
 
         pos_neg_scores, avg_scores, loss = self._compute_scores_loss(
-            src_embeddings, dst_embeddings, neg_dst_embeddings, kwargs["original_edge_types"], kwargs["original_edge_types"]
+            src_embeddings, dst_embeddings, neg_src_embeddings, neg_dst_embeddings, kwargs["original_edge_types"], kwargs["original_neg_edge_types"]
         )
 
-        return None, pos_neg_scores, (labels, neg_labels), loss, avg_scores
+        return ObjectiveOutput(
+            gnn_output=None,
+            logits=pos_neg_scores,
+            labels=(labels, neg_labels),
+            loss=loss,
+            scores=avg_scores,
+            prediction=(
+                torch.softmax(pos_neg_scores[0], dim=-1),
+                torch.softmax(pos_neg_scores[1], dim=-1) if pos_neg_scores[1] is not None else None
+            )
+        )

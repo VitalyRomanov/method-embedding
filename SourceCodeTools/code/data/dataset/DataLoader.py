@@ -682,6 +682,7 @@ class SGTrueEdgesDataLoader(SGNodesDataLoader):
                 neg_src_node_slice_map = []
                 neg_dst_node_slice_map = []
                 neg_labels = []
+                original_neg_labels = []
 
                 for etype in edges_for_batching:
                     if pair_graph.num_edges(etype) == 0:
@@ -694,10 +695,17 @@ class SGTrueEdgesDataLoader(SGNodesDataLoader):
                         original_labels.extend(self.label_encoder._inverse_target_map[k] for k in edge_labels[etype].tolist())
 
                     # negative
-                    neg_src_node_slice_map.extend(map(node_id_to_position.get, src_nodes.tolist()))
-                    neg_dst_node_slice_map.extend(random.sample(range(len(node_id_to_position)), len(src_nodes)))
+                    neg_sampling_factor = 15
+                    neg_src = src_nodes.tolist() * neg_sampling_factor
+                    neg_dst = random.choices(range(len(node_id_to_position)), k=len(neg_src))
+                    neg_valid = [(s, d, l) for s, d, l in zip(neg_src, neg_dst, edge_labels[etype].tolist() * neg_sampling_factor) if (s, d) not in edges_bloom_filter]
+
+                    neg_src_node_slice_map.extend(map(node_id_to_position.get, map(lambda x: x[0], neg_valid)))
+                    neg_dst_node_slice_map.extend(map(node_id_to_position.get, map(lambda x: x[1], neg_valid)))
                     if edge_labels is not None:
-                        neg_labels.extend(edge_labels[etype])
+                        neg_lbl = list(map(lambda x: x[2], neg_valid))
+                        neg_labels.extend(neg_lbl)
+                        original_neg_labels.extend(self.label_encoder._inverse_target_map[k] for k in neg_lbl)
 
                 batch = {
                     "src_slice_map": torch.LongTensor(src_node_slice_map).to(self.device),
@@ -705,6 +713,7 @@ class SGTrueEdgesDataLoader(SGNodesDataLoader):
                     "neg_src_slice_map": torch.LongTensor(neg_src_node_slice_map).to(self.device),
                     "neg_dst_slice_map": torch.LongTensor(neg_dst_node_slice_map).to(self.device),
                     "original_edge_types": original_labels,
+                    "original_neg_edge_types": original_neg_labels,
                     "labels": torch.LongTensor(labels).to(self.device),
                     "neg_labels": torch.LongTensor(neg_labels).to(self.device),
                     "input_nodes": input_nodes.to(self.device),

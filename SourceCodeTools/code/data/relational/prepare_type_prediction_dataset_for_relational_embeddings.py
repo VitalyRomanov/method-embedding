@@ -90,8 +90,8 @@ def main():
     dataset_db = SQLiteStorage(args.dataset_db)
 
     output = Path(args.output)
-    prepare(train_data, dataset_db, output.joinpath("train_relaitonal_type_pred.pt"))
-    prepare(test_data, dataset_db, output.joinpath("test_relaitonal_type_pred.pt"))
+    prepare(train_data, dataset_db, output.joinpath("train_relational_type_pred.pt"))
+    prepare(test_data, dataset_db, output.joinpath("test_relational_type_pred.pt"))
 
 
 
