@@ -31,7 +31,7 @@ class CodeBertSemiHybridModel(nn.Module):
             new_param = torch.nn.Parameter(pretrained_embeddings)
             assert self.graph_emb.weight.shape == new_param.shape
             self.graph_emb.weight = new_param
-            self.graph_emb.weight.requires_grad = False
+            # self.graph_emb.weight.requires_grad = False
             logging.warning("Graph embeddings are not finetuned")
             self.graph_adapter = nn.Linear(pretrained_embeddings.shape[1], bert_emb_size)
         else:
