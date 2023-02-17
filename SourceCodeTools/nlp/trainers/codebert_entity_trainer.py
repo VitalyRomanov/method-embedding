@@ -135,6 +135,8 @@ class CodeBertModelTrainer(ModelTrainer):
             extra_mask=None, class_weights=None, scorer=None, finetune=False, vocab_mapping=None, train=False
     ):
 
+        token_ids[token_ids == 50265] = 1
+
         if train is True:
             scores = cls.compute_loss_and_scores(
                 model, token_ids, prefix, suffix, graph_ids, labels, lengths, graph_embs=graph_embs,
