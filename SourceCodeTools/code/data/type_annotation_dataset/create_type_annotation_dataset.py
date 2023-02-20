@@ -26,8 +26,17 @@ def inspect_fdef(node):
     :return:
     """
     if node.returns is not None:
-        return [{"name": "returns", "line": node.returns.lineno - 1, "end_line": node.returns.end_lineno - 1,
-                 "col_offset": node.returns.col_offset, "end_col_offset": node.returns.end_col_offset}]
+        return [{
+            "name": "returns",
+            "line": node.returns.lineno - 1,
+            "end_line": node.returns.end_lineno - 1,
+            "col_offset": node.returns.col_offset,
+            "end_col_offset": node.returns.end_col_offset,
+            "var_line": node.lineno - 1,
+            "var_end_line": node.end_lineno - 1,
+            "var_col_offset": node.col_offset,
+            "var_end_col_offset": node.end_col_offset
+        }]
     else:
         return []
 
@@ -80,14 +89,14 @@ def correct_entities(entities, removed_offsets):
     for offset_len, offset in zip(offset_lens, offsets_sorted):
         new_entities = []
         for entity in for_correction:
-            if offset[0] <= entity[0] and offset[1] <= entity[0]:  # removed span is to the left of the entitity
+            if offset[0] <= entity[0] and offset[1] <= entity[0]:  # removed span is to the left of the entity
                 if len(entity) == 2:
                     new_entities.append((entity[0] - offset_len, entity[1] - offset_len))
                 elif len(entity) == 3:
                     new_entities.append((entity[0] - offset_len, entity[1] - offset_len, entity[2]))
                 else:
                     raise Exception("Invalid entity size")
-            elif offset[0] >= entity[1] and offset[1] >= entity[1]:  # removed span is to the right of the entitity
+            elif offset[0] >= entity[1] and offset[1] >= entity[1]:  # removed span is to the right of the entity
                 new_entities.append(entity)
             elif offset[0] <= entity[0] <= offset[1] and offset[0] <= entity[1] <= offset[1]:  # removed span covers the entity
                 pass
@@ -103,6 +112,13 @@ def correct_entities(entities, removed_offsets):
                     new_entities.append((entity[0], entity[1] - offset_len + offset[1] - entity[1], entity[2]))
                 elif len(entity) == 2:
                     new_entities.append((entity[0], entity[1] - offset_len + offset[1] - entity[1]))
+                else:
+                    raise Exception("Invalid entity size")
+            elif entity[0] <= offset[0] <= entity[1] and entity[0] <= offset[1] <= entity[1]:  # removed span is inside the entity
+                if len(entity) == 3:
+                    new_entities.append((entity[0], entity[1] - offset_len, entity[2]))
+                elif len(entity) == 2:
+                    new_entities.append((entity[0], entity[1] - offset_len))
                 else:
                     raise Exception("Invalid entity size")
             else:
@@ -143,7 +159,7 @@ def get_docstring(body: str):
     return to_offsets(body, docstring_ranges, as_bytes=False)
 
 
-def remove_offsets(body: str, entities, offsets):
+def remove_offsets(body: str, entities, default_values, return_offsets, offsets):
     """
     Remove offsets from body, adjust entities to match trimmed body
     :param body:
@@ -162,8 +178,10 @@ def remove_offsets(body: str, entities, offsets):
         new_body = new_body[:offset[0]] + new_body[offset[1]:]
 
     new_entities = correct_entities(entities, removed_offsets=offsets_sorted)
+    default_values = correct_entities(default_values, removed_offsets=offsets_sorted)
+    return_offsets = correct_entities(return_offsets, removed_offsets=offsets_sorted)
 
-    return new_body, new_entities, cuts
+    return new_body, new_entities, default_values, return_offsets, cuts
 
 
 def unpack_returns(body: str, labels: pd.DataFrame):
@@ -177,19 +195,24 @@ def unpack_returns(body: str, labels: pd.DataFrame):
         return [], []
 
     returns = []
+    variables = []
 
     for ind, row in labels.iterrows():
         if row['name'] == "returns":
+            variables.append((
+                row['var_line'], row['var_end_line'], row['var_col_offset'], row['var_end_col_offset'],
+                'function'))
             returns.append((row['line'], row['end_line'], row['col_offset'], row['end_col_offset'], "returns"))
 
     # most likely do not need to use as_bytes here, because non-unicode usually appear in strings
     # but type annotations usually appear in the end of signature and in the beginnig of a line
     return_offsets = to_offsets(body, returns, as_bytes=True)
+    function_offsets = to_offsets(body, variables, as_bytes=True)
 
     cuts = []
     ret = []
 
-    for offset in return_offsets:
+    for offset, fn_offset in zip(return_offsets, function_offsets):
         beginning = offset[0]
         end = offset[1]
 
@@ -204,28 +227,57 @@ def unpack_returns(body: str, labels: pd.DataFrame):
         assert head.endswith(fannsymbol)
         beginning = beginning - (orig_len - stripped_len) - len(fannsymbol)
         cuts.append((beginning, end))
-        ret.append(preprocess(body[offset[0]: offset[1]]))
+        ret.append((fn_offset[0], fn_offset[1], preprocess(body[offset[0]: offset[1]])))
 
     return ret, cuts
+
+
+def ast_node_to_offset(node, body):
+    return to_offsets(
+        body,
+        [(node.lineno - 1, node.end_lineno - 1, node.col_offset, node.end_col_offset, "node")],
+        as_bytes=True
+    )[0]
 
 
 def get_defaults_spans(body):
     root = ast.parse(body)
     defaults_offsets = []
+    defaults = {}
     for node in ast.walk(root):
-        if isinstance(node, ast.FunctionDef):
-            defaults_offsets.extend(to_offsets(
-                body,
-                [(arg.lineno-1, arg.end_lineno-1, arg.col_offset, arg.end_col_offset, "default") for arg in node.args.defaults],
-                as_bytes=True
-            ))
+        if isinstance(node, ast.arguments):
+            without_default = len(node.args) - len(node.defaults)
+            for ind, i in enumerate(range(without_default, len(node.args))):
+                arg = ast_node_to_offset(node.args[i], body)
+                default_value = ast_node_to_offset(node.defaults[ind], body)
+                defaults[arg] = default_value
+                defaults_offsets.append(default_value)
+
+            for i in range(len(node.kwonlyargs)):
+                arg = ast_node_to_offset(node.kwonlyargs[i], body)
+                default_value = ast_node_to_offset(node.kw_defaults[i], body)
+                defaults[arg] = default_value
+                defaults_offsets.append(default_value)
+
+            # defaults_offsets.extend(to_offsets(
+            #     body,
+            #     [(arg.lineno-1, arg.end_lineno-1, arg.col_offset, arg.end_col_offset, "default") for arg in node.defaults],
+            #     as_bytes=True
+            # ))
+
+    default_values = []
+    for v_off, d_off in defaults.items():
+        default_values.append(
+            (v_off[0], v_off[1], body[d_off[0]: d_off[1]])
+        )
 
     extended = []
     for start, end, label in defaults_offsets:
         while body[start] != "=":
             start -= 1
         extended.append((start, end))
-    return extended
+
+    return extended, default_values
 
 
 def unpack_annotations(body, labels, remove_default=False):
@@ -237,7 +289,7 @@ def unpack_annotations(body, labels, remove_default=False):
     :return: Trimmed body and list of annotations.
     """
     if labels is None:
-        return [], []
+        return [], [], []
 
     variables = []
     annotations = []
@@ -251,10 +303,10 @@ def unpack_annotations(body, labels, remove_default=False):
                 (row['line'], row['end_line'], row['col_offset'], row['end_col_offset'], 'annotation '))
 
     # most likely do not need to use as_bytes here, because non-unicode usually appear in strings
-    # but type annotations usually appear in the end of signature and in the beginnig of a line
+    # but type annotations usually appear in the end of signature and in the beginning of a line
     variables = to_offsets(body, variables, as_bytes=True)
     annotations = to_offsets(body, annotations, as_bytes=True)
-    defaults_spans = get_defaults_spans(body)
+    defaults_spans, default_values = get_defaults_spans(body)
 
     cuts = []
     vars = []
@@ -282,7 +334,7 @@ def unpack_annotations(body, labels, remove_default=False):
     if remove_default:
         cuts.extend(defaults_spans)
 
-    return vars, cuts
+    return vars, cuts, default_values
 
 
 def body_valid(body):
@@ -293,25 +345,32 @@ def body_valid(body):
         return False
 
 
-def process_body(nlp, body: str, replacements=None, require_labels=False, remove_default=False):
+def process_body(
+        nlp, body: str, replacements=None, require_labels=False, remove_default=False, remove_docstring=False,
+        keep_return_offsets = False
+):
     """
     Extract annotation information, strip documentation and type annotations.
     :param nlp: Spacy tokenizer
     :param body: Function body
     :param replacements: Optional. Additional replacements that need to be adjusted for modified function
-    :param remove_default:
     :param require_labels:
+    :param remove_default:
+    :param remove_docstring:
     :return: Entry with modified function body. Returns None if not annotations in the function
     """
 
     if replacements is None:
         replacements = []
 
-    entry = {"ents": [],
-             "cats": [],
-             "replacements": [],
-             "text": None,
-             "docstrings": []}
+    entry = {
+        "ents": [],
+        "cats": [],
+        "replacements": [],
+        "defaults": [],
+        "text": None,
+        "docstrings": []
+    }
 
     body_ = body.lstrip()
     initial_strip = body[:len(body) - len(body_)]
@@ -321,10 +380,11 @@ def process_body(nlp, body: str, replacements=None, require_labels=False, remove
     if body_valid(body_) is False:
         return None
 
-    docsting_offsets = get_docstring(body_)
+    docstring_offsets = get_docstring(body_)
 
-    body_, replacements, docstrings = remove_offsets(body_, replacements, docsting_offsets)
-    entry['docstrings'].extend(docstrings)
+    if remove_docstring:
+        body_, replacements, docstrings = remove_offsets(body_, replacements, docstring_offsets)
+        entry['docstrings'].extend(docstrings)
 
     was_valid = body_valid(body_)
     initial_labels = get_initial_labels(body_)
@@ -333,10 +393,18 @@ def process_body(nlp, body: str, replacements=None, require_labels=False, remove
         return None
 
     returns, return_cuts = unpack_returns(body_, initial_labels)
-    annotations, annotation_cuts = unpack_annotations(body_, initial_labels, remove_default=remove_default)
+    annotations, annotation_cuts, default_values = unpack_annotations(body_, initial_labels, remove_default=remove_default)
 
-    body_, replacements_annotations, _ = remove_offsets(body_, replacements + annotations,
-                                                        return_cuts + annotation_cuts)
+    body_, replacements_annotations, default_values, returns, _ = remove_offsets(
+        body_,
+        entities=replacements + annotations, default_values=default_values,
+        return_offsets=returns,
+        offsets=return_cuts + annotation_cuts
+    )
+
+    if not keep_return_offsets:
+        returns = [return_[2] for return_ in returns]
+
     is_valid = body_valid(body_)
     if was_valid != is_valid:
         print("Failed processing")
@@ -350,6 +418,7 @@ def process_body(nlp, body: str, replacements=None, require_labels=False, remove
     entry['ents'].extend(list(filter(lambda x: not isint(x[2]), replacements_annotations)))
     entry['cats'].extend(returns)
     entry['text'] = body_
+    entry["defaults"] = default_values
 
     entry['replacements'] = resolve_self_collisions2(entry['replacements'])
 
@@ -495,7 +564,8 @@ def process_package(working_directory, global_names=None, require_labels=False, 
     for ind, function_data in enumerate(iterate_functions(offsets, node_maps, filecontent)):
         try:
             entry = process_body(
-                nlp, function_data.pop("body"), replacements=function_data.pop("offsets"), require_labels=require_labels, remove_default=remove_default
+                nlp, function_data.pop("body"), replacements=function_data.pop("offsets"),
+                require_labels=require_labels, remove_default=remove_default, remove_docstring=True
             )
         except Exception as e:
             logging.warning("Error during processing")
@@ -588,7 +658,7 @@ def create_from_dataset(args):
     for ind, function_data in enumerate(iterate_functions(offsets, node_maps, filecontent)):
         entry = process_body(
             nlp, function_data.pop("body"), replacements=function_data.pop("offsets"),
-            require_labels=args.require_labels, remove_default=remove_default
+            require_labels=args.require_labels, remove_default=remove_default, remove_docstring=True
         )
 
         if entry is not None:

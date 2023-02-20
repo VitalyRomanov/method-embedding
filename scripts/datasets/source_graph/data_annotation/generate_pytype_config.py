@@ -73,17 +73,59 @@ strict_primitive_comparisons = False
 
 # Space-separated list of error names to ignore.
 disable =
-    pyi-error
-    name-error
-    import-error
+    annotation-type-mismatch
+    assert-type
     attribute-error
-    # bad-return-type
-    # annotation-type-mismatch
-    # bad-yield-annotation
-    # wrong-arg-types
+    bad-concrete-type
+    bad-function-defaults
+    bad-return-type
+    bad-slots
+    bad-unpacking
+    bad-yield-annotation
+    base-class-error
+    container-type-mismatch
+    duplicate-keyword-argument
+    final-error
+    ignored-abstractmethod
+    ignored-metaclass
+    ignored-type-comment
+    import-error
+    incomplete-match
+    invalid-annotation
+    invalid-directive
+    invalid-function-definition
+    invalid-function-type-comment
+    invalid-namedtuple-arg
+    invalid-super-call
+    invalid-typevar
+    late-directive
+    match-error
+    missing-parameter
+    module-attr
+    mro-error
+    name-error
+    not-callable
+    not-indexable
+    not-instantiable
+    not-supported-yet
+    not-writable
+    paramspec-error
+    pyi-error
+    python-compiler-error
+    recursion-error
+    redundant-function-type-comment
+    redundant-match
+    reveal-type
+    signature-mismatch
+    typed-dict-error
+    unbound-type-param
+    unsupported-operands
+    wrong-arg-count
+    wrong-arg-types
+    wrong-keyword-args
 
 # Don't report errors.
-report_errors = True
+report_errors = False
 
 """
 
