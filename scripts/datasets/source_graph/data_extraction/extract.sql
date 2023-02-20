@@ -12,4 +12,6 @@ SELECT * FROM source_location;
 SELECT * FROM occurrence;
 .output filecontent.csv
 SELECT * FROM filecontent;
+.output file.csv
+SELECT * FROM file;
 .quit
