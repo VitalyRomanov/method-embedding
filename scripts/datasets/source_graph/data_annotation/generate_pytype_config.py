@@ -75,6 +75,12 @@ strict_primitive_comparisons = False
 disable =
     pyi-error
     name-error
+    import-error
+    attribute-error
+    # bad-return-type
+    # annotation-type-mismatch
+    # bad-yield-annotation
+    # wrong-arg-types
 
 # Don't report errors.
 report_errors = True
