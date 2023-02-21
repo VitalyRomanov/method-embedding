@@ -695,10 +695,9 @@ class SGTrueEdgesDataLoader(SGNodesDataLoader):
                         original_labels.extend(self.label_encoder._inverse_target_map[k] for k in edge_labels[etype].tolist())
 
                     # negative
-                    neg_sampling_factor = 15
-                    neg_src = src_nodes.tolist() * neg_sampling_factor
+                    neg_src = src_nodes.tolist() * self.neg_sampling_factor
                     neg_dst = random.choices(range(len(node_id_to_position)), k=len(neg_src))
-                    neg_valid = [(s, d, l) for s, d, l in zip(neg_src, neg_dst, edge_labels[etype].tolist() * neg_sampling_factor) if (s, d) not in edges_bloom_filter]
+                    neg_valid = [(s, d, l) for s, d, l in zip(neg_src, neg_dst, edge_labels[etype].tolist() * self.neg_sampling_factor) if (s, d) not in edges_bloom_filter]
 
                     neg_src_node_slice_map.extend(map(node_id_to_position.get, map(lambda x: x[0], neg_valid)))
                     neg_dst_node_slice_map.extend(map(node_id_to_position.get, map(lambda x: x[1], neg_valid)))
