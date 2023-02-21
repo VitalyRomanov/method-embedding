@@ -22,7 +22,9 @@ def main():
     functions = data_path.joinpath("type_pred_relational_train")
     original_embedder = pickle.load(open(original_embedder_path, "rb"))
 
-    for i in range(10):
+    dists = []
+
+    for i in range(500):
         example_folder = output.joinpath(f"{i}")
         example_folder.mkdir(exist_ok=True, parents=True)
 
@@ -72,11 +74,19 @@ def main():
             }
             dist_diff_sink.write(f"{json.dumps(data)}\n")
 
+        dists.append(dist)
+
         # print()
 
         emb_sink.close()
         emb_meta.close()
         emb_fn.close()
+
+    with open(output.joinpath("dist_diff.json"), "w") as dist_diff_sink:
+        data = {
+            "dist": sum(dists) / len(dists)
+        }
+        dist_diff_sink.write(f"{json.dumps(data)}\n")
 
 if __name__ == "__main__":
     main()
