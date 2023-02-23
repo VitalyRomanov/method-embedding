@@ -15,6 +15,8 @@ class CodeBertSemiHybridModel(nn.Module):
         super(CodeBertSemiHybridModel, self).__init__()
 
         self.codebert_model = codebert_model
+        self.buffered_toke_type_ids = self.codebert_model.embeddings.token_type_ids.tile(1, 2)
+        assert self.buffered_toke_type_ids.sum().item() == 0
         self.use_graph = not no_graph
 
         if self.use_graph:
@@ -57,7 +59,13 @@ class CodeBertSemiHybridModel(nn.Module):
             mask = torch.cat([mask, mask], dim=1)
         else:
             token_embs = token_embs_
-        x = self.codebert_model(inputs_embeds=token_embs, attention_mask=mask, position_ids=position_ids).last_hidden_state
+        token_type_ids = self.buffered_toke_type_ids[:, :token_embs.size(1)]
+        x = self.codebert_model(
+            inputs_embeds=token_embs,
+            attention_mask=mask,
+            position_ids=position_ids,
+            token_type_ids=token_type_ids
+        ).last_hidden_state
 
         # if self.use_graph:
         #     graph_emb = self.graph_adapter(self.graph_emb(graph_ids))
@@ -84,10 +92,12 @@ class CodeBertSemiHybridModel(nn.Module):
         else:
             token_embs = token_embs_
 
+        token_type_ids = self.buffered_toke_type_ids[:, :token_embs.size(1)]
         x = self.codebert_model(
             inputs_embeds=token_embs,
             attention_mask=mask,
-            position_ids=position_ids
+            position_ids=position_ids,
+            token_type_ids=token_type_ids
         ).last_hidden_state
         # # if finetune:
         # #     x = self.codebert_model(input_ids=token_ids, attention_mask=mask).last_hidden_state
