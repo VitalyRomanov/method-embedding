@@ -96,25 +96,30 @@ def correct_entities(entities, removed_offsets):
                     new_entities.append((entity[0] - offset_len, entity[1] - offset_len, entity[2]))
                 else:
                     raise Exception("Invalid entity size")
-            elif offset[0] >= entity[1] and offset[1] >= entity[1]:  # removed span is to the right of the entity
+            elif offset[0] >= entity[1] and offset[1] >= entity[1]:
+                # removed span is to the right of the entity
                 new_entities.append(entity)
-            elif offset[0] <= entity[0] <= offset[1] and offset[0] <= entity[1] <= offset[1]:  # removed span covers the entity
+            elif offset[0] <= entity[0] <= offset[1] and offset[0] <= entity[1] <= offset[1]:
+                # removed span covers the entity
                 pass
-            elif offset[0] <= entity[0] <= offset[1] and entity[0] <= offset[1] <= entity[1]:  # removed span overlaps on the left
+            elif offset[0] <= entity[0] <= offset[1] and entity[0] <= offset[1] <= entity[1]:
+                # removed span overlaps on the left
                 if len(entity) == 3:
                     new_entities.append((entity[0] - offset_len + offset[1] - entity[1], entity[1] - offset_len, entity[2]))
                 elif len(entity) == 2:
                     new_entities.append((entity[0] - offset_len + offset[1] - entity[1], entity[1] - offset_len))
                 else:
                     raise Exception("Invalid entity size")
-            elif entity[0] <= offset[0] <= entity[1] and entity[0] <= entity[1] <= offset[1]:  # removed span overlaps on the right
+            elif entity[0] <= offset[0] <= entity[1] and entity[0] <= entity[1] <= offset[1]:
+                # removed span overlaps on the right
                 if len(entity) == 3:
                     new_entities.append((entity[0], entity[1] - offset_len + offset[1] - entity[1], entity[2]))
                 elif len(entity) == 2:
                     new_entities.append((entity[0], entity[1] - offset_len + offset[1] - entity[1]))
                 else:
                     raise Exception("Invalid entity size")
-            elif entity[0] <= offset[0] <= entity[1] and entity[0] <= offset[1] <= entity[1]:  # removed span is inside the entity
+            elif entity[0] <= offset[0] <= entity[1] and entity[0] <= offset[1] <= entity[1]:
+                # removed span is inside the entity
                 if len(entity) == 3:
                     new_entities.append((entity[0], entity[1] - offset_len, entity[2]))
                 elif len(entity) == 2:
@@ -159,19 +164,21 @@ def get_docstring(body: str):
     return to_offsets(body, docstring_ranges, as_bytes=False)
 
 
-def remove_offsets(body: str, entities, default_values, return_offsets, offsets):
+def remove_offsets(body: str, entities, default_values, return_offsets, offsets_to_cut):
     """
     Remove offsets from body, adjust entities to match trimmed body
     :param body:
     :param entities: list of entities in format (start, end, entity)
-    :param offsets: list of removed spans in format (start, end)
+    :param default_values:
+    :param return_offsets:
+    :param offsets_to_cut:
     :return:
     """
     cuts = []
 
     new_body = body
 
-    offsets_sorted = sorted(offsets, key=lambda x: x[0], reverse=True)
+    offsets_sorted = sorted(offsets_to_cut, key=lambda x: x[0], reverse=True)
 
     for offset in offsets_sorted:
         cuts.append(new_body[offset[0]: offset[1]])
@@ -205,7 +212,7 @@ def unpack_returns(body: str, labels: pd.DataFrame):
             returns.append((row['line'], row['end_line'], row['col_offset'], row['end_col_offset'], "returns"))
 
     # most likely do not need to use as_bytes here, because non-unicode usually appear in strings
-    # but type annotations usually appear in the end of signature and in the beginnig of a line
+    # but type annotations usually appear in the end of signature and in the beginning of a line
     return_offsets = to_offsets(body, returns, as_bytes=True)
     function_offsets = to_offsets(body, variables, as_bytes=True)
 
@@ -258,12 +265,6 @@ def get_defaults_spans(body):
                 default_value = ast_node_to_offset(node.kw_defaults[i], body)
                 defaults[arg] = default_value
                 defaults_offsets.append(default_value)
-
-            # defaults_offsets.extend(to_offsets(
-            #     body,
-            #     [(arg.lineno-1, arg.end_lineno-1, arg.col_offset, arg.end_col_offset, "default") for arg in node.defaults],
-            #     as_bytes=True
-            # ))
 
     default_values = []
     for v_off, d_off in defaults.items():
@@ -341,13 +342,13 @@ def body_valid(body):
     try:
         ast.parse(body)
         return True
-    except:
+    except SyntaxError:
         return False
 
 
 def process_body(
         nlp, body: str, replacements=None, require_labels=False, remove_default=False, remove_docstring=False,
-        keep_return_offsets = False
+        keep_return_offsets=False
 ):
     """
     Extract annotation information, strip documentation and type annotations.
@@ -357,6 +358,7 @@ def process_body(
     :param require_labels:
     :param remove_default:
     :param remove_docstring:
+    :param keep_return_offsets:
     :return: Entry with modified function body. Returns None if not annotations in the function
     """
 
@@ -383,7 +385,13 @@ def process_body(
     docstring_offsets = get_docstring(body_)
 
     if remove_docstring:
-        body_, replacements, docstrings = remove_offsets(body_, replacements, docstring_offsets)
+        body_, replacements, _, _, docstrings = remove_offsets(
+            body_,
+            entities=replacements,
+            default_values=[],
+            return_offsets=[],
+            offsets_to_cut=docstring_offsets
+        )
         entry['docstrings'].extend(docstrings)
 
     was_valid = body_valid(body_)
@@ -399,7 +407,7 @@ def process_body(
         body_,
         entities=replacements + annotations, default_values=default_values,
         return_offsets=returns,
-        offsets=return_cuts + annotation_cuts
+        offsets_to_cut=return_cuts + annotation_cuts
     )
 
     if not keep_return_offsets:
@@ -474,8 +482,7 @@ def to_global_ids(entry, id_map, global_names=None, local_names=None):
         if global_names is not None and local_names is not None:
             assert local_names[id_] == global_names[id_map[id_]], f"{local_names[id_]} != {global_names[id_map[id_]]}"
 
-        # cast id into string to make format compatible with spacy's NER classifier
-        global_replacements.append((r[0], r[1], str(id_map[id_])))
+        global_replacements.append((r[0], r[1], id_map[id_]))
 
     entry['replacements'] = global_replacements
     return entry
@@ -494,8 +501,10 @@ def offsets_for_func(offsets, body, func_id):
                 return mention
         raise Exception("Mention should have been found")
 
-    in_mention_ = lambda mention: in_mention(func_id, mention)
-    body_offsets = offsets.query("mentioned_in.map(@in_mention)", local_dict={"in_mention": in_mention_})
+    body_offsets = offsets.query(
+        "mentioned_in.map(@in_mention)",
+        local_dict={"in_mention": lambda mention: in_mention(func_id, mention)}
+    )
 
     if len(body_offsets) == 0:
         return []
@@ -645,12 +654,12 @@ def group_offsets(offsets):
     return offsets_grouped
 
 
-def create_from_dataset(args):
-    remove_default = args.remove_default
+def create_from_dataset(**kwargs):
+    remove_default = kwargs["remove_default"]
 
-    node_maps = get_node_maps(unpersist(join(args.dataset_path, "common_nodes.json")))
-    filecontent = get_filecontent_maps(unpersist(join(args.dataset_path, "common_filecontent.json")))
-    offsets = group_offsets(unpersist(join(args.dataset_path, "common_offsets.json")))
+    node_maps = get_node_maps(unpersist(join(kwargs["dataset_path"], "common_nodes.json")))
+    filecontent = get_filecontent_maps(unpersist(join(kwargs["dataset_path"], "common_filecontent.json")))
+    offsets = group_offsets(unpersist(join(kwargs["dataset_path"], "common_offsets.json")))
 
     data = []
     nlp = create_tokenizer("spacy")
@@ -658,49 +667,49 @@ def create_from_dataset(args):
     for ind, function_data in enumerate(iterate_functions(offsets, node_maps, filecontent)):
         entry = process_body(
             nlp, function_data.pop("body"), replacements=function_data.pop("offsets"),
-            require_labels=args.require_labels, remove_default=remove_default, remove_docstring=True
+            require_labels=kwargs["require_labels"], remove_default=remove_default, remove_docstring=True
         )
 
         if entry is not None:
             entry.update(function_data)
             data.append(entry)
 
-    store(data, args)
+    store(data, **kwargs)
 
 
-def create_from_environments(args):
-    global_names = load_names(args.global_nodes)
+def create_from_environments(**kwargs):
+    global_names = load_names(kwargs["global_nodes"])
 
-    remove_default = args.remove_default
+    remove_default = kwargs["remove_default"]
 
     data = []
 
-    for package in os.listdir(args.dataset_path):
-        pkg_path = os.path.join(args.dataset_path, package)
+    for package in os.listdir(kwargs["dataset_path"]):
+        pkg_path = os.path.join(kwargs["dataset_path"], package)
         if not os.path.isdir(pkg_path):
             continue
 
         data.extend(
             process_package(
-                working_directory=pkg_path, global_names=global_names, require_labels=args.require_labels,
+                working_directory=pkg_path, global_names=global_names, require_labels=kwargs["require_labels"],
                 remove_default=remove_default
             )
         )
 
-    store(data, args)
+    store(data, **kwargs)
 
 
-def store(data, args):
-    if args.format == "json":  # json format is used by spacy
-        with open(args.output_path, "w") as sink:
+def store(data, **kwargs):
+    if kwargs["format"] == "json":  # json format is used by spacy
+        with open(kwargs["output_path"], "w") as sink:
             for entry in data:
                 sink.write(f"{json.dumps(entry)}\n")
-    elif args.format == "csv":
-        if os.path.isfile(args.output_path):
+    elif kwargs["format"] == "csv":
+        if os.path.isfile(kwargs["output_path"]):
             header = False
         else:
             header = True
-        pd.DataFrame(data).to_csv(args.output_path, index=False, header=header)
+        pd.DataFrame(data).to_csv(kwargs["output_path"], index=False, header=header)
 
 
 if __name__ == "__main__":
@@ -717,9 +726,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.dataset_format == "envs":
-        create_from_environments(args)
+        create_from_environments(**args.__dict__)
     elif args.dataset_format == "dataset":
-        create_from_dataset(args)
+        create_from_dataset(**args.__dict__)
     else:
-        raise ValueError("supperted dataset formats are: envs|dataset")
+        raise ValueError("Supported dataset formats are: envs|dataset")
     # remove_default = False

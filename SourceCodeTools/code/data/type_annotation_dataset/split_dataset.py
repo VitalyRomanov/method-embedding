@@ -14,6 +14,33 @@ def get_all_annotations(dataset):
     return ann
 
 
+def split_dataset(
+        data_path, min_entity_count, random_seed, name_suffix
+):
+    train_data, test_data = read_data(
+        open(data_path, "r").readlines(), normalize=True, allowed=None, include_replacements=True,
+        include_only="entities",
+        min_entity_count=min_entity_count, random_seed=random_seed
+    )
+
+    directory = os.path.dirname(data_path)
+
+    def write_to_file(data, directory, suffix, partition):
+        with open(os.path.join(directory, f"type_prediction_dataset_{suffix}_{partition}.json"), "w") as sink:
+            for entry in data:
+                sink.write(f"{json.dumps(entry)}\n")
+
+    write_to_file(train_data, directory, name_suffix, "train")
+    write_to_file(test_data, directory, name_suffix, "test")
+
+    ent_counts = Counter(get_all_annotations(train_data)) | Counter(get_all_annotations(test_data))
+
+    with open(os.path.join(directory, f"type_prediction_dataset_{name_suffix}_annotations_counts.txt"),
+              "w") as sink:
+        for ent, count in ent_counts.most_common():
+            sink.write(f"{ent}\t{count}\n")
+
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
@@ -28,25 +55,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    train_data, test_data = read_data(
-            open(args.data_path, "r").readlines(), normalize=True, allowed=None, include_replacements=True, include_only="entities",
-            min_entity_count=args.min_entity_count, random_seed=args.random_seed
-        )
-
-    directory = os.path.dirname(args.data_path)
-
-    def write_to_file(data, directory, suffix, partition):
-        with open(os.path.join(directory, f"type_prediction_dataset_{suffix}_{partition}.json"), "w") as sink:
-            for entry in data:
-                sink.write(f"{json.dumps(entry)}\n")
-
-    write_to_file(train_data, directory, args.name_suffix, "train")
-    write_to_file(test_data, directory, args.name_suffix, "test")
-
-    ent_counts = Counter(get_all_annotations(train_data)) | Counter(get_all_annotations(test_data))
-
-    with open(os.path.join(directory, f"type_prediction_dataset_{args.name_suffix}_annotations_counts.txt"), "w") as sink:
-        for ent, count in ent_counts.most_common():
-            sink.write(f"{ent}\t{count}\n")
-
-    print()
+    split_dataset(args.data_path, args.min_entity_count, args.random_seed, args.name_suffix)

@@ -4,6 +4,7 @@ from os.path import join
 from random import random
 
 import pandas as pd
+import numpy as np
 
 from SourceCodeTools.code.ast.python_ast2 import PythonSharedNodes
 from SourceCodeTools.code.common import read_nodes
@@ -33,7 +34,6 @@ def add_splits(items, train_frac, restricted_id_pool=None, force_test=None, excl
             else:
                 return "test"
 
-    import numpy as np
     # define partitioning
     masks = np.array([random_partition(node_id) for node_id in items["id"]])
 
@@ -67,7 +67,26 @@ def read_test_set_nodes(path):
     return node_ids
 
 
-def main():
+def create_type_annotation_aware_graph_partition(working_directory, type_annotation_test_set, output_path):
+    all_nodes = []
+    shared_nodes = set()
+    for nodes in read_nodes(join(working_directory, "common_nodes.json"), as_chunks=True):
+        all_nodes.append(nodes[["id"]])
+        shared_nodes.update(
+            nodes.query("type in @shared", local_dict={"shared": PythonSharedNodes.shared_node_types})["id"]
+        )
+
+    partition = add_splits(
+        items=pd.concat(all_nodes),
+        train_frac=0.8,
+        force_test=read_test_set_nodes(type_annotation_test_set),
+        exclude_ids=shared_nodes
+    )
+
+    persist(partition, output_path)
+
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("working_directory")
     parser.add_argument("type_annotation_test_set")
@@ -75,23 +94,6 @@ def main():
 
     args = parser.parse_args()
 
-    all_nodes = []
-    shared_nodes = set()
-    for nodes in read_nodes(join(args.working_directory, "common_nodes.json"), as_chunks=True):
-        all_nodes.append(nodes[["id"]])
-        shared_nodes.update(nodes.query("type in @shared", local_dict={"shared": PythonSharedNodes.shared_node_types})["id"])
-
-    partition = add_splits(
-        items=pd.concat(all_nodes),
-        train_frac=0.8,
-        force_test=read_test_set_nodes(args.type_annotation_test_set),
-        exclude_ids=shared_nodes
+    create_type_annotation_aware_graph_partition(
+        args.working_directory, args.type_annotation_test_set, args.output_path
     )
-
-    persist(partition, args.output_path)
-
-
-
-
-if __name__ == "__main__":
-    main()
