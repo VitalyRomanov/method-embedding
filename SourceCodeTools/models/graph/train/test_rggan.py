@@ -11,12 +11,12 @@ from dgl.data import FB15kDataset, FB15k237Dataset, AMDataset
 import torch
 from sklearn.model_selection import ParameterGrid
 
+from SourceCodeTools.cli_arguments import GraphTrainerArgumentParser
 from SourceCodeTools.code.data.dataset.Dataset import SourceGraphDataset
 from SourceCodeTools.models.graph import RGGAN
 from SourceCodeTools.models.graph.NodeEmbedder import NodeIdEmbedder
 from SourceCodeTools.models.graph.train.sampling_multitask2 import SamplingMultitaskTrainer
 from SourceCodeTools.models.graph.train.utils import get_name, get_model_base
-from SourceCodeTools.models.training_options import add_gnn_train_args, verify_arguments
 
 rggan_grids = [
     {
@@ -525,13 +525,8 @@ def link_pred(args):
 #     print()
 
 if __name__=="__main__":
-    import argparse
 
-    parser = argparse.ArgumentParser(description='Process some integers.')
-    add_gnn_train_args(parser)
-
-    args = parser.parse_args()
-    verify_arguments(args)
+    args = GraphTrainerArgumentParser().parse()
 
     node_clf(args)
     # link_pred(args)

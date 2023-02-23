@@ -1,12 +1,10 @@
 from __future__ import unicode_literals, print_function
 
-import logging
 import os
 import pickle
 from copy import copy
-from os.path import isfile, isdir
 
-from SourceCodeTools.cli_arguments import TypePredictorTrainerArguments
+from SourceCodeTools.cli_arguments import TypePredictorTrainerArgumentParser
 from SourceCodeTools.nlp.entity.utils import get_unique_entities
 
 from SourceCodeTools.nlp.entity.utils.data import read_json_data
@@ -45,19 +43,19 @@ def load_pkl_emb(path):
 #         config.write(configfile)
 
 
-def get_type_prediction_arguments():
-    parser = TypePredictorTrainerArguments()
-    args = parser.parse()
-
-    if args.finetune is False and args.pretraining_epochs > 0:
-        logging.info(
-            f"Fine-tuning is disabled, but the the number of pretraining epochs is {args.pretraining_epochs}. Setting pretraining epochs to 0.")
-        args.pretraining_epochs = 0
-
-    if args.graph_emb_path is not None and not (isfile(args.graph_emb_path) or isdir(args.graph_emb_path)):
-        logging.warning(f"File with graph embeddings does not exist: {args.graph_emb_path}")
-        args.graph_emb_path = None
-    return args
+# def get_type_prediction_arguments():
+#     parser = TypePredictorTrainerArguments()
+#     args = parser.parse()
+#
+#     if args.finetune is False and args.pretraining_epochs > 0:
+#         logging.info(
+#             f"Fine-tuning is disabled, but the the number of pretraining epochs is {args.pretraining_epochs}. Setting pretraining epochs to 0.")
+#         args.pretraining_epochs = 0
+#
+#     if args.graph_emb_path is not None and not (isfile(args.graph_emb_path) or isdir(args.graph_emb_path)):
+#         logging.warning(f"File with graph embeddings does not exist: {args.graph_emb_path}")
+#         args.graph_emb_path = None
+#     return args
 
 
 def save_entities(path, entities):
@@ -83,7 +81,7 @@ def find_example(dataset, needed_label):
 
 
 if __name__ == "__main__":
-    args = get_type_prediction_arguments()
+    args = TypePredictorTrainerArgumentParser().parse()
 
     output_dir = args.model_output
     if not os.path.isdir(output_dir):
@@ -99,7 +97,7 @@ if __name__ == "__main__":
 
     train_data, test_data = read_json_data(
         args.data_path, normalize=True, allowed=allowed, include_replacements=True, include_only="entities",
-        min_entity_count=args.min_entity_count, random_seed=args.random_seed
+        min_entity_count=args.min_entity_count
     )
 
     unique_entities = get_unique_entities(train_data, field="entities")
