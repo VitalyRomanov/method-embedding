@@ -27,37 +27,6 @@ def load_pkl_emb(path):
     return embedder
 
 
-# def write_config(trial_dir, params, extra_params=None):
-#     config_path = os.path.join(trial_dir, "model_config.conf")
-#
-#     import configparser
-#
-#     params = copy(params)
-#     if extra_params is not None:
-#         params.update(extra_params)
-#
-#     config = configparser.ConfigParser()
-#     config['DEFAULT'] = params
-#
-#     with open(config_path, 'w') as configfile:
-#         config.write(configfile)
-
-
-# def get_type_prediction_arguments():
-#     parser = TypePredictorTrainerArguments()
-#     args = parser.parse()
-#
-#     if args.finetune is False and args.pretraining_epochs > 0:
-#         logging.info(
-#             f"Fine-tuning is disabled, but the the number of pretraining epochs is {args.pretraining_epochs}. Setting pretraining epochs to 0.")
-#         args.pretraining_epochs = 0
-#
-#     if args.graph_emb_path is not None and not (isfile(args.graph_emb_path) or isdir(args.graph_emb_path)):
-#         logging.warning(f"File with graph embeddings does not exist: {args.graph_emb_path}")
-#         args.graph_emb_path = None
-#     return args
-
-
 def save_entities(path, entities):
     with open(os.path.join(path, 'entities.txt'), "w") as entitiesfile:
         for e in entities:
@@ -81,13 +50,9 @@ def find_example(dataset, needed_label):
 
 
 if __name__ == "__main__":
-    args = TypePredictorTrainerArgumentParser().parse()
+    config = TypePredictorTrainerArgumentParser().parse()
 
-    output_dir = args.model_output
-    if not os.path.isdir(output_dir):
-        os.mkdir(output_dir)
-
-    if args.restrict_allowed:
+    if config["DATASET"]["restrict_allowed"]:
         allowed = {
             'str', 'Optional', 'int', 'Any', 'Union', 'bool', 'Callable', 'Dict', 'bytes', 'float', 'Description',
             'List', 'Sequence', 'Namespace', 'T', 'Type', 'object', 'HTTPServerRequest', 'Future', "Matcher"
@@ -96,25 +61,20 @@ if __name__ == "__main__":
         allowed = None
 
     train_data, test_data = read_json_data(
-        args.data_path, normalize=True, allowed=allowed, include_replacements=True, include_only="entities",
-        min_entity_count=args.min_entity_count
+        config["DATASET"]["data_path"], normalize=True, allowed=allowed, include_replacements=True, include_only="entities",
+        min_entity_count=config["DATASET"]["min_entity_count"]
     )
 
-    unique_entities = get_unique_entities(train_data, field="entities")
-    save_entities(output_dir, unique_entities)
-
-    trainer_params = copy(args.__dict__)
-
-    model_params = {
+    config["MODEL"].update({
         'h_sizes': [100, 100, 100],
         'dense_size': 60,
         'pos_emb_size': 50,
         'cnn_win_size': 7,
         'suffix_prefix_dims': 70,
-    }
+    })
 
     # for model_params in cnn_params:
     trainer = ModelTrainer(
-        train_data, test_data, model_params, trainer_params
+        train_data, test_data, config
     )
     trainer.train_model()

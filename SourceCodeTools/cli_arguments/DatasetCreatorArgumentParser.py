@@ -41,9 +41,9 @@ class DatasetCreatorArgumentParser(AstDatasetCreatorArgumentParser):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def add_positional_argument(self):
+    def _add_positional_argument(self):
         self._parser.add_argument('indexed_environments', help='Path to environments indexed by sourcetrail')
         self._parser.add_argument('output_directory', help='')
 
-    def additional_arguments(self):
+    def _additional_arguments(self):
         pass

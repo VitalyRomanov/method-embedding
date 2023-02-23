@@ -10,6 +10,7 @@ from pathlib import Path
 
 from time import time
 
+from SourceCodeTools.cli_arguments.config import save_config
 from SourceCodeTools.code.data.file_utils import write_mapping_to_json
 from SourceCodeTools.nlp import TagMap
 from SourceCodeTools.nlp.entity.entity_scores import entity_scorer
@@ -48,13 +49,15 @@ def load_pkl_emb(path):
 
 class ModelTrainer:
     def __init__(
-            self, train_data, test_data, model_params, trainer_params
+            self, train_data, test_data, config
     ):
         self.set_batcher_class()
         self.set_model_class()
 
-        self.model_params = model_params
-        self.trainer_params = trainer_params
+        self.config = config
+        self.dataset_params = config["DATASET"]
+        self.model_params = config["MODEL"]
+        self.trainer_params = config["TRAINING"]
 
         self.train_data = train_data
         self.test_data = test_data
@@ -75,7 +78,7 @@ class ModelTrainer:
 
     @property
     def data_path(self):
-        return self.trainer_params["data_path"]
+        return self.dataset_params["data_path"]
 
     @property
     def graph_emb_path(self):
@@ -240,7 +243,7 @@ class ModelTrainer:
 
     def _create_optimizer(self, model):
         self._lr = tensorflow.Variable(self.learning_rate, trainable=False)
-        self.optimizer = tensorflow.keras.optimizers.Adam(learning_rate=self._lr, weight_decay=self.weight_decay)
+        self.optimizer = tensorflow.keras.optimizers.Adam(learning_rate=self._lr)  # , weight_decay=self.weight_decay)
 
     def _lr_scheduler_step(self):
         self._lr.assign(self._lr * self.learning_rate_decay)
@@ -433,14 +436,10 @@ class ModelTrainer:
 
         train_batcher.tagmap.save(trial_dir.joinpath("tagmap.json"))
 
-        self.save_params(
-            trial_dir, {
-                "MODEL_PARAMS": self.model_params,
-                "TRAINER_PARAMS": self.trainer_params,
-                "model_class": self.model.__class__.__name__,
-                "batcher_class": self.batcher.__class__.__name__
-            }
-        )
+        self.config["TRAINING"]["model_class"] = self.model.__name__
+        self.config["TRAINING"]["batcher_class"] = self.batcher.__name__
+
+        save_config(self.config, trial_dir.joinpath("config.yaml"))
 
         model = self.get_model(
             tok_embedder=word_emb, graph_embedder=graph_emb, train_embeddings=self.finetune,

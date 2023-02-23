@@ -10,6 +10,7 @@ import numpy
 import pandas
 import torch
 
+from SourceCodeTools.cli_arguments.config import save_config
 from SourceCodeTools.code.ast.python_ast2 import PythonSharedNodes
 from SourceCodeTools.code.data.GraphStorage import OnDiskGraphStorageWithFastIteration, InMemoryGraphStorage
 from SourceCodeTools.code.data.DBStorage import SQLiteStorage
@@ -1361,7 +1362,6 @@ def read_or_create_gnn_dataset(args, model_base, force_new=False, restore_state=
         dataset = SourceGraphDataset(**args)
 
         # save dataset state for recovery
-        from SourceCodeTools.models.training_config import save_config
         save_config(args, join(model_base, "dataset.config"))
 
     return dataset

@@ -1,7 +1,7 @@
 from argparse import ArgumentParser
 
 
-class AbstractArgumentParser():
+class AbstractArgumentParser:
     _parser = None
     _parser_description = ""
 
@@ -24,5 +24,8 @@ class AbstractArgumentParser():
     def _verify_arguments(self, args):
         return args
 
+    def _make_config(self, args):
+        return args  # .__dict__
+
     def parse(self):
-        return self._verify_arguments(self._parser.parse_args())
+        return self._make_config(self._verify_arguments(self._parser.parse_args()))

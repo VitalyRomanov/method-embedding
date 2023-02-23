@@ -1,4 +1,57 @@
+from SourceCodeTools.cli_arguments import default_config, update_config, load_config
 from SourceCodeTools.cli_arguments.AbstractArgumentParser import AbstractArgumentParser
+
+
+graph_config_specification = {
+    "DATASET": {
+        "data_path": None,
+        "min_entity_count": 3,
+        "restrict_allowed": False,
+    },
+    "TRAINING": {
+        "mask_unlabeled_declarations": False,
+        "no_localization": False,
+        "word_emb_path": None,
+        "graph_emb_path": None,
+        "model_output": None,
+
+        "learning_rate": 1e-3,
+        "learning_rate_decay": 1.0,
+        "dropout": None,
+        "weight_decay": None,
+
+        "batch_size": 32,
+        "suffix_prefix_buckets": 3000,
+        "max_seq_len": 256,
+
+        "finetune": False,
+        "pretraining_epochs": 0,
+        "epochs": 500,
+        "ckpt_path": None,
+
+        "no_graph": False,
+
+        "gpu": -1,
+
+        "type_ann_edges": None,
+        "bert_layer_freeze_start": None,
+        "bert_layer_freeze_end": None,
+
+        "model_class": None,
+        "batcher_class": None
+    },
+    "MODEL": {
+    },
+}
+
+
+def default_type_pred_config():
+    return default_config(graph_config_specification)
+
+
+def get_type_pred_config(**kwargs):
+    config = default_type_pred_config()
+    return update_config(config, **kwargs)
 
 
 class TypePredictorTrainerArgumentParser(AbstractArgumentParser):
@@ -7,7 +60,7 @@ class TypePredictorTrainerArgumentParser(AbstractArgumentParser):
         super().__init__(*args, **kwargs)
 
     def _dataset_arguments(self):
-        self._parser.add_argument('--data_path', dest='data_path', default=None,help='Path to the dataset file')
+        self._parser.add_argument('--data_path', dest='data_path', default=None, help='Path to the dataset file')
         self._parser.add_argument('--word_emb_path', dest='word_emb_path', default=None, help='Path to the file with token embeddings')
         self._parser.add_argument('--graph_emb_path', dest='graph_emb_path', default=None, help='Path to the file with graph embeddings')
         self._parser.add_argument('--min_entity_count', dest='min_entity_count', default=3, type=int, help='')
@@ -59,6 +112,17 @@ class TypePredictorTrainerArgumentParser(AbstractArgumentParser):
             args.graph_emb_path = None
 
         return args
+
+    def _make_config(self, args):
+        args_ = args.__dict__
+        config_path = args_.pop("config", None)
+
+        if config_path is None:
+            config = get_type_pred_config(**args_)
+        else:
+            config = load_config(config_path)
+
+        return config
 
 
 class CodeBERTTypePredictorTrainerArgumentParser(TypePredictorTrainerArgumentParser):
