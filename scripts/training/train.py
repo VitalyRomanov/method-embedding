@@ -1,17 +1,16 @@
 import json
 import logging
-import pickle
 from copy import copy
 from datetime import datetime
 from os import mkdir
 from os.path import isdir, join
 
+from SourceCodeTools.cli_arguments import GraphTrainerArgumentParser
 from SourceCodeTools.code.data.dataset.Dataset import read_or_create_gnn_dataset
 from SourceCodeTools.models.graph import RGGAN, RGCN, RGAN, HGT
 from SourceCodeTools.models.graph.train.sampling_multitask2 import training_procedure
 from SourceCodeTools.models.graph.train.utils import get_name, get_model_base
-from SourceCodeTools.models.training_config import get_config, load_config, update_config, save_config
-from SourceCodeTools.models.training_options import add_gnn_train_args, verify_arguments
+from SourceCodeTools.models.training_config import get_graph_config, load_config, update_config, save_config
 
 
 _models = {
@@ -98,7 +97,7 @@ def train_model(args):
     config_path = args.pop("config")
 
     if config_path is None:
-        config = get_config(**args)
+        config = get_graph_config(**args)
     else:
         config = load_config(config_path)
 
@@ -157,14 +156,7 @@ def train_model(args):
 
 
 if __name__ == "__main__":
-
-    import argparse
-
-    parser = argparse.ArgumentParser(description='')
-    add_gnn_train_args(parser)
-
-    args = parser.parse_args()
-    verify_arguments(args)
+    args = GraphTrainerArgumentParser().parse()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s:%(levelname)s:%(module)s:%(lineno)d:%(message)s")
 
