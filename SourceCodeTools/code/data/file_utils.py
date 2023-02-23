@@ -40,7 +40,10 @@ def write_csv(df, out_path, **kwargs):
 
 def read_csv(path, **kwargs):
     # quotechar = '"', escapechar = '\\'
-    return pd.read_csv(path, na_filter=False, **kwargs)
+    try:
+        return pd.read_csv(path, na_filter=False, **kwargs)
+    except pd.errors.EmptyDataError:
+        return None
 
 
 def write_parquet(df, path, **kwargs):
