@@ -3,7 +3,7 @@ from copy import copy
 import yaml
 
 
-config_specification = {
+graph_config_specification = {
     "DATASET": {
         "data_path": None,
         "train_frac": 0.9,
@@ -86,7 +86,11 @@ config_specification = {
 }
 
 
-def default_config():
+def default_graph_config():
+    return default_config(graph_config_specification)
+
+
+def default_config(config_specification):
     config = copy(config_specification)
 
     assert len(
@@ -101,8 +105,8 @@ def default_config():
     return config
 
 
-def get_config(**kwargs):
-    config = default_config()
+def get_graph_config(**kwargs):
+    config = default_graph_config()
     return update_config(config, **kwargs)
 
 
