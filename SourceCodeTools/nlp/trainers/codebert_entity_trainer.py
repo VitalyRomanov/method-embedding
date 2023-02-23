@@ -36,10 +36,12 @@ class CodeBertModelTrainer(ModelTrainer):
         tok_ids, words = zip(*decoder_mapping.items())
         self._vocab_mapping = dict(zip(words, tok_ids))
 
+        tagmap = kwargs.pop("tagmap", None)
+
         train_batcher = self.get_batcher(
             self.train_data, self.batch_size, seq_len=self.seq_len,
             graphmap=graph_emb.ind if graph_emb is not None else None,
-            wordmap=self.vocab_mapping, tagmap=None,
+            wordmap=self.vocab_mapping, tagmap=tagmap,
             class_weights=False, element_hash_size=suffix_prefix_buckets, no_localization=self.no_localization,
             mask_unlabeled_declarations=self.mask_unlabeled_declarations, **kwargs
         )
@@ -47,20 +49,21 @@ class CodeBertModelTrainer(ModelTrainer):
             self.test_data, self.batch_size, seq_len=self.seq_len,
             graphmap=graph_emb.ind if graph_emb is not None else None,
             wordmap=self.vocab_mapping,
-            tagmap=train_batcher.tagmap,  # use the same mapping
+            tagmap=train_batcher.tagmap if tagmap is None else tagmap,  # use the same mapping
             class_weights=False, element_hash_size=suffix_prefix_buckets,  # class_weights are not used for testing
             no_localization=self.no_localization,
             mask_unlabeled_declarations=self.mask_unlabeled_declarations, **kwargs
         )
         return train_batcher, test_batcher
 
-    def get_training_dir(self):
-        if not hasattr(self, "_timestamp"):
-            self._timestamp = str(datetime.now()).replace(":", "-").replace(" ", "_")
-        return Path(self.trainer_params["model_output"]).joinpath("codebert_" + self._timestamp)
+    # def get_training_dir(self):
+    #     if not hasattr(self, "_timestamp"):
+    #         self._timestamp = str(datetime.now()).replace(":", "-").replace(" ", "_")
+    #     return Path(self.trainer_params["model_output"]).joinpath("codebert_" + self._timestamp)
 
     def get_model(self, *args, **kwargs):
         codebert_model = RobertaModel.from_pretrained("microsoft/codebert-base")
+        # codebert_model.config.attention_probs_dropout_prob
         model = self.model(
             codebert_model, graph_emb=kwargs["graph_embedder"],
             graph_padding_idx=kwargs["graph_padding_idx"],
@@ -79,7 +82,7 @@ class CodeBertModelTrainer(ModelTrainer):
         torch.save(model.state_dict(), path)
 
     def load_checkpoint(self, model, path):
-        model.load_state_dict(torch.load(os.path.join(self.ckpt_path, "checkpoint")))
+        model.load_state_dict(torch.load(os.path.join(self.ckpt_path, "checkpoint"), map_location=torch.device('cpu')))
         return model
 
     def _load_word_embs(self):
@@ -158,9 +161,17 @@ class CodeBertModelTrainer(ModelTrainer):
 
         return scores
 
+    @staticmethod
+    def set_model_training(model):
+        model.train()
+
+    @staticmethod
+    def set_model_evaluation(model):
+        model.eval()
+
     def train(
             self, model, train_batches, test_batches, epochs, report_every=10, scorer=None, learning_rate=0.01,
-            learning_rate_decay=1., finetune=False, save_ckpt_fn=None, no_localization=False
+            learning_rate_decay=1., save_ckpt_fn=None, no_localization=False
     ):
 
         self._create_optimizer(model)
