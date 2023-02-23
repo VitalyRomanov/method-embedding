@@ -106,11 +106,14 @@ def annotate_from_spans(doc, entities):
     return line
 
 
-def render_single(text, replacements, output_path):
+def render_single(text, replacements, output_path=None):
     # nlp = create_tokenizer("spacy")
     # doc = nlp(text)
     html = single_html_template.format(single_entry.format(annotate_from_spans(text, replacements)))
-    open(output_path, "w").write(html)
+    if output_path is not None:
+        open(output_path, "w").write(html)
+    else:
+        return html
 
 
 def render_annotations(annotations):
