@@ -1,6 +1,6 @@
 import os
-from datetime import datetime
-from pathlib import Path
+# from datetime import datetime
+# from pathlib import Path
 
 import torch
 from SourceCodeTools.mltools.torch import get_length_mask
@@ -140,22 +140,18 @@ class CodeBertModelTrainer(ModelTrainer):
 
         token_ids[token_ids == 50265] = 1
 
+        torch.set_grad_enabled(train)
+        scores = cls.compute_loss_and_scores(
+            model, token_ids, prefix, suffix, graph_ids, labels, lengths, graph_embs=graph_embs,
+            extra_mask=extra_mask, class_weights=class_weights, scorer=scorer, finetune=finetune,
+            vocab_mapping=vocab_mapping, training=train
+        )
+        torch.set_grad_enabled(True)
+
         if train is True:
-            scores = cls.compute_loss_and_scores(
-                model, token_ids, prefix, suffix, graph_ids, labels, lengths, graph_embs=graph_embs,
-                extra_mask=extra_mask, class_weights=class_weights, scorer=scorer, finetune=finetune,
-                vocab_mapping=vocab_mapping, training=True
-            )
             optimizer.zero_grad()
             scores["loss"].backward()
             optimizer.step()
-        else:
-            with torch.no_grad():
-                scores = cls.compute_loss_and_scores(
-                    model, token_ids, prefix, suffix, graph_ids, labels, lengths, graph_embs=graph_embs,
-                    extra_mask=extra_mask, class_weights=class_weights, scorer=scorer, finetune=finetune,
-                    vocab_mapping=vocab_mapping, training=False
-                )
 
         scores["loss"] = scores["loss"].cpu().item()
 
