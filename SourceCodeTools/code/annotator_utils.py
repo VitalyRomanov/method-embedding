@@ -1,11 +1,11 @@
-import logging
 from copy import copy, deepcopy
-from typing import List, Tuple, Iterable
+from typing import Tuple, Iterable
 
 from SourceCodeTools.nlp import create_tokenizer
 from spacy.gold import biluo_tags_from_offsets as spacy_biluo_tags_from_offsets
 
 from SourceCodeTools.nlp.tokenizers import codebert_to_spacy
+from SourceCodeTools.nlp.string_tools import get_byte_to_char_map
 
 
 def biluo_tags_from_offsets(doc, ents, no_localization):
@@ -33,29 +33,14 @@ def biluo_tags_from_offsets(doc, ents, no_localization):
 
 def get_cum_lens(body, as_bytes=False):
     """
-    Calculate the cummulative lengths of each line with respect to the beginning of
+    Calculate the cumulative lengths of each line with respect to the beginning of
     the function's body.
     """
     body_lines = body.split("\n")
     cum_lens = [0]
     for ind, line in enumerate(body_lines):
-        cum_lens.append(len(line if not as_bytes else line.encode('utf8')) + cum_lens[-1] + 1) # +1 for new line character
+        cum_lens.append(len(line if not as_bytes else line.encode('utf8')) + cum_lens[-1] + 1)  # +1 for new line character
     return cum_lens
-
-
-from SourceCodeTools.nlp.string_tools import get_byte_to_char_map
-# def get_byte_to_char_map(unicode_string):
-#     """
-#     Generates a dictionary mapping character offsets to byte offsets for unicode_string.
-#     """
-#     response = {}
-#     byte_offset = 0
-#     for char_offset, character in enumerate(unicode_string):
-#         response[byte_offset] = char_offset
-#         # print(character, byte_offset, char_offset)
-#         byte_offset += len(character.encode('utf-8'))
-#     response[byte_offset] = len(unicode_string)
-#     return response
 
 
 def to_offsets(
@@ -66,7 +51,10 @@ def to_offsets(
     to (char_ind, end_char_ind).
     :param body: string containing function body
     :param entities: list of tuples containing entity start- and end-offsets in bytes
-    :param as_bytes: treat entity offsets as offsets for bytes. this is needed when offsets are given in bytes, not in str positions
+    :param as_bytes: treat entity offsets as offsets for bytes. this is needed when offsets are given in bytes,
+            not in str positions
+    :param cum_lens: dictionary mapping from line index to the cumulative number of chars in preceding string
+    :param b2c: dictionary mapping from byte index to character index
     :return: list of tuples that represent start- and end-offsets in a string that contains function body
     """
     if cum_lens is None:
@@ -92,7 +80,7 @@ def to_offsets(
                 if b2c is None:
                     b2c = get_byte_to_char_map(body)
                 r_ = (b2c[r_[0]], b2c[r_[1]], r_[2])
-                repl.append(r_)
+            repl.append(r_)
         except KeyError:
             # logging.warning("Skipping offset, does not align with the source code")
             continue
@@ -204,16 +192,16 @@ def resolve_self_collisions2(offsets):
     return no_collisions
 
 
-def align_tokens_with_graph(doc, spans, tokenzer_name):
+def align_tokens_with_graph(doc, spans, tokenizer_name):
     spans = deepcopy(spans)
-    if tokenzer_name == "codebert":
+    if tokenizer_name == "codebert":
         backup_tokens = doc
         doc, adjustment = codebert_to_spacy(doc)
         spans = adjust_offsets(spans, adjustment)
 
     node_tags = biluo_tags_from_offsets(doc, spans, no_localization=False)
 
-    if tokenzer_name == "codebert":
+    if tokenizer_name == "codebert":
         doc = ["<s>"] + [t.text for t in backup_tokens] + ["</s>"]
     return doc, node_tags
 
@@ -224,7 +212,7 @@ def source_code_graph_alignment(source_codes, node_spans, tokenizer="codebert"):
     nlp = create_tokenizer(tokenizer)
 
     for code, spans in zip(source_codes, node_spans):
-        yield align_tokens_with_graph(nlp(code), resolve_self_collisions2(spans), tokenzer_name=tokenizer)
+        yield align_tokens_with_graph(nlp(code), resolve_self_collisions2(spans), tokenizer_name=tokenizer)
 
 
 def map_offsets(column, id_map):
