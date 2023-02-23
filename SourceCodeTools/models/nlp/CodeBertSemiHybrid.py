@@ -85,7 +85,7 @@ class CodeBertSemiHybridModel(nn.Module):
         position_ids = None
         if self.use_graph:
             graph_emb = self.graph_emb(graph_ids)
-            position_ids = torch.arange(2, token_embs_.shape[1] + 2).reshape(1, -1)
+            position_ids = torch.arange(2, token_embs_.shape[1] + 2).reshape(1, -1).to(token_ids.device)
             position_ids = torch.cat([position_ids, position_ids], dim=1)
             token_embs = torch.cat([token_embs_, self.graph_adapter(graph_emb)], dim=1)
             mask = torch.cat([mask, mask], dim=1)
