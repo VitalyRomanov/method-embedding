@@ -92,7 +92,7 @@ class CodeBertSemiHybridModel(nn.Module):
         else:
             token_embs = token_embs_
 
-        token_type_ids = self.buffered_toke_type_ids[:, :token_embs.size(1)]
+        token_type_ids = self.buffered_toke_type_ids[:, :token_embs.size(1)].to(token_ids.device)
         x = self.codebert_model(
             inputs_embeds=token_embs,
             attention_mask=mask,
