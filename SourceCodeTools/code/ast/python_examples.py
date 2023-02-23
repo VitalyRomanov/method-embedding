@@ -47,6 +47,7 @@ class PythonCodeExamplesForNodes:
         "BinOp12": "a >> b\n",
         "BoolOp1": "a and b\n",
         "BoolOp2": "a or b\n",
+        "BoolOp3": "not a\n",
         "UnaryOp1": "+a\n",
         "UnaryOp2": "-a\n",
         "UnaryOp3": "~a\n",
@@ -80,6 +81,8 @@ class PythonCodeExamplesForNodes:
         "If":
             "if d is True:\n"
             "   a = b\n"
+            "elif d is False:"
+            "   b = a\n"
             "else:\n"
             "   a, a = c, c\n",
         "For":
