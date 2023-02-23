@@ -85,8 +85,7 @@ def read_data(
 
 def read_json_data(
         data_path, normalize=False, include_replacements=False, allowed=None, min_entity_count=None,
-        include_only="entities",
-        random_seed=None, train_frac=0.8
+        include_only="entities"
 ):
     """
     Read dataset and split into train and test

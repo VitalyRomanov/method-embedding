@@ -45,7 +45,7 @@ def main():
 
     train_data, test_data = read_json_data(
         args.type_pred_path, normalize=True, allowed=None, include_replacements=True, include_only="entities",
-        min_entity_count=0, random_seed=0
+        min_entity_count=0
     )
 
     dataset_db = SQLiteStorage(args.dataset_db)
