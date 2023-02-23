@@ -10,7 +10,7 @@ import networkx as nx
 import pandas as pd
 from tqdm import tqdm
 
-from SourceCodeTools.cli_arguments import DatasetCreatorArguments
+from SourceCodeTools.cli_arguments import DatasetCreatorArgumentParser
 from SourceCodeTools.code.annotator_utils import map_offsets, adjust_offsets2
 from SourceCodeTools.code.common import SQLTable
 from SourceCodeTools.code.data.file_utils import unpersist_if_present, persist, \
@@ -529,7 +529,7 @@ class HierarchicalDatasetCreator(DatasetCreator):
 
 if __name__ == "__main__":
 
-    args = DatasetCreatorArguments().parse()
+    args = DatasetCreatorArgumentParser().parse()
 
     if args.recompute_l2g:
         args.do_extraction = True
