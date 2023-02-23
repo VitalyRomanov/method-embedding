@@ -124,13 +124,13 @@ class CodeBertModelTrainer(ModelTrainer):
     ):
         token_ids[token_ids == len(vocab_mapping)] = vocab_mapping["<unk>"]
         seq_mask = get_length_mask(token_ids, lengths)
-        logits = model(token_ids, graph_ids, graph_embs=graph_embs, mask=seq_mask, finetune=finetune)
-        loss = model.loss(logits, labels, mask=seq_mask, class_weights=class_weights, extra_mask=extra_mask)
-        scores = model.score(logits, labels, mask=seq_mask, scorer=scorer, extra_mask=extra_mask)
+        model_output = model(token_ids, graph_ids, graph_embs=graph_embs, mask=seq_mask, finetune=finetune)
+        loss = model.loss(model_output.logits, labels, mask=seq_mask, class_weights=class_weights, extra_mask=extra_mask)
+        scores = model.score(model_output.logits, labels, mask=seq_mask, scorer=scorer, extra_mask=extra_mask)
 
-        scores["loss"] = loss
-
-        return scores
+        scores["loss"] = loss.cpu().item()
+        model_output.loss = loss
+        return model_output, scores
 
     @classmethod
     def make_step(
@@ -140,20 +140,17 @@ class CodeBertModelTrainer(ModelTrainer):
 
         token_ids[token_ids == 50265] = 1
 
-        torch.set_grad_enabled(train)
-        scores = cls.compute_loss_and_scores(
-            model, token_ids, prefix, suffix, graph_ids, labels, lengths, graph_embs=graph_embs,
-            extra_mask=extra_mask, class_weights=class_weights, scorer=scorer, finetune=finetune,
-            vocab_mapping=vocab_mapping, training=train
-        )
-        torch.set_grad_enabled(True)
+        with torch.set_grad_enabled(train):
+            model_output, scores = cls.compute_loss_and_scores(
+                model, token_ids, prefix, suffix, graph_ids, labels, lengths, graph_embs=graph_embs,
+                extra_mask=extra_mask, class_weights=class_weights, scorer=scorer, finetune=finetune,
+                vocab_mapping=vocab_mapping, training=train
+            )
 
         if train is True:
             optimizer.zero_grad()
-            scores["loss"].backward()
+            model_output.loss.backward()
             optimizer.step()
-
-        scores["loss"] = scores["loss"].cpu().item()
 
         return scores
 

@@ -1,10 +1,23 @@
 import logging
+from dataclasses import dataclass
+from typing import Optional, Dict
 
 import numpy as np
 import torch
 from SourceCodeTools.mltools.torch import to_numpy
 
 import torch.nn as nn
+
+
+@dataclass
+class HybridModelOutput:
+    token_embs: torch.Tensor
+    graph_embs: Optional[torch.Tensor]
+    text_encoder_output: torch.Tensor
+    logits: torch.Tensor
+    prediction: torch.Tensor
+    loss: Optional[torch.Tensor]
+    scores: Optional[Dict]
 
 
 class CodeBertSemiHybridModel(nn.Module):
@@ -48,81 +61,41 @@ class CodeBertSemiHybridModel(nn.Module):
 
         self.loss_f = nn.CrossEntropyLoss(reduction="mean")
 
-    def get_tensors_for_saliency(self, token_ids, graph_ids, mask):
-        token_embs_ = self.codebert_model.embeddings.word_embeddings(token_ids)
-        position_ids = None
-        if self.use_graph:
-            graph_emb = self.graph_emb(graph_ids)
-            position_ids = torch.arange(2, token_embs_.shape[1] + 2).reshape(1, -1)
-            position_ids = torch.cat([position_ids, position_ids], dim=1)
-            token_embs = torch.cat([token_embs_, self.graph_adapter(graph_emb)], dim=1)
-            mask = torch.cat([mask, mask], dim=1)
-        else:
-            token_embs = token_embs_
-        token_type_ids = self.buffered_toke_type_ids[:, :token_embs.size(1)]
-        x = self.codebert_model(
-            inputs_embeds=token_embs,
-            attention_mask=mask,
-            position_ids=position_ids,
-            token_type_ids=token_type_ids
-        ).last_hidden_state
-
-        # if self.use_graph:
-        #     graph_emb = self.graph_adapter(self.graph_emb(graph_ids))
-        #     x = torch.cat([x, graph_emb], dim=-1)
-
-        x = torch.relu(self.fc1(x))
-        x = self.drop(x)
-        logits = self.fc2(x)
-
-        if self.use_graph:
-            return token_embs_, graph_emb, logits[:, :token_ids.size(1), :]
-        else:
-            return token_embs, logits
-
     def forward(self, token_ids, graph_ids, mask, finetune=False, graph_embs=None):
-        token_embs_ = self.codebert_model.embeddings.word_embeddings(token_ids)
-        position_ids = None
-        if self.use_graph:
-            graph_emb = self.graph_emb(graph_ids)
-            position_ids = torch.arange(2, token_embs_.shape[1] + 2).reshape(1, -1).to(token_ids.device)
-            position_ids = torch.cat([position_ids, position_ids], dim=1)
-            token_embs = torch.cat([token_embs_, self.graph_adapter(graph_emb)], dim=1)
-            mask = torch.cat([mask, mask], dim=1)
-        else:
-            token_embs = token_embs_
+        with torch.set_grad_enabled(finetune):
+            token_embs_ = self.codebert_model.embeddings.word_embeddings(token_ids)
+            position_ids = None
+            if self.use_graph:
+                graph_emb = self.graph_emb(graph_ids)
+                position_ids = torch.arange(2, token_embs_.shape[1] + 2).reshape(1, -1).to(token_ids.device)
+                position_ids = torch.cat([position_ids, position_ids], dim=1)
+                token_embs = torch.cat([token_embs_, self.graph_adapter(graph_emb)], dim=1)
+                mask = torch.cat([mask, mask], dim=1)
+            else:
+                token_embs = token_embs_
+                graph_emb = None
 
-        token_type_ids = self.buffered_toke_type_ids[:, :token_embs.size(1)].to(token_ids.device)
-        x = self.codebert_model(
-            inputs_embeds=token_embs,
-            attention_mask=mask,
-            position_ids=position_ids,
-            token_type_ids=token_type_ids
-        ).last_hidden_state
-        # # if finetune:
-        # #     x = self.codebert_model(input_ids=token_ids, attention_mask=mask).last_hidden_state
-        # # else:
-        # #     with torch.no_grad():
-        # #         x = self.codebert_model(input_ids=token_ids, attention_mask=mask).last_hidden_state
-        #
-        # torch.set_grad_enabled(finetune)
-        # token_embs = self.codebert_model.embeddings.word_embeddings(token_ids)
-        # if self.use_graph:
-        #     graph_emb = self.graph_adapter(self.graph_emb(graph_ids))
-        #     token_embs = token_embs + graph_emb
-        # x = self.codebert_model(inputs_embeds=token_embs, attention_mask=mask).last_hidden_state
-        # torch.set_grad_enabled(True)
-        #
-        # # if self.use_graph:
-        # #     if graph_embs is None:
-        # #         graph_embs = self.graph_emb(graph_ids)
-        # #     x = torch.cat([x, graph_embs], dim=-1)
+            token_type_ids = self.buffered_toke_type_ids[:, :token_embs.size(1)].to(token_ids.device)
+            codebert_output = self.codebert_model(
+                inputs_embeds=token_embs,
+                attention_mask=mask,
+                position_ids=position_ids,
+                token_type_ids=token_type_ids
+            )
 
+        x = codebert_output.last_hidden_state
         x = torch.relu(self.fc1(x[:, :token_ids.size(1), :]))
         x = self.drop(x)
         x = self.fc2(x)
 
-        return x
+        return HybridModelOutput(
+            token_embs=token_embs_,
+            graph_embs=graph_emb,
+            text_encoder_output=codebert_output,
+            logits=x,
+            prediction=x.argmax(-1),
+            loss=None, scores=None
+        )
 
     def loss(self, logits, labels, mask, class_weights=None, extra_mask=None):
         if extra_mask is not None:

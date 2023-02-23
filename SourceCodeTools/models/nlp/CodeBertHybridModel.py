@@ -61,11 +61,8 @@ class CodeBertHybridModel(nn.Module):
             return token_embs, logits
 
     def forward(self, token_ids, graph_ids, mask, finetune=False):
-        if finetune:
+        with torch.set_grad_enabled(finetune):
             x = self.codebert_model(input_ids=token_ids, attention_mask=mask).last_hidden_state
-        else:
-            with torch.no_grad():
-                x = self.codebert_model(input_ids=token_ids, attention_mask=mask).last_hidden_state
 
         if self.use_graph:
             graph_emb = self.graph_emb(graph_ids)
