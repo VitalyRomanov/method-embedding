@@ -13,6 +13,8 @@ def parse_biluo(biluo):
 
     for ind, t in enumerate(biluo):
         if t[0] not in expected:
+            # TODO
+            # skips U-tag if it follows incorrect labels
             expected = {"B", "U", "0"}
             continue
 
