@@ -6,9 +6,10 @@ import gensim
 import numpy as np
 from tqdm import tqdm
 
+from SourceCodeTools.cli_arguments import TypePredictorTrainerArgumentParser
 from SourceCodeTools.models.Embedder import Embedder
-from SourceCodeTools.nlp.entity.type_prediction import get_type_prediction_arguments, ModelTrainer, load_pkl_emb
 from SourceCodeTools.nlp.entity.utils.data import read_data, read_json_data
+from SourceCodeTools.nlp.trainers.cnn_entity_trainer import ModelTrainer, load_pkl_emb
 
 
 def load_typed_nodes(path):
@@ -86,12 +87,12 @@ class FasttextModelTrainer(ModelTrainer):
 
 
 def main():
-    args = get_type_prediction_arguments()
+    args = TypePredictorTrainerArgumentParser().parse()
 
     train_data, test_data = read_json_data(
         args.data_path, normalize=True, allowed=None, include_replacements=True,
         include_only="entities",
-        min_entity_count=args.min_entity_count, random_seed=args.random_seed
+        min_entity_count=args.min_entity_count
     )
 
     trainer = FasttextModelTrainer(train_data, test_data, params={}, seq_len=512, word_emb_path=args.word_emb_path)

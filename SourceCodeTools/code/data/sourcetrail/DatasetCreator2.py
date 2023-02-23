@@ -2,7 +2,7 @@ import logging
 import os
 from os.path import join
 
-from SourceCodeTools.cli_arguments import DatasetCreatorArguments
+from SourceCodeTools.cli_arguments import DatasetCreatorArgumentParser
 from SourceCodeTools.code.annotator_utils import map_offsets
 from SourceCodeTools.code.common import read_nodes
 from SourceCodeTools.code.data.AbstractDatasetCreator import AbstractDatasetCreator
@@ -293,7 +293,7 @@ class DatasetCreator(AbstractDatasetCreator):
 
 if __name__ == "__main__":
 
-    args = DatasetCreatorArguments().parse()
+    args = DatasetCreatorArgumentParser().parse()
 
     if args.recompute_l2g:
         args.do_extraction = True

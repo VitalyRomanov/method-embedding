@@ -5,10 +5,10 @@ from datetime import datetime
 from os import mkdir
 from os.path import isdir, join
 
+from SourceCodeTools.cli_arguments import GraphTrainerArgumentParser
 from SourceCodeTools.code.data.dataset.Dataset import read_or_create_gnn_dataset
 from SourceCodeTools.models.graph import RGGAN
 from SourceCodeTools.models.graph.train.utils import get_name, get_model_base
-from SourceCodeTools.models.training_options import add_gnn_train_args, verify_arguments
 from params import rggan_params
 
 
@@ -80,13 +80,7 @@ def main(models, args):
 
 if __name__ == "__main__":
 
-    import argparse
-
-    parser = argparse.ArgumentParser(description='')
-    add_gnn_train_args(parser)
-
-    args = parser.parse_args()
-    verify_arguments(args)
+    args = GraphTrainerArgumentParser().parse()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s:%(levelname)s:%(module)s:%(lineno)d:%(message)s")
 

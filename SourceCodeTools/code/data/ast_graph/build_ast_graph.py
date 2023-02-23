@@ -10,7 +10,7 @@ import pandas as pd
 
 from tqdm import tqdm
 
-from SourceCodeTools.cli_arguments import AstDatasetCreatorArguments
+from SourceCodeTools.cli_arguments import AstDatasetCreatorArgumentParser
 from SourceCodeTools.code.ast import has_valid_syntax
 from SourceCodeTools.code.common import read_nodes, read_edges
 from SourceCodeTools.code.data.AbstractDatasetCreator import AbstractDatasetCreator
@@ -1035,7 +1035,7 @@ class AstDatasetCreator(AbstractDatasetCreator):
 
 if __name__ == "__main__":
 
-    args = AstDatasetCreatorArguments().parse()
+    args = AstDatasetCreatorArgumentParser().parse()
 
     if args.recompute_l2g:
         args.do_extraction = True
