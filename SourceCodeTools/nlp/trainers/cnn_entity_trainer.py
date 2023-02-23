@@ -134,6 +134,14 @@ class ModelTrainer:
         return self.trainer_params["gpu"]
 
     @property
+    def dropout(self):
+        return self.trainer_params["dropout"]
+
+    @property
+    def weight_decay(self):
+        return self.trainer_params["weight_decay"]
+
+    @property
     def classes_for(self):
         return "tags"
 
@@ -232,7 +240,7 @@ class ModelTrainer:
 
     def _create_optimizer(self, model):
         self._lr = tensorflow.Variable(self.learning_rate, trainable=False)
-        self.optimizer = tensorflow.keras.optimizers.Adam(learning_rate=self._lr)
+        self.optimizer = tensorflow.keras.optimizers.Adam(learning_rate=self._lr, weight_decay=self.weight_decay)
 
     def _lr_scheduler_step(self):
         self._lr.assign(self._lr * self.learning_rate_decay)

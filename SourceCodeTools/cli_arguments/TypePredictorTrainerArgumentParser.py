@@ -27,6 +27,11 @@ class TypePredictorTrainerArgumentParser(AbstractArgumentParser):
         self._parser.add_argument('--gpu', dest='gpu', default=-1, type=int, help='')
         self._parser.add_argument('--finetune', action='store_true')
         self._parser.add_argument('--no_graph', action='store_true', default=False)
+        self._parser.add_argument('--dropout', dest='dropout', default=None, type=float, help='')
+        self._parser.add_argument('--weight_decay', dest='weight_decay', default=None, type=float, help='')
+
+    def _model_arguments(self):
+        pass
 
     def _additional_arguments(self):
         pass
@@ -34,6 +39,7 @@ class TypePredictorTrainerArgumentParser(AbstractArgumentParser):
     def _add_optional_arguments(self):
         self._dataset_arguments()
         self._trainer_arguments()
+        self._model_arguments()
         self._additional_arguments()
 
     def _add_positional_argument(self):
@@ -53,6 +59,14 @@ class TypePredictorTrainerArgumentParser(AbstractArgumentParser):
             args.graph_emb_path = None
 
         return args
+
+
+class CodeBERTTypePredictorTrainerArgumentParser(TypePredictorTrainerArgumentParser):
+
+    def _additional_arguments(self):
+        self._parser.add_argument('--type_ann_edges', dest='type_ann_edges', default=None, help='Path to type annotation edges')
+        self._parser.add_argument('--bert_layer_freeze_start', dest='bert_layer_freeze_start', default=None, type=int, help='')
+        self._parser.add_argument('--bert_layer_freeze_end', dest='bert_layer_freeze_end', default=None, type=int, help='')
 
 
 class CodeBertEmbeddingExtractorArgumentParser(TypePredictorTrainerArgumentParser):

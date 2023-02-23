@@ -1,3 +1,4 @@
+import logging
 import os
 # from datetime import datetime
 # from pathlib import Path
@@ -63,7 +64,10 @@ class CodeBertModelTrainer(ModelTrainer):
 
     def get_model(self, *args, **kwargs):
         codebert_model = RobertaModel.from_pretrained("microsoft/codebert-base")
-        # codebert_model.config.attention_probs_dropout_prob
+        if self.dropout is not None:
+            codebert_model.config.attention_probs_dropout_prob = self.dropout
+            codebert_model.config.hidden_dropout_prob = self.dropout
+
         model = self.model(
             codebert_model, graph_emb=kwargs["graph_embedder"],
             graph_padding_idx=kwargs["graph_padding_idx"],
@@ -110,7 +114,24 @@ class CodeBertModelTrainer(ModelTrainer):
                 batch[key] = tf(batch[key]).to(device)
 
     def _create_optimizer(self, model):
-        self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.learning_rate)
+        bert_freeze_start = self.trainer_params["bert_layer_freeze_start"]
+        bert_freeze_end = self.trainer_params["bert_layer_freeze_end"]
+        parameters = set(model.parameters())
+        if bert_freeze_start is None and bert_freeze_end is None:
+            pass  # use as is
+        else:
+            if bert_freeze_start is None:
+                bert_freeze_start = 0
+            if bert_freeze_end is None:
+                bert_freeze_end = 12
+            logging.info(f"Freezing CodeBERT layers from {bert_freeze_start} to {bert_freeze_end}")
+            for i in range(bert_freeze_start, bert_freeze_end):
+                parameters -= set(model.codebert_model.encoder.layer[i].parameters())
+        self.optimizer = torch.optim.AdamW(
+            list(parameters),  # model.parameters(),
+            lr=self.learning_rate,
+            weight_decay=0.0 if self.weight_decay is None else self.weight_decay
+        )
         self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=self.learning_rate_decay)
 
     def _lr_scheduler_step(self):

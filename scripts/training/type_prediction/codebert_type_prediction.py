@@ -1,10 +1,10 @@
-from SourceCodeTools.cli_arguments import TypePredictorTrainerArgumentParser
+from SourceCodeTools.cli_arguments import CodeBERTTypePredictorTrainerArgumentParser
 from SourceCodeTools.nlp.entity.utils.data import read_json_data
 from SourceCodeTools.nlp.trainers.codebert_entity_trainer import CodeBertModelTrainer
 
 
 def main():
-    args = TypePredictorTrainerArgumentParser().parse()
+    args = CodeBERTTypePredictorTrainerArgumentParser().parse()
 
     if args.restrict_allowed:
         allowed = {
