@@ -1,13 +1,13 @@
 import logging
 import os
-# from datetime import datetime
-# from pathlib import Path
+from pathlib import Path
 
 import torch
 from SourceCodeTools.mltools.torch import get_length_mask
 from torch.utils.tensorboard import SummaryWriter
 from transformers import RobertaTokenizer, RobertaModel
 
+from SourceCodeTools.nlp import TagMap
 from SourceCodeTools.nlp.trainers.cnn_entity_trainer import ModelTrainer
 
 
@@ -37,7 +37,10 @@ class CodeBertModelTrainer(ModelTrainer):
         tok_ids, words = zip(*decoder_mapping.items())
         self._vocab_mapping = dict(zip(words, tok_ids))
 
-        tagmap = kwargs.pop("tagmap", None)
+        if self.ckpt_path is not None:
+            tagmap = TagMap.load(Path(self.ckpt_path).joinpath("tagmap.json"))
+        else:
+            tagmap = None
 
         train_batcher = self.get_batcher(
             self.train_data, self.batch_size, seq_len=self.seq_len,
