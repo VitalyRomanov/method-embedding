@@ -8,32 +8,48 @@ from SourceCodeTools.nlp import create_tokenizer
 
 parser = argparse.ArgumentParser()
 parser.add_argument("package_path")
-parser.add_argument("file_path")
+parser.add_argument("files_path")
 
 
 args = parser.parse_args()
 
 package_path = Path(args.package_path)
-file_path = Path(args.file_path)
+files_path = Path(args.files_path)
 
-with open(file_path, "r") as source:
-    file_content = source.read()
 
-entry = process_body(
-    create_tokenizer("spacy"), file_content, require_labels=False, remove_default=True, remove_docstring=False,
-    keep_return_offsets=True
-)
+def iterate_python_files(path):
+    for name in path.iterdir():
+        if name.is_dir():
+            yield from iterate_python_files(name)
 
-shutil.move(file_path, file_path.parent.joinpath(file_path.name + ".original"))
+        if name.is_file() and not name.name.startswith(".") and name.name.endswith(".py"):
+            yield name
 
-with open(file_path, "w") as sink:
-    sink.write(entry["text"])
 
-with open(package_path.joinpath("type_annotations.json"), "a") as sink:
-    entry_str = json.dumps({
-        "file_path": package_path.absolute().name + "/" + str(file_path.relative_to(package_path)),
-        "variable_annotations": entry["ents"],
-        "return_annotations": entry["cats"],
-        "default_values": entry["defaults"]
-    })
-    sink.write(f"{entry_str}\n")
+for file_path in iterate_python_files(files_path):
+
+    print(f"Removing annotations from {file_path}")
+
+    with open(file_path, "r") as source:
+        file_content = source.read()
+
+    entry = process_body(
+        create_tokenizer("spacy"), file_content, require_labels=True, remove_default=False, remove_docstring=False,
+        keep_return_offsets=True
+    )
+
+    if entry is not None and (len(entry["ents"]) > 0 or len(entry["cats"]) > 0):
+        shutil.move(file_path, file_path.parent.joinpath(file_path.name + ".original"))
+        with open(file_path, "w") as sink:
+            sink.write(entry["text"])
+
+        with open(package_path.joinpath("type_annotations.json"), "a") as sink:
+            entry_str = json.dumps({
+                "file_path": package_path.absolute().name + "/" + str(file_path.relative_to(package_path)),
+                "variable_annotations": entry["ents"],
+                "return_annotations": entry["cats"],
+                "default_values": entry["defaults"]
+            })
+            sink.write(f"{entry_str}\n")
+    else:
+        print(f"No annotations found")
