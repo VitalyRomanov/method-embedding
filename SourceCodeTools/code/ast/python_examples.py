@@ -144,7 +144,7 @@ class PythonCodeExamplesForNodes:
                         "       \n"
                         "       key1:str='value1',\n"
                         "       key2=2,*,\n"
-                        "       key3=value3,\n"
+                        "       key3=None,\n"
                         "       key4=4,\n"
                         "       **kwargs\n"
                         ") -> returnedtype:\n"
