@@ -262,9 +262,10 @@ def get_defaults_spans(body):
 
             for i in range(len(node.kwonlyargs)):
                 arg = ast_node_to_offset(node.kwonlyargs[i], body)
-                default_value = ast_node_to_offset(node.kw_defaults[i], body)
-                defaults[arg] = default_value
-                defaults_offsets.append(default_value)
+                if node.kw_defaults[i] is not None:
+                    default_value = ast_node_to_offset(node.kw_defaults[i], body)
+                    defaults[arg] = default_value
+                    defaults_offsets.append(default_value)
 
     default_values = []
     for v_off, d_off in defaults.items():
@@ -322,15 +323,18 @@ def unpack_annotations(body, labels, remove_default=False):
         stripped_len = len(head)
 
         annsymbol = ":"
-        assert head.endswith(annsymbol)
-        beginning = beginning - (orig_len - stripped_len) - len(annsymbol)
-        # Workaround if there is a space before annotation. Example: "groupby : List[str]"
-        while beginning > 0 and body[beginning - 1] == " ":
-            beginning -= 1
-        cuts.append((beginning, end))
+        if head.endswith(annsymbol):
+            assert head.endswith(annsymbol)
+            beginning = beginning - (orig_len - stripped_len) - len(annsymbol)
+            # Workaround if there is a space before annotation. Example: "groupby : List[str]"
+            while beginning > 0 and body[beginning - 1] == " ":
+                beginning -= 1
+            cuts.append((beginning, end))
 
-        assert offset_var[0] != len(head)
-        vars.append((offset_var[0], beginning, preprocess(body[offset_ann[0]: offset_ann[1]])))
+            assert offset_var[0] != len(head)
+            vars.append((offset_var[0], beginning, preprocess(body[offset_ann[0]: offset_ann[1]])))
+        else:
+            logging.info(f"Failed to remove annotation")
 
     if remove_default:
         cuts.extend(defaults_spans)
