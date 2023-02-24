@@ -8,13 +8,13 @@ from tqdm import tqdm
 from transformers import RobertaModel
 
 from SourceCodeTools.models.graph import RGCN
-from SourceCodeTools.models.training_config import get_config
 from SourceCodeTools.nlp.batchers.HybridBatcher import HybridBatcher
 from SourceCodeTools.nlp.trainers.codebert_entity_trainer import CodeBertModelTrainer
 
 
 class HybridModelTrainer(CodeBertModelTrainer):
     def __init__(self, *args, **kwargs):
+        self._graph_config = kwargs.pop("graph_config")
         super().__init__(*args, **kwargs)
 
     def set_batcher_class(self):
@@ -29,12 +29,16 @@ class HybridModelTrainer(CodeBertModelTrainer):
             self._timestamp = str(datetime.now()).replace(":", "-").replace(" ", "_")
         return Path(self.trainer_params["model_output"]).joinpath("HybridModel_" + self._timestamp)
 
+    def get_batcher(self, *args, **kwargs):
+        kwargs.update({"tokenizer": "codebert"})
+        kwargs["graph_config"] = self._graph_config
+        return self.batcher(*args, **kwargs)
+
     def get_model(self, *args, **kwargs):
         codebert_model = RobertaModel.from_pretrained("microsoft/codebert-base")
 
-        graph_model_params = get_config()
         graph_model = RGCN(
-            ["node_"], ["edge_"], **graph_model_params
+            ["node_"], ["edge_"], **self._graph_config["MODEL"]
         )
         model = self.model(
             codebert_model, graph_model, graph_emb=kwargs["graph_embedder"],
