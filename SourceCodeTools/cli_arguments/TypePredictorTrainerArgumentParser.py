@@ -2,7 +2,7 @@ from SourceCodeTools.cli_arguments import default_config, update_config, load_co
 from SourceCodeTools.cli_arguments.AbstractArgumentParser import AbstractArgumentParser
 
 
-graph_config_specification = {
+type_pred_config_specification = {
     "DATASET": {
         "data_path": None,
         "min_entity_count": 3,
@@ -46,7 +46,7 @@ graph_config_specification = {
 
 
 def default_type_pred_config():
-    return default_config(graph_config_specification)
+    return default_config(type_pred_config_specification)
 
 
 def get_type_pred_config(**kwargs):
