@@ -15,4 +15,3 @@ train_wor2vec(
     tokenizer=make_tokenizer(load_bpe_model(args.tokenizer_model_path)),
     emb_size=args.emb_size
 )
-

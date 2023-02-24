@@ -2,6 +2,7 @@ import argparse
 import os
 import time
 import logging
+from pathlib import Path
 
 from nltk import RegexpTokenizer
 
@@ -52,17 +53,20 @@ def train_embedding_model(model, params, corpus_path, output_path, tokenizer=Non
     if not os.path.isdir(output_path):
         os.mkdir(output_path)
 
-    model.wv.save_word2vec_format(output_path + "/" + 'emb.txt')
+    if isinstance(output_path, str):
+        output_path = Path(output_path)
+
+    model.wv.save_word2vec_format(str(output_path.joinpath('emb.txt')))
     print("Embeddings saved, ", time.strftime("%Y-%m-%d %H:%M"))
-    model.save(output_path + "/" + 'model')
+    model.save(str(output_path.joinpath('model')))
     print("Model saved, ", time.strftime("%Y-%m-%d %H:%M"))
 
 
-def train_fasttext(corpus_path, output_path, tokenizer=None):
+def train_fasttext(corpus_path, output_path, tokenizer=None, emb_size=100):
     from gensim.models import FastText
     
     params = {
-        'size': 100,
+        'size': emb_size,
         'window': 15,
         'min_count': 1,
         'workers': 4,

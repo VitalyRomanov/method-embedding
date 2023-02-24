@@ -3,7 +3,7 @@ from pathlib import Path
 root_path = Path(__file__).parent.parent
 
 
-def test_DatasetCreator():
+def test_dataset_creator():
     from SourceCodeTools.code.data.sourcetrail.DatasetCreator2 import DatasetCreator
 
     indexed_environments = root_path.joinpath("res", "python_testdata", "example_environment")
@@ -86,7 +86,8 @@ def test_create_type_annotation_aware_graph_partition():
         "res", "python_testdata", "example_graph", "with_ast"
     )
     type_annotation_test_set = root_path.joinpath(
-        "res", "python_testdata", "example_graph", "with_ast", "type_prediction_dataset_no_default_args_mapped_test.json"
+        "res", "python_testdata", "example_graph", "with_ast",
+        "type_prediction_dataset_no_default_args_mapped_test.json"
     )
     output_path = root_path.joinpath(
         "res", "python_testdata", "example_graph", "with_ast",
@@ -95,5 +96,3 @@ def test_create_type_annotation_aware_graph_partition():
     from SourceCodeTools.code.data.type_annotation_dataset.create_type_annotation_aware_graph_partition import \
         create_type_annotation_aware_graph_partition
     create_type_annotation_aware_graph_partition(working_directory, type_annotation_test_set, output_path)
-
-
