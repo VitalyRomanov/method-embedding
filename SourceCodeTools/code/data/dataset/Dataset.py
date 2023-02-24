@@ -1396,6 +1396,12 @@ class ProxyDataset(SourceGraphDataset):
     def get_num_edges(self):
         return self._graph_storage.get_num_edges()
 
+    def create_graph(self):
+        return self._create_graph_from_nodes_and_edges(
+            self._graph_storage.get_nodes(),
+            self._graph_storage.get_edges()
+        )
+
 
 def test_dataset():
     import sys
