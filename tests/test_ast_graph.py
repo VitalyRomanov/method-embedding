@@ -1498,7 +1498,7 @@ def test_graph_builder():
 
     bpe_tokenizer_path = Path(os.getcwd())\
         .joinpath(__file__)\
-        .parent.parent.parent\
+        .parent.parent\
         .joinpath("examples", "sentencepiece_bpe.model")
 
     assert bpe_tokenizer_path.is_file()
