@@ -358,8 +358,8 @@ class AstGraphGenerator(object):
 
     def handle_span_exceptions(self, node, line, end_line, col_offset, end_col_offset):
         exception_handled = False
-        handling_async = False
         expected_string = None
+        skip_check = False
         if isinstance(node, ast.ExceptHandler):
             end_line = line
             end_col_offset = col_offset + 6
@@ -546,10 +546,13 @@ class AstGraphGenerator(object):
             exception_handled = True
             handling_async = True
             expected_string = "yield from"
+        elif isinstance(node, ast.arg):
+            # do not bother
+            skip_check = True
         elif type(node) in {
             ast.Name,
             ast.Constant,
-            ast.arg,
+            # ast.arg,
             ast.JoinedStr,
             ast.Expr
         }:  # do not bother
@@ -576,16 +579,17 @@ class AstGraphGenerator(object):
 
         char_offset = self._range_to_offset(line, end_line, col_offset, end_col_offset)
 
-        if exception_handled is False:
-            try:
-                ast.parse(self._body[char_offset[0]: char_offset[1]])
-            except SyntaxError:
+        if skip_check is False:
+            if exception_handled is False:
                 try:
-                    ast.parse("(" + self._body[char_offset[0]: char_offset[1]] + ")")
-                except:
-                    raise Exception("Range parsed incorrectly")
-        else:
-            assert expected_string == self._body[char_offset[0]: char_offset[1]], f"{expected_string} != {self._body[char_offset[0]: char_offset[1]]}"
+                    ast.parse(self._body[char_offset[0]: char_offset[1]])
+                except SyntaxError:
+                    try:
+                        ast.parse("(" + self._body[char_offset[0]: char_offset[1]] + ")")
+                    except:
+                        raise Exception("Range parsed incorrectly")
+            else:
+                assert expected_string == self._body[char_offset[0]: char_offset[1]], f"{expected_string} != {self._body[char_offset[0]: char_offset[1]]}"
 
         return line, end_line, col_offset, end_col_offset, char_offset
 
