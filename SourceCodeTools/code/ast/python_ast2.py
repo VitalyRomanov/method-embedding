@@ -11,6 +11,7 @@ import astunparse
 import pandas as pd
 from SourceCodeTools.code.IdentifierPool import IdentifierPool
 from SourceCodeTools.code.annotator_utils import get_cum_lens, to_offsets
+from SourceCodeTools.code.ast.python_examples import PythonCodeExamplesForNodes
 from SourceCodeTools.nlp.string_tools import get_byte_to_char_map
 
 
@@ -358,46 +359,62 @@ class AstGraphGenerator(object):
     def handle_span_exceptions(self, node, line, end_line, col_offset, end_col_offset):
         exception_handled = False
         handling_async = False
+        expected_string = None
         if isinstance(node, ast.ExceptHandler):
             end_line = line
             end_col_offset = col_offset + 6
             exception_handled = True
+            expected_string = "except"
         elif isinstance(node, ast.Try):
             end_line = line
             end_col_offset = col_offset + 3
             exception_handled = True
+            expected_string = "try"
         elif isinstance(node, ast.If):
             end_line = line
-            end_col_offset = col_offset + 2
+            if self.source[line][col_offset] == "i":
+                end_col_offset = col_offset + 2
+                expected_string = "if"
+            elif self.source[line][col_offset] == "e":
+                end_col_offset = col_offset + 4
+                expected_string = "elif"
+            else:
+                assert False
             exception_handled = True
         elif isinstance(node, ast.For):
             end_line = line
             end_col_offset = col_offset + 3
             exception_handled = True
+            expected_string = "for"
         elif isinstance(node, ast.AsyncFor):
             end_line = line
             end_col_offset = col_offset + 9
             exception_handled = True
             handling_async = True
+            expected_string = "async for"
         elif isinstance(node, ast.While):
             end_line = line
             end_col_offset = col_offset + 5
             exception_handled = True
+            expected_string = "while"
         elif isinstance(node, ast.With):
             end_line = line
             end_col_offset = col_offset + 4
             exception_handled = True
+            expected_string = "with"
         elif isinstance(node, ast.AsyncWith):
             end_line = line
             end_col_offset = col_offset + 10
             exception_handled = True
             handling_async = True
+            expected_string = "async with"
         elif isinstance(node, ast.FunctionDef):
             # assert "(" in self.source[line] and self.source[line].count("def ") == 1
             end_line = line
             end_col_offset = col_offset + 3
             # end_col_offset = col_offset + 4 + len(self.source[line].split("def ")[1].split("(")[0])
             exception_handled = True
+            expected_string = "def"
         elif isinstance(node, ast.AsyncFunctionDef):
             # assert "(" in self.source[line] and self.source[line].count("async def ") == 1
             end_line = line
@@ -405,6 +422,7 @@ class AstGraphGenerator(object):
             # end_col_offset = col_offset + 10 + len(self.source[line].split("async def ")[1].split("(")[0])
             exception_handled = True
             handling_async = True
+            expected_string = "async def"
         elif isinstance(node, ast.ClassDef):
             # assert (":" in self.source[line] or ":" in self.source[line]) and self.source[line].count("class ") == 1
             # if "(" in self.source[line]:
@@ -415,98 +433,125 @@ class AstGraphGenerator(object):
             # end_col_offset = col_offset + 6 + def_len
             end_col_offset = col_offset + 5
             exception_handled = True
+            expected_string = "class"
         elif isinstance(node, ast.Import):
             end_line = line
             end_col_offset = col_offset + 6
             exception_handled = True
             handling_async = True
+            expected_string = "import"
         elif isinstance(node, ast.Delete):
             end_line = line
             end_col_offset = col_offset + 3
             exception_handled = True
+            expected_string = "del"
         elif isinstance(node, ast.ImportFrom):
             end_line = line
             end_col_offset = col_offset + 4
             exception_handled = True
+            expected_string = "from"
         elif isinstance(node, ast.List):
             end_line = line
             end_col_offset = col_offset + 1
             exception_handled = True
+            expected_string = "["
         elif isinstance(node, ast.Dict):
             end_line = line
             end_col_offset = col_offset + 1
             exception_handled = True
+            expected_string = "{"
         elif isinstance(node, ast.Set):
             end_line = line
             end_col_offset = col_offset + 1
             exception_handled = True
+            expected_string = "{"
         elif isinstance(node, ast.Tuple):
-            end_line = line
-            end_col_offset = col_offset + 1
-            exception_handled = True
+            pass
+            # possible variants
+            # - (1,2)
+            # 1,2
+            # end_line = line
+            # end_col_offset = col_offset + 1
+            # exception_handled = True
         elif isinstance(node, ast.GeneratorExp):
-            end_line = line
-            end_col_offset = col_offset + 1
-            exception_handled = True
+            # cannot if passed as argument ot function
+            pass
+            # end_line = line
+            # end_col_offset = col_offset + 1
+            # exception_handled = True
         elif isinstance(node, ast.ListComp):
             end_line = line
             end_col_offset = col_offset + 1
             exception_handled = True
+            expected_string = "["
         elif isinstance(node, ast.DictComp):
             end_line = line
             end_col_offset = col_offset + 1
             exception_handled = True
+            expected_string = "{"
         elif isinstance(node, ast.SetComp):
             end_line = line
             end_col_offset = col_offset + 1
             exception_handled = True
+            expected_string = "{"
         elif isinstance(node, ast.Starred):
             assert "*" in self.source[line]
             end_line = line
             end_col_offset = col_offset + 1
             exception_handled = True
+            expected_string = "*"
         elif isinstance(node, ast.Return):
             end_line = line
             end_col_offset = col_offset + 6
             exception_handled = True
+            expected_string = "return"
         elif isinstance(node, ast.Global):
             end_line = line
             end_col_offset = col_offset + 6
             exception_handled = True
+            expected_string = "global"
         elif isinstance(node, ast.Nonlocal):
             end_line = line
             end_col_offset = col_offset + 8
             exception_handled = True
+            expected_string = "nonlocal"
         elif isinstance(node, ast.Assert):
             end_line = line
             end_col_offset = col_offset + 6
             exception_handled = True
+            expected_string = "assert"
         elif isinstance(node, ast.Lambda):
             end_line = line
             end_col_offset = col_offset + 6
             exception_handled = True
+            expected_string = "lambda"
         elif isinstance(node, ast.Raise):
             end_line = line
             end_col_offset = col_offset + 5
             exception_handled = True
+            expected_string = "raise"
         elif isinstance(node, ast.Await):
             end_line = line
             end_col_offset = col_offset + 5
             exception_handled = True
+            expected_string = "await"
         elif isinstance(node, ast.Yield):
             end_line = line
             end_col_offset = col_offset + 5
             exception_handled = True
+            expected_string = "yield"
         elif isinstance(node, ast.YieldFrom):
             end_line = line
             end_col_offset = col_offset + 10
             exception_handled = True
             handling_async = True
+            expected_string = "yield from"
         elif type(node) in {
             ast.Name,
             ast.Constant,
             ast.arg,
-            ast.JoinedStr
+            ast.JoinedStr,
+            ast.Expr
         }:  # do not bother
             pass
         elif type(node) in {
@@ -520,7 +565,10 @@ class AstGraphGenerator(object):
             ast.Attribute,  # could be multiline
             ast.Call,  # need to parse
             ast.UnaryOp,  # need to parse
-            ast.IfExp
+            ast.IfExp,  # need to parse
+            ast.Pass,  # seem to be fine
+            ast.Break,  # seem to be fine
+            ast.Continue,  # seem to be fine
         }:  # potential
             pass
         # else:
@@ -536,8 +584,8 @@ class AstGraphGenerator(object):
                     ast.parse("(" + self._body[char_offset[0]: char_offset[1]] + ")")
                 except:
                     raise Exception("Range parsed incorrectly")
-        elif handling_async is False:
-            assert " " not in self._body[char_offset[0]: char_offset[1]]
+        else:
+            assert expected_string == self._body[char_offset[0]: char_offset[1]], f"{expected_string} != {self._body[char_offset[0]: char_offset[1]]}"
 
         return line, end_line, col_offset, end_col_offset, char_offset
 
@@ -681,6 +729,7 @@ class AstGraphGenerator(object):
     def parse_body(self, nodes):
         edges = []
         last_node = None
+        last_node_ = None
         for node in nodes:
             s = self.parse(node)
             if isinstance(s, tuple):
@@ -695,9 +744,10 @@ class AstGraphGenerator(object):
                     self.add_edge(edges, src=last_node, dst=s[1], type="next", scope=self.scope[-1])
 
                 last_node = s[1]
+                last_node_ = node if not isinstance(node, ast.Expr) else node.value
 
                 for cond_name, cond_stat in zip(self.current_condition[-1:], self.condition_status[-1:]):
-                    self.add_edge(edges, src=last_node, dst=cond_name, type=cond_stat, scope=self.scope[-1])  # "defined_in_" +
+                    self.add_edge(edges, src=last_node, dst=cond_name, type=cond_stat, scope=self.scope[-1], position_node=last_node_)  # "defined_in_" +
             else:
                 edges.extend(s)
         return edges
@@ -1235,8 +1285,17 @@ class AstGraphGenerator(object):
 
 if __name__ == "__main__":
     c = "def f(a=5): f(a=4)"
-    g = AstGraphGenerator(c.lstrip())
-    g.parse(g.root)
+    c = """def _build_bayes_net(factory_class,
+                         net) :
+
+        if not (isinstance(net, BayesNet) or isinstance(net, Vertex)):
+            raise TypeError("net must be a Vertex or a BayesNet. Was given {}".format(type(net)))
+        elif isinstance(net, Vertex):
+            net = BayesNet(net.iter_connected_graph())
+        return factory_class.builderFor(net.unwrap()), net"""
+    for c in PythonCodeExamplesForNodes.examples.values():
+        g = AstGraphGenerator(c.lstrip())
+        g.parse(g.root)
     # import sys
     # f_bodies = pd.read_csv(sys.argv[1])
     # failed = 0
