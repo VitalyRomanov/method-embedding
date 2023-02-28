@@ -35,6 +35,11 @@ def span_f1(pred_spans, true_spans, eps=1e-8):
     return compute_precision_recall_f1(tp, fp, fn)
 
 
+def token_spans_from_prediction(predictions, tagmap):
+    pred_biluo = [tagmap.inverse(p) for p in predictions]
+    return parse_biluo(pred_biluo)
+
+
 def entity_scorer(pred, labels, tagmap, no_localization=False, eps=1e-8):
     """
     Compute f1 score, precision, and recall from BILUO labels
