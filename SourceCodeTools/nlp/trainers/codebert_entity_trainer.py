@@ -150,7 +150,10 @@ class CodeBertModelTrainer(ModelTrainer):
         seq_mask = get_length_mask(token_ids, lengths)
         model_output = model(token_ids, graph_ids, graph_embs=graph_embs, mask=seq_mask, finetune=finetune)
         loss = model.loss(model_output.logits, labels, mask=seq_mask, class_weights=class_weights, extra_mask=extra_mask)
-        scores = model.score(model_output.logits, labels, mask=seq_mask, scorer=scorer, extra_mask=extra_mask)
+        if scorer is not None:
+            scores = model.score(model_output.logits, labels, mask=seq_mask, scorer=scorer, extra_mask=extra_mask)
+        else:
+            scores = {}
 
         scores["loss"] = loss.cpu().item()
         model_output.loss = loss

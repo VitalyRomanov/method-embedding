@@ -261,7 +261,10 @@ class ModelTrainer:
         logits = model(token_ids, prefix, suffix, graph_ids, graph_embs=graph_embs, target=None, training=training, mask=seq_mask)
         loss = model.loss(logits, labels, mask=seq_mask, class_weights=class_weights, extra_mask=extra_mask)
         # token_acc = tf.reduce_sum(tf.cast(tf.argmax(logits, axis=-1) == labels, tf.float32)) / (token_ids.shape[0] * token_ids.shape[1])
-        scores = model.score(logits, labels, mask=seq_mask, scorer=scorer, extra_mask=extra_mask)
+        if scorer is not None:
+            scores = model.score(logits, labels, mask=seq_mask, scorer=scorer, extra_mask=extra_mask)
+        else:
+            scores = {}
 
         scores["loss"] = loss
         return scores
