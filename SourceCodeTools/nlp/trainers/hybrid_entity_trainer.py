@@ -59,6 +59,11 @@ class HybridModelTrainer(CodeBertModelTrainer):
 
         batch_count = 0
 
+        if train is True:
+            self.set_model_training(model)
+        else:
+            self.set_model_evaluation(model)
+
         for ind, batch in enumerate(tqdm(batches, desc=f"Epoch {epoch}")):
             self._format_batch(batch, self.device)
             scores = self.make_step(
