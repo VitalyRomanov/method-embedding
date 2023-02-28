@@ -1,3 +1,4 @@
+import logging
 from copy import copy, deepcopy
 from typing import Tuple, Iterable
 
@@ -5,7 +6,7 @@ from SourceCodeTools.nlp import create_tokenizer
 from spacy.gold import biluo_tags_from_offsets as spacy_biluo_tags_from_offsets
 
 from SourceCodeTools.nlp.tokenizers import codebert_to_spacy
-from SourceCodeTools.nlp.string_tools import get_byte_to_char_map
+from SourceCodeTools.nlp.string_tools import get_byte_to_char_map, get_byte_to_char_map2
 
 
 def biluo_tags_from_offsets(doc, ents, no_localization):
@@ -82,7 +83,7 @@ def to_offsets(
                 r_ = (b2c[r_[0]], b2c[r_[1]], r_[2])
             repl.append(r_)
         except KeyError:
-            # logging.warning("Skipping offset, does not align with the source code")
+            logging.warning("Skipping offset, does not align with the source code")
             continue
 
     return repl

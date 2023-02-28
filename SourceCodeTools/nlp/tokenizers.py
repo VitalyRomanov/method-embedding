@@ -1,11 +1,12 @@
 import hashlib
+import logging
 from functools import lru_cache
 
 import spacy
 from spacy.tokens import Doc
 
 from SourceCodeTools.nlp.spacy_tools.SpacyPythonBpeTokenizer import SpacyPythonBpe
-from SourceCodeTools.nlp.string_tools import get_byte_to_char_map
+from SourceCodeTools.nlp.string_tools import get_byte_to_char_map, get_byte_to_char_map2
 
 
 def token_hasher(token: str, buckets: int):
@@ -30,6 +31,13 @@ def _inject_tokenizer(nlp):
     return nlp
 
 
+def recover_offset_char_spans(tokens, offsets):
+    if isinstance(tokens, AdapterDoc):
+        return tokens.token_offsets_to_char_offsets(offsets)
+    else:
+        raise NotImplementedError()
+
+
 class AdapterDoc:
     def __init__(
             self, tokens,
@@ -45,7 +53,7 @@ class AdapterDoc:
         tokens compatible with `biluo_tags_from_offsets`
         """
         self.tokens = tokens
-        self.adjustment_amount = 0
+        # self.adjustment_amount = 0
         # self.tokens_for_biluo_alignment = None
         # self._replacements = replacements
         self._original_text = original_text
@@ -88,6 +96,80 @@ class AdapterDoc:
 
         if self._start_token_adjustment_amount != 0:
             offsets = [(o[0] + self._start_token_adjustment_amount, o[1] + self._start_token_adjustment_amount, o[2]) for o in offsets]
+
+        return offsets
+
+    def token_offsets_to_char_offsets(self, offsets):
+        if len(offsets) == 0:
+            return []
+
+        sorted_offsets = sorted(offsets, key=lambda x: x[0])
+        offsets = []
+        current_offset = sorted_offsets.pop(0)
+        start_found = False
+        start_char = None
+        position = 0
+
+        cum_chars = 0
+        num_tokens = len(self.tokens)
+        while position < num_tokens:
+            current_token_len = len(self.tokens[position])
+            if start_found is False and position == current_offset[0]:
+                start_char = cum_chars
+                start_found = True
+                position += 1
+                cum_chars += current_token_len
+            elif start_found is True and position == current_offset[1]:
+                end_char = cum_chars
+                start_found = False
+                offsets.append((start_char, end_char, current_offset[2]))
+                if len(sorted_offsets) == 0:
+                    break
+                current_offset = sorted_offsets.pop(0)
+            else:
+                position += 1
+                cum_chars += current_token_len
+
+        if self._start_token_adjustment_amount != 0:
+            offsets = ((o[0] - self._start_token_adjustment_amount, o[1] - self._start_token_adjustment_amount, o[2]) for o in offsets)
+
+        if self._tokens_as_bytes:
+            _b2c = get_byte_to_char_map2(self._original_text)
+            _c2b = dict(zip(_b2c.values(), _b2c.keys()))
+
+            offsets = ((_b2c[o[0]], _b2c[o[1]], o[2]) for o in offsets)
+
+        # def verify_offset(offset):
+        #     token = self._original_text[offset[0]: offset[1]]
+        #     original_len = len(token)
+        #     if token.strip() != "":
+        #         lstrip_len = original_len - len(token.lstrip())
+        #         rstrip_len = original_len - len(token.rstrip())
+        #         return (offset[0] + lstrip_len, offset[1] - rstrip_len, offset[2])
+        #     else:
+        #         return offset
+        #
+        # offsets = [verify_offset(offset) for offset in offsets]
+
+        return list(offsets)
+
+    def get_original_spans_for_tokens(self):
+
+        token_spans = []
+
+        assert self._start_token_adjustment_amount != 0
+        last_token = len(self.tokens) - 1
+        for ind, token in enumerate(self.tokens):
+            if ind > 0 and ind < last_token:
+                token_spans.append((ind, ind + 1, None))
+
+        offsets = self.token_offsets_to_char_offsets(token_spans)
+
+        offsets = [
+            offset for offset in offsets if (
+                (offset[0] < offset[1]) and (offset[0] >= 0) and (offset[0]) < len(self._original_text)
+            )
+        ]
 
         return offsets
 
