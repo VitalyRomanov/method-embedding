@@ -52,6 +52,7 @@ def train_model(args):
                 storage_kwargs={
                     "nodes": entry["nodes"],
                     "edges": entry["edges"],
+                    "add_type_nodes": True
                 },
                 type_nodes=True
             )

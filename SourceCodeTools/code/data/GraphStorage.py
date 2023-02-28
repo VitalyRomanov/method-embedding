@@ -808,8 +808,9 @@ class OnDiskGraphStorageWithFastIteration(OnDiskGraphStorage):
 
 
 class InMemoryGraphStorage(AbstractGraphStorage):
-    def __init__(self, nodes, edges):
-        nodes, edges = self._add_type_nodes(nodes, edges)
+    def __init__(self, nodes, edges, add_type_nodes=False):
+        if add_type_nodes:
+            nodes, edges = self._add_type_nodes(nodes, edges)
         self._nodes = nodes
         self._edges = edges
 
