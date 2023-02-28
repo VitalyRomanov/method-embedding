@@ -89,6 +89,20 @@ class HashingValueEncoder:
         return new
 
 
+class ShiftingValueEncoder:
+    def __init__(self):
+        pass
+
+    @property
+    def default(self):
+        return 0
+
+    def __getitem__(self, item):
+        if item == "O":
+            return self.default
+        return item + 1
+
+
 class TagMap(ValueEncoder):
     def __init__(self, values):
         super().__init__(values=values)
