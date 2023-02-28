@@ -47,7 +47,7 @@ class CodeBertSemiHybridModel(nn.Module):
             assert self.graph_emb.weight.shape == new_param.shape
             self.graph_emb.weight = new_param
             # self.graph_emb.weight.requires_grad = False
-            logging.warning("Graph embeddings are not finetuned")
+            # logging.warning("Graph embeddings are not finetuned")
             self.graph_adapter = nn.Linear(pretrained_embeddings.shape[1], bert_emb_size, bias=False)
         else:
             graph_emb_dim = 0
@@ -80,7 +80,8 @@ class CodeBertSemiHybridModel(nn.Module):
                 inputs_embeds=token_embs,
                 attention_mask=mask,
                 position_ids=position_ids,
-                token_type_ids=token_type_ids
+                token_type_ids=token_type_ids,
+                output_attentions=True
             )
 
         x = codebert_output.last_hidden_state
