@@ -130,7 +130,7 @@ class ModelTrainer:
 
     @property
     def ckpt_path(self):
-        return self.trainer_params["ckpt_path"]
+         return Path(self.trainer_params["ckpt_path"]) if self.trainer_params["ckpt_path"] is not None else None
 
     @property
     def gpu_id(self):
