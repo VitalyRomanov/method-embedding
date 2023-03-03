@@ -1271,8 +1271,14 @@ class SourceGraphDataset(AbstractDataset):
         return result.rename({"type": "label"}, axis=1)
 
     def load_type_prediction(self):
+        from SourceCodeTools.code.data.type_annotation_dataset.type_parser import TypeHierarchyParser
+        from SourceCodeTools.code.data.type_annotation_dataset.type_parser import type_is_valid
 
         type_ann = unpersist(join(self.data_path, "type_annotations.json.bz2"))
+        type_ann = type_ann.query("dst.apply(@type_is_valid)", local_dict={"type_is_valid": type_is_valid})
+        type_ann["dst"] = type_ann["dst"].apply(
+            lambda type_: TypeHierarchyParser(type_, normalize=True).assemble(max_level=3, simplify_nodes=True)
+        )
 
         cache_key = f"{self._get_df_hash(type_ann)}_{self.min_count_for_objectives}"
         result = self._load_cache_if_exists(cache_key)
@@ -1286,7 +1292,11 @@ class SourceGraphDataset(AbstractDataset):
                 type_ann["src_type"].apply(lambda type_: type_ in {"mention"})  # FunctionDef {"arg", "AnnAssign"})
             ]
 
-            type_ann["dst"] = type_ann["dst"].apply(lambda x: x.strip("\"").strip("'").split("[")[0].split(".")[-1])
+            counter = Counter(type_ann["dst"])
+            allowed = {item for item, count in counter.items() if count >= self.min_count_for_objectives}
+            type_ann["dst"] = type_ann["dst"].apply(lambda type_: type_ if type_ in allowed else "<unk>")
+
+            # type_ann["dst"] = type_ann["dst"].apply(lambda x: x.strip("\"").strip("'").split("[")[0].split(".")[-1])
             type_ann = filter_dst_by_freq(type_ann, self.min_count_for_objectives)
             type_ann = type_ann[["src", "dst"]]
             result = type_ann
