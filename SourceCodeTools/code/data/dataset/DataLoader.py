@@ -785,7 +785,9 @@ class SGMisuseEdgesDataLoader(SGTrueEdgesDataLoader):
 
                     num_positive_labels = sum(sum(labels) for etype, labels in edge_labels.items())
 
-                    if partition == "train_mask" and num_positive_labels == 0:
+                    # if partition == "train_mask" and num_positive_labels == 0:  # this results in nan in evaluation metrics
+                    #     continue
+                    if num_positive_labels == 0:
                         continue
                 else:
                     edge_labels = None
