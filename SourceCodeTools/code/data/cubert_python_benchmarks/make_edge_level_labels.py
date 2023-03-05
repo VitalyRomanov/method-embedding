@@ -47,24 +47,29 @@ def create_edge_labels(dataset_directory, use_mention_instances):
 
     last_file_id = None
     total = 0
+    needed_span = []
     for chunk_ind, edges in tqdm(enumerate(read_edges(edges_path, as_chunks=True)), desc="Extracting misuse edges"):
         edges = edges.astype({"offset_start": "Int32", "offset_end": "Int32"})
         for edge_id, file_id, package, source_node_id, target_node_id, type, offset_start, offset_end in \
                 edges[["id", "file_id", "package", "source_node_id", "target_node_id", "type", "offset_start", "offset_end"]].values:
             if last_file_id != file_id:
                 total += 1
-                if last_file_id is not None and last_file_id not in file_id2incorrect_edge:
+                if last_file_id is not None and last_file_id not in file_id2incorrect_edge and len(needed_span) > 0:
                     # print(f"Did not find edge for {last_file_id}")
                     skipped.append(last_file_id)
                     # print(f"Skipped {len(skipped)} files out of {total}")
                 last_file_id = file_id
+                needed_span = tuple(file_id2misuse_span[file_id])
+
+            if len(needed_span) != 2:
+                continue
 
             if not pd.isna(offset_start):
                 # file_id = edge["file_id"]
                 # src = edge["source_node_id"]
                 # dst = edge["target_node_id"]
                 # type = edge["type"]
-                needed_span = tuple(file_id2misuse_span[file_id])
+                # needed_span = tuple(file_id2misuse_span[file_id])
                 given_span = (offset_start, offset_end)
                 if needed_span == given_span:
                     replacement = file_id2replacement_var[file_id]
