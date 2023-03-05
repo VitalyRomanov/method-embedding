@@ -700,7 +700,7 @@ def build_ast_only_graph2(
         # work with lists of dictionaries
         graph = source_code_to_graph(
             source_code, variety=graph_variety, bpe_tokenizer_path=bpe_tokenizer_path, reverse_edges=True,
-            mention_instances=mention_instances, save_node_strings=True, make_table=False
+            mention_instances=mention_instances, save_node_strings=False, make_table=False
         )
 
         nodes_ = graph["nodes"]
@@ -755,9 +755,15 @@ def build_ast_only_graph2(
         all_ast_edges = all_ast_edges.query("src != dst")
 
         column_order = ["edge_hash", "type", "src", "dst", "file_id", "package", "scope"]
+        map_dtypes = {}
         if "offset_start" in all_ast_edges.columns:
             column_order.append("offset_start")
             column_order.append("offset_end")
+            map_dtypes["offset_start"] = "Int64"
+            map_dtypes["offset_end"] = "Int64"
+
+        for col_name, dtype in map_dtypes.items():
+            all_ast_edges[col_name] = all_ast_edges[col_name].astype(dtype)
 
         all_ast_edges = all_ast_edges[column_order] \
             .rename({
@@ -774,13 +780,23 @@ def build_ast_only_graph2(
         # all_ast_nodes = pd.concat(all_ast_nodes_)
         all_ast_nodes.drop_duplicates(["node_hash", "type", "name"], inplace=True)
 
-        column_order = ["node_hash", "type", "name", "string"]
+        column_order = ["node_hash", "type", "name", "string", "scope"]
+        map_dtypes = {}
         if "offset_start" in all_ast_nodes.columns:
             column_order.append("offset_start")
             column_order.append("offset_end")
+            map_dtypes["offset_start"] = "Int64"
+            map_dtypes["offset_end"] = "Int64"
+
+        for col_name, dtype in map_dtypes.items():
+            all_ast_nodes[col_name] = all_ast_nodes[col_name].astype(dtype)
 
         all_ast_nodes = all_ast_nodes[column_order] \
-            .rename({'name': 'serialized_name', 'offset_start': "start", "offset_end": "end", "node_hash": "id"}, axis=1)
+            .rename({
+                'name': 'serialized_name', 'offset_start': "start", "offset_end": "end", "node_hash": "id",
+                'scope': 'mentioned_in'
+            }, axis=1)
+
 
         return all_ast_nodes
 
