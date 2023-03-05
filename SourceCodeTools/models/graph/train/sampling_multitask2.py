@@ -432,7 +432,8 @@ class SamplingMultitaskTrainer:
         def load_labels():
             filecontent_path = Path(dataset.data_path).joinpath("misuse_edge_labels.json.bz2")
             filecontent = unpersist(filecontent_path)
-            return filecontent[["id", "label", "file_id"]].rename({"file_id": "group", "id": "src", "label": "dst"}, axis=1)
+            # do not add group here because the values for groups (unique_file_id, package_id) are not present in this table
+            return filecontent[["id", "label"]].rename({"id": "src", "label": "dst"}, axis=1)
 
         self.objectives.append(
             self._create_edge_level_objective(
@@ -480,8 +481,8 @@ class SamplingMultitaskTrainer:
 
         def load_labels():
             filecontent_path = Path(dataset.data_path).joinpath("misuse_edge_labels.json.bz2")
-            filecontent = unpersist(filecontent_path)[["src", "label", "file_id"]]
-            return filecontent.rename({"file_id": "group", "label": "dst"}, axis=1)
+            filecontent = unpersist(filecontent_path)[["src", "label"]]
+            return filecontent.rename({"label": "dst"}, axis=1)
 
         self.objectives.append(
             self._create_node_level_objective(
