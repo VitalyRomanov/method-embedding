@@ -708,6 +708,18 @@ class PythonAstGraphBuilder(object):
             assert position_node is None, "position conflict"
             new_edge.assign_positions(position)
 
+        if (
+                (
+                    self._node_pool[new_edge.src].type.name == "instance" and
+                    self._node_pool[new_edge.dst].type.name not in {"FunctionDef"}
+                ) or (
+                    self._node_pool[new_edge.src].type.name == "mention" and
+                    self._node_pool[new_edge.dst].type.name not in {"instance", "FunctionDef"}
+                )
+        ):
+            if new_edge.offset_start is None:
+                assert False, "no offset for crucial node"
+
         edges.append(new_edge)
 
         if self._add_reverse_edges is True:
