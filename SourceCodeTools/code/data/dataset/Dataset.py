@@ -760,7 +760,7 @@ class SourceGraphDataset(AbstractDataset):
             labels.rename({new_col_name: "group", "id": "src"}, axis=1, inplace=True)
         elif labels_for == SGLabelSpec.edges:
             labels, new_col_name = self._graph_storage.get_info_for_edge_ids(labels["src"], group_by)
-            labels.rename({new_col_name: "group"}, axis=1, inplace=True)
+            labels.rename({new_col_name: "group", "id": "src"}, axis=1, inplace=True)
         elif labels_for == SGLabelSpec.subgraphs:
             labels, new_col_name = self._graph_storage.get_info_for_subgraphs(labels["src"], group_by)
             labels.rename({new_col_name: "group"}, axis=1, inplace=True)

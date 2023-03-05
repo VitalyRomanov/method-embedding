@@ -171,7 +171,7 @@ class AbstractGraphStorage(ABC):
         ...
 
     @abstractmethod
-    def get_info_for_node_ids(self, node_ids):
+    def get_info_for_node_ids(self, node_ids, field):
         ...
 
     @abstractmethod
@@ -623,21 +623,21 @@ class OnDiskGraphStorage(AbstractGraphStorage):
     # def get_temp_schema(table, table_name):
     #     return pd.io.sql.get_schema(table, table_name).replace("CREATE TABLE", "CREATE TEMPORARY TABLE")
 
-    def _create_tmp_node_ids_list(self, node_ids):
-        table_name = "tmp_partition_nodes"
-        list_of_nodes = ",".join(f"({val})" for val in node_ids)
-        insertion_query = f"insert into {table_name}(node_ids) values {list_of_nodes}"
+    def _create_tmp_ids_list(self, ids):
+        table_name = "tmp_partition_ids"
+        list_of_ids = ",".join(f"({val})" for val in ids)
+        insertion_query = f"insert into {table_name}(ids) values {list_of_ids}"
 
         self.database.execute(f"DROP TABLE IF EXISTS {table_name}", commit=False)
-        self.database.execute(f"CREATE TEMPORARY TABLE {table_name}(node_ids INTEGER)", commit=False)
+        self.database.execute(f"CREATE TEMPORARY TABLE {table_name}(ids INTEGER)", commit=False)
         self.database.execute(insertion_query, commit=False)
         self.database.execute(
-            f"CREATE INDEX IF NOT EXISTS idx_tmp_partition_nodes ON {table_name}(node_ids)",
+            f"CREATE INDEX IF NOT EXISTS idx_tmp_{table_name} ON {table_name}(ids)",
             commit=True
         )
         return table_name
 
-    def _drop_tmp_node_ids_list(self, table_name):
+    def _drop_tmp_ids_list(self, table_name):
         self.database.execute(f"DROP TABLE {table_name}")
 
     def get_info_for_subgraphs(self, subgraph_ids, field):
@@ -686,7 +686,7 @@ class OnDiskGraphStorage(AbstractGraphStorage):
         else:
             raise ValueError()
 
-        node_ids_table_name = self._create_tmp_node_ids_list(node_ids, )
+        ids_table_name = self._create_tmp_ids_list(node_ids)
         # results = self.database.query(
         #     f"""
         #     select distinct src, {column_name} from (
@@ -707,13 +707,37 @@ class OnDiskGraphStorage(AbstractGraphStorage):
         results = self.database.query(
             f"""
             select distinct node_file_id.id, {column_name}
-            from {node_ids_table_name}
-            inner join node_file_id on node_file_id.id = {node_ids_table_name}.node_ids
+            from {ids_table_name}
+            inner join node_file_id on node_file_id.id = {ids_table_name}.ids
             join node_hierarchy on node_file_id.id = node_hierarchy.id
             """
         )
 
-        self._drop_tmp_node_ids_list(node_ids_table_name)
+        self._drop_tmp_ids_list(ids_table_name)
+        return results, column_name
+
+    def get_info_for_edge_ids(self, edge_ids, field):
+        if field == SGPartitionStrategies.package:
+            column_name = "package"
+        elif field == SGPartitionStrategies.file:
+            column_name = "unique_file_id"
+        elif field == SGPartitionStrategies.mention:
+            column_name = "mentioned_in"
+        else:
+            raise ValueError()
+
+        ids_table_name = self._create_tmp_ids_list(edge_ids)
+
+        results = self.database.query(
+            f"""
+            select distinct edge_file_id.id, {column_name}
+            from {ids_table_name}
+            inner join edge_file_id on edge_file_id.id = {ids_table_name}.ids
+            join edge_hierarchy on edge_file_id.id = edge_hierarchy.id
+            """
+        )
+
+        self._drop_tmp_ids_list(ids_table_name)
         return results, column_name
 
 
@@ -731,6 +755,7 @@ class OnDiskGraphStorageWithFastIteration(OnDiskGraphStorage):
 
         requested_partition_groups = ",".join(map(str, groups))
         if how == SGPartitionStrategies.package:
+            requested_partition_groups = ",".join(map(repr, groups))
             query_str = f"""
                         SELECT
                         edges.id as id, edge_types.type_desc as type, src, dst, unique_file_id, package
