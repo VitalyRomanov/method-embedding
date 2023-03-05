@@ -5,7 +5,7 @@ class AbstractArgumentParser:
     _parser = None
     _parser_description = ""
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         self._create_parser()
         self._add_positional_argument()
         self._add_optional_arguments()
