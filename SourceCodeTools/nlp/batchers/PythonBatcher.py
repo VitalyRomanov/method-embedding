@@ -25,8 +25,27 @@ from tqdm import tqdm
 try:
     from nhkv import KVStore
 except ImportError:
-    print("Install NHKV: pip install git+https://github.com/VitalyRomanov/nhkv.git")
+    print("Install NHKV: pip install nhkv")
     sys.exit()
+
+
+__kv_storage_registry = {}
+
+
+def get_or_create_cache(path):
+    if isinstance(path, Path):
+        path_key = str(path.absolute())
+    else:
+        path_key = path
+        path = Path(path)
+
+    if path_key not in __kv_storage_registry:
+        if path.is_dir():
+            __kv_storage_registry[path_key] = KVStore.load(path)
+        else:
+            __kv_storage_registry[path_key] = KVStore(path)
+
+    return __kv_storage_registry[path_key]
 
 
 def filter_unlabeled(entities, declarations):
@@ -49,6 +68,34 @@ def filter_unlabeled(entities, declarations):
 def print_token_tag(doc, tags):
     for t, tag in zip(doc, tags):
         print(t, "\t", tag)
+
+
+class NoMaskEncoder(ValueEncoder):
+    def __init__(self, default=False, *args, **kwargs):
+        super(NoMaskEncoder, self).__init__(default=default)
+
+    def _initialize(self, values, value_to_code):
+        pass
+
+    def __getitem__(self, item):
+        if item == "O":
+            return False
+        else:
+            return True
+
+    def get(self, key, default=0):
+        return self.__getitem__(key)
+
+
+class OMaskEncoder(NoMaskEncoder):
+    def __init__(self, default=True, *args, **kwargs):
+        super(OMaskEncoder, self).__init__(default=default)
+
+    def __getitem__(self, item):
+        if item == "O":
+            return True
+        else:
+            return False
 
 
 class SampleEntry(object):
@@ -169,7 +216,7 @@ class Batcher:
 
     def _get_version_code(self):
         signature_dict = {
-            "tokenizer": self._tokenizer, "max_seq_len": self._max_seq_len, "class_weights": self._class_weights,
+            "tokenizer": self._tokenizer, "class_weights": self._class_weights,
             "_no_localization": self._no_localization, "wordmap": self._wordmap, "class": self.__class__.__name__
         }
         if hasattr(self, "_extra_signature_parameters"):
@@ -201,9 +248,9 @@ class Batcher:
         self._cache_dir = self._cache_dir.joinpath(f"{self.__class__.__name__}{self._get_version_code()}")
         self._cache_dir.mkdir(parents=True, exist_ok=True)
 
-        self._data_cache = KVStore(self._data_cache_path)  # dc.Cache(self._data_cache_path)
-        self._length_cache = KVStore(self._length_cache_path)
-        self._batch_cache = KVStore(self._batch_cache_path)
+        self._data_cache = get_or_create_cache(self._data_cache_path)  #  KVStore(self._data_cache_path)  # dc.Cache(self._data_cache_path)
+        self._length_cache = get_or_create_cache(self._length_cache_path)  # KVStore(self._length_cache_path)
+        self._batch_cache = None  # get_or_create_cache(self._batch_cache_path)  # KVStore(self._batch_cache_path)
 
     @staticmethod
     def _compute_text_id(text):
@@ -211,7 +258,7 @@ class Batcher:
 
     def _prepare_record(self, id_, text, annotations):
         extra = copy(annotations)
-        labels = extra.pop("entities")
+        labels = extra.pop("entities", [])  # remove from copy
         extra.update(self._prepare_tokenized_sent((text, annotations)))
         entry = SampleEntry(id=id_, text=text, labels=labels, **extra)
         return entry
@@ -246,9 +293,11 @@ class Batcher:
         for text, annotations in tqdm(self._data, desc="Scanning data"):
             id_ = self._compute_text_id(text)
             self._data_ids.add(id_)
-            if id_ not in self._length_cache:
+            # if id_ not in self._length_cache:
+            if self._length_cache.get(id_, None) is None:
                 length_edited = True
-                if id_ not in self._data_cache:
+                # if id_ not in self._data_cache:
+                if self._data_cache.get(id_, None) is None:
                     data_edited = True
                     self._data_cache[id_] = (text, annotations)
                 entry = self._prepare_record(id_, text, annotations)
@@ -327,9 +376,12 @@ class Batcher:
         return {}
 
     def get_record_with_id(self, id_):
-        if id_ not in self._data_cache:
+        record = self._data_cache.get(id_, None)
+        # if id_ not in self._data_cache:
+        if record is None:
             raise KeyError("Record with such id is not found")
-        text, annotations = self._data_cache[id_]
+        # text, annotations = self._data_cache[id_]
+        text, annotations = record
         return self._prepare_record(id_, text, annotations)
         # return self._data_cache[id]
 
@@ -357,12 +409,21 @@ class Batcher:
             # text, annotations = self._get_record_with_id(id_)
             # yield self._prepare_record(id_, text, annotations)
 
+    def _collect_pad_values_for_fields(self):
+        self._default_padding = {}
+        for mapper in self._mappers:
+            enc = mapper.encoder
+            if hasattr(enc, "default"):
+                self._default_padding[mapper.target_field] = enc.default
+
     def _create_mappers(self, **kwargs):
         self._mappers = []
         self._create_wordmap_encoder()
         self._create_tagmap_encoder()
         self._create_category_encoder()
         self._create_additional_encoders()
+
+        self._collect_pad_values_for_fields()
 
     def _create_additional_encoders(self):
         pass
@@ -372,6 +433,8 @@ class Batcher:
             if self._labelmap_path.is_file():
                 labelmap = TagMap.load(self._labelmap_path)
             else:
+                if not self._unique_tags_and_labels_path.is_file():
+                    return
                 unique_tags_and_labels = read_mapping_from_json(self._unique_tags_and_labels_path)
                 if "category" not in unique_tags_and_labels:
                     return
@@ -425,10 +488,10 @@ class Batcher:
             if preproc_fn is None:
                 def preproc_fn(x):
                     return x
-            blank = np.ones((self._max_seq_len,), dtype=np.int32) * pad
+            # blank = np.ones((self._max_seq_len,), dtype=np.int32) * pad
             encoded = np.array([encoder[preproc_fn(w)] for w in seq], dtype=np.int32)
-            blank[0:min(encoded.size, self._max_seq_len)] = encoded[0:min(encoded.size, self._max_seq_len)]
-            return blank
+            # blank[0:min(encoded.size, self._max_seq_len)] = encoded[0:min(encoded.size, self._max_seq_len)]
+            return encoded
 
         def encode_item(item, encoder, pad=None, preproc_fn=None):
             if preproc_fn is None:
@@ -450,9 +513,10 @@ class Batcher:
                 assert isinstance(enc_fn, Callable), "encoder_fn should be either `item`/`seq` or a callable"
 
                 encoded = enc_fn(
-                    record[mapper.field], encoder=mapper.encoder, pad=mapper.encoder.default,
+                    record[mapper.field], encoder=mapper.encoder,
+                    pad=mapper.encoder.default if hasattr(mapper.encoder, "default") else None,
                     preproc_fn=mapper.preproc_fn
-                ).astype(mapper.dtype)
+                )
 
                 if mapper.dtype is not None:
                     output[mapper.target_field] = encoded.astype(mapper.dtype)
@@ -461,7 +525,8 @@ class Batcher:
 
         num_tokens = len(record.tokens)
 
-        output["lens"] = np.array(num_tokens if num_tokens < self._max_seq_len else self._max_seq_len, dtype=np.int32)
+        # output["lens"] = np.array(num_tokens if num_tokens < self._max_seq_len else self._max_seq_len, dtype=np.int32)
+        output["lens"] = np.array(num_tokens, dtype=np.int32)
         output["id"] = record.id
 
         # self._batch_cache[record.id] = output
@@ -469,26 +534,57 @@ class Batcher:
 
         return output
 
-    def format_batch(self, batch):
-        fbatch = defaultdict(list)
+    def collate(self, batch):
+        if len(batch) == 0:
+            return {}
 
-        for sent in batch:
-            for key, val in sent.items():
-                fbatch[key].append(val)
+        keys = batch[0].keys()
 
-        max_len = max(fbatch["lens"])
+        def get_key(key):
+            for sent in batch:
+                yield sent[key]
+
+        max_len = min(max(get_key("lens")), self._max_seq_len)
+
+        def add_padding(encoded, pad):
+            blank = np.ones((max_len,), dtype=np.int32) * pad
+            blank[0:min(encoded.size, max_len)] = encoded[0:min(encoded.size, max_len)]
+            return blank
 
         batch_o = {}
 
-        for field, items in fbatch.items():
+        for field in keys:
             if field == "lens" or field == "label":
-                batch_o[field] = np.array(items, dtype=np.int32)
+                batch_o[field] = np.fromiter((min(i, max_len) for i in get_key(field)), dtype=np.int32)
             elif field == "id":
-                batch_o[field] = np.array(items, dtype=np.int64)
+                batch_o[field] = np.fromiter(get_key(field), dtype=np.int64)
             elif field == "tokens" or field == "replacements":
-                batch_o[field] = items
+                batch_o[field] = get_key(field)
             else:
-                batch_o[field] = np.stack(items)[:, :max_len]
+                batch_o[field] = np.array(
+                    [add_padding(item, self._default_padding[field]) for item in get_key(field)],
+                    dtype=np.int64
+                )
+
+        # fbatch = defaultdict(list)
+
+        # for sent in batch:
+        #     for key, val in sent.items():
+        #         fbatch[key].append(val)
+
+        # max_len = max(fbatch["lens"])
+
+        # batch_o = {}
+        #
+        # for field, items in fbatch.items():
+        #     if field == "lens" or field == "label":
+        #         batch_o[field] = np.array(items, dtype=np.int32)
+        #     elif field == "id":
+        #         batch_o[field] = np.array(items, dtype=np.int64)
+        #     elif field == "tokens" or field == "replacements":
+        #         batch_o[field] = items
+        #     else:
+        #         batch_o[field] = np.stack(items)[:, :max_len]
 
         return batch_o
 
@@ -509,7 +605,7 @@ class Batcher:
             # else:
             batch.append(self._encode_for_batch(self.get_record_with_id(id_)))
             if len(batch) >= self._batch_size:
-                yield self.format_batch(batch)
+                yield self.collate(batch)
                 batch.clear()
 
         # for sent in records:
@@ -518,7 +614,7 @@ class Batcher:
         #         yield self.format_batch(batch)
         #         batch = []
         if len(batch) > 0:
-            yield self.format_batch(batch)
+            yield self.collate(batch)
         # yield self.format_batch(batch)
 
     def __iter__(self):
@@ -537,6 +633,11 @@ class Batcher:
             if length < self._max_seq_len:
                 total_valid += 1
         return int(ceil(total_valid / self._batch_size))
+
+    def tokenize_and_encode(self, text, annotations):
+        record = self._prepare_record(0, text, annotations)
+        encoded = self._encode_for_batch(record)
+        return encoded
 
 
 class PythonBatcher(Batcher):
@@ -561,7 +662,7 @@ class PythonBatcher(Batcher):
         assert len(parsed["tokens"]) == len(repl_tags)
 
         if self._mask_unlabeled_declarations:
-            unlabeled_dec = filter_unlabeled(annotations["entities"], get_declarations(text))
+            unlabeled_dec = filter_unlabeled(annotations.get("entities", []), get_declarations(text))
             unlabeled_dec_tags = self._biluo_tags_from_offsets(doc, unlabeled_dec)
             assert len(parsed["tokens"]) == len(unlabeled_dec_tags)
         else:
@@ -592,6 +693,13 @@ class PythonBatcher(Batcher):
                 )
             )
             self.graphpad = graphmap_enc.default
+
+            self._mappers.append(
+                MapperSpec(
+                    field="replacements", target_field="graph_mask", encoder=NoMaskEncoder(),
+                    preproc_fn=self._strip_biluo_and_try_cast_to_int, dtype=np.bool
+                )
+            )
         else:
             self.graphpad = 0
 
@@ -619,21 +727,7 @@ class PythonBatcher(Batcher):
 
         self._create_graph_encoder()
 
-        class NoMaskEncoder(ValueEncoder):
-            def __init__(self, default=False, *args, **kwargs):
-                super(NoMaskEncoder, self).__init__(default=default)
 
-            def _initialize(self, values, value_to_code):
-                pass
-
-            def __getitem__(self, item):
-                if item == "O":
-                    return False
-                else:
-                    return True
-
-            def get(self, key, default=0):
-                return self.__getitem__(key)
 
         self._mappers.append(
             MapperSpec(
@@ -641,16 +735,6 @@ class PythonBatcher(Batcher):
                 preproc_fn=self._strip_biluo_and_try_cast_to_int, dtype=np.bool
             )
         )
-
-        class OMaskEncoder(NoMaskEncoder):
-            def __init__(self, default=True, *args, **kwargs):
-                super(OMaskEncoder, self).__init__(default=default)
-
-            def __getitem__(self, item):
-                if item == "O":
-                    return True
-                else:
-                    return False
 
         self._mappers.append(
             MapperSpec(

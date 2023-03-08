@@ -335,6 +335,7 @@ class ModelTrainer:
                 prefix=batch['prefix'], suffix=batch['suffix'],
                 graph_ids=batch['graph_ids'] if 'graph_ids' in batch else None,
                 graph_embs=batch['graph_embs'] if 'graph_embs' in batch else None,
+                graph_mask=batch['graph_mask'] if 'graph_mask' in batch else None,
                 labels=batch['tags'], lengths=batch['lens'],
                 extra_mask=batch['no_loc_mask'] if self.no_localization else batch['hide_mask'],
                 # class_weights=batch['class_weights'],
