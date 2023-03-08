@@ -350,7 +350,7 @@ class PythonCFGraphBuilder(PythonAstGraphBuilder):
             # can contain quotes
             # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
             # https://www.python.org/dev/peps/pep-0484/#forward-references
-            annotation_position = self._get_positions_from_node(node.returns)
+            annotation_position = self._get_positions_from_node(node.returns, full=True)
             annotation_string = self._get_source_from_range(*annotation_position)
             annotation = self._get_node(
                 name=annotation_string, type=self._node_types["type_annotation"]

@@ -608,7 +608,124 @@ class PythonAstGraphBuilder(object):
         except:
             return None
 
-    def _get_positions_from_node(self, node):
+    def _handle_span_exceptions(self, node, positions):
+        line = positions["line"]
+        end_line = positions["end_line"]
+        col_offset = positions["col_offset"]
+        end_col_offset = positions["end_col_offset"]
+
+        offset_reduction_spec = {
+            ast.ExceptHandler: (6, "except"),
+            ast.Try: (3, "try"),
+            ast.For: (3, "for"),
+            ast.AsyncFor: (9, "async for"),
+            ast.While: (5, "while"),
+            ast.With: (4, "with"),
+            ast.AsyncWith: (10, "async with"),
+            ast.FunctionDef: (3, "def"),
+            ast.AsyncFunctionDef: (9, "async def"),
+            ast.ClassDef: (5, "class"),
+            ast.Import: (6, "import"),
+            ast.Delete: (3, "del"),
+            ast.ImportFrom: (4, "from"),
+            ast.List: (1, "["),
+            ast.Dict: (1, "{"),
+            ast.Set: (1, "{"),
+            ast.Tuple: None,  # possible variants: (1,2) and 1,2
+            ast.ListComp: (1, "["),
+            ast.DictComp: (1, "{"),
+            ast.SetComp: (1, "{"),
+            ast.GeneratorExp: None,  # cannot if passed as argument ot function
+            ast.Starred: (1, "*"),
+            ast.Return: (6, "return"),
+            ast.Global: (6, "global"),
+            ast.Nonlocal: (8, "nonlocal"),
+            ast.Assert: (6, "assert"),
+            ast.Lambda: (6, "lambda"),
+            ast.Raise: (5, "raise"),
+            ast.Await: (5, "await"),
+            ast.Yield: (5, "yield"),
+            ast.YieldFrom: (10, "yield from"),
+        }
+
+        exception_handled = False
+        expected_string = None
+        skip_check = False
+        node_type = type(node)
+        if node_type in offset_reduction_spec:
+            spec = offset_reduction_spec[node_type]
+            if spec is not None:
+                char_len, expected_string = offset_reduction_spec[node_type]
+                end_line = line
+                end_col_offset = col_offset + char_len
+                exception_handled = True
+        elif isinstance(node, ast.If):
+            end_line = line
+            if self._source_lines[line][col_offset] == "i":
+                end_col_offset = col_offset + 2
+                expected_string = "if"
+            elif self._source_lines[line][col_offset] == "e":
+                end_col_offset = col_offset + 4
+                expected_string = "elif"
+            else:
+                assert False
+            exception_handled = True
+        elif isinstance(node, ast.arg):
+            # some issues when the arguments when there is a type annotation and there is new
+            # line after colon. example variable:\n type_ann
+            skip_check = True
+        elif type(node) in {
+            ast.Name,  # Should not even try since type ann extraction depends on this
+            ast.Attribute,  # Should not even try since type ann extraction depends on this
+            ast.Constant,
+            ast.JoinedStr,
+            ast.Expr
+        }:  # do not bother
+            pass
+        elif node_type in {
+            ast.Compare,  # can use comparator operator
+            ast.BoolOp,  # could be multiline
+            ast.BinOp,  # could be multiline
+            ast.Assign,  # could be multiline
+            ast.AnnAssign,  # could be multiline
+            ast.AugAssign,  # could be multiline
+            ast.Subscript,  # could be multiline
+            ast.Call,  # need to parse
+            ast.UnaryOp,  # need to parse
+            ast.IfExp,  # need to parse
+            ast.Pass,  # seem to be fine
+            ast.Break,  # seem to be fine
+            ast.Continue,  # seem to be fine
+        }:  # potential
+            pass
+        # else:
+        #     assert False
+
+        positions = {
+            "line": line,
+            "end_line": end_line,
+            "col_offset": col_offset,
+            "end_col_offset": end_col_offset
+        }
+        positions = self._into_offset(positions)
+
+        if skip_check is False:
+            if exception_handled is False:
+                try:
+                    ast.parse(self._original_source[positions[0]: positions[1]])
+                except SyntaxError:
+                    try:
+                        ast.parse("(" + self._original_source[positions[0]: positions[1]] + ")")
+                    except:
+                        raise Exception("Range parsed incorrectly")
+            else:
+                assert (
+                    expected_string == self._original_source[positions[0]: positions[1]]
+                ), f"{expected_string} != {self._original_source[positions[0]: positions[1]]}"
+
+        return positions
+
+    def _get_positions_from_node(self, node, full=False):
         if node is not None and hasattr(node, "lineno"):
             positions = {
                 "line": node.lineno - 1,
@@ -616,7 +733,10 @@ class PythonAstGraphBuilder(object):
                 "col_offset": node.col_offset,
                 "end_col_offset": node.end_col_offset
             }
-            positions = self._into_offset(positions)
+            positions_ = self._into_offset(positions)
+            if full is False:
+                positions_ = self._handle_span_exceptions(node, positions)
+            positions = positions_
         else:
             positions = None
         return positions
@@ -711,10 +831,14 @@ class PythonAstGraphBuilder(object):
         if (
                 (
                     self._node_pool[new_edge.src].type.name == "instance" and
-                    self._node_pool[new_edge.dst].type.name not in {"FunctionDef"}
+                    self._node_pool[new_edge.dst].type.name not in {
+                        "FunctionDef", "AsyncFunctionDef", "Global", "Nonlocal", "ImportFrom", "Import", "alias",
+                    }  # no position information
                 ) or (
                     self._node_pool[new_edge.src].type.name == "mention" and
-                    self._node_pool[new_edge.dst].type.name not in {"instance", "FunctionDef"}
+                    self._node_pool[new_edge.dst].type.name not in {
+                        "instance", "FunctionDef", "AsyncFunctionDef", "Nonlocal", "ImportFrom", "Import", "alias",
+                    }
                 )
         ):
             if new_edge.offset_start is None:
@@ -921,7 +1045,7 @@ class PythonAstGraphBuilder(object):
             # can contain quotes
             # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
             # https://www.python.org/dev/peps/pep-0484/#forward-references
-            annotation_position = self._get_positions_from_node(node.returns)
+            annotation_position = self._get_positions_from_node(node.returns, full=True)
             annotation_string = self._get_source_from_range(*annotation_position)
             annotation = self._get_node(
                 name=annotation_string, type=self._node_types["type_annotation"]
@@ -988,7 +1112,7 @@ class PythonAstGraphBuilder(object):
             # can contain quotes
             # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
             # https://www.python.org/dev/peps/pep-0484/#forward-references
-            positions = self._get_positions_from_node(node.annotation)
+            positions = self._get_positions_from_node(node.annotation, full=True)
             annotation_string = self._get_source_from_range(*positions)
             annotation = self._get_node(name=annotation_string, type=self._node_types["type_annotation"])
             mention_name = self._get_node(
@@ -1023,7 +1147,7 @@ class PythonAstGraphBuilder(object):
         # can contain quotes
         # https://stackoverflow.com/questions/46458470/should-you-put-quotes-around-type-annotations-in-python
         # https://www.python.org/dev/peps/pep-0484/#forward-references
-        positions = self._get_positions_from_node(node.annotation)
+        positions = self._get_positions_from_node(node.annotation, full=True)
         annotation_string = self._get_source_from_range(*positions)
         annotation = self._get_node(
             name=annotation_string, type=self._node_types["type_annotation"]
