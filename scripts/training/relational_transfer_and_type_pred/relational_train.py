@@ -19,15 +19,7 @@ def iterate_data(data_path):
         yield r
 
 
-def train_model(args):
-
-    args = copy(args.__dict__)
-    config_path = args.pop("config")
-
-    if config_path is None:
-        config = get_graph_config(**args)
-    else:
-        config = load_config(config_path)
+def train_model(config):
 
     date_time = str(datetime.now())
     print("\n\n")
@@ -111,7 +103,7 @@ def train_model(args):
 
 if __name__ == "__main__":
 
-    args = GraphTrainerArgumentParser().parse()
+    config = GraphTrainerArgumentParser().parse()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s:%(levelname)s:%(module)s:%(lineno)d:%(message)s")
 
@@ -124,7 +116,6 @@ if __name__ == "__main__":
     #
     # }
 
-    if not isdir(args.model_output_dir):
-        mkdir(args.model_output_dir)
+    Path(config["TRAINING"]["model_output_dir"]).mkdir(parents=True, exist_ok=True)
 
-    train_model(args)
+    train_model(config)
