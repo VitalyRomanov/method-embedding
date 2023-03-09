@@ -23,29 +23,13 @@ from tqdm import tqdm
 
 
 try:
-    from nhkv import KVStore
+    from nhkv import KVStore, get_or_create_storage
 except ImportError:
     print("Install NHKV: pip install nhkv")
     sys.exit()
 
 
 __kv_storage_registry = {}
-
-
-def get_or_create_cache(path):
-    if isinstance(path, Path):
-        path_key = str(path.absolute())
-    else:
-        path_key = path
-        path = Path(path)
-
-    if path_key not in __kv_storage_registry:
-        if path.is_dir():
-            __kv_storage_registry[path_key] = KVStore.load(path)
-        else:
-            __kv_storage_registry[path_key] = KVStore(path)
-
-    return __kv_storage_registry[path_key]
 
 
 def filter_unlabeled(entities, declarations):
@@ -248,9 +232,9 @@ class Batcher:
         self._cache_dir = self._cache_dir.joinpath(f"{self.__class__.__name__}{self._get_version_code()}")
         self._cache_dir.mkdir(parents=True, exist_ok=True)
 
-        self._data_cache = get_or_create_cache(self._data_cache_path)  #  KVStore(self._data_cache_path)  # dc.Cache(self._data_cache_path)
-        self._length_cache = get_or_create_cache(self._length_cache_path)  # KVStore(self._length_cache_path)
-        self._batch_cache = None  # get_or_create_cache(self._batch_cache_path)  # KVStore(self._batch_cache_path)
+        self._data_cache = get_or_create_storage(KVStore, path=self._data_cache_path)  #  KVStore(self._data_cache_path)  # dc.Cache(self._data_cache_path)
+        self._length_cache = get_or_create_storage(KVStore, path=self._length_cache_path)  # KVStore(self._length_cache_path)
+        self._batch_cache = None  # get_or_create_storage(KVStore, path=self._batch_cache_path)  # KVStore(self._batch_cache_path)
 
     @staticmethod
     def _compute_text_id(text):
