@@ -11,7 +11,7 @@ import pandas
 import torch
 
 from SourceCodeTools.cli_arguments.config import save_config, load_config
-from SourceCodeTools.code.ast.python_ast2 import PythonSharedNodes
+from SourceCodeTools.code.ast.python_ast2 import PythonSharedNodes, PythonNodeEdgeDefinitions
 from SourceCodeTools.code.data.GraphStorage import OnDiskGraphStorageWithFastIteration, InMemoryGraphStorage
 from SourceCodeTools.code.data.DBStorage import SQLiteStorage
 from SourceCodeTools.code.data.dataset.SubwordMasker import SubwordMasker, NodeNameMasker, NodeClfMasker
@@ -491,6 +491,7 @@ class SourceGraphDataset(AbstractDataset):
         from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import special_mapping
         global_reverse = {key for key, val in special_mapping.items()}
         self.edge_types_to_remove.update(global_reverse)
+        self.edge_types_to_remove.update(PythonNodeEdgeDefinitions.reverse_edge_exceptions.values())
 
         all_edge_types = self._graph_storage.get_edge_type_descriptions()
         self.edge_types_to_remove.update(filter(lambda edge_type: edge_type.endswith("_rev"), all_edge_types))
@@ -825,7 +826,55 @@ class SourceGraphDataset(AbstractDataset):
 
         return nodes.append(new_nodes), edges.append(new_edges)
 
-    def _create_graph_from_nodes_and_edges(self, nodes, edges, node_data=None, edge_data=None, n_buckets=200000):
+    def _add_k_hop_edges(self, nodes, edges, k_hops):
+        import networkx as nx
+        from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import special_mapping
+
+        g = nx.from_pandas_edgelist(
+            edges, source="src", target="dst", create_using=nx.DiGraph, edge_attr="type"
+        )
+
+        skip_edges = (
+                set(special_mapping.keys()) |
+                set(special_mapping.values()) |
+                set(PythonNodeEdgeDefinitions.reverse_edge_exceptions.values()) |
+                set(filter(lambda edge_type: edge_type.endswith("_rev"), self._graph_storage.get_edge_type_descriptions()))
+        )
+
+        def expand_edges(edges, node_id, view, edge_prefix, level=0):
+            # edges = []
+            if level < k_hops:
+                if edge_prefix != "":
+                    edge_prefix += "|"
+                for e in view:
+                    next_edge_type = view[e]["type"]
+                    if level > 0:
+                        new_prefix = f"{level}_hop_connection"
+                        # edges.append((node_id, e, new_prefix.rstrip("|")))
+                        edges.append({"src": node_id, "dst": e, "type": new_prefix.rstrip("|")})
+                    else:
+                        new_prefix = edge_prefix + next_edge_type
+                    # edges.append((node_id, e, new_prefix.rstrip("|")))
+                    if next_edge_type in skip_edges:
+                        continue
+                    expand_edges(edges, node_id, g[e], new_prefix, level=level + 1)
+                    # edges.extend(expand_edges(node_id, g[e], new_prefix, level=level+1))
+            return edges
+
+        new_edges = []
+        for node in g.nodes:
+            expand_edges(new_edges, node, g[node], "", level=0)
+
+        new_edges_df = pd.DataFrame.from_records(new_edges)
+        new_edges_id = edges["id"].max() + 1
+        new_edges_df["id"] = range(new_edges_id, new_edges_id + len(new_edges_df))
+        edges_with_k_hop = edges.append(new_edges_df).drop_duplicates(["src", "dst"])
+
+        return nodes, edges_with_k_hop
+
+    def _create_graph_from_nodes_and_edges(
+            self, nodes, edges, node_data=None, edge_data=None, n_buckets=200000, k_hops=0
+    ):
         if node_data is None:
             node_data = {}
         if edge_data is None:
@@ -836,6 +885,9 @@ class SourceGraphDataset(AbstractDataset):
         if self.custom_reverse is not None:
             edges = self._add_custom_reverse(edges)
         self.ensure_connectedness(nodes, edges)
+
+        if k_hops > 0:
+            nodes, edges = self._add_k_hop_edges(nodes, edges, k_hops)
 
         # if self.type_nodes:
         #     nodes, edges = self._add_type_nodes(nodes, edges)
