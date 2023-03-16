@@ -955,8 +955,9 @@ class AstDatasetCreator(AbstractDatasetCreator):
         # pass
 
     def _prepare_environments(self):
+        from time import time_ns
         dataset_location = os.path.dirname(self.path)
-        temp_path = os.path.join(dataset_location, "temp_graph_builder")
+        temp_path = os.path.join(dataset_location, f"temp_graph_builder_{time_ns()}")
         self.temp_path = temp_path
         if os.path.isdir(temp_path):
             raise FileExistsError(f"Directory exists: {temp_path}")
