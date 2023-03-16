@@ -304,6 +304,7 @@ class PythonCFGraphBuilder(PythonAstGraphBuilder):
         nodes_inside = set()
         edges_ = []
         positions = {}
+        has_instances = False
         for e in edges:
             if self._node_pool[e.src].type.name in {"type_annotation", "returned_by"} or \
                     e.type.name in {"local_mention", "instance", "ctx"}:
@@ -311,6 +312,8 @@ class PythonCFGraphBuilder(PythonAstGraphBuilder):
             else:
                 nodes_inside.add(e.src)
                 nodes_inside.add(e.dst)
+            if e.type.name == "instance":
+                has_instances = True
             if e.offset_start is not None:
                 positions[e.src] = (e.offset_start, e.offset_end)
 
@@ -322,6 +325,8 @@ class PythonCFGraphBuilder(PythonAstGraphBuilder):
             } or self._node_pool[n].type.name in {
                 "type_annotation", "Name", "#attr#", "#keyword#", "Op", "Constant", "JoinedStr", "CtlFlow", "astliteral"
             }:
+                if self._node_pool[n].type.name == "mention" and has_instances:
+                    continue
                 self._add_edge(
                     edges_, src=n, dst=attach_to, type=self._edge_types["inside"], scope=self.latest_scope,
                     position=positions.get(n, None)

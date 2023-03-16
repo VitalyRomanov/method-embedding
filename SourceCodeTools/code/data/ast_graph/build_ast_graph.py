@@ -961,7 +961,7 @@ class AstDatasetCreator(AbstractDatasetCreator):
         self.temp_path = temp_path
         if os.path.isdir(temp_path):
             raise FileExistsError(f"Directory exists: {temp_path}")
-        os.mkdir(temp_path)
+        os.makedirs(temp_path, exist_ok=True)
 
         rnd_state = np.random.RandomState(self.seed)
 
