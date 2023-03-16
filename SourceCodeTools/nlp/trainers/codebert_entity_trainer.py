@@ -149,8 +149,12 @@ class CodeBertModelTrainer(ModelTrainer):
     ):
         token_ids[token_ids == len(vocab_mapping)] = vocab_mapping["<unk>"]
         seq_mask = get_length_mask(token_ids, lengths)
+        if graph_mask is not None:
+            graph_mask = graph_mask * seq_mask
+        else:
+            graph_mask = seq_mask
         model_output = model(
-            token_ids, graph_ids, graph_embs=graph_embs, mask=seq_mask, graph_mask=graph_mask * seq_mask,
+            token_ids, graph_ids, graph_embs=graph_embs, mask=seq_mask, graph_mask=graph_mask,
             finetune=finetune
         )
         loss = model.loss(model_output.logits, labels, mask=seq_mask, class_weights=class_weights, extra_mask=extra_mask)
