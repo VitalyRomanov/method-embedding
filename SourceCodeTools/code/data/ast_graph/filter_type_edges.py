@@ -74,3 +74,16 @@ def filter_type_edges_with_chunks(nodes_path, edges_path, kwarg_fn):
 
     os.remove(edges_path)
     os.rename(temp_edges, edges_path)
+
+
+if __name__ == "__main__":
+    def get_writing_mode(is_csv, first_written):
+        kwargs = {}
+        if first_written is True:
+            kwargs["mode"] = "a"
+            if is_csv:
+                kwargs["header"] = False
+        return kwargs
+
+    import sys
+    filter_type_edges_with_chunks(sys.argv[1], sys.argv[2], get_writing_mode)
