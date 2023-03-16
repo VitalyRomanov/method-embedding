@@ -12603,31 +12603,31 @@ def test_graph_builder():
         )
         visualize(graph["nodes"], graph["edges"], f"{node}_{variety}.png", show_reverse=True)
 
-        # variety = "v1.0_control_flow"
-        # graph = source_code_to_graph(code, variety=variety)
-        # print("\t", variety, len(graph["nodes"]), len(graph["edges"]))
-        # desc = make_graph_description(graph)
-        # answers[variety][node]["description"] = desc
-        # assert (
-        #         correct_answers[variety][node]["description"] == json.loads(json.dumps(desc))
-        # )
-        # visualize(graph["nodes"], graph["edges"], f"{node}_{variety}.png", show_reverse=True)
-        #
-        # variety = "v3.5"
-        # graph = source_code_to_graph(
-        #     code, variety=variety, reverse_edges=True, mention_instances=True, bpe_tokenizer_path=bpe_tokenizer_path
-        # )
-        # print("\t", variety, len(graph["nodes"]), len(graph["edges"]))
-        # desc = make_graph_description(graph)
-        # answers[variety][node]["description"] = desc
-        # assert (
-        #         correct_answers[variety][node]["description"] == json.loads(json.dumps(desc))
-        # )
-        # visualize(
-        #     graph["nodes"].rename({"name": "serialized_name"}, axis=1),
-        #     graph["edges"].rename({"src": "source_node_id", "dst": "target_node_id"}, axis=1),
-        #     f"{node}_{variety}_instances.png", show_reverse=True
-        # )
+        variety = "v1.0_control_flow"
+        graph = source_code_to_graph(code, variety=variety)
+        print("\t", variety, len(graph["nodes"]), len(graph["edges"]))
+        desc = make_graph_description(graph)
+        answers[variety][node]["description"] = desc
+        assert (
+                correct_answers[variety][node]["description"] == json.loads(json.dumps(desc))
+        )
+        visualize(graph["nodes"], graph["edges"], f"{node}_{variety}.png", show_reverse=True)
+
+        variety = "v3.5"
+        graph = source_code_to_graph(
+            code, variety=variety, reverse_edges=True, mention_instances=True, bpe_tokenizer_path=bpe_tokenizer_path
+        )
+        print("\t", variety, len(graph["nodes"]), len(graph["edges"]))
+        desc = make_graph_description(graph)
+        answers[variety][node]["description"] = desc
+        assert (
+                correct_answers[variety][node]["description"] == json.loads(json.dumps(desc))
+        )
+        visualize(
+            graph["nodes"].rename({"name": "serialized_name"}, axis=1),
+            graph["edges"].rename({"src": "source_node_id", "dst": "target_node_id"}, axis=1),
+            f"{node}_{variety}_instances.png", show_reverse=True
+        )
 
         variety = "v3.5_control_flow"
         graph = source_code_to_graph(

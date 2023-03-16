@@ -837,7 +837,8 @@ class PythonAstGraphBuilder(object):
                 ) or (
                     self._node_pool[new_edge.src].type.name == "mention" and
                     self._node_pool[new_edge.dst].type.name not in {
-                        "instance", "FunctionDef", "AsyncFunctionDef", "Nonlocal", "ImportFrom", "Import", "alias",
+                        "instance", "FunctionDef", "AsyncFunctionDef", "Global", "Nonlocal", "ImportFrom", "Import",
+                        "alias",
                     }
                 )
         ):
