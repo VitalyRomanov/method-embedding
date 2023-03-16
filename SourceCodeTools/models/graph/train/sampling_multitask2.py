@@ -329,7 +329,7 @@ class SamplingMultitaskTrainer:
                 dataset=dataset,
                 labels_fn=dataset.load_type_prediction,
                 tokenizer_path=tokenizer_path,
-                masker_fn=dataset.create_subword_masker,
+                masker_fn=None,  # dataset.create_subword_masker,
                 preload_for="package",
             )
         )
@@ -536,6 +536,10 @@ class SamplingMultitaskTrainer:
         return self.trainer_params['learning_rate']
 
     @property
+    def weight_decay(self):
+        return self.trainer_params['weight_decay']
+
+    @property
     def batch_size(self):
         return self.trainer_params['batch_size']
 
@@ -616,10 +620,15 @@ class SamplingMultitaskTrainer:
         # AdaHessian  TODO could not run
         # optimizer = Yogi(parameters, lr=self.lr)
         self.optimizer = torch.optim.AdamW(
-            [{"params": parameters}], lr=self.lr, weight_decay=0.5
+            [{"params": parameters}], lr=self.lr, weight_decay=self.weight_decay
         )
         self.sparse_optimizer = torch.optim.SparseAdam(
             [{"params": nodeembedder_params}], lr=self.lr
+        )
+
+        assert (
+            len(set(self.optimizer.param_groups[0]["params"]) | set(self.sparse_optimizer.param_groups[0]["params"])) ==
+            len(set(self.optimizer.param_groups[0]["params"])) + len(set(self.sparse_optimizer.param_groups[0]["params"]))
         )
 
     # def _warm_up_proximity_ns(self, objective, update_ns_callback):

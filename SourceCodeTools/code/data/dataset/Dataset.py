@@ -384,7 +384,8 @@ class SourceGraphDataset(AbstractDataset):
             self, data_path: Union[str, Path], partition, use_node_types: bool = False, use_edge_types: bool = False,
             filter_edges: Optional[List[str]] = None, tokenizer_path: Union[str, Path] = None,
             min_count_for_objectives: int = 1, no_global_edges: bool = False, remove_reverse: bool = False,
-            custom_reverse: Optional[List[str]] = None, use_ns_groups: bool = False, type_nodes=False, **kwargs
+            custom_reverse: Optional[List[str]] = None, use_ns_groups: bool = False, type_nodes=False,
+            max_type_ann_level=3, k_hops=0, **kwargs
     ):
         self.use_node_types = use_node_types
         self.use_edge_types = use_edge_types
@@ -396,6 +397,8 @@ class SourceGraphDataset(AbstractDataset):
         self.custom_reverse = custom_reverse
         self.use_ns_groups = use_ns_groups
         self.type_nodes = type_nodes
+        self.max_type_ann_level = max_type_ann_level
+        self.k_hops = k_hops
 
         self._cache = DatasetCache(self.data_path)
 
@@ -873,7 +876,7 @@ class SourceGraphDataset(AbstractDataset):
         return nodes, edges_with_k_hop
 
     def _create_graph_from_nodes_and_edges(
-            self, nodes, edges, node_data=None, edge_data=None, n_buckets=200000, k_hops=0
+            self, nodes, edges, node_data=None, edge_data=None, n_buckets=200000
     ):
         if node_data is None:
             node_data = {}
@@ -886,8 +889,8 @@ class SourceGraphDataset(AbstractDataset):
             edges = self._add_custom_reverse(edges)
         self.ensure_connectedness(nodes, edges)
 
-        if k_hops > 0:
-            nodes, edges = self._add_k_hop_edges(nodes, edges, k_hops)
+        if self.k_hops > 0:
+            nodes, edges = self._add_k_hop_edges(nodes, edges, self.k_hops)
 
         # if self.type_nodes:
         #     nodes, edges = self._add_type_nodes(nodes, edges)
@@ -1329,7 +1332,7 @@ class SourceGraphDataset(AbstractDataset):
         type_ann = unpersist(join(self.data_path, "type_annotations.json.bz2"))
         type_ann = type_ann.query("dst.apply(@type_is_valid)", local_dict={"type_is_valid": type_is_valid})
         type_ann["dst"] = type_ann["dst"].apply(
-            lambda type_: TypeHierarchyParser(type_, normalize=True).assemble(max_level=3, simplify_nodes=True)
+            lambda type_: TypeHierarchyParser(type_, normalize=True).assemble(max_level=self.max_type_ann_level, simplify_nodes=True)
         )
 
         cache_key = f"{self._get_df_hash(type_ann)}_{self.min_count_for_objectives}"

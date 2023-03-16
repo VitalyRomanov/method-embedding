@@ -19,7 +19,9 @@ graph_config_specification = {
         "random_seed": None,
         "subgraph_id_column": "mentioned_in",
         "subgraph_partition": None,
-        "partition": None
+        "partition": None,
+        "max_type_ann_level": 3,
+        "k_hops": 0
     },
     "TRAINING": {
         "model": "RGCN",
@@ -38,6 +40,7 @@ graph_config_specification = {
         "epochs": 100,
         "batch_size": 128,
         "learning_rate": 1e-3,
+        "weight_decay": 0.01,
 
         "objectives": None,
         "save_each_epoch": False,
@@ -114,6 +117,8 @@ class GraphTrainerArgumentParser(AbstractArgumentParser):
         group.add_argument('--remove_reverse', action='store_true', help="Remove reverse edges from the graph")
         group.add_argument('--custom_reverse', dest='custom_reverse', nargs='+', default=None, help='List of edges for which to add reverse types. Should use together with `remove_reverse`')
         group.add_argument('--restricted_id_pool', dest='restricted_id_pool', default=None, help='???')
+        group.add_argument('--max_type_ann_level', default=3, type=int, help='')
+        group.add_argument('--k_hops', default=0, type=int, help='')
 
     def _add_pretraining_arguments(self):
         group = self._parser.add_argument_group("PRETRAINING")
@@ -161,6 +166,7 @@ class GraphTrainerArgumentParser(AbstractArgumentParser):
         group.add_argument("--external_dataset", default=None, type=str, help='Path to external graph, use for inference')
 
         group.add_argument("--learning_rate", default=None, type=float, help='')
+        group.add_argument("--weight_decay", default=None, type=float, help='')
 
         group.add_argument("--inference_ids_path", default=None, type=str, help='')
 

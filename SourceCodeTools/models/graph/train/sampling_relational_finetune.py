@@ -204,7 +204,7 @@ class RelationalFinetuneTrainer(SamplingMultitaskTrainer):
         # AdaHessian  TODO could not run
         # optimizer = Yogi(parameters, lr=self.lr)
         self.optimizer = torch.optim.AdamW(
-            [{"params": parameters}], lr=self.lr, weight_decay=0.5
+            [{"params": parameters}], lr=self.lr, weight_decay=self.weight_decay
         )
 
     def eval(self):
