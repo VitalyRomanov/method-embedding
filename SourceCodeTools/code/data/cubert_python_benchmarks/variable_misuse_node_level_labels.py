@@ -83,7 +83,7 @@ def get_node_labels(dataset_path):
     labels_ = labels.merge(partition, how="left", left_on="src", right_on="id")
     labels_.drop("id", axis=1, inplace=True)
     assert (labels_.isna().sum() == 0).all()
-
+    labels_["id"] = labels_["src"]
     persist(labels_, join(dataset_path, "misuse_labels.json"))
 
 
