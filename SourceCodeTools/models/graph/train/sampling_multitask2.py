@@ -480,7 +480,7 @@ class SamplingMultitaskTrainer:
         from SourceCodeTools.models.graph.train.objectives.NodeClassificationObjective import ClassifierTargetMapper
 
         def load_labels():
-            filecontent_path = Path(dataset.data_path).joinpath("misuse_edge_labels.json.bz2")
+            filecontent_path = Path(dataset.data_path).joinpath("misuse_labels.json.bz2")
             filecontent = unpersist(filecontent_path)[["src", "label"]]
             return filecontent.rename({"label": "dst"}, axis=1)
 
