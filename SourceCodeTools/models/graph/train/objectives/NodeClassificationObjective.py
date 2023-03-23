@@ -126,11 +126,15 @@ class MisuseNodeClassifierObjective(NodeClassifierObjective):
             scores = scores.cpu().argmax(dim=-1)
             if scores.sum() == 0.:
                 return 0.
+            if labels is not None:
+                labels = labels.cpu()
             return ((labels * scores).sum() / scores.sum()).item()
 
         def compute_recall(scores, labels=None):
             assert labels.sum() > 0.
             scores = scores.cpu().argmax(dim=-1)
+            if labels is not None:
+                labels = labels.cpu()
             return ((labels * scores).sum() / labels.sum()).item()
 
         self._compute_precision = compute_precision
