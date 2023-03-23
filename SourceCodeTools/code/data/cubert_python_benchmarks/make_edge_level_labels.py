@@ -86,7 +86,7 @@ def create_edge_labels(dataset_directory, use_mention_instances):
                             "type": type,
                             "file_id": file_id,
                             "package": package,
-                            "label": "misuse"
+                            "label": "misused"
                         })
                 else:
                     node_type = id2node_type[source_node_id]
@@ -121,6 +121,14 @@ def create_edge_labels(dataset_directory, use_mention_instances):
     print(f"Found {len(misuse_edges)} misuse edges, skipped {len(skipped)} files")
     pd.Series(skipped).to_csv(dataset.joinpath("skipped.csv"), index=False)
     persist(misuse_edges, dataset.joinpath("misuse_edge_labels.json.bz2"))
+
+    if use_mention_instances:
+        node_partition = misuse_edges.drop("id", axis=1)
+        node_partition["id"] = node_partition["src"]
+        node_partition["dst"] = node_partition["label"]
+        to_write = node_partition[["id", "src", "dst", "train_mask", "test_mask", "val_mask"]]
+        assert len(to_write) == to_write["src"].nunique()
+        persist(node_partition[["id", "src", "dst", "train_mask", "test_mask", "val_mask"]], dataset.joinpath("misuse_labels.json.bz2"))
 
 
 if __name__ == "__main__":
