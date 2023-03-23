@@ -529,13 +529,17 @@ class SGMisuseNodesDataLoader(SGNodesDataLoader):
                 if positive_indices is not None and positive_indices.sum() == 0:
                     continue
 
-                if positive_indices is not None and partition == "train_mask":
-                    misused_node = subgraph_["edges"].query(f"dst == {indices[positive_indices.tolist().index(1)]} and type_backup == 'instance'")["src"].tolist()[0]
-                    misuse_instances = subgraph_["edges"].query(f"src == {misused_node} and type_backup == 'instance'")[
-                        "dst"].tolist()
-                    misuse_node_mask = [ind in misuse_instances for ind in indices]
-                else:
-                    misuse_node_mask = None
+                # probably the idea of the misuse mask is to take all the occurrences of the variable and do
+                # predictions only for them. allows to reduce the imbalance between classes and increase training speed.
+                # if positive_indices is not None and partition == "train_mask":
+                #     misused_node = subgraph_["nodes"].query(f"original_id == {indices[positive_indices.tolist().index(1)]} and type_backup == 'instance'")["id"].tolist()[0]
+                #     misuse_instances = subgraph_["edges"].query(f"src == {misused_node} and type_backup != 'instance_rev'")["dst"].tolist()
+                #     # misused_node = subgraph_["edges"].query(f"dst == {indices[positive_indices.tolist().index(1)]} and type_backup == 'instance'")["src"].tolist()[0]
+                #     # misuse_instances = subgraph_["edges"].query(f"src == {misused_node} and type_backup == 'instance'")["dst"].tolist()
+                #     misuse_node_mask = [ind in misuse_instances for ind in indices]
+                # else:
+                #     misuse_node_mask = None
+                misuse_node_mask = None
 
                 input_nodes = blocks[0].srcnodes["node_"].data["embedding_id"]
 
