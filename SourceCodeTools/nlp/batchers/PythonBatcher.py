@@ -29,9 +29,6 @@ except ImportError:
     sys.exit()
 
 
-__kv_storage_registry = {}
-
-
 def filter_unlabeled(entities, declarations):
     """
     Get a list of declarations that were not mentioned in `entities`
