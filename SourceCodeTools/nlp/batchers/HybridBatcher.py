@@ -4,31 +4,44 @@ import dgl
 import numpy as np
 
 from SourceCodeTools.code.annotator_utils import resolve_self_collisions2
-from SourceCodeTools.code.data.ast_graph.build_ast_graph import ast_graph_for_single_example
-from SourceCodeTools.code.data.dataset.Dataset import SimpleGraphCreator, SourceGraphDataset
-from SourceCodeTools.models.training_config import get_config
+from SourceCodeTools.code.data.ast_graph.build_ast_graph import ast_graph_for_single_example, source_code_to_graph
+from SourceCodeTools.code.data.dataset.Dataset import SimpleGraphCreator, SourceGraphDataset, ProxyDataset
+from SourceCodeTools.nlp import ShiftingValueEncoder
 from SourceCodeTools.nlp.batchers import PythonBatcher
 from SourceCodeTools.nlp.batchers.PythonBatcher import MapperSpec
 
 
 class HybridBatcher(PythonBatcher):
     def __init__(self, *args, **kwargs):
-        dataset_config = get_config(data_path=kwargs["cache_dir"].parent)
-        self._graph_creator = SourceGraphDataset(
-            **dataset_config["DATASET"], **dataset_config["TOKENIZER"]
-        )
+        self._graph_config = kwargs.pop("graph_config")
+        assert kwargs["cache_dir"] is not None
+        self._graph_config["DATASET"]["data_path"] = kwargs["cache_dir"]
         super(HybridBatcher, self).__init__(*args, **kwargs)
 
     def _prepare_tokenized_sent(self, sent):
         text, annotations = sent
 
-        nodes, edges, offsets = ast_graph_for_single_example(text, "/Users/LTV/dev/method-embeddings/examples/sentencepiece_bpe.model", track_offsets=True)
+        graph = source_code_to_graph(
+            text,
+            variety="v2.5",
+            bpe_tokenizer_path=self._graph_config["TOKENIZER"]["tokenizer_path"],
+            reverse_edges=True,
+            mention_instances=False, save_node_strings=True
+        )
+        nodes, edges, offsets = graph["nodes"], graph["edges"], graph["offsets"]
+
         edges = edges.rename({"source_node_id": "src", "target_node_id": "dst"}, axis=1)
         nodes = nodes.rename({"serialized_name": "name"}, axis=1)
-        graph = self._graph_creator._create_graph_from_nodes_and_edges(nodes, edges)
+
+        graph_creator = ProxyDataset(
+            storage_kwargs={"nodes": nodes, "edges": edges},
+            **self._graph_config["DATASET"], **self._graph_config["TOKENIZER"]
+        )
+
+        graph = graph_creator.create_graph()
 
         doc = self._nlp(text)
-        ents = annotations['entities']
+        ents = annotations.get('entities', [])
         annotations['replacements'] = resolve_self_collisions2(
             list(zip(offsets["start"], offsets["end"], offsets["node_id"]))
         )
@@ -46,17 +59,31 @@ class HybridBatcher(PythonBatcher):
             "tokens": tokens,
             "tags": ents_tags,
             "graph": graph,
+            "nodes": nodes,
+            "edges": edges,
+            "offsets": offsets
         }
 
         output.update(self._parse_additional_tags(text, annotations, doc, output))
 
         return output
 
+    def _create_graph_encoder(self):
+        graphmap_enc = ShiftingValueEncoder()
+        # graphmap_enc.set_default(len(self._graphmap))
+        self._mappers.append(
+            MapperSpec(
+                field="replacements", target_field="graph_ids", encoder=graphmap_enc,
+                preproc_fn=self._strip_biluo_and_try_cast_to_int, dtype=np.int32
+            )
+        )
+        self.graphpad = graphmap_enc.default
+
     def _create_additional_encoders(self):
 
         super()._create_additional_encoders()
 
-        def graph_encoder(*args):
+        def graph_encoder(*args, **kwargs):
             graph = args[0]
             return graph
 
@@ -67,7 +94,7 @@ class HybridBatcher(PythonBatcher):
             )
         )
 
-    def format_batch(self, batch):
+    def collate(self, batch):
         fbatch = defaultdict(list)
 
         for sent in batch:
