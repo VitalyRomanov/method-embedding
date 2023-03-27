@@ -92,7 +92,15 @@ class AdapterDoc:
             _b2c = get_byte_to_char_map(self._original_text)
             _c2b = dict(zip(_b2c.values(), _b2c.keys()))
 
-            offsets = [(_c2b[o[0]], _c2b[o[1]], o[2]) for o in offsets]
+            offsets = []
+            for o in offsets:
+                try:
+                    offsets.append((_c2b[o[0]], _c2b[o[1]], o[2]))
+                except KeyError:
+                    continue
+            # encountered an error which resulted in offset span being outside the length of the original string.
+            # not sure about the cause, could be python bug?. let's simply skip such offsets for now.
+            # offsets = [(_c2b[o[0]], _c2b[o[1]], o[2]) for o in offsets]
 
         if self._start_token_adjustment_amount != 0:
             offsets = [(o[0] + self._start_token_adjustment_amount, o[1] + self._start_token_adjustment_amount, o[2]) for o in offsets]
