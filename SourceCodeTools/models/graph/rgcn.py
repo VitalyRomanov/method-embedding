@@ -81,6 +81,7 @@ class RelGraphConvLayer(nn.Module):
         self.activation = activation
         self.self_loop = self_loop
         self.use_gcn_checkpoint = use_gcn_checkpoint
+        self.glu = nn.GLU()
 
         self.use_weight = weight
         self.use_basis = num_bases < len(self.rel_names) and weight
@@ -165,6 +166,7 @@ class RelGraphConvLayer(nn.Module):
         hs = self.do_convolution(g, inputs_src, wdict)
 
         def _apply(ntype, h):
+            h = self.glu(h.tile(1, 2))
             if self.self_loop:
                 h = h + matmul(inputs_dst[ntype], self.loop_weight)
             if self.bias:
