@@ -70,7 +70,7 @@ graph_config_specification = {
         "node_emb_size": 100,
         "h_dim": None,
         "n_layers": 5,
-        "use_self_loop": True,
+        "use_self_loop": False,
 
         "use_gcn_checkpoint": False,
         "use_att_checkpoint": False,
@@ -79,7 +79,7 @@ graph_config_specification = {
         'num_bases': 10,
         'dropout': 0.0,
 
-        'activation': "relu",
+        'activation': None,  #"leaky_relu",
         # torch.nn.functional.hardswish], #[torch.nn.functional.hardtanh], #torch.nn.functional.leaky_relu
     },
     "TOKENIZER": {
