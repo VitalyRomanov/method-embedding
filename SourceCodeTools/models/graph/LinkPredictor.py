@@ -3,7 +3,6 @@ from enum import Enum
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 
 class ScorerObjectiveOptimizationDirection(Enum):
@@ -94,11 +93,12 @@ class LinkClassifier(AbstractNNLinkScorer):
         # self.norm = nn.BatchNorm1d(concat_emb_size) # LayerNorm
         self.l1 = nn.Linear(concat_emb_size, self._h_dim)
         self.logits = nn.Linear(self._h_dim, num_classes)
+        self.act = nn.ELU()
 
     def forward(self, x1, x2, **kwargs):
         x = torch.cat([x1, x2], dim=-1)
         # x = self.norm(x)
-        x = F.relu(self.l1(x))
+        x = self.act(self.l1(x))
         return self.logits(x)
 
 
@@ -112,11 +112,12 @@ class BilinearLinkClassifier(AbstractNNLinkScorer):
         self.l2_2 = nn.Linear(self._h_dim, self._h_dim, bias=False)
 
         self.bilinear = nn.Bilinear(self._h_dim, self._h_dim, self._num_classes)
+        self.act = nn.ELU()
 
     def forward(self, x1, x2, **kwargs):
 
-        x1_l1 = self.l1_2(F.relu(self.l1_1(x1)))
-        x2_l2 = self.l2_2(F.relu(self.l2_1(x2)))
+        x1_l1 = self.l1_2(self.act(self.l1_1(x1)))
+        x2_l2 = self.l2_2(self.act(self.l2_1(x2)))
 
         return self.bilinear(x1_l1, x2_l2)
 
@@ -146,10 +147,11 @@ class DirectedCosineLinkScorer(AbstractCosineLinkScorer):
         self.l1_2 = nn.Linear(h_dim, h_dim)
         self.l2_1 = nn.Linear(input_dim2, h_dim)
         self.l2_2 = nn.Linear(h_dim, h_dim)
+        self.act = nn.ELU()
 
     def forward(self, x1, x2, **kwargs):
-        x1 = self.l1_2(F.relu(self.l1_1(x1)))
-        x2 = self.l2_2(F.relu(self.l2_1(x2)))
+        x1 = self.l1_2(self.act(self.l1_1(x1)))
+        x2 = self.l2_2(self.act(self.l2_1(x2)))
         return self.cos(x1, x2)
 
 
@@ -177,10 +179,11 @@ class DirectedL2LinkScorer(AbstractL2LinkScorer):
         self.l1_2 = nn.Linear(h_dim, h_dim)
         self.l2_1 = nn.Linear(input_dim2, h_dim)
         self.l2_2 = nn.Linear(h_dim, h_dim)
+        self.act = nn.ELU()
 
     def forward(self, x1, x2, **kwargs):
-        x1 = self.l1_2(F.relu(self.l1_1(x1)))
-        x2 = self.l1_2(F.relu(self.l1_2(x2)))
+        x1 = self.l1_2(self.act(self.l1_1(x1)))
+        x2 = self.l1_2(self.act(self.l1_2(x2)))
         return torch.norm(x1 - x2, dim=-1, keepdim=True)
 
 
