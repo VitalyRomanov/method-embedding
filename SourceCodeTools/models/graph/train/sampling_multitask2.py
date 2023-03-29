@@ -19,7 +19,7 @@ import logging
 from tqdm import tqdm
 
 from SourceCodeTools.code.data.dataset.DataLoader import SGNodesDataLoader, SGEdgesDataLoader, SGSubgraphDataLoader, \
-    SGMisuseEdgesDataLoader, SGMisuseNodesDataLoader
+    SGMisuseEdgesDataLoader, SGMisuseNodesDataLoader, SGTrueEdgesDataLoader
 from SourceCodeTools.code.data.file_utils import unpersist
 from SourceCodeTools.models.Embedder import Embedder
 from SourceCodeTools.models.graph.TargetLoader import TargetLoader, GraphLinkTargetLoader, \
@@ -397,17 +397,17 @@ class SamplingMultitaskTrainer:
             return edges[["src", "dst"]]
 
         self.objectives.append(
-            self._create_node_level_objective(
+            self._create_edge_level_objective(
                 objective_name="EdgePrediction",
                 objective_class=GraphLinkObjective,
                 dataset=dataset,
                 labels_fn=load_edge_prediction,
-                label_loader_class=GraphLinkTargetLoader,
-                label_loader_params={"compact_dst": False},
-                dataloader_class=SGEdgesDataLoader,
+                label_loader_class=ClassifierTargetMapper,
+                # label_loader_params={"compact_dst": True},
+                dataloader_class=SGTrueEdgesDataLoader,
                 tokenizer_path=tokenizer_path,
                 masker_fn=None,
-                preload_for="package" # "file", "mention"
+                preload_for="file" # "package", "mention"
             )
         )
 
@@ -940,6 +940,8 @@ def resolve_activation_function(function_name):
     known_functions = {
         "tanh": torch.tanh
     }
+    if function_name is None:
+        return None
     if function_name in known_functions:
         return known_functions[function_name]
     return eval(f"nn.functional.{function_name}")
