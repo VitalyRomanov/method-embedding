@@ -1308,8 +1308,8 @@ class SourceGraphDataset(AbstractDataset):
         # when using this objective remove following edges
         # defined_in_*, executed_*, prev, next, *global_edges
         edge_types_for_prediction = {
-            "next", "prev", "defined_in_module", "defined_in_class", "defined_in_function"
-        } | {etype for etype in edge_types if etype.startswith("executed_")}
+            "next", "defined_in_module", "defined_in_class", "defined_in_function",  # , "prev",
+        } | {etype for etype in edge_types if etype.startswith("executed_") and not etype.endswith("_rev")}
 
         cache_key = self._get_df_hash(pd.Series(sorted(list(edge_types_for_prediction))))
         result = self._load_cache_if_exists(cache_key)
@@ -1320,10 +1320,10 @@ class SourceGraphDataset(AbstractDataset):
             #     groups = self.get_negative_sample_groups()
             #     valid_nodes = valid_nodes.intersection(set(groups["id"].tolist()))
 
-            result = edges[["src", "dst", "type"]]
+            result = edges[["id", "type"]]  # edges[["src", "dst", "type"]]
             self._write_to_cache(result, cache_key)
 
-        return result.rename({"type": "label"}, axis=1)
+        return result.rename({"id": "src", "type": "dst"}, axis=1)
 
     def load_type_prediction(self):
         from SourceCodeTools.code.data.type_annotation_dataset.type_parser import TypeHierarchyParser
