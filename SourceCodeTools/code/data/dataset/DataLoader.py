@@ -633,6 +633,8 @@ class SGTrueEdgesDataLoader(SGNodesDataLoader):
     def create_batches(self, subgraph_generator, number_of_hops, batch_size, partition, labels_for):
 
         sampler = MultiLayerFullNeighborSampler(number_of_hops)
+        pool = []
+        in_pool = 0
 
         # for group, subgraph, masker, labels_loader, edge_labels_loader, edges_bloom_filter in subgraph_generator:
         for subgraph_ in subgraph_generator:
@@ -643,11 +645,25 @@ class SGTrueEdgesDataLoader(SGNodesDataLoader):
             edges_bloom_filter = subgraph_["edges_bloom_filter"]
 
             edges_for_batching = self._get_ids_from_partition(subgraph, partition, labels_for)
-            if self._num_for_batching_total(edges_for_batching) == 0:
+            _num_for_batching_total = self._num_for_batching_total(edges_for_batching)
+
+            if _num_for_batching_total == 0:
+                continue
+            else:
+                pool.append(subgraph)
+                in_pool += _num_for_batching_total
+
+            if in_pool < self.batch_size:
                 continue
 
+            graphs = [s for s in pool]
+            graph = dgl.batch(graphs)
+            edges_for_batching = self._get_ids_from_partition(graph, partition, labels_for)
+            in_pool = 0
+            pool.clear()
+
             loader = EdgeDataLoader(
-                subgraph, edges_for_batching, sampler, batch_size=self.batch_size, shuffle=False, num_workers=0
+                graph, edges_for_batching, sampler, batch_size=self.batch_size, shuffle=False, num_workers=0
             )
 
             for input_nodes, pair_graph, blocks in loader:
