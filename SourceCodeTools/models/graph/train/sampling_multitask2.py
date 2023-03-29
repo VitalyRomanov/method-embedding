@@ -692,7 +692,19 @@ class SamplingMultitaskTrainer:
 
             objective_iterators = [objective.get_iterator("train") for objective in self.objectives]
 
-            longlongloop = range(num_batches * 4)  # make sure there are more steps than the actual number of steps
+            class InfiniteLoop:
+                def __init__(self):
+                    self.step = 0
+
+                def __iter__(self):
+                    self.step = 0
+                    return self
+
+                def __next__(self):
+                    self.step += 1
+                    return self.step - 1
+
+            longlongloop = InfiniteLoop()  # range(num_batches * 4)  # make sure there are more steps than the actual number of steps
 
             for step in tqdm(longlongloop, total=num_batches, desc=f"Epoch {self.epoch}"):
 
