@@ -55,33 +55,26 @@ class GraphLinkClassificationObjective(GraphLinkObjective):
         return (pos_scores, None), scores, loss
 
     def forward(
-            self, input_nodes, input_mask, blocks, positive_indices, negative_indices,
+            self, input_nodes, input_mask, blocks,
             update_ns_callback=None, subgraph=None, **kwargs
     ):
         gnn_output = self._graph_embeddings(input_nodes, blocks, mask=input_mask)
         unique_embeddings = gnn_output.output
 
-        all_embeddings = unique_embeddings[kwargs["slice_map"]]
+        src_embeddings = unique_embeddings[kwargs["src_slice_map"]]
+        dst_embeddings = unique_embeddings[kwargs["dst_slice_map"]]
 
-        graph_embeddings = all_embeddings[kwargs["src_nodes_mask"]]
-        positive_embeddings = all_embeddings[kwargs["positive_nodes_mask"]]
-        negative_embeddings = all_embeddings[kwargs["negative_nodes_mask"]]
-
-        # non_src_nodes_mask = ~kwargs["src_nodes_mask"]
-        # non_src_ids = kwargs["compute_embeddings_for"][non_src_nodes_mask]
-        # non_src_embeddings = all_embeddings[non_src_nodes_mask].cpu().detach().numpy()
-
-        labels_pos = kwargs["positive_labels"]  #  self._create_positive_labels(positive_indices).to(self.device)
-        labels_neg = kwargs["negative_labels"]  # self._create_negative_labels(negative_embeddings).to(self.device)
+        labels = kwargs["labels"]
 
         pos_neg_scores, avg_scores, loss = self._compute_scores_loss(
-            graph_embeddings, positive_embeddings, negative_embeddings, labels_pos, labels_neg
+            node_embs=src_embeddings, positive_embs=dst_embeddings, negative_embs=None,
+            positive_labels=labels, negative_labels=None
         )
 
         return ObjectiveOutput(
             gnn_output=gnn_output,
             logits=pos_neg_scores,
-            labels=(labels_pos, labels_neg),
+            labels=(labels, None),
             loss=loss,
             scores=avg_scores,
             prediction=(

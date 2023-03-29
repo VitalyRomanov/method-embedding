@@ -26,29 +26,42 @@ class GraphLinkObjective(AbstractObjective):
         from SourceCodeTools.models.graph.LinkPredictor import DirectedCosineLinkScorer
         return DirectedCosineLinkScorer
 
+    def _compute_scores_loss(self, src_pos, dst_pos, src_neg, dst_neg, positive_labels, negative_labels):
+
+        positive_scores = self.link_scorer(src_pos, dst_pos, labels=positive_labels)
+        negative_scores = self.link_scorer(
+            src_neg, dst_neg, labels=negative_labels
+        )
+
+        loss = self._compute_loss(positive_scores, positive_labels, negative_scores, negative_labels)
+
+        with torch.no_grad():
+            scores = {
+                f"positive_score/{self.link_scorer_type.name}": self._compute_average_score(positive_scores, positive_labels),
+                f"negative_score/{self.link_scorer_type.name}": self._compute_average_score(negative_scores, negative_labels)
+            }
+
+        return (positive_scores, negative_scores), scores, loss
+
     def forward(
-            self, input_nodes, input_mask, blocks, positive_indices, negative_indices,
+            self, input_nodes, input_mask, blocks,
             update_ns_callback=None, subgraph=None, **kwargs
     ):
         gnn_output = self._graph_embeddings(input_nodes, blocks, mask=input_mask)
         unique_embeddings = gnn_output.output
 
-        all_embeddings = unique_embeddings[kwargs["slice_map"]]
+        src_embs = unique_embeddings[kwargs["src_slice_map"]]
+        dst_embs = unique_embeddings[kwargs["dst_slice_map"]]
 
-        graph_embeddings = all_embeddings[kwargs["src_nodes_mask"]]
-        positive_embeddings = all_embeddings[kwargs["positive_nodes_mask"]]
-        negative_embeddings = all_embeddings[kwargs["negative_nodes_mask"]]
+        neg_src_embs = unique_embeddings[kwargs["neg_src_slice_map"]]
+        neg_dst_embs = unique_embeddings[kwargs["neg_dst_slice_map"]]
 
-        non_src_nodes_mask = ~kwargs["src_nodes_mask"]
-        non_src_ids = kwargs["compute_embeddings_for"][non_src_nodes_mask]
-        non_src_embeddings = all_embeddings[non_src_nodes_mask].cpu().detach().numpy()
-        update_ns_callback(non_src_ids, non_src_embeddings)
-
-        labels_pos = self._create_positive_labels(positive_indices).to(self.device)
-        labels_neg = self._create_negative_labels(negative_embeddings).to(self.device)
+        labels_pos = torch.ones_like(kwargs["src_slice_map"]).to(self.device)
+        labels_neg = (torch.ones_like(kwargs["neg_src_slice_map"]) * -1).to(self.device)
 
         pos_neg_scores, avg_scores, loss = self._compute_scores_loss(
-            graph_embeddings, positive_embeddings, negative_embeddings, labels_pos, labels_neg
+            src_pos=src_embs, dst_pos=dst_embs, src_neg=neg_src_embs, dst_neg=neg_dst_embs,
+            positive_labels=labels_pos, negative_labels=labels_neg
         )
 
         return ObjectiveOutput(
