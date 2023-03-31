@@ -538,7 +538,7 @@ class SGMisuseNodesDataLoader(SGNodesDataLoader):
             # loader = NodeDataLoader(
             #     subgraph, nodes_for_batching, sampler, batch_size=batch_size, shuffle=False, num_workers=0
             # )
-            loader = self._create_batch_iterator(subgraph, nodes_for_batching, sampler, batch_size)  # loader = NewProcessNodeDataLoader(subgraph, nodes_for_batching, sampler, batch_size=batch_size)
+            loader = self._create_node_batch_iterator(subgraph, nodes_for_batching, sampler, batch_size)  # loader = NewProcessNodeDataLoader(subgraph, nodes_for_batching, sampler, batch_size=batch_size)
 
             nodes_in_graph = set(subgraph.nodes("node_")[subgraph.nodes["node_"].data["current_type_mask"]].cpu().numpy())
             # nodes_in_graph = set(nodes_for_batching["node_"].numpy())
