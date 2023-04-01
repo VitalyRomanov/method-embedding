@@ -1,3 +1,5 @@
+import logging
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -41,6 +43,14 @@ def get_tensor_metrics(tensor, path):
         output_metrics[f"{path}/quantile_0.5"] = torch.quantile(tensor, 0.5)
 
     return output_metrics
+
+
+def write_metrics(tensor_metrics, tensor, metric_key):
+    try:
+        tensor_metrics.update(get_tensor_metrics(tensor, metric_key))
+    except RuntimeError as e:
+        # logging.warning(f"Encountered error when computing metrics: {e}")
+        pass
 
 
 class RelGraphConvLayer(nn.Module):
@@ -173,11 +183,11 @@ class RelGraphConvLayer(nn.Module):
                 h = h + self.bias_dict[ntype]
                 # h = h + self.h_bias
             if tensor_metrics is not None:
-                tensor_metrics.update(get_tensor_metrics(h, f"layer_{layer_id}/{ntype}/logits"))
+                write_metrics(tensor_metrics, h, f"layer_{layer_id}/{ntype}/logits")
             if self.activation:
                 h = self.activation(h)
             if tensor_metrics is not None:
-                tensor_metrics.update(get_tensor_metrics(h, f"layer_{layer_id}/{ntype}/activation"))
+                write_metrics(tensor_metrics, h, f"layer_{layer_id}/{ntype}/activation")
             return self.dropout(h)
 
         return {ntype: _apply(ntype, h) for ntype, h in hs.items()}
@@ -245,7 +255,7 @@ class RGCN(nn.Module):
         for key, val in h.items():
             norm_ = layer(val)
             if self.tensor_metrics is not None:
-                self.tensor_metrics.update(get_tensor_metrics(norm_, f"layer_{layer_id}/{key}/norm"))
+                write_metrics(self.tensor_metrics, norm_, f"layer_{layer_id}/{key}/norm")
             out[key] = norm_
         return out
         # return {key: layer(val) for key, val in h.items()}

@@ -1,7 +1,7 @@
 import torch
 from torch.utils import checkpoint
 
-from SourceCodeTools.models.graph.rgcn import RGCN, RelGraphConvLayer, CkptGATConv, get_tensor_metrics
+from SourceCodeTools.models.graph.rgcn import RGCN, RelGraphConvLayer, CkptGATConv, get_tensor_metrics, write_metrics
 
 import torch.nn as nn
 import torch.nn.functional as F
@@ -198,7 +198,7 @@ class RGGANLayer(RGANLayer):
             )
             out[dsttype] = gru_out
             if tensor_metrics is not None:
-                tensor_metrics.update(get_tensor_metrics(gru_out, f"layer_{layer_id}/{dsttype}/norm"))
+                write_metrics(tensor_metrics, gru_out, f"layer_{layer_id}/{dsttype}/norm")
 
         return out
 
