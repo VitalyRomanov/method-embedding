@@ -4,6 +4,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
 from os.path import join
+from random import random
 from typing import Dict, Union, Tuple, Optional
 
 import dgl
@@ -76,7 +77,8 @@ class AbstractObjective(nn.Module):
             masker_fn=None, label_loader_class=None, label_loader_params=None, dataloader_class=None,
             tokenizer_path=None, target_emb_size=None, link_scorer_type="inner_prod",
             measure_scores=False, dilate_scores=1, early_stopping=False, early_stopping_tolerance=20, nn_index="brute",
-            model_base_path=None, force_w2v=False, neg_sampling_factor=1, use_ns_groups=False, embedding_table_size=300000
+            model_base_path=None, force_w2v=False, neg_sampling_factor=1, use_ns_groups=False, embedding_table_size=300000,
+            node_mask_dropout=0.
     ):
         super(AbstractObjective, self).__init__()
 
@@ -99,6 +101,7 @@ class AbstractObjective(nn.Module):
         self.use_ns_groups = use_ns_groups
         self.embedding_table_size = embedding_table_size
         self.neg_sampling_factor = neg_sampling_factor
+        self.node_mask_dropout = node_mask_dropout
 
         self._verify_parameters()
 
@@ -573,6 +576,10 @@ class AbstractObjective(nn.Module):
             self, input_nodes, input_mask, blocks, positive_indices, negative_indices,
             update_ns_callback=None, **kwargs
     ):
+        if input_mask is not None:
+            if random() < self.node_mask_dropout:
+                input_mask = input_mask * 0.
+
         gnn_output = self._graph_embeddings(input_nodes, blocks, mask=input_mask)
 
         _, positive_emb, negative_emb, labels_pos, labels_neg = self._prepare_for_prediction(
