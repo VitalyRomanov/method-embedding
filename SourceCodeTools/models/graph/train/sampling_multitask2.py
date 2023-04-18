@@ -329,7 +329,7 @@ class SamplingMultitaskTrainer:
                 dataset=dataset,
                 labels_fn=dataset.load_type_prediction,
                 tokenizer_path=tokenizer_path,
-                masker_fn=None,  # dataset.create_subword_masker,
+                masker_fn=dataset.create_subword_masker,
                 preload_for="package",
             )
         )
@@ -925,10 +925,13 @@ class SamplingMultitaskTrainer:
         ):
 
             with torch.no_grad():
-                graph_emb = self.graph_model(
-                    {"node_": self.node_embedder(batch["input_nodes"])},
-                    batch["blocks"]
-                )["node_"].to("cpu").numpy()
+                try:
+                    graph_emb = self.graph_model(
+                        {"node_": self.node_embedder(batch["input_nodes"])},
+                        batch["blocks"]
+                    )["node_"].to("cpu").numpy()
+                except KeyError:
+                    continue
 
             for node_id, emb in zip(batch["indices"], graph_emb):
 
