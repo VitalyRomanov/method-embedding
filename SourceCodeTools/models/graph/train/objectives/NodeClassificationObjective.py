@@ -4,7 +4,7 @@ from itertools import chain
 from typing import Tuple, Optional, Dict
 
 import torch
-from sklearn.metrics import ndcg_score, top_k_accuracy_score
+from sklearn.metrics import ndcg_score, top_k_accuracy_score, f1_score
 from torch import nn
 
 from SourceCodeTools.models.graph.TargetLoader import TargetLoader
@@ -45,7 +45,28 @@ class NodeClassifierObjective(AbstractObjective):
             return sm(scores)[torch.full(scores.shape, False).scatter_(1, labels.reshape(-1, 1), True)].mean().item()
             # return compute_accuracy(scores.argmax(dim=-1), labels)
 
+        def compute_micro_f1(scores, labels=None):
+            assert len(scores.shape) > 1 and scores.shape[1] > 1
+            scores = scores.cpu()
+            labels = labels.cpu()
+            return f1_score(labels.numpy(), scores.argmax(-1).numpy(), average="micro")
+
+        def compute_macro_f1(scores, labels=None):
+            assert len(scores.shape) > 1 and scores.shape[1] > 1
+            scores = scores.cpu()
+            labels = labels.cpu()
+            return f1_score(labels.numpy(), scores.argmax(-1).numpy(), average="macro")
+
+        def compute_ndcg(scores, labels=None):
+            assert len(scores.shape) > 1 and scores.shape[1] > 1
+            scores = scores.cpu()
+            labels = labels.cpu()
+            return ndcg_score(torch.nn.functional.one_hot(labels, num_classes=scores.size(1)).numpy(), scores.numpy())
+
         self._compute_average_score = compute_average_score
+        self._compute_micro_f1 = compute_micro_f1
+        self._compute_macro_f1 = compute_macro_f1
+        self._compute_ndcg = compute_ndcg
 
     def _compute_scores_loss(
             self, graph_emb, positive_emb, negative_emb, labels_pos, labels_neg
@@ -55,6 +76,9 @@ class NodeClassifierObjective(AbstractObjective):
         with torch.no_grad():
             scores = {
                 f"positive_score/{self.link_scorer_type.name}": self._compute_average_score(pos_scores, labels_pos),
+                f"micro_f1/{self.link_scorer_type.name}": self._compute_micro_f1(pos_scores, labels_pos),
+                f"macro_f1/{self.link_scorer_type.name}": self._compute_macro_f1(pos_scores, labels_pos),
+                f"ndcg/{self.link_scorer_type.name}": self._compute_ndcg(pos_scores, labels_pos),
             }
         return (pos_scores, None), scores, loss
 
