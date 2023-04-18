@@ -33,6 +33,7 @@ graph_config_specification = {
         "neg_sampling_factor": 3,
         "use_layer_scheduling": False,
         "schedule_layers_every": 10,
+        "node_mask_dropout": 0.,
 
         "elem_emb_size": 100,
         "embedding_table_size": 200000,
@@ -171,6 +172,8 @@ class GraphTrainerArgumentParser(AbstractArgumentParser):
         group.add_argument("--inference_ids_path", default=None, type=str, help='')
 
         group.add_argument('--gpu', dest='gpu', default=-1, type=int, help='')
+
+        group.add_argument("--node_mask_dropout", default=0., type=float, help='')
 
     def _add_scoring_arguments(self):
         group = self._parser.add_argument_group("SCORING")

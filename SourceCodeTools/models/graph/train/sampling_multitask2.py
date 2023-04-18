@@ -165,7 +165,8 @@ class SamplingMultitaskTrainer:
             early_stopping=False, early_stopping_tolerance=20, nn_index=self.trainer_params["nn_index"],
             model_base_path=self.model_base_path, force_w2v=self.trainer_params["force_w2v_ns"],
             neg_sampling_factor=self.neg_sampling_factor,
-            embedding_table_size=self.trainer_params["embedding_table_size"]
+            embedding_table_size=self.trainer_params["embedding_table_size"],
+            node_mask_dropout=self.trainer_params["node_mask_dropout"]
         )
 
     def _create_edge_level_objective(
