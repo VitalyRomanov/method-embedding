@@ -578,7 +578,7 @@ class AbstractObjective(nn.Module):
     ):
         if input_mask is not None:
             if random() < self.node_mask_dropout:
-                input_mask = 0
+                input_mask *= 0
 
         gnn_output = self._graph_embeddings(input_nodes, blocks, mask=input_mask)
 
