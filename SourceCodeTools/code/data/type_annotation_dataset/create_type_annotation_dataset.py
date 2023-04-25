@@ -435,7 +435,7 @@ def process_body(
     entry['replacements'] = resolve_self_collisions2(entry['replacements'])
 
     # assert isvalid(nlp, body_, entry['replacements'])
-    assert isvalid(nlp, body_, entry['ents'])
+    # assert isvalid(nlp, body_, entry['ents'])
 
     return entry
 

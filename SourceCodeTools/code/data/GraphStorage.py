@@ -91,13 +91,13 @@ class GraphStorageWorker:
         elif message.descriptor == GraphStorageWorker.InboxTypes.get_node_type_descriptions:
             self.send_out(Message(
                 descriptor=GraphStorageWorker.OutboxTypes.node_type_descriptions,
-                content=self.dataset_db.get_node_type_descriptions()
+                content=self.dataset_db.get_node_types()
             ))
 
         elif message.descriptor == GraphStorageWorker.InboxTypes.get_edge_type_descriptions:
             self.send_out(Message(
                 descriptor=GraphStorageWorker.OutboxTypes.edge_type_descriptions,
-                content=self.dataset_db.get_edge_type_descriptions()
+                content=self.dataset_db.get_edge_types()
             ))
         elif message.descriptor == GraphStorageWorker.InboxTypes.get_nodes_with_subwords:
             self.send_out(Message(
@@ -155,11 +155,11 @@ def start_worker(config, inbox_queue, outbox_queue, *args, **kwargs):
 class AbstractGraphStorage(ABC):
     ...
     @abstractmethod
-    def get_node_type_descriptions(self):
+    def get_node_types(self):
         ...
 
     @abstractmethod
-    def get_edge_type_descriptions(self):
+    def get_edge_types(self):
         ...
 
     @abstractmethod
@@ -426,10 +426,10 @@ class OnDiskGraphStorage(AbstractGraphStorage):
     def get_num_edges(self):
         return self.database.query("SELECT count(id) FROM edges").iloc[0,0]
 
-    def get_node_type_descriptions(self):
+    def get_node_types(self):
         return self.database.query("SELECT type_desc from node_types")["type_desc"]
 
-    def get_edge_type_descriptions(self):
+    def get_edge_types(self):
         return self.database.query("SELECT type_desc from edge_types")["type_desc"]
 
     def get_edge_types(self):
@@ -874,7 +874,7 @@ class InMemoryGraphStorage(AbstractGraphStorage):
         return nodes.append(new_nodes), edges.append(new_edges)
 
     @classmethod
-    def get_node_type_descriptions(cls):
+    def get_node_types(cls):
         return [
             "module", "global_variable", "non_indexed_symbol", "class", "function", "class_field", "class_method",
             "subword", "mention", "Module", "ImportFrom", "alias", "Import", "Attribute", "#attr#", "Call", "Subscript",
@@ -887,7 +887,7 @@ class InMemoryGraphStorage(AbstractGraphStorage):
         ]
 
     @classmethod
-    def get_edge_type_descriptions(cls):
+    def get_edge_types(cls):
         return [
             "defines", "uses", "imports", "calls", "uses_type", "inheritance", "defined_in", "used_by", "imported_by",
             "called_by", "type_used_by", "inherited_by", "subword", "module", "global_mention", "module_rev", "name",

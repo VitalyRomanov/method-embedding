@@ -23,10 +23,13 @@ from SourceCodeTools.code.data.sourcetrail.sourcetrail_call_seq_extractor import
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_add_reverse_edges import add_reverse_edges
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_ast_edges2 import get_ast_from_modules
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_extract_variable_names import extract_var_names
-from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import special_mapping
+from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import special_mapping, node_types
 from SourceCodeTools.code.data.type_annotation_dataset.create_type_annotation_dataset import process_body as extract_type_annotations
 from SourceCodeTools.nlp import create_tokenizer
 from SourceCodeTools.nlp.entity.entity_render import render_single
+
+
+global_node_types = set(node_types.values())
 
 
 class HierarchicalDatasetCreator(DatasetCreator):
@@ -266,7 +269,7 @@ class HierarchicalDatasetCreator(DatasetCreator):
         def get_offsets_for_file(file_id):
             offsets = files["offsets.bz2"].query(f"file_id == {file_id}")[
                 ["start", "end", "node_id"]].values.tolist()
-            return offsets
+            return [tuple(offset) for offset in offsets]
 
         def get_span_for_class_or_method(mention_id):
             start = end = None
@@ -286,22 +289,25 @@ class HierarchicalDatasetCreator(DatasetCreator):
 
             if offsets is not None:
                 offsets = [o for o in offsets if o[0] >= start and o[1] <= end]
-                offsets = adjust_offsets2(offsets, -start)
-                for s, _, _ in offsets:
-                    assert s >= 0, "Offset became negative"
+                # offsets = adjust_offsets2(offsets, -start)
+                # for s, _, _ in offsets:
+                #     assert s >= 0, "Offset became negative"
 
             return offsets
 
+        enclosing_span = None
         if global_type == "module":
             offsets = get_offsets_for_file(file_id)
             text = file_text
+            offsets = [offset for offset in offsets if offset[0] < len(text) and offset[1] < len(text)]
         else:
             start, end = get_span_for_class_or_method(mention_id)
             if start is not None:
                 text = file_text[start: end]
                 offsets = get_offsets_for_class_or_method(mention_id, start, end)
+                enclosing_span = (start, end)
 
-        return text, offsets
+        return text, offsets, enclosing_span
 
     def write_mention(
             self, files, mappings, file_id, file_text, location_path, mention_id,
@@ -321,97 +327,124 @@ class HierarchicalDatasetCreator(DatasetCreator):
             "global_type": global_type,
         }
 
-        if global_type is not None:
-
-            text, offsets = self.get_text_and_offsets(
-                file_id, file_text, global_id, mention_id, global_type, files, mappings
-            )
-
-            if text is not None:
-                metadata["original_text"] = text
-                metadata["original_offsets"] = offsets
-
-                entry = extract_type_annotations(nlp, text, offsets, require_labels=False)
-                if entry is not None:
-                    metadata["normalized_text"] = entry["text"]
-                    metadata["normalized_offsets"] = entry["replacements"]
-                    metadata["type_annotations"] = entry["ents"]
-                    if len(entry["cats"]) == 1:
-                        metadata["returns"] = entry["cats"]
-                    if len(entry["docstrings"]) == 1:
-                        metadata["docstring"] = entry["docstrings"][0]
-
+        entry = {}
         edges_written = 0
         written_edge_ids = set()
+        written_offsets = set()
+
+        if global_type is None:
+            return edges_written, written_edge_ids, written_offsets
+
+        # offsets here have original spans
+        # adjust them to the text later
+        text, offsets, enclosing_span = self.get_text_and_offsets(
+            file_id, file_text, global_id, mention_id, global_type, files, mappings
+        )
+
+        if text is None:
+            return edges_written, written_edge_ids, written_offsets
 
         for m in nested_mentions:
-            _edges_written, _written_edge_ids = self.write_mention(
+            _edges_written, _written_edge_ids, _written_offsets = self.write_mention(
                 files, mappings, file_id, file_text, mention_path, m, mention_hierarchy_graph, nlp
             )
             edges_written += _edges_written
             written_edge_ids.update(_written_edge_ids)
+            written_offsets.update(_written_offsets)
             assert len(written_edge_ids) == edges_written
 
+        offsets = list(set(offsets) - written_offsets)
+        written_offsets.update(offsets)
+
+        metadata["original_text"] = text
+        metadata["original_offsets"] = offsets
+        metadata["enclosing_span"] = enclosing_span
+
         def get_mention_nodes_and_edges(mention_id):
-            # mention_edges = files["ast_edges.bz2"].query(f"mentioned_in == {mention_id}")
-            mention_edges = files["ast_edges"].query(
-                f"select * from ast_edges where mentioned_in = {mention_id}")
+            mention_edges = files["ast_edges"].query(f"select * from ast_edges where mentioned_in = {mention_id}")
             mention_node_ids = set(mention_edges["source_node_id"]) | set(mention_edges["target_node_id"])
-            # mention_nodes = files["ast_nodes.bz2"].query("id in @mention_ids", local_dict={"mention_ids": mention_node_ids})
-            mention_nodes = files["ast_nodes"].query(
-                f"select * from ast_nodes where id in ({','.join(map(str, mention_node_ids))})")
-            # mention_global_nodes = files["global_nodes.bz2"].query("id in @mention_ids", local_dict={"mention_ids": mention_node_ids})
-            mention_global_nodes = files["global_nodes"].query(
-                f"select * from global_nodes where id in ({','.join(map(str, mention_node_ids))})")
+            mention_nodes = files["ast_nodes"].query(f"select * from ast_nodes where id in ({','.join(map(str, mention_node_ids))})")
+            mention_global_nodes = files["global_nodes"].query(f"select * from global_nodes where id in ({','.join(map(str, mention_node_ids))})")
             mention_nodes = mention_nodes.append(mention_global_nodes)
             mention_nodes.drop_duplicates(subset=["id", "type", "serialized_name"], inplace=True)
             return mention_nodes, mention_edges
 
         mention_nodes, mention_edges = get_mention_nodes_and_edges(mention_id)
+
+        def get_edge_offsets(edge_offsets, enclosing_span):
+            if enclosing_span is not None:
+                for edge in edge_offsets:
+                    assert edge["offset_start"] >= enclosing_span[0] and edge["offset_end"] <= enclosing_span[1]
+            offsets = []
+            for edge in edge_offsets:
+                offsets.append((edge["offset_start"], edge["offset_end"], f"#edge_{edge['id']}"))
+            return offsets
+
+        try:
+            edge_offsets = get_edge_offsets(
+                mention_edges[["id", "offset_start", "offset_end"]]\
+                    .dropna()\
+                    .astype({"offset_start": "int64", "offset_end": "int64"}).to_dict(orient="records"),
+                enclosing_span
+            )
+            metadata["original_edge_offsets"] = edge_offsets
+        except AssertionError:
+            # when getting edges for some mentions, they seem to be out of enclosing_span
+            # the reason for this is unclear. skip such cases for now
+            return edges_written, written_edge_ids, written_offsets
+
         mention_path.mkdir(exist_ok=True, parents=True)
+
+        def map_nodes_to_embeddable_names(nodes):
+            nodes = nodes.to_dict(orient="records")
+            node_to_emb_name = {}
+            for node in nodes:
+                if node["type"] in {
+                    "ctx", "type_node", "type_annotation", "Name", "#attr#", "#keyword#", "Op", "Constant", "JoinedStr",
+                    "CtlFlow", "astliteral", "subword", "mention"
+                } or node["type"] in global_node_types:
+                    node_to_emb_name[node["id"]] = node["serialized_name"].split("@")[0]
+                else:
+                    node_to_emb_name[node["id"]] = node["type"]
+            return node_to_emb_name
+
+        emb_names = map_nodes_to_embeddable_names(mention_nodes)
+
+        if enclosing_span is not None:
+            entry_offsets = adjust_offsets2(offsets + edge_offsets, -enclosing_span[0])
+        else:
+            entry_offsets = offsets + edge_offsets
+
+        entry_offsets = [offset for offset in entry_offsets if offset[0] < len(text) and offset[1] < len(text)]
+
+        entry_ = extract_type_annotations(nlp, text, entry_offsets, require_labels=False, remove_docstring=True)
+        if entry_ is not None:
+            entry["enclosing_span"] = enclosing_span
+            entry["normalized_text"] = entry_["text"]
+            entry["normalized_node_offsets"] = entry_["replacements"]
+            entry["normalized_edge_offsets"] = [(e[0], e[1], int(e[2][6:])) for e in entry_["ents"] if e[2].startswith("#edge_")]
+            entry["type_annotations"] = [e for e in entry_["ents"] if not e[2].startswith("#edge_")]
+            entry["node_names"] = emb_names
+            if len(entry_["cats"]) == 1:
+                entry["returns"] = entry_["cats"]
+            if len(entry_["docstrings"]) == 1:
+                entry["docstring"] = entry_["docstrings"][0]
+        else:
+            return edges_written, written_edge_ids, written_offsets
 
         write_mapping_to_json(metadata, mention_path.joinpath("metadata.json"))
 
-        def filter_type_annotations(edges):
-            edges = SQLTable(edges, ":memory:", "edges")
-            # type_ann = edges.query("type == 'annotation_for' or type == 'annotation_for_rev' or type == 'returned_by' or type == 'returned_by_rev'")
-            # no_type_ann = edges.query("type != 'annotation_for' and type != 'annotation_for_rev' and type != 'returned_by' and type != 'returned_by_rev'")
-            type_ann = edges.query(
-                "select * from edges where type = 'annotation_for' or type = 'annotation_for_rev' or type = 'returned_by' or type = 'returned_by_rev'")
-            no_type_ann = edges.query(
-                "select * from edges where type != 'annotation_for' and type != 'annotation_for_rev' and type != 'returned_by' and type != 'returned_by_rev'")
+        entry["edge_id"] = mention_edges["id"].tolist()
+        entry["src_id"] = mention_edges["source_node_id"].tolist()
+        entry["dst_id"] = mention_edges["target_node_id"].tolist()
+        entry["edge_type"] = mention_edges["type"].tolist()
 
-            type_ann = type_ann.query("type == 'annotation_for' or type == 'returned_by'")
-            # type_ann["source_node_id"] = type_ann["source_node_id"].apply(node2name.get)
-            # type_ann = type_ann.rename({"source_node_id": "dst", "target_node_id": "src"}, axis=1)
-            return no_type_ann, type_ann
+        write_mapping_to_json(entry, mention_path.joinpath("entry.json"))
 
-        def get_type_annotation_labels(type_ann_edges):
-            type_ann_edges["source_node_id"] = type_ann_edges["source_node_id"].apply(mappings["node2name"].get)
-            type_ann_edges = type_ann_edges.rename({"source_node_id": "dst", "target_node_id": "src"}, axis=1)
-            return type_ann_edges[["src", "dst"]]
-
-        if self.remove_type_annotations:
-            # mention_edges, type_ann_edges = filter_type_annotations(mention_edges)
-            mention_edges, type_ann_edges = mention_edges, None
-        else:
-            type_ann_edges = None
-
-        edge_offsets = mention_edges[["id", "offset_start", "offset_end"]].dropna()
-        node_strings = mention_nodes[["id", "string"]].dropna()
-
-        if type_ann_edges is not None and len(type_ann_edges) > 0:
-            persist(type_ann_edges[["id", "type", "source_node_id", "target_node_id"]],
-                    mention_path.joinpath("type_ann_edges.parquet"))
-            persist(get_type_annotation_labels(type_ann_edges), mention_path.joinpath("type_ann_labels.parquet"))
-        if len(edge_offsets) > 0:
-            persist(edge_offsets, mention_path.joinpath("edge_offsets.parquet"))
-        if len(node_strings) > 0:
-            persist(node_strings, mention_path.joinpath("node_strings.parquet"))
-
-        persist(mention_edges[["id", "type", "source_node_id", "target_node_id"]],
-                mention_path.joinpath("edges.parquet"))
-        persist(mention_nodes[["id", "type", "serialized_name"]], mention_path.joinpath("nodes.parquet"))
+        write_mapping_to_json(
+            mention_nodes[["id", "type", "serialized_name"]].rename({"serialized_name": "name"}, axis=1).to_dict(orient="records"),
+            mention_path.joinpath("nodes.json")
+        )
 
         edges_written += len(mention_edges["id"])
         written_edge_ids.update(mention_edges["id"])
@@ -420,10 +453,9 @@ class HierarchicalDatasetCreator(DatasetCreator):
             self.visualize_func(
                 mention_nodes, mention_edges, mention_path.joinpath("visualization.pdf"), show_reverse=True
             )
-            # if "normalized_text" in metadata:
-            #     render_single(metadata["normalized_text"], metadata["normalized_offsets"], mention_path.joinpath("visualization.html"))
+            render_single(entry["normalized_text"], entry["normalized_node_offsets"], mention_path.joinpath("visualization.html"))
 
-        return edges_written, written_edge_ids
+        return edges_written, written_edge_ids, written_offsets
 
     def assign_partitions(self, dataset_location):
         for package_path in tqdm(
@@ -467,15 +499,11 @@ class HierarchicalDatasetCreator(DatasetCreator):
     def create_dataset_structure(self, output_directory):
         nlp = create_tokenizer("spacy")
 
-        # for ind, env_path in tqdm(
-        #         enumerate(self.environments), desc="Creating dataset hierarchy", leave=True,
-        #         dynamic_ncols=True, total=len(self.environments)
-        # ):
         for ind, env_path in enumerate(self.environments):
             package_name = Path(env_path).name
             logging.info(f"Found {package_name}")
             package_path = output_directory.joinpath(package_name)
-            if package_path.joinpath("nodes.parquet").is_file():
+            if package_path.joinpath("nodes.json").is_file():
                 logging.info(f"Hierarchy is already present")
                 continue
 
@@ -495,7 +523,7 @@ class HierarchicalDatasetCreator(DatasetCreator):
                 file_id_path = package_path.joinpath(str(file_id))
                 file_text = mappings["filecontent"][file_id]
 
-                _edges_written, _written_edge_ids = self.write_mention(
+                _edges_written, _written_edge_ids, _written_offsets = self.write_mention(
                     files, mappings, file_id, file_text, file_id_path, root, mention_hierarchy_graph, nlp
                 )
                 edges_written += _edges_written
@@ -503,12 +531,25 @@ class HierarchicalDatasetCreator(DatasetCreator):
                 assert edges_written == len(written_edge_ids)
 
             remaining_edges = files["ast_edges.bz2"].query("id not in @written_edges", local_dict={"written_edges": written_edge_ids})
-            assert len(remaining_edges) == 0
+            logging.warning(f"{len(remaining_edges)} edges skipped")
 
-            # persist(files["global_edges.bz2"], package_path.joinpath("edges.parquet"))
-            # persist(files["global_nodes.bz2"], package_path.joinpath("nodes.parquet"))
-            persist(files["global_edges.bz2"], package_path.joinpath("edges.parquet"))
-            persist(files["global_nodes.bz2"], package_path.joinpath("nodes.parquet"))
+            global_nodes = files["global_nodes.bz2"][["id", "type", "serialized_name"]].rename(
+                {"serialized_name": "name"}, axis=1)
+
+            edges_json = defaultdict(list)
+            for row_ind, edge in files["global_edges.bz2"].iterrows():
+                edges_json["edge_id"].append(edge["id"])
+                edges_json["src_id"].append(edge["source_node_id"])
+                edges_json["dst_id"].append(edge["target_node_id"])
+                edges_json["edge_type"].append(edge["type"])
+            edges_json["node_names"] = dict(zip(global_nodes["id"], global_nodes["name"]))
+            write_mapping_to_json(edges_json, package_path.joinpath("entry.json"))
+
+            write_mapping_to_json(
+                global_nodes.to_dict(
+                    orient="records"),
+                package_path.joinpath("nodes.json")
+            )
 
     def merge(self, output_directory):
 

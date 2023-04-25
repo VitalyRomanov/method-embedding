@@ -242,8 +242,8 @@ class SimpleGraphCreator:
             return f"{value}_"
 
     def get_graph_types(self):
-        ntypes = InMemoryGraphStorage.get_node_type_descriptions()
-        etypes = InMemoryGraphStorage.get_edge_type_descriptions()
+        ntypes = InMemoryGraphStorage.get_node_types()
+        etypes = InMemoryGraphStorage.get_edge_types()
 
         return list(
             map(
@@ -496,7 +496,7 @@ class SourceGraphDataset(AbstractDataset):
         self.edge_types_to_remove.update(global_reverse)
         self.edge_types_to_remove.update(PythonNodeEdgeDefinitions.reverse_edge_exceptions.values())
 
-        all_edge_types = self._graph_storage.get_edge_type_descriptions()
+        all_edge_types = self._graph_storage.get_edge_types()
         self.edge_types_to_remove.update(filter(lambda edge_type: edge_type.endswith("_rev"), all_edge_types))
 
     def _add_custom_reverse(self, edges):
@@ -841,7 +841,7 @@ class SourceGraphDataset(AbstractDataset):
                 set(special_mapping.keys()) |
                 set(special_mapping.values()) |
                 set(PythonNodeEdgeDefinitions.reverse_edge_exceptions.values()) |
-                set(filter(lambda edge_type: edge_type.endswith("_rev"), self._graph_storage.get_edge_type_descriptions()))
+                set(filter(lambda edge_type: edge_type.endswith("_rev"), self._graph_storage.get_edge_types()))
         )
 
         def expand_edges(edges, node_id, view, edge_prefix, level=0):
@@ -975,8 +975,8 @@ class SourceGraphDataset(AbstractDataset):
         return types
 
     def get_graph_types(self):
-        ntypes = self._graph_storage.get_node_type_descriptions()
-        etypes = self._graph_storage.get_edge_type_descriptions()
+        ntypes = self._graph_storage.get_node_types()
+        etypes = self._graph_storage.get_edge_types()
 
         def only_unique(elements):
             new_list = []
@@ -1000,7 +1000,7 @@ class SourceGraphDataset(AbstractDataset):
 
     def inference_mode(self):
         shared_node_types = PythonSharedNodes.shared_node_types
-        type_filter = [ntype for ntype in self._graph_storage.get_node_type_descriptions() if ntype not in shared_node_types]
+        type_filter = [ntype for ntype in self._graph_storage.get_node_types() if ntype not in shared_node_types]
         nodes = self._graph_storage.get_nodes(type_filter=type_filter)
         nodes["train_mask"] = True
         nodes["test_mask"] = True
@@ -1097,8 +1097,8 @@ class SourceGraphDataset(AbstractDataset):
         return types
 
     def get_graph_types(self):
-        ntypes = self._graph_storage.get_node_type_descriptions()
-        etypes = self._graph_storage.get_edge_type_descriptions()
+        ntypes = self._graph_storage.get_node_types()
+        etypes = self._graph_storage.get_edge_types()
 
         def only_unique(elements):
             new_list = []
@@ -1303,7 +1303,7 @@ class SourceGraphDataset(AbstractDataset):
 
     def load_edge_prediction(self):
 
-        edge_types = self._graph_storage.get_edge_type_descriptions()
+        edge_types = self._graph_storage.get_edge_types()
 
         # when using this objective remove following edges
         # defined_in_*, executed_*, prev, next, *global_edges

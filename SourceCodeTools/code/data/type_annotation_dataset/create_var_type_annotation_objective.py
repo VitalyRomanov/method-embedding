@@ -1,18 +1,17 @@
-from collections import Counter
+import os
+from collections import Counter, defaultdict
 
 from tqdm import tqdm
 
 from SourceCodeTools.code.data.FileSystemStorage import FileSystemStorage, LocationIterator
-from SourceCodeTools.code.data.file_utils import unpersist, write_mapping_to_json, read_mapping_from_json
+from SourceCodeTools.code.data.file_utils import write_mapping_to_json, read_mapping_from_json
+from SourceCodeTools.code.data.type_annotation_dataset.type_parser import TypeHierarchyParser
 
 
-def collect_objective_summary(s, labels_filename):
-    summary_path = s._path.joinpath(".summary").joinpath("summary_" + labels_filename.split(".")[0] + ".json")
-    labels_locations = s._path.joinpath(".summary").joinpath("location_" + labels_filename.split(".")[0] + ".txt")
+def collect_objective_summary(storage, objective_name):
+    summary_path = storage.get_objective_summary_path(objective_name)
+    labels_locations = storage.get_objective_labels_location_path(objective_name)
     locations = []
-
-    # if labels_locations.is_file():
-    #     locations = None
 
     summary = {
         "train": Counter(),
@@ -20,29 +19,55 @@ def collect_objective_summary(s, labels_filename):
         "val": Counter()
     }
 
-    for loc_path in tqdm(s._iterate_all(s._path, "metadata.json")):
-        metadata = read_mapping_from_json(loc_path.joinpath("metadata.json"))
-        if "type_annotations" not in metadata or len(metadata["type_annotations"]) == 0:
+    for loc_path in tqdm(storage._iterate_all(storage._path, "entry.json")):
+        entry = read_mapping_from_json(loc_path.joinpath("entry.json"))
+        if "type_annotations" not in entry or len(entry["type_annotations"]) == 0:
             continue
 
-        edges = unpersist(loc_path.joinpath("edges.parquet"))
-        type_ann_edges = edges.query("type == 'annotation_for'")
-        if len(type_ann_edges) > 0:
-            locations.append(str(loc_path.relative_to(s._path)))
-            nodes = unpersist(loc_path.joinpath("nodes.parquet"))
-            node2name = dict(zip(nodes["id"], nodes["serialized_name"]))
-            type_ann_edges["type_name"] = type_ann_edges["source_node_id"].apply(node2name.get)
-            type_ann_edges["type_name_normalized"] = type_ann_edges["type_name"].apply(lambda x: x.split("[")[0].split(".")[-1].strip("\"").strip("'"))
-            type_ann = type_ann_edges.rename({"target_node_id": "src", "type_name_normalized": "dst"}, axis=1)
+        objective_data = defaultdict(list)
 
-            partition = s._determine_partition(loc_path)
-            targets = Counter(type_ann["dst"])
-            summary[partition] |= targets
+        for edge_id, src, dst, etype in zip(entry["edge_id"], entry["src_id"], entry["dst_id"], entry["edge_type"]):
+            if etype != "annotation_for":
+                continue
+
+            objective_data["node_id"].append(dst)
+            objective_data["label"].append(
+                TypeHierarchyParser(
+                    entry["node_names"][str(src)], normalize=True
+                ).assemble(max_level=3, simplify_nodes=True)
+            )
+
+        if len(objective_data) > 0:
+            locations.append(loc_path)
+            partition = storage._determine_partition(loc_path)
+            targets = Counter(objective_data["label"])
+            summary[partition] += targets
+
+            write_mapping_to_json(objective_data, loc_path.joinpath(objective_name + ".json"))
+
+    allowed_types = set(summary["train"].keys())
+    for loc_path in locations:
+        objective_data = read_mapping_from_json(loc_path.joinpath(objective_name + ".json"))
+        to_write = defaultdict(list)
+        for nid, lbl in zip(objective_data["node_id"], objective_data["label"]):
+            if lbl in allowed_types:
+                to_write["node_id"].append(nid)
+                to_write["label"].append(lbl)
+
+        if len(to_write) == 0:
+            os.remove(loc_path.joinpath(objective_name + ".json"))
+
+        write_mapping_to_json(to_write, loc_path.joinpath(objective_name + ".json"))
 
     summary = {
         "train": dict(summary["train"].most_common()),
-        "test": dict(summary["test"].most_common()),
-        "val": dict(summary["val"].most_common()),
+        "test": dict((k, v) for k, v in summary["test"].most_common() if k in allowed_types),
+        "val": dict((k, v) for k, v in summary["val"].most_common() if k in allowed_types),
+        "labels_for": "nodes",
+        "filter_edges": ["annotation_for"],  # "returned_by" is not used in this objective
+        "mask": "node_name",
+        "objective_type": "clf",  # clf | link | gen
+        "labels_filename": objective_name + ".json"
     }
 
     summary_path.parent.mkdir(exist_ok=True)
@@ -50,6 +75,12 @@ def collect_objective_summary(s, labels_filename):
     if locations is not None:
         LocationIterator.write_locations(locations, labels_locations)
 
+
 if __name__ == "__main__":
-    s = FileSystemStorage("/Users/LTV/Documents/popular_packages/graph")
-    collect_objective_summary(s, "type_ann_edges.parquet")
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("path")
+    args = parser.parse_args()
+
+    s = FileSystemStorage(args.path)
+    collect_objective_summary(s, "type_annotation")
