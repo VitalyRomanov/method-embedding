@@ -19,7 +19,32 @@ from SourceCodeTools.models.graph.TargetLoader import LabelDenseEncoder, TargetE
 
 
 class SGAbstractDataLoader(ABC):
+    partitions = ["train", "val", "test", "any"]
+    train_loader = None
+    val_loader = None
+    test_loader = None
+    any_loader = None
+
+    train_num_batches = None
+    val_num_batches = None
+    test_num_batches = None
+    any_num_batches = None
+
     def __init__(
+            self, dataset, labels_for, number_of_hops, batch_size, preload_for="package", labels=None,
+            masker_fn=None, label_loader_class=None, label_loader_params=None, device="cpu",
+            negative_sampling_strategy="w2v", neg_sampling_factor=1, base_path=None, objective_name=None,
+            embedding_table_size=300000
+    ):
+        self._initialize(
+            dataset, labels_for, number_of_hops, batch_size, preload_for=preload_for, labels=labels,
+            masker_fn=masker_fn, label_loader_class=label_loader_class, label_loader_params=label_loader_params,
+            device=device, negative_sampling_strategy=negative_sampling_strategy,
+            neg_sampling_factor=neg_sampling_factor, base_path=base_path, objective_name=objective_name,
+            embedding_table_size=embedding_table_size
+        )
+
+    def _initialize(
             self, dataset, labels_for, number_of_hops, batch_size, preload_for="package", labels=None,
             masker_fn=None, label_loader_class=None, label_loader_params=None, device="cpu",
             negative_sampling_strategy="w2v", neg_sampling_factor=1, base_path=None, objective_name=None,
@@ -31,7 +56,6 @@ class SGAbstractDataLoader(ABC):
         if labels_for == SGLabelSpec.subgraphs:
             assert preload_for == SGPartitionStrategies.file, "Subgraphs objectives are currently " \
                                                               "partitioned only in files"
-
         self.dataset = dataset
         self.labels_for = labels_for
         self.number_of_hops = number_of_hops
@@ -61,12 +85,53 @@ class SGAbstractDataLoader(ABC):
             else:
                 self.target_embedding_proximity = None
 
-        for partition_label in ["train", "val", "test", "any"]:  # can memory consumption be improved?
+        for partition_label in self.partitions:  # can memory consumption be improved?
             self._create_label_loader_for_partition(
                 labels, partition_label, label_loader_class, label_loader_params, base_path, objective_name
             )
 
         self._active_loader = None
+
+    def _set_num_batches(self, partition, value):
+        if partition == "train":
+            self.train_num_batches = value
+        elif partition == "val":
+            self.val_num_batches = value
+        elif partition == "test":
+            self.test_num_batches = value
+        elif partition == "any":
+            self.any_num_batches = value
+
+    def _set_label_loader(self, partition, value):
+        if partition == "train":
+            self.train_loader = value
+        elif partition == "val":
+            self.val_loader = value
+        elif partition == "test":
+            self.test_loader = value
+        elif partition == "any":
+            self.any_loader = value
+
+    def get_num_batches(self, partition):
+        if partition == "train":
+            return self.train_num_batches
+        elif partition == "val":
+            return self.val_num_batches
+        elif partition == "test":
+            return self.test_num_batches
+        elif partition == "any":
+            return self.any_num_batches
+
+    @abstractmethod
+    def get_label_loader(self, partition):
+        if partition == "train":
+            return self.train_loader
+        elif partition == "val":
+            return self.val_loader
+        elif partition == "test":
+            return self.test_loader
+        elif partition == "any":
+            return self.any_loader
 
     def _create_label_loader_for_partition(
             self, labels, partition_label, label_loader_class, label_loader_params, base_path, objective_name
@@ -75,7 +140,7 @@ class SGAbstractDataLoader(ABC):
             partition_labels = self.dataset.get_labels_for_partition(
                 labels, partition_label, self.labels_for, group_by=self.preload_for
             )
-            setattr(self, f"{partition_label}_num_batches", len(partition_labels) // self.batch_size + 1)
+            self._set_num_batches(partition_label, len(partition_labels) // self.batch_size + 1)  # setattr(self, f"{partition_label}_num_batches", len(partition_labels) // self.batch_size + 1)
             if partition_label == "train":
                 label_loader_params = copy(label_loader_params)
                 label_loader_params["logger_path"] = base_path
@@ -87,8 +152,8 @@ class SGAbstractDataLoader(ABC):
             )
         else:
             label_loader = None
-            setattr(self, f"{partition_label}_num_batches", self.dataset.get_partition_size(partition_label) // self.batch_size + 1)
-        setattr(self, f"{partition_label}_loader", label_loader)
+            self._set_num_batches(partition_label, self.dataset.get_partition_size(partition_label) // self.batch_size + 1)  # setattr(self, f"{partition_label}_num_batches", self.dataset.get_partition_size(partition_label) // self.batch_size + 1)
+        self._set_label_loader(partition_label, label_loader)  # setattr(self, f"{partition_label}_loader", label_loader)
 
     @staticmethod
     def _get_df_hash(table):
@@ -221,9 +286,8 @@ class SGAbstractDataLoader(ABC):
 
         self._active_loader = None
 
-    @abstractmethod
     def batches_from_graph(self, graph, sampler, ids_for_batch, masker, labels_loader, **kwargs):
-        ...
+        raise NotImplementedError
 
     def create_batches(self, subgraph_generator, number_of_hops, batch_size, partition, labels_for):
         sampler = MultiLayerFullNeighborSampler(number_of_hops)
@@ -236,6 +300,8 @@ class SGAbstractDataLoader(ABC):
             masker = subgraph_["masker"]
             labels_loader = subgraph_["labels_loader"]
             edges_bloom_filter = subgraph_["edges_bloom_filter"]
+
+            # logging.info("Preparing new DGL graph for batching")
 
             for_batching = self._get_ids_from_partition(subgraph, partition, labels_for)
             _num_for_batching_total = self._num_for_batching_total(for_batching)
@@ -263,12 +329,29 @@ class SGAbstractDataLoader(ABC):
                 labels_loader=labels_loader,
             )
 
+        if len(pool) > 0:
+            graphs = [s for s in pool]
+            graph = dgl.batch(graphs)
+            for_batching = self._get_ids_from_partition(graph, partition, labels_for)
+            in_pool = 0
+            pool.clear()
 
+            yield from self.batches_from_graph(
+                graph=graph,
+                sampler=sampler,
+                ids_for_batch=for_batching,
+                masker=masker,
+                labels_loader=labels_loader,
+            )
+
+    @abstractmethod
+    def get_label_encoder(self):
+        return self.label_encoder
 
     def get_dataloader(
             self, partition_label
     ):
-        label_loader = getattr(self, f"{partition_label}_loader")
+        label_loader = self.get_label_loader(partition_label)  # getattr(self, f"{partition_label}_loader")
 
         data = {}
         kwargs = {}
@@ -301,6 +384,27 @@ class SGAbstractDataLoader(ABC):
             self.number_of_hops, self.batch_size, current_partition_key, self.labels_for
         )
 
+    @abstractmethod
+    def get_train_num_batches(self):
+        return self.train_num_batches
+
+    @abstractmethod
+    def get_test_num_batches(self):
+        return self.test_num_batches
+
+    @abstractmethod
+    def get_val_num_batches(self):
+        return self.val_num_batches
+
+    @abstractmethod
+    def get_any_num_batches(self):
+        return self.any_num_batches
+
+    @abstractmethod
+    def get_num_classes(self):
+        return self.train_loader.num_classes
+
+    @abstractmethod
     def partition_iterator(self, partition_label):
         class SGDLIter:
             iter_fn = self.get_dataloader
@@ -334,6 +438,30 @@ class SGNodesDataLoader(SGAbstractDataLoader):
 
         return positive_indices, negative_indices
 
+    def get_label_loader(self, partition):
+        return super().get_label_loader(partition)
+
+    def get_label_encoder(self):
+        return super().get_label_encoder()
+
+    def get_train_num_batches(self):
+        return super().get_train_num_batches()
+
+    def get_test_num_batches(self):
+        return super().get_test_num_batches()
+
+    def get_val_num_batches(self):
+        return super().get_val_num_batches()
+
+    def get_any_num_batches(self):
+        return super().get_any_num_batches()
+
+    def partition_iterator(self, partition_label):
+        return super().partition_iterator(partition_label)
+
+    def get_num_classes(self):
+        return super().get_num_classes()
+
     def batches_from_graph(
             self, graph, sampler, ids_for_batch, masker, labels_loader, **kwargs
     ):
@@ -348,7 +476,7 @@ class SGNodesDataLoader(SGAbstractDataLoader):
             if masker is not None:
                 input_mask = masker.get_mask(
                     mask_for=blocks[-1].dstdata["original_id"], input_nodes=blocks[0].srcdata["original_id"]
-                ).to(self.device)
+                )
             else:
                 input_mask = None
 
@@ -366,13 +494,13 @@ class SGNodesDataLoader(SGAbstractDataLoader):
             assert -1 not in input_nodes.tolist()
 
             batch = {
-                "input_nodes": input_nodes.to(self.device),
+                "input_nodes": input_nodes,
                 "input_mask": input_mask,
                 "indices": indices,
-                "blocks": [block.to(self.device) for block in blocks],
+                "blocks": [block for block in blocks],
                 "positive_indices": positive_targets,
                 "negative_indices": negative_targets,
-                "labels_loader": labels_loader,
+                # "labels_loader": labels_loader,
             }
 
             yield batch
@@ -508,7 +636,7 @@ class SGEdgesDataLoader(SGNodesDataLoader):
                     "negative_indices": negative_indices,  # .to(self.device),
                     "positive_labels": positive_labels,
                     "negative_labels": negative_labels,
-                    "labels_loader": labels_loader,
+                    # "labels_loader": labels_loader,
                     "src_nodes_mask": src_nodes_mask,
                     "positive_nodes_mask": positive_nodes_mask,
                     "negative_nodes_mask": negative_nodes_mask
@@ -596,7 +724,7 @@ class SGMisuseNodesDataLoader(SGNodesDataLoader):
                     "blocks": [block.to(self.device) for block in blocks],
                     "positive_indices": positive_indices,
                     "negative_indices": negative_indices,
-                    "labels_loader": labels_loader,
+                    # "labels_loader": labels_loader,
                     "misuse_node_mask": misuse_node_mask
                     # "edge_labels_loader": edge_labels_loader,
                     # "update_node_negative_sampler_callback": labels_loader.set_embed,
@@ -696,11 +824,12 @@ class SGTrueEdgesDataLoader(SGNodesDataLoader):
             if in_pool < self.batch_size:
                 continue
 
-            graphs = [s for s in pool]
-            graph = dgl.batch(graphs)
+            graph = dgl.batch(pool)
             edges_for_batching = self._get_ids_from_partition(graph, partition, labels_for)
             in_pool = 0
-            pool.clear()
+            pool = []
+
+            # TODO process partial batch
 
             loader = EdgeDataLoader(
                 graph, edges_for_batching, sampler, batch_size=self.batch_size, shuffle=False, num_workers=0
@@ -778,7 +907,7 @@ class SGTrueEdgesDataLoader(SGNodesDataLoader):
                     "input_nodes": input_nodes.to(self.device),
                     "input_mask": input_mask,
                     "blocks": [block.to(self.device) for block in blocks],
-                    "labels_loader": labels_loader,
+                    # "labels_loader": labels_loader,
                     "group": group,
                 }
 
@@ -890,7 +1019,7 @@ class SGMisuseEdgesDataLoader(SGTrueEdgesDataLoader):
                     "input_nodes": input_nodes.to(self.device),
                     "input_mask": input_mask,
                     "blocks": [block.to(self.device) for block in blocks],
-                    "labels_loader": labels_loader,
+                    # "labels_loader": labels_loader,
                     "group": group,
                 }
 
@@ -941,7 +1070,7 @@ class SGSubgraphDataLoader(SGNodesDataLoader):
             # "subgraph_masks": subgraph_masks,
             # "blocks": [block.to(self.device) for block in blocks],
             # "labels": positive_labels,
-            "labels_loader": labels_loader
+            # "labels_loader": labels_loader
         }
 
         return batch
