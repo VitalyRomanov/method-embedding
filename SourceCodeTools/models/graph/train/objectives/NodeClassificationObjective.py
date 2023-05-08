@@ -32,7 +32,7 @@ class NodeClassifierObjective(AbstractObjective):
 
     def _create_link_scorer(self):
         self.classifier = NodeClassifier(
-            input_dims=self.target_emb_size, num_classes=self.dataloader.train_loader.num_classes
+            input_dims=self.target_emb_size, num_classes=self.dataloader.get_num_classes()
         ).to(self.device)
         self.link_scorer_type = ScoringMethods.nn
         self._loss_op = nn.CrossEntropyLoss()
