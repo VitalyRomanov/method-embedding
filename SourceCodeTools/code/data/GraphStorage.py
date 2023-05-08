@@ -1,10 +1,13 @@
+import asyncio
 import hashlib
+import logging
 import tempfile
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from functools import partial
-from os.path import join, isfile
-from enum import Enum
-from time import sleep
+from os.path import join
+from pathlib import Path
+from threading import Thread
 
 import pandas as pd
 from tqdm import tqdm
@@ -13,7 +16,7 @@ import diskcache as dc
 from SourceCodeTools.code.common import read_nodes, read_edges
 from SourceCodeTools.code.data.DBStorage import SQLiteStorage, AbstractDBStorage, PostgresStorage
 from SourceCodeTools.code.data.dataset.partition_strategies import SGPartitionStrategies
-from SourceCodeTools.code.data.file_utils import unpersist
+from SourceCodeTools.code.data.file_utils import unpersist, read_mapping_from_json, write_mapping_to_json
 
 
 class NodeTypes:
@@ -26,140 +29,33 @@ class NodeTypes:
         return self.type_id2desc[node_type_id]
 
 
-class Message:
-    def __init__(self, descriptor, content):
-        self.descriptor = descriptor
-        self.content = content
+def read_or_add_summary_field(field):
+    def read_or_add_summary(function):
+        def wrapper(self, summary_filename="summary.json"):
+            dataset_summary_path = self.path.parent.joinpath(summary_filename)
 
+            if dataset_summary_path.is_file():
+                summary = read_mapping_from_json(dataset_summary_path)
+            else:
+                summary = dict()
 
-class GraphStorageWorker:
-    class InboxTypes(Enum):
-        iterate_subgraphs = 0
-        get_node_type_descriptions = 1
-        get_edge_type_descriptions = 2
-        get_nodes_with_subwords = 3
-        get_nodes = 4
-        get_edges = 5
-        get_node_types = 6
-        get_nodes_for_classification = 7
-        get_info_for_node_ids = 8
+            if field not in summary:
+                summary[field] = function(self)
+                write_mapping_to_json(summary, dataset_summary_path)
+            return summary[field]
 
-    class OutboxTypes(Enum):
-        iterate_subgraphs = 0
-        node_type_descriptions = 1
-        edge_type_descriptions = 2
-        nodes_with_subwords = 3
-        nodes = 4
-        edges = 5
-        node_types = 6
-        nodes_for_classification = 7
-        info_for_node_ids = 8
-        stop_iteration = 9
-
-    def __init__(self, config, inbox_queue, outbox_queue):
-        database_exists = isfile(config["db_path"])
-
-        self.dataset_db = OnDiskGraphStorage(config["db_path"])
-        if not database_exists:
-            self.dataset_db.import_from_files(config["data_path"])
-        #     self.dataset_db.import_from_files(self.data_path)
-        # self.dataset_db = OnDiskGraphStorage(config["path"])
-        self.inbox_queue = inbox_queue
-        self.outbox_queue = outbox_queue
-
-    def send_out(self, message):
-        while self.outbox_queue.full():
-            sleep(0.2)
-        self.outbox_queue.put(message)
-
-    def _iterate_subgraphs(self, **kwargs):
-        for subgraph in self.dataset_db.iterate_subgraphs(**kwargs):
-            self.send_out(Message(
-                descriptor=GraphStorageWorker.OutboxTypes.iterate_subgraphs,
-                content=subgraph
-            ))
-        self.send_out(Message(
-            descriptor=GraphStorageWorker.OutboxTypes.stop_iteration,
-            content=None
-        ))
-
-    def _handle_message(self, message):
-        kwargs = message.content
-        if message.descriptor == GraphStorageWorker.InboxTypes.iterate_subgraphs:
-            self._iterate_subgraphs(**kwargs)
-
-        elif message.descriptor == GraphStorageWorker.InboxTypes.get_node_type_descriptions:
-            self.send_out(Message(
-                descriptor=GraphStorageWorker.OutboxTypes.node_type_descriptions,
-                content=self.dataset_db.get_node_types()
-            ))
-
-        elif message.descriptor == GraphStorageWorker.InboxTypes.get_edge_type_descriptions:
-            self.send_out(Message(
-                descriptor=GraphStorageWorker.OutboxTypes.edge_type_descriptions,
-                content=self.dataset_db.get_edge_types()
-            ))
-        elif message.descriptor == GraphStorageWorker.InboxTypes.get_nodes_with_subwords:
-            self.send_out(Message(
-                descriptor=GraphStorageWorker.OutboxTypes.nodes_with_subwords,
-                content=self.dataset_db.get_nodes_with_subwords()
-            ))
-
-        elif message.descriptor == GraphStorageWorker.InboxTypes.get_nodes:
-            self.send_out(Message(
-                descriptor=GraphStorageWorker.OutboxTypes.nodes,
-                content=self.dataset_db.get_nodes(**kwargs)
-            ))
-
-        elif message.descriptor == GraphStorageWorker.InboxTypes.get_edges:
-            self.send_out(Message(
-                descriptor=GraphStorageWorker.OutboxTypes.edges,
-                content=self.dataset_db.get_edges(**kwargs)
-            ))
-
-        elif message.descriptor == GraphStorageWorker.InboxTypes.get_node_types:
-            self.send_out(Message(
-                descriptor=GraphStorageWorker.OutboxTypes.node_types,
-                content=self.dataset_db.get_node_types()
-            ))
-
-        elif message.descriptor == GraphStorageWorker.InboxTypes.get_nodes_for_classification:
-            self.send_out(Message(
-                descriptor=GraphStorageWorker.OutboxTypes.nodes_for_classification,
-                content=self.dataset_db.get_nodes_for_classification()
-            ))
-
-        elif message.descriptor == GraphStorageWorker.InboxTypes.get_info_for_node_ids:
-            self.send_out(Message(
-                descriptor=GraphStorageWorker.OutboxTypes.info_for_node_ids,
-                content=self.dataset_db.get_info_for_node_ids(**kwargs)
-            ))
-
-        else:
-            raise ValueError("Unrecognized message descriptor")
-
-    def handle_incoming(self):
-        message = self.inbox_queue.get()
-        response = self._handle_message(message)
-        if response is not None:
-            self.outbox_queue.put(response)
-
-
-def start_worker(config, inbox_queue, outbox_queue, *args, **kwargs):
-    worker = GraphStorageWorker(config, inbox_queue, outbox_queue)
-
-    while True:
-        worker.handle_incoming()
+        return wrapper
+    return read_or_add_summary
 
 
 class AbstractGraphStorage(ABC):
     ...
     @abstractmethod
-    def get_node_types(self):
+    def get_node_type_descriptions(self):
         ...
 
     @abstractmethod
-    def get_edge_types(self):
+    def get_edge_type_descriptions(self):
         ...
 
     @abstractmethod
@@ -168,10 +64,6 @@ class AbstractGraphStorage(ABC):
 
     @abstractmethod
     def get_num_edges(self):
-        ...
-
-    @abstractmethod
-    def get_info_for_node_ids(self, node_ids, field):
         ...
 
     @abstractmethod
@@ -190,12 +82,28 @@ class AbstractGraphStorage(ABC):
     def get_nodes_with_subwords(self):
         ...
 
+    @abstractmethod
+    def get_nodes_for_classification(self):
+        ...
+
+    @abstractmethod
+    def get_info_for_subgraphs(self, subgraph_ids, field):
+        ...
+
+    @abstractmethod
+    def get_info_for_node_ids(self, node_ids, field):
+        ...
+
+    @abstractmethod
+    def get_info_for_edge_ids(self, edge_ids, field):
+        ...
+
 
 class OnDiskGraphStorage(AbstractGraphStorage):
     storage_class = SQLiteStorage  # can change this between PostgresStorage and SQLiteStorage
 
     def __init__(self, path):
-        self.path = path
+        self.path = Path(path)
         if self.storage_class == PostgresStorage:
             self.database = PostgresStorage("localhost")
         elif self.storage_class == SQLiteStorage:
@@ -420,31 +328,33 @@ class OnDiskGraphStorage(AbstractGraphStorage):
         self._import_edges(get_path("common_edges.json.bz2"))
         # self._import_filecontent(get_path("common_filecontent.json.bz2"))
 
-    def get_num_nodes(self):
-        return self.database.query("SELECT max(id) FROM nodes").iloc[0,0] + 1
+    @read_or_add_summary_field("num_nodes")
+    def get_num_nodes(self):  # max() is used here to make it compatible with DGL
+        return int(self.database.query("SELECT max(id) FROM nodes").iloc[0,0] + 1)
 
+    @read_or_add_summary_field("num_edges")
     def get_num_edges(self):
-        return self.database.query("SELECT count(id) FROM edges").iloc[0,0]
+        return int(self.database.query("SELECT count(id) FROM edges").iloc[0,0])
 
-    def get_node_types(self):
+    def get_node_type_descriptions(self):
         return self.database.query("SELECT type_desc from node_types")["type_desc"]
 
-    def get_edge_types(self):
+    def get_edge_type_descriptions(self):
         return self.database.query("SELECT type_desc from edge_types")["type_desc"]
 
-    def get_edge_types(self):
-        table = self.database.query("SELECT * from edge_types")
-        return dict(zip(table["type_id"], table["type_desc"]))
-
-    def get_node_types(self):
-        node_id2type_id = self.database.query("SELECT id, type as type_id from nodes")
-        if not hasattr(self, "type_id2desc"):
-            self.type_id2desc = self.database.query("SELECT type_id, type_desc from node_types")
-
-        node_types = NodeTypes(dict(zip(node_id2type_id["id"], node_id2type_id["type_id"])),
-                               dict(zip(self.type_id2desc["type_id"], self.type_id2desc["type_desc"])))
-
-        return node_types
+    # def get_edge_types(self):
+    #     table = self.database.query("SELECT * from edge_types")
+    #     return dict(zip(table["type_id"], table["type_desc"]))
+    #
+    # def get_node_types(self):
+    #     node_id2type_id = self.database.query("SELECT id, type as type_id from nodes")
+    #     if not hasattr(self, "type_id2desc"):
+    #         self.type_id2desc = self.database.query("SELECT type_id, type_desc from node_types")
+    #
+    #     node_types = NodeTypes(dict(zip(node_id2type_id["id"], node_id2type_id["type_id"])),
+    #                            dict(zip(self.type_id2desc["type_id"], self.type_id2desc["type_desc"])))
+    #
+    #     return node_types
 
     def get_nodes(self, type_filter=None, **kwargs):
         query_str = """
@@ -521,29 +431,51 @@ class OnDiskGraphStorage(AbstractGraphStorage):
         )
         return nodes, edges
 
+    # def get_nodes_for_edges(self, edges):
+    #     node_id_for_query = ",".join(map(str, set(edges["src"]) | set(edges["dst"])))
+    #     nodes = self.database.query(
+    #         f"""
+    #                             SELECT
+    #                             id, node_types.type_desc as type, name
+    #                             FROM
+    #                             nodes
+    #                             LEFT JOIN node_types ON nodes.type = node_types.type_id
+    #                             WHERE nodes.id IN ({node_id_for_query})
+    #                             """
+    #     )
+    #     return nodes
+
     def get_nodes_for_edges(self, edges):
-        node_id_for_query = ",".join(map(str, set(edges["src"]) | set(edges["dst"])))
-        nodes = self.database.query(
-            f"""
-                                SELECT
-                                id, node_types.type_desc as type, name
-                                FROM
-                                nodes
-                                LEFT JOIN node_types ON nodes.type = node_types.type_id
-                                WHERE nodes.id IN ({node_id_for_query})
-                                """
-        )
-        return nodes
+        nodes = defaultdict(list)
+        seen = set()
+        for src, dst, src_type, dst_type, src_name, dst_name in edges[["src", "dst", "src_type", "dst_type", "src_name", "dst_name"]].values:
+            if src not in seen:
+                nodes["id"].append(src)
+                nodes["type"].append(src_type)
+                nodes["name"].append(src_name)
+            if dst not in seen:
+                nodes["id"].append(dst)
+                nodes["type"].append(dst_type)
+                nodes["name"].append(dst_name)
+        return pd.DataFrame(nodes)
 
     def get_subgraph_for_package(self, package_id):
         edges = self.database.query(
             f"""
                         SELECT
-                        edges.id as id, edge_types.type_desc as type, src, dst
+                        edges.id as id, edge_types.type_desc as type, src, dst,
+                        src_node_types.type_desc as src_type,
+                        dst_node_types.type_desc as dst_type,
+                        src_nodes.name as src_name,
+                        dst_nodes.name as dst_name
                         FROM
                         edge_file_id
                         LEFT JOIN edges ON edge_file_id.id = edges.id
                         LEFT JOIN edge_types ON edges.type = edge_types.type_id
+                        JOIN nodes as src_nodes ON src_nodes.id = edges.src
+                        JOIN nodes as dst_nodes ON dst_nodes.id = edges.dst
+                        JOIN node_types as src_node_types ON src_nodes.type = src_node_types.type_id
+                        JOIN node_types as dst_node_types ON dst_nodes.type = dst_node_types.type_id
                         WHERE edge_file_id.package = '{package_id}'
                         """
         )
@@ -558,11 +490,19 @@ class OnDiskGraphStorage(AbstractGraphStorage):
         edges = self.database.query(
             f"""
                         SELECT
-                        edges.id as id, edge_types.type_desc as type, src, dst
+                        edges.id as id, edge_types.type_desc as type, src, dst,
+                        src_node_types.type_desc as src_type,
+                        dst_node_types.type_desc as dst_type,
+                        src_nodes.name as src_name,
+                        dst_nodes.name as dst_name
                         FROM
                         edge_file_id
                         LEFT JOIN edges ON edge_file_id.id = edges.id
                         LEFT JOIN edge_types ON edges.type = edge_types.type_id
+                        JOIN nodes as src_nodes ON src_nodes.id = edges.src
+                        JOIN nodes as dst_nodes ON dst_nodes.id = edges.dst
+                        JOIN node_types as src_node_types ON src_nodes.type = src_node_types.type_id
+                        JOIN node_types as dst_node_types ON dst_nodes.type = dst_node_types.type_id
                         WHERE edge_file_id.unique_file_id = '{file_id}'
                         """
         )
@@ -577,11 +517,19 @@ class OnDiskGraphStorage(AbstractGraphStorage):
         edges = self.database.query(
             f"""
                         SELECT
-                        edges.id as id, edge_types.type_desc as type, src, dst
+                        edges.id as id, edge_types.type_desc as type, src, dst,
+                        src_node_types.type_desc as src_type,
+                        dst_node_types.type_desc as dst_type,
+                        src_nodes.name as src_name,
+                        dst_nodes.name as dst_name
                         FROM
                         edge_hierarchy
                         LEFT JOIN edges ON edge_hierarchy.id = edges.id
                         LEFT JOIN edge_types ON edges.type = edge_types.type_id
+                        JOIN nodes as src_nodes ON src_nodes.id = edges.src
+                        JOIN nodes as dst_nodes ON dst_nodes.id = edges.dst
+                        JOIN node_types as src_node_types ON src_nodes.type = src_node_types.type_id
+                        JOIN node_types as dst_node_types ON dst_nodes.type = dst_node_types.type_id
                         WHERE edge_hierarchy.mentioned_in = '{mention}'
                         """
         )
@@ -611,10 +559,10 @@ class OnDiskGraphStorage(AbstractGraphStorage):
 
         for group in groups:
             cache_key = self.get_cache_key(how, group)
-            cached = self.load_from_cache(cache_key)
+            cached = None  # self.load_from_cache(cache_key)
             if cached is None:
                 nodes, edges = load_fn(group)
-                self.write_to_cache(cache_key, (nodes, edges))
+                # self.write_to_cache(cache_key, (nodes, edges))
             else:
                 nodes, edges = cached
             yield group, nodes, edges
@@ -742,7 +690,7 @@ class OnDiskGraphStorage(AbstractGraphStorage):
 
 
 class OnDiskGraphStorageWithFastIteration(OnDiskGraphStorage):
-    def iterate_subgraphs(self, how, groups):
+    def get_iteration_groups_if_necessary(self, how, groups):
         if groups is None:
             if how == SGPartitionStrategies.package:
                 groups = self.get_all_packages()
@@ -752,47 +700,92 @@ class OnDiskGraphStorageWithFastIteration(OnDiskGraphStorage):
                 groups = self.get_all_mentions()
             else:
                 raise ValueError()
+        return groups
 
+    def get_iteration_request_and_columns_and_group_encoder(self, how, groups):
         requested_partition_groups = ",".join(map(str, groups))
         if how == SGPartitionStrategies.package:
             requested_partition_groups = ",".join(map(repr, groups))
             query_str = f"""
-                        SELECT
-                        edges.id as id, edge_types.type_desc as type, src, dst, unique_file_id, package
-                        FROM
-                        edges
-                        INNER JOIN edge_file_id ON edge_file_id.id = edges.id
-                        INNER JOIN edge_types ON edges.type = edge_types.type_id
-                        WHERE package in ({requested_partition_groups})
-                        """
+                                SELECT
+                                edges.id as id, edge_types.type_desc as type, src, dst,  
+                                src_node_types.type_desc as src_type,
+                                dst_node_types.type_desc as dst_type,
+                                src_nodes.name as src_name,
+                                dst_nodes.name as dst_name,
+                                unique_file_id, package
+                                FROM
+                                edges
+                                INNER JOIN edge_file_id ON edge_file_id.id = edges.id
+                                INNER JOIN edge_types ON edges.type = edge_types.type_id
+                                JOIN nodes as src_nodes ON src_nodes.id = edges.src
+                                JOIN nodes as dst_nodes ON dst_nodes.id = edges.dst
+                                JOIN node_types as src_node_types ON src_nodes.type = src_node_types.type_id
+                                JOIN node_types as dst_node_types ON dst_nodes.type = dst_node_types.type_id
+                                WHERE package in ({requested_partition_groups})
+                                """
             partition_columns = ["package"]
             group_encoder = lambda x: x[0]
         elif how == SGPartitionStrategies.file:
             query_str = f"""
-                        SELECT
-                        edges.id as id, edge_types.type_desc as type, src, dst, unique_file_id, file_id, package
-                        FROM
-                        edges
-                        INNER JOIN edge_file_id ON edge_file_id.id = edges.id
-                        INNER JOIN edge_types ON edges.type = edge_types.type_id
-                        WHERE unique_file_id in ({requested_partition_groups})
-                        """
+                                SELECT
+                                edges.id as id, edge_types.type_desc as type, src, dst, 
+                                src_node_types.type_desc as src_type,
+                                dst_node_types.type_desc as dst_type,
+                                src_nodes.name as src_name,
+                                dst_nodes.name as dst_name,
+                                unique_file_id, file_id, package
+                                FROM
+                                edges
+                                INNER JOIN edge_file_id ON edge_file_id.id = edges.id
+                                INNER JOIN edge_types ON edges.type = edge_types.type_id
+                                JOIN nodes as src_nodes ON src_nodes.id = edges.src
+                                JOIN nodes as dst_nodes ON dst_nodes.id = edges.dst
+                                JOIN node_types as src_node_types ON src_nodes.type = src_node_types.type_id
+                                JOIN node_types as dst_node_types ON dst_nodes.type = dst_node_types.type_id
+                                WHERE unique_file_id in ({requested_partition_groups})
+                                """
             partition_columns = ["unique_file_id", "file_id"]
             group_encoder = lambda x: x[1]
         elif how == SGPartitionStrategies.mention:
             query_str = f"""
-                        SELECT
-                        edges.id as id, edge_types.type_desc as type, src, dst, mentioned_in
-                        FROM
-                        edges
-                        INNER JOIN edge_hierarchy ON edge_hierarchy.id = edges.id
-                        INNER JOIN edge_types ON edges.type = edge_types.type_id
-                        WHERE mentioned_in in ({requested_partition_groups})
-                        """
+                                SELECT
+                                edges.id as id, edge_types.type_desc as type, src, dst,
+                                src_node_types.type_desc as src_type,
+                                dst_node_types.type_desc as dst_type,
+                                src_nodes.name as src_name,
+                                dst_nodes.name as dst_name,
+                                mentioned_in
+                                FROM
+                                edges
+                                INNER JOIN edge_hierarchy ON edge_hierarchy.id = edges.id
+                                INNER JOIN edge_types ON edges.type = edge_types.type_id
+                                JOIN nodes as src_nodes ON src_nodes.id = edges.src
+                                JOIN nodes as dst_nodes ON dst_nodes.id = edges.dst
+                                JOIN node_types as src_node_types ON src_nodes.type = src_node_types.type_id
+                                JOIN node_types as dst_node_types ON dst_nodes.type = dst_node_types.type_id
+                                WHERE mentioned_in in ({requested_partition_groups})
+                                """
             partition_columns = ["mentioned_in"]
             group_encoder = lambda x: x[0]
         else:
             raise ValueError()
+
+        return query_str, partition_columns, group_encoder
+
+    @staticmethod
+    def get_next_chunk(iterator, output_loc: asyncio.Future=None):
+        try:
+            chunk = next(iterator)
+        except StopIteration:
+            chunk = None
+        if output_loc is not None:
+            output_loc.set_result(chunk)
+        return chunk
+
+    def iterate_subgraphs(self, how, groups):
+        groups = self.get_iteration_groups_if_necessary(how, groups)
+        query_str, partition_columns, group_encoder = self.get_iteration_request_and_columns_and_group_encoder(how, groups)
 
         iterator = iter(self.database.query(query_str, chunksize=100000))
 
@@ -804,13 +797,33 @@ class OnDiskGraphStorageWithFastIteration(OnDiskGraphStorage):
                 return new_part
             return pd.concat([current_part, new_part])
 
+        # next_edges = self.get_next_chunk(iterator)
+        next_edges = asyncio.Future()
+        # logging.info("Starting new thread to receive a chunk")
+        th = Thread(target=self.get_next_chunk, name="Get chunk", args=(iterator, next_edges))
+        th.start()
+
+        served = 0
+
         while True:
             try:
-                edges = next(iterator)
+                # edges = next_edges
+                # logging.info("Joining the thread with a chunk")
+                th.join()
+                edges = next_edges.result()
+                if edges is None:
+                    raise StopIteration
+                # logging.info(f"New chunk has {len(edges)} edges")
+                # next_edges = self.get_next_chunk(iterator)
+                next_edges = asyncio.Future()
+                # logging.info("Starting new thread to receive a chunk")
+                th = Thread(target=self.get_next_chunk, name="Get chunk", args=(iterator, next_edges))
+                th.start()
                 start = 0
 
                 partition_c = edges[partition_columns]
 
+                # logging.info(f"Looking through the current chunk")
                 for ind, val in enumerate(partition_c.values.tolist()):
                     if val != prev_partition_value and prev_partition_value is not None:
                         end = ind
@@ -818,16 +831,23 @@ class OnDiskGraphStorageWithFastIteration(OnDiskGraphStorage):
                             current_part = merge_current_part(current_part, edges[start: end])
                         partition_edges = current_part
                         partition_nodes = self.get_nodes_for_edges(partition_edges)
+                        # logging.info(f"Found subgraph with {len(partition_nodes)} nodes and {len(partition_edges)} edges")
+                        # if served >= 50:
+                        #     raise StopIteration
+                        served += 1
                         yield group_encoder(prev_partition_value), partition_nodes, partition_edges
                         current_part = None
                         start = end
                     prev_partition_value = val
+                # logging.info(f"Finished with the current chunk")
                 if start != len(edges):
                     current_part = merge_current_part(current_part, edges[start: len(edges)])
 
             except StopIteration:
-                partition_edges = current_part
+                # logging.info(f"Last chunk")
+                partition_edges = current_part  # may be empty
                 partition_nodes = self.get_nodes_for_edges(partition_edges)
+                # logging.info(f"Found subgraph with {len(partition_nodes)} nodes and {len(partition_edges)} edges")
                 yield group_encoder(prev_partition_value), partition_nodes, partition_edges
                 break
 
@@ -874,7 +894,7 @@ class InMemoryGraphStorage(AbstractGraphStorage):
         return nodes.append(new_nodes), edges.append(new_edges)
 
     @classmethod
-    def get_node_types(cls):
+    def get_node_type_descriptions(cls):
         return [
             "module", "global_variable", "non_indexed_symbol", "class", "function", "class_field", "class_method",
             "subword", "mention", "Module", "ImportFrom", "alias", "Import", "Attribute", "#attr#", "Call", "Subscript",
@@ -887,7 +907,7 @@ class InMemoryGraphStorage(AbstractGraphStorage):
         ]
 
     @classmethod
-    def get_edge_types(cls):
+    def get_edge_type_descriptions(cls):
         return [
             "defines", "uses", "imports", "calls", "uses_type", "inheritance", "defined_in", "used_by", "imported_by",
             "called_by", "type_used_by", "inherited_by", "subword", "module", "global_mention", "module_rev", "name",
@@ -945,3 +965,5 @@ class InMemoryGraphStorage(AbstractGraphStorage):
         edge_info = self._edges.query("id in @edge_ids", local_dict={"edge_ids": edge_ids})[["id"]].rename({"id": "src"}, axis=1)
         edge_info["group"] = 0
         return edge_info, "group"
+
+
