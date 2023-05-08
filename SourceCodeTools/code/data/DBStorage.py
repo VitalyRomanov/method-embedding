@@ -89,7 +89,7 @@ class SQLiteStorage(AbstractDBStorage):
     }
 
     def __init__(self, filename):
-        self.conn = sqlite3.connect(filename)
+        self.conn = sqlite3.connect(filename, check_same_thread=False)
         self.path = filename
 
     @classmethod
