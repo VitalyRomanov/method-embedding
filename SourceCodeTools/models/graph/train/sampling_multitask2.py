@@ -330,7 +330,7 @@ class SamplingMultitaskTrainer:
                 dataset=dataset,
                 labels_fn=dataset.load_type_prediction,
                 tokenizer_path=tokenizer_path,
-                masker_fn=dataset.create_subword_masker,
+                masker_fn=dataset.__class__.create_subword_masker,
                 preload_for="package",
             )
         )
