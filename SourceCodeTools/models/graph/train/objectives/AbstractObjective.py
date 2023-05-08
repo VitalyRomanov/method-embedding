@@ -11,6 +11,7 @@ import dgl
 import torch
 from tqdm import tqdm
 
+from SourceCodeTools.code.data.dataset.multiprocessing_dataloader import DataLoaderWorkerAdapter
 from SourceCodeTools.models.graph.LinkPredictor import UndirectedCosineLinkScorer, BilinearLinkClassifier, \
     UndirectedL2LinkScorer, ScorerObjectiveOptimizationDirection
 
@@ -71,6 +72,11 @@ class ScoringMethods(Enum):
 
 
 class AbstractObjective(nn.Module):
+    scorer_partitions = ["train", "test", "val"]
+    train_scorer = None
+    test_scorer = None
+    val_scorer = None
+
     def __init__(
             self, *, name, graph_model, node_embedder, dataset, label_load_fn, device,
             sampling_neighbourhood_size, batch_size, labels_for, number_of_hops, preload_for="package",
@@ -130,28 +136,37 @@ class AbstractObjective(nn.Module):
             self, dataset, labels_for, number_of_hops, batch_size, preload_for="package", labels=None,
             masker_fn=None, label_loader_class=None, label_loader_params=None
     ):
-        self.dataloader = self.dataloader_class(
-            dataset, labels_for, number_of_hops, batch_size, preload_for=preload_for, labels=labels,
+        self.dataloader = DataLoaderWorkerAdapter(
+            dataset=dataset.get_config(), labels_for=labels_for, number_of_hops=number_of_hops, batch_size=batch_size, preload_for=preload_for, labels=labels,
             masker_fn=masker_fn, label_loader_class=label_loader_class, label_loader_params=label_loader_params,
             negative_sampling_strategy="w2v" if self.force_w2v else "closest", neg_sampling_factor=self.neg_sampling_factor,
-            base_path=self.base_path, objective_name=self.name, device=self.device, embedding_table_size=self.embedding_table_size
+            base_path=self.base_path, objective_name=self.name, device=self.device, embedding_table_size=self.embedding_table_size,
+            dataloader_class=self.dataloader_class
         )
         self._create_loaders()
 
     def _create_target_embedder(self, target_emb_size, tokenizer_path):
         self.target_embedder = TargetEmbedder(
             # self.dataloader.label_encoder.get_original_targets()
-            self.dataloader.label_encoder, emb_size=target_emb_size, num_buckets=200000,
+            self.dataloader.get_label_encoder(), emb_size=target_emb_size, num_buckets=200000,
             max_len=20, tokenizer_path=tokenizer_path
         ).to(self.device)
 
+    def _set_scorer(self, partition, scorer):
+        if partition == "train":
+            self.train_scorer = scorer
+        elif partition == "test":
+            self.test_scorer = scorer
+        elif partition == "val":
+            self.val_scorer = scorer
+
     def _create_global_scorers(self):
-        for partition in ["train", "test", "val"]:
-            setattr(
-                self,
-                f"{partition}_scorer",
-                Scorer(getattr(self.dataloader, f"{partition}_loader"))
-            )
+        for partition in self.scorer_partitions:
+            self._set_scorer(partition, None)  # Scorer(self.dataloader.get_label_loader(partition)))  # getattr(self.dataloader, f"{partition}_loader")))  # setattr(
+                # self,
+                # f"{partition}_scorer",
+                # Scorer(getattr(self.dataloader, f"{partition}_loader"))
+            # )
 
     @property
     def positive_label(self):
@@ -282,9 +297,9 @@ class AbstractObjective(nn.Module):
         # def get_num_batches_estimate(ids):
         #     return len(ids) // self.batch_size + 1
 
-        self.num_train_batches = self.dataloader.train_num_batches
-        self.num_test_batches = self.dataloader.test_num_batches
-        self.num_val_batches = self.dataloader.val_num_batches
+        self.num_train_batches = self.dataloader.get_train_num_batches()
+        self.num_test_batches = self.dataloader.get_test_num_batches()
+        self.num_val_batches = self.dataloader.get_val_num_batches()
 
     @staticmethod
     def _idx_len(idx):
@@ -415,19 +430,19 @@ class AbstractObjective(nn.Module):
     ):
         self._update_num_batches_for_split(partition, batch_ind)
 
-        labels_loader = batch["labels_loader"]
+        # labels_loader = batch["labels_loader"]
         # blocks = batch["blocks"]
         # input_nodes = batch["input_nodes"]
         # input_mask = batch["input_mask"]
         # positive_indices = batch["positive_indices"]
         # negative_indices = batch["negative_indices"]
-        update_ns_callback = labels_loader.set_embed
+        update_ns_callback = None  # labels_loader.set_embed
         # graph = batch["subgraph"]
 
-        self._warmup_if_needed(partition, update_ns_callback)
+        # self._warmup_if_needed(partition, update_ns_callback)
 
-        if batch_ind % 10 == 0:
-            labels_loader.update_index()
+        # if batch_ind % 10 == 0:
+        #     labels_loader.update_index()
 
         # do_break = False
         # for block in blocks:
