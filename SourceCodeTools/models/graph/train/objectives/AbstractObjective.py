@@ -11,7 +11,6 @@ import dgl
 import torch
 from tqdm import tqdm
 
-from SourceCodeTools.code.data.dataset.multiprocessing_dataloader import DataLoaderWorkerAdapter
 from SourceCodeTools.models.graph.LinkPredictor import UndirectedCosineLinkScorer, BilinearLinkClassifier, \
     UndirectedL2LinkScorer, ScorerObjectiveOptimizationDirection
 
@@ -136,12 +135,18 @@ class AbstractObjective(nn.Module):
             self, dataset, labels_for, number_of_hops, batch_size, preload_for="package", labels=None,
             masker_fn=None, label_loader_class=None, label_loader_params=None
     ):
-        self.dataloader = DataLoaderWorkerAdapter(
-            dataset=dataset.get_config(), labels_for=labels_for, number_of_hops=number_of_hops, batch_size=batch_size, preload_for=preload_for, labels=labels,
+        # self.dataloader = DataLoaderWorkerAdapter(
+        #     dataset=dataset.get_config(), labels_for=labels_for, number_of_hops=number_of_hops, batch_size=batch_size, preload_for=preload_for, labels=labels,
+        #     masker_fn=masker_fn, label_loader_class=label_loader_class, label_loader_params=label_loader_params,
+        #     negative_sampling_strategy="w2v" if self.force_w2v else "closest", neg_sampling_factor=self.neg_sampling_factor,
+        #     base_path=self.base_path, objective_name=self.name, device=self.device, embedding_table_size=self.embedding_table_size,
+        #     dataloader_class=self.dataloader_class
+        # )
+        self.dataloader = self.dataloader_class(
+            dataset=dataset, labels_for=labels_for, number_of_hops=number_of_hops, batch_size=batch_size, preload_for=preload_for, labels=labels,
             masker_fn=masker_fn, label_loader_class=label_loader_class, label_loader_params=label_loader_params,
             negative_sampling_strategy="w2v" if self.force_w2v else "closest", neg_sampling_factor=self.neg_sampling_factor,
             base_path=self.base_path, objective_name=self.name, device=self.device, embedding_table_size=self.embedding_table_size,
-            dataloader_class=self.dataloader_class
         )
         self._create_loaders()
 
@@ -357,11 +362,16 @@ class AbstractObjective(nn.Module):
         else:
             return input
 
-    def _graph_embeddings(self, input_nodes, blocks, mask=None) -> GNNOutput:
+    def _graph_embeddings(self, input_nodes, blocks, mask=None, target_mask=None) -> GNNOutput:
         emb = self._wrap_into_dict(self._extract_embed(input_nodes, mask=mask))
         graph_emb = self.graph_model(emb, blocks)
+
+        graph_emb_ = graph_emb["node_"]
+        if target_mask is not None:
+            graph_emb_ = graph_emb_[target_mask]
+
         return GNNOutput(
-            output=graph_emb["node_"],
+            output=graph_emb_,
             node_embeddings=graph_emb,
             input_embeddings=emb
         )
@@ -595,7 +605,9 @@ class AbstractObjective(nn.Module):
             if random() < self.node_mask_dropout:
                 input_mask *= False
 
-        gnn_output = self._graph_embeddings(input_nodes, blocks, mask=input_mask)
+        gnn_output = self._graph_embeddings(
+            input_nodes, blocks, mask=input_mask, target_mask=kwargs.get("target_mask", None)
+        )
 
         _, positive_emb, negative_emb, labels_pos, labels_neg = self._prepare_for_prediction(
             gnn_output.output, positive_indices, negative_indices, self.target_embedding_fn, update_ns_callback  # , subgraph
