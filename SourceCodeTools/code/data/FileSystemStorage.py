@@ -452,7 +452,7 @@ class FileSystemStorage(AbstractGraphStorage):
         return len(unique_edges)
 
     @read_or_add_summary_field("node_types")
-    def get_node_types(self):
+    def get_node_type_descriptions(self):
         unique_node_types = set()
         for nodes in tqdm(self._stream_nodes(), desc="Computing unique node types"):
             for node in nodes:
@@ -462,7 +462,7 @@ class FileSystemStorage(AbstractGraphStorage):
         return unique_node_types
 
     @read_or_add_summary_field("edge_types")
-    def get_edge_types(self):
+    def get_edge_type_descriptions(self):
         unique_edge_types = set()
         for edges in tqdm(self._stream_edges(), desc="Computing unique edge types"):
             unique_edge_types.update(edges["edge_type"])
