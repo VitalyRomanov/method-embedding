@@ -131,7 +131,7 @@ class SubgraphClassifierObjective(NodeClassifierObjective, SubgraphAbstractObjec
     def pooling_fn(self, node_embeddings):
         return torch.mean(node_embeddings, dim=0, keepdim=True)
 
-    def _graph_embeddings(self, input_nodes, blocks, mask=None) -> GNNOutput:
+    def _graph_embeddings(self, input_nodes, blocks, mask=None, target_mask=None) -> GNNOutput:
         graph = blocks
 
         emb = self._wrap_into_dict(self._extract_embed(input_nodes, mask=mask))
@@ -145,8 +145,12 @@ class SubgraphClassifierObjective(NodeClassifierObjective, SubgraphAbstractObjec
         for subgraph in unbatched:
             subgraph_embs.append(self.pooling_fn(subgraph.nodes["node_"].data["node_embeddings"]))
 
+        subgraph_embs_ = torch.cat(subgraph_embs, dim=0)
+        if target_mask is not None:
+            subgraph_embs_ = subgraph_embs_[target_mask]
+
         return GNNOutput(
-            output=torch.cat(subgraph_embs, dim=0),
+            output=subgraph_embs_,
             node_embeddings=node_embs,
             input_embeddings=emb
         )
