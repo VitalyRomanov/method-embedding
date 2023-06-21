@@ -149,6 +149,8 @@ class TypePredDatasetCreator(DatasetCreator):
                     mention_nodes = set(mention_edges['source_node_id']) | set(mention_edges['target_node_id'])
                     self.restricted_nodes[env_path].update(mention_nodes)
 
+                    assert len(set(mapped_local.query("type == 'annotation_for' or type == 'returned_by'")["target_node_id"]) - mention_nodes) == 0
+
                 for col in self.merging_specification[local_file]["columns_to_filter"]:
                     mapped_local = mapped_local.query(
                         f"{col}.map(@in_nodes)", local_dict={"in_nodes": lambda x: x in self.restricted_nodes[env_path]}
