@@ -178,6 +178,23 @@ class LabelDenseEncoder:
         return dict(zip(range(len(labels)), labels))
 
 
+class VagueHasLabelDict:
+    def __init__(self, ids_with_labels):
+        self._ids_with_labels = set(ids_with_labels)
+
+    def __len__(self):
+        return len(self._ids_with_labels)
+
+    def __getitem__(self, item):
+        if item in self._ids_with_labels:
+            return True
+        else:
+            return False
+
+    def values(self):
+        return [True, False]
+
+
 class TargetLoader:
     def __init__(
             self, targets, label_encoder, *, compact_dst=True, target_embedding_proximity=None, emb_size=None,
@@ -433,7 +450,8 @@ class TargetLoader:
             self._target_embedding_proximity.update_index()
 
     def has_label_mask(self):
-        return {key: True for key in self._element_lookup}
+        return VagueHasLabelDict(key for key in self._element_lookup)
+        # return {key: True for key in self._element_lookup}
 
     def get_groups(self):
         if self._groups is None:
