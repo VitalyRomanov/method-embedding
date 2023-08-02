@@ -1,12 +1,13 @@
 import os.path
 import pickle
 from abc import ABC, abstractmethod
-from collections import Counter
-from functools import partial
+from collections import Counter, defaultdict, OrderedDict
+from functools import partial, lru_cache
 from os.path import join
 from typing import List, Optional
 
 import dgl
+import networkx as nx
 import numpy
 import pandas
 import torch
@@ -14,12 +15,14 @@ import torch
 from SourceCodeTools.cli_arguments.config import save_config, load_config
 from SourceCodeTools.code.ast.python_ast2 import PythonSharedNodes, PythonNodeEdgeDefinitions
 from SourceCodeTools.code.data.GraphStorage import OnDiskGraphStorageWithFastIteration, InMemoryGraphStorage, \
-    OnDiskGraphStorage
+    OnDiskGraphStorage, OnDiskGraphStorageWithFastIterationNoPandas, InMemoryGraphStorageNoPandas
 from SourceCodeTools.code.data.DBStorage import SQLiteStorage
-from SourceCodeTools.code.data.dataset.SubwordMasker import SubwordMasker, NodeNameMasker, NodeClfMasker
+from SourceCodeTools.code.data.dataset.SubwordMasker import SubwordMasker, NodeNameMasker, NodeClfMasker, \
+    SubwordMaskerNoPandas
 from SourceCodeTools.code.data.dataset.partition_strategies import SGPartitionStrategies, SGLabelSpec
 from SourceCodeTools.code.data.file_utils import *
-from SourceCodeTools.code.data.multiprocessing_storage_adapter import GraphStorageWorkerAdapter
+from SourceCodeTools.code.data.multiprocessing_storage_adapter import GraphStorageWorkerAdapter, \
+    GraphStorageWorkerMetaAdapter
 from SourceCodeTools.code.data.sourcetrail.sourcetrail_extract_node_names import extract_node_names
 from SourceCodeTools.models.graph.TargetLoader import TargetLoader
 from SourceCodeTools.nlp import token_hasher
@@ -64,7 +67,7 @@ class AbstractDataset(ABC):
     ):
         ...
 
-    def _create_hetero_graph(self, nodes, edges):
+    def _create_hetero_graph(self, nodes, edges, **kwargs):
         ...
 
 
@@ -212,13 +215,24 @@ class PartitionIndex:
             return self._index[item]
         else:
             if self._exclusive_label == -1:
-                return any(self._index[item])
+                if item not in self._index:
+                    return False
+                return any(self._index[item][label] for label in self._index[item])
+            if item not in self._index:
+                return False
             return self._index[item][self._exclusive_label]
 
     def get(self, item, default):
         if item not in self._index:
             return default
         return self[item]
+
+    def __len__(self):
+        return len(self._index)
+
+    def values(self):
+        for item in self._index:
+            yield self._index[item][self._exclusive_label]
 
 
 class SimpleGraphCreator:
@@ -435,15 +449,17 @@ class SourceGraphDataset(AbstractDataset):
         )
 
     def _initialize_storage(self, **kwargs):
-        StorageClass = GraphStorageWorkerAdapter  # OnDiskGraphStorageWithFastIteration
+        # StorageClass = OnDiskGraphStorageWithFastIteration
+        StorageClass = GraphStorageWorkerAdapter
 
         _graph_storage_path = OnDiskGraphStorageWithFastIteration.get_storage_file_name(self.data_path)
         if not OnDiskGraphStorageWithFastIteration.verify_imported(_graph_storage_path):
-            self._graph_storage = StorageClass(_graph_storage_path)
+            self._graph_storage = OnDiskGraphStorageWithFastIteration(_graph_storage_path)
             self._graph_storage.import_from_files(self.data_path)
             self._graph_storage.add_import_completed_flag(_graph_storage_path)
-        else:
-            self._graph_storage = StorageClass(_graph_storage_path, OnDiskGraphStorageWithFastIteration)
+        # else:
+        #     self._graph_storage = StorageClass(_graph_storage_path)
+        self._graph_storage = StorageClass(_graph_storage_path, OnDiskGraphStorageWithFastIteration)
         self._num_nodes = self._graph_storage.get_num_nodes()
 
     def _filter_edges(self, types_to_filter):
@@ -456,7 +472,7 @@ class SourceGraphDataset(AbstractDataset):
         name_pool_rev = dict()
         for node_id, embeddable_name in zip(
                 nodes["id"],
-                nodes["name"].apply(self._get_embeddable_name)
+                map(self._get_embeddable_name, nodes["name"])  # nodes["name"].apply(self._get_embeddable_name)
         ):
             if embeddable_name not in name_pool:
                 name_pool[embeddable_name] = len(name_pool)
@@ -521,7 +537,7 @@ class SourceGraphDataset(AbstractDataset):
 
         return edges.append(to_reverse[["src", "dst", "type"]])
 
-    def _create_hetero_graph(self, nodes, edges):
+    def _create_hetero_graph(self, nodes, edges, **kwargs):
 
         def set_canonical_edge_types(edges, edge_subset):
             return edge_subset.astype(edges.dtypes)
@@ -987,6 +1003,7 @@ class SourceGraphDataset(AbstractDataset):
 
         return types
 
+    @lru_cache
     def get_graph_types(self):
         ntypes = self._graph_storage.get_node_type_descriptions()
         etypes = self._graph_storage.get_edge_type_descriptions()
@@ -1094,46 +1111,46 @@ class SourceGraphDataset(AbstractDataset):
 
         return nodes, train_edges, heldout_edges
 
-    @staticmethod
-    def get_global_edges():
-        """
-        :return: Set of global edges and their reverses
-        """
-        from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import special_mapping, node_types
-        types = set()
-
-        for key, value in special_mapping.items():
-            types.add(key)
-            types.add(value)
-
-        for _, value in node_types.items():
-            types.add(value + "_name")
-
-        return types
-
-    def get_graph_types(self):
-        ntypes = self._graph_storage.get_node_type_descriptions()
-        etypes = self._graph_storage.get_edge_type_descriptions()
-
-        def only_unique(elements):
-            new_list = []
-            for ind, element in enumerate(elements):
-                if ind != 0 and element == new_list[-1]:
-                    continue
-                new_list.append(element)
-            return new_list
-
-        return only_unique(
-            map(
-                partial(self._strip_types_if_needed, stripping_flag=self.use_node_types, stripped_type="node_"),
-                ntypes
-            )
-        ), only_unique(
-            map(
-                partial(self._strip_types_if_needed, stripping_flag=self.use_edge_types, stripped_type="edge_"),
-                etypes
-            )
-        )
+    # @staticmethod
+    # def get_global_edges():
+    #     """
+    #     :return: Set of global edges and their reverses
+    #     """
+    #     from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import special_mapping, node_types
+    #     types = set()
+    #
+    #     for key, value in special_mapping.items():
+    #         types.add(key)
+    #         types.add(value)
+    #
+    #     for _, value in node_types.items():
+    #         types.add(value + "_name")
+    #
+    #     return types
+    #
+    # def get_graph_types(self):
+    #     ntypes = self._graph_storage.get_node_type_descriptions()
+    #     etypes = self._graph_storage.get_edge_type_descriptions()
+    #
+    #     def only_unique(elements):
+    #         new_list = []
+    #         for ind, element in enumerate(elements):
+    #             if ind != 0 and element == new_list[-1]:
+    #                 continue
+    #             new_list.append(element)
+    #         return new_list
+    #
+    #     return only_unique(
+    #         map(
+    #             partial(self._strip_types_if_needed, stripping_flag=self.use_node_types, stripped_type="node_"),
+    #             ntypes
+    #         )
+    #     ), only_unique(
+    #         map(
+    #             partial(self._strip_types_if_needed, stripping_flag=self.use_edge_types, stripped_type="edge_"),
+    #             etypes
+    #         )
+    #     )
 
     @staticmethod
     def ensure_connectedness(nodes: pandas.DataFrame, edges: pandas.DataFrame):
@@ -1353,7 +1370,7 @@ class SourceGraphDataset(AbstractDataset):
         result = self._load_cache_if_exists(cache_key)
 
         if result is None:
-            node2id = self._graph_storage.get_node_type_descriptions()
+            node2id = self._graph_storage.get_node_types()
 
             type_ann["src_type"] = type_ann["src"].apply(lambda x: node2id[x])
 
@@ -1412,7 +1429,7 @@ class SourceGraphDataset(AbstractDataset):
         :return: SubwordMasker for all nodes that have subwords. Suitable for token prediction objective.
         """
         # TODO
-        return SubwordMasker(nodes, edges)
+        return SubwordMaskerNoPandas(nodes, edges)
 
     def create_variable_name_masker(self, nodes, edges):
         """
@@ -1433,12 +1450,336 @@ class SourceGraphDataset(AbstractDataset):
         return NodeClfMasker(nodes, edges)
 
 
+class SourceGraphDatasetNoPandas(SourceGraphDataset):
+    def __init__(
+            self, *args, **kwargs
+    ):
+        super(SourceGraphDatasetNoPandas, self).__init__(*args, **kwargs)
+
+    def _remove_edges_with_restricted_types(self, edges):
+        edges.filter(lambda row: row["type"] not in self.edge_types_to_remove)
+
+    def _initialize_storage(self, **kwargs):
+        # StorageClass = OnDiskGraphStorageWithFastIterationNoPandas
+        StorageClass = GraphStorageWorkerMetaAdapter
+
+        _graph_storage_path = OnDiskGraphStorageWithFastIterationNoPandas.get_storage_file_name(self.data_path)
+        if not OnDiskGraphStorageWithFastIterationNoPandas.verify_imported(_graph_storage_path):
+            self._graph_storage = OnDiskGraphStorageWithFastIterationNoPandas(_graph_storage_path)
+            self._graph_storage.import_from_files(self.data_path)
+            self._graph_storage.add_import_completed_flag(_graph_storage_path)
+        # else:
+            # self._graph_storage = StorageClass(_graph_storage_path)
+        self._graph_storage = StorageClass(_graph_storage_path, OnDiskGraphStorageWithFastIterationNoPandas, 2)
+        self._num_nodes = self._graph_storage.get_num_nodes()
+
+    @staticmethod
+    def _add_node_types_to_edges(nodes, edges):
+
+        node_type_map = dict(zip(nodes['id'].values, nodes['type']))
+
+        edges.eval("src_type = src.map(@node_type_map.get)", local_dict={"node_type_map": node_type_map}, inplace=True)
+        edges.eval("dst_type = dst.map(@node_type_map.get)", local_dict={"node_type_map": node_type_map}, inplace=True)
+        edges = edges.astype({'src_type': 'category', 'dst_type': 'category'}, copy=False)
+
+        return edges
+
+    def _add_custom_reverse(self, edges):
+        raise NotImplementedError
+        to_reverse = edges.query("type in @custom_reverse", local_dict={"custom_reverse": self.custom_reverse})
+
+        to_reverse.eval("type = type.map(@add_rev)", local_dict={"add_rev": lambda type_: type_ + "_rev"}, inplace=True)
+        to_reverse.rename({"src": "dst", "dst": "src"}, axis=1, inplace=True)
+
+        new_id = edges["id"].max() + 1
+        to_reverse["id"] = range(new_id, new_id + len(to_reverse))
+
+        return edges.append(to_reverse[["src", "dst", "type"]])
+
+    def _create_hetero_graph(self, nodes, edges, **kwargs):
+        node_data = kwargs.get("node_data", {})
+        edge_data = kwargs.get("edge_data", {})
+
+        node2type = dict(zip(nodes["id"], nodes["type"]))
+        dense_node_id = OrderedDict()
+        typed_edge_ids = defaultdict(OrderedDict)
+
+        all_node_types, all_edge_types = self.get_graph_types()
+        dense_node_types = dict(zip(all_node_types, range(len(all_node_types))))
+        dense_edge_types = dict(zip(all_edge_types, range(len(all_edge_types))))
+
+        nxg = nx.DiGraph()
+
+        def add_node(graph, node_id, node_types, dense_ids, node_data):
+            if node_id not in dense_ids:
+                dense_ids[node_id] = len(dense_ids)
+                attrs = {
+                    "type": dense_node_types[node_types[src_id]],
+                    "nx_id": dense_ids[node_id],
+                    "original_id": node_id,
+                    "current_type_mask": True
+                }
+                for field in node_data:
+                    attrs[field] = node_data[field][node_id]
+                graph.add_node(dense_ids[node_id], **attrs)
+
+        for ind, edge_row in enumerate(edges):
+            edge_id, edge_type, src_id, dst_id = edge_row["id"], edge_row["type"], edge_row["src"], edge_row["dst"]
+            add_node(nxg, src_id, node2type, dense_node_id, node_data)
+            add_node(nxg, dst_id, node2type, dense_node_id, node_data)
+            edge_signature = (node2type[src_id], edge_type, node2type[dst_id])
+
+            if src_id not in dense_node_id:
+                dense_node_id[src_id] = len(dense_node_id)
+                nxg.add_node(dense_node_id[src_id], type=node2type[src_id], original_id=src_id)
+            if dst_id not in dense_node_id:
+                dense_node_id[dst_id] = len(dense_node_id)
+                nxg.add_node(dense_node_id[dst_id], type=node2type[dst_id], original_id=dst_id)
+
+            typed_edge_ids_ = typed_edge_ids[edge_signature]
+            typed_edge_ids_[edge_id] = len(typed_edge_ids_)
+
+            edge_attrs = {
+                "type": dense_edge_types[edge_type],
+                "original_id": edge_id,
+                "typed_edge_id": typed_edge_ids_[edge_id],
+                "dense_edge_id": ind
+            }
+            for field in edge_data:
+                edge_attrs[field] = edge_data[edge_id]
+
+            nxg.add_edge(dense_node_id[src_id], dense_node_id[dst_id], **edge_attrs)
+
+        return nxg
+
+    # def _create_hetero_graph(self, nodes, edges, **kwargs):
+    #     node_data = kwargs.get("node_data", {})
+    #     edge_data = kwargs.get("edge_data", {})
+    #
+    #     def get_torch_type(canonical_type):
+    #         torch_types = {
+    #             "int32": torch.IntTensor,
+    #             "int64": torch.LongTensor,
+    #             "bool": torch.BoolTensor,
+    #         }
+    #         return torch_types[canonical_type]
+    #
+    #     node2type = dict(zip(nodes["id"], nodes["type"]))
+    #     dense_node_id = OrderedDict()
+    #     typed_subgraphs = defaultdict(list)
+    #     typed_edge_ids = defaultdict(OrderedDict)
+    #     node_data_ = dict()
+    #     edge_data_ = dict()
+    #
+    #     for edge_row in edges:
+    #         edge_id, edge_type, src_id, dst_id = edge_row["id"], edge_row["type"], edge_row["src"], edge_row["dst"]
+    #         edge_signature = (node2type[src_id], edge_type, node2type[dst_id])
+    #         if src_id not in dense_node_id:
+    #             dense_node_id[src_id] = len(dense_node_id)
+    #         if dst_id not in dense_node_id:
+    #             dense_node_id[dst_id] = len(dense_node_id)
+    #
+    #         typed_subgraphs[edge_signature].append((dense_node_id[src_id], dense_node_id[dst_id]))
+    #         typed_edge_ids_ = typed_edge_ids[edge_signature]
+    #         assert edge_id not in typed_edge_ids_, \
+    #             "Found edges without ids. This is likely happening because new edges were added without properly "\
+    #             "setting edge ids. The same happens if one removes reverse edges and then adds some of the reverse "\
+    #             "edges back."
+    #         typed_edge_ids_[edge_id] = len(typed_edge_ids_)
+    #
+    #     # edge_data_["typed_id"] = typed_edge_ids
+    #     edge_data_["original_id"] = dict(zip(edges["id"], edges["id"]))
+    #     # node_data_["typed_id"] = dense_node_id
+    #     node_data_["original_id"] = dict(zip(dense_node_id.keys(), dense_node_id.keys()))
+    #
+    #     # need to make metagraphs the same for all graphs. lines below assume node types is set to false always
+    #     assert self.use_node_types is False
+    #     _, all_edge_types = self.get_graph_types()
+    #     for etype in all_edge_types:
+    #         signature = ("node_", etype, "node_")
+    #         if signature not in typed_subgraphs:
+    #             typed_subgraphs[signature] = list()
+    #
+    #     num_nodes = len(nodes)
+    #     graph = dgl.heterograph(typed_subgraphs, num_nodes_dict={ntype: num_nodes for ntype in set(nodes["type"])})
+    #
+    #     # logging.info(
+    #     #     f"Unique triplet types in the graph: {len(typed_subgraphs.keys())}"
+    #     # )
+    #
+    #     def infer_type(dict_):
+    #         assert len(dict_) > 0
+    #         values = dict_.values()
+    #         item_ = next(iter(values))
+    #         if isinstance(item_, bool):
+    #             return "bool"
+    #         elif isinstance(item_, int):
+    #             return "int64"
+    #
+    #     def attach_node_data(graph, node_data):
+    #         node_order = list(dense_node_id.keys())
+    #         assert len(graph.ntypes) == 1
+    #
+    #         for col_name in node_data:
+    #             graph.nodes["node_"].data[col_name] = get_torch_type(infer_type(node_data[col_name]))(
+    #                 list(map(lambda x: node_data[col_name][x], node_order)),
+    #             )
+    #
+    #         graph.nodes["node_"].data["current_type_mask"] = torch.BoolTensor([True] * num_nodes)
+    #
+    #     def attach_edge_data(graph, edge_data):
+    #         for subgraph_signature in graph.canonical_etypes:
+    #             if subgraph_signature not in typed_edge_ids:
+    #                 continue
+    #             edge_order = typed_edge_ids[subgraph_signature].keys()
+    #             for col_name in edge_data:
+    #                 graph.edges[subgraph_signature].data[col_name] = get_torch_type(infer_type(edge_data[col_name]))(
+    #                     list(map(lambda x: edge_data[col_name][x], edge_order)),
+    #                 )
+    #
+    #     attach_node_data(graph, node_data)
+    #     attach_edge_data(graph, edge_data)
+    #     attach_node_data(graph, node_data_)
+    #     attach_edge_data(graph, edge_data_)
+    #     return graph
+
+    def _adjust_types(self, nodes, edges):
+        nodes["type_backup"] = nodes["type"]
+        edges["type_backup"] = edges["type"]
+        nodes["type"] = map(
+            partial(self._strip_types_if_needed, stripping_flag=self.use_node_types, stripped_type="node_"),
+            nodes["type"]
+        )
+
+        edges["type"] = map(
+            partial(self._strip_types_if_needed, stripping_flag=self.use_edge_types, stripped_type="edge_"),
+            edges["type"]
+        )
+
+    @staticmethod
+    def _add_type_nodes(nodes, edges):
+        node_new_id = max(nodes["id"]) + 1
+        edge_new_id = max(edges["id"]) + 1
+
+        new_nodes = []
+        new_edges = []
+        added_type_nodes = {}
+
+        node_slice = nodes[["id", "type"]]
+
+        for id, type in node_slice:
+            if type not in added_type_nodes:
+                added_type_nodes[type] = node_new_id
+                node_new_id += 1
+
+                new_nodes.append({
+                    "id": added_type_nodes[type],
+                    "name": type,
+                    "type": "type_node",
+                })
+
+            new_edges.append({
+                "id": edge_new_id,
+                "type": "node_type",
+                "src": added_type_nodes[type],
+                "dst": id,
+            })
+            edge_new_id += 1
+
+        nodes.chunks.append(new_nodes)
+        edges.chunks.append(new_edges)
+
+        return nodes, edges
+
+    def _add_k_hop_edges(self, nodes, edges, k_hops):
+        import networkx as nx
+        from SourceCodeTools.code.data.sourcetrail.sourcetrail_types import special_mapping
+
+        g = nx.from_pandas_edgelist(
+            edges, source="src", target="dst", create_using=nx.DiGraph, edge_attr="type"
+        )
+
+        skip_edges = (
+                set(special_mapping.keys()) |
+                set(special_mapping.values()) |
+                set(PythonNodeEdgeDefinitions.reverse_edge_exceptions.values()) |
+                set(filter(lambda edge_type: edge_type.endswith("_rev"), self._graph_storage.get_edge_type_descriptions()))
+        )
+
+        new_edge_id = max(edges["id"]) + 1
+
+        def expand_edges(edges, node_id, view, edge_prefix, level=0):
+            nonlocal new_edge_id
+
+            if level < k_hops:
+                if edge_prefix != "":
+                    edge_prefix += "|"
+                for e in view:
+                    next_edge_type = view[e]["type"]
+                    if level > 0:
+                        new_prefix = f"{level}_hop_connection"
+                        # edges.append((node_id, e, new_prefix.rstrip("|")))
+                        edges.append({"id": new_edge_id, "src": node_id, "dst": e, "type": new_prefix.rstrip("|")})
+                        new_edge_id += 1
+                    else:
+                        new_prefix = edge_prefix + next_edge_type
+                    # edges.append((node_id, e, new_prefix.rstrip("|")))
+                    if next_edge_type in skip_edges:
+                        continue
+                    expand_edges(edges, node_id, g[e], new_prefix, level=level + 1)
+                    # edges.extend(expand_edges(node_id, g[e], new_prefix, level=level+1))
+            return edges
+
+        new_edges = []
+        for node in g.nodes:
+            expand_edges(new_edges, node, g[node], "", level=0)
+
+        edges.chunks.append(new_edges)
+
+        edges.filter(lambda row: row["src"] != row["dst"])
+
+        return nodes, edges
+
+    def _create_graph_from_nodes_and_edges(
+            self, nodes, edges, node_data=None, edge_data=None, n_buckets=200000
+    ):
+        if node_data is None:
+            node_data = {}
+        if edge_data is None:
+            edge_data = {}
+
+        self._remove_edges_with_restricted_types(edges)
+
+        # if self.custom_reverse is not None:
+        #     edges = self._add_custom_reverse(edges)
+        # self.ensure_connectedness(nodes, edges)
+
+        if self.k_hops > 0:
+            nodes, edges = self._add_k_hop_edges(nodes, edges, self.k_hops)
+
+        if self.type_nodes:
+            nodes, edges = self._add_type_nodes(nodes, edges)
+
+        node_data["embedding_id"] = self._get_node_name2bucket_mapping(
+            self._get_embeddable_names(nodes),
+            n_buckets
+        )
+
+        self._adjust_types(nodes, edges)
+
+        if len(edges) > 0:
+            subgraph = self._create_hetero_graph(nodes, edges, node_data=node_data, edge_data=edge_data)
+            return subgraph
+        else:
+            return None
+
+
 def read_or_create_gnn_dataset(args, model_base, force_new=False, restore_state=False):
     if restore_state and not force_new:
         args = load_config(join(model_base, "dataset.config"))
-        dataset = SourceGraphDataset(**args)
+        dataset = SourceGraphDatasetNoPandas(**args)
     else:
-        dataset = SourceGraphDataset(**args)
+        dataset = SourceGraphDatasetNoPandas(**args)
 
         # save dataset state for recovery
         save_config(args, join(model_base, "dataset.config"))
@@ -1482,6 +1823,42 @@ class ProxyDataset(SourceGraphDataset):
         )
 
 
+class ProxyDatasetNoPandas(SourceGraphDatasetNoPandas):
+    def __init__(self, *args, **kwargs):
+        super(ProxyDatasetNoPandas, self).__init__(*args, **kwargs)
+
+    def _initialize_storage(self, **kwargs):
+        storage_kwargs = kwargs.get("storage_kwargs")
+        if storage_kwargs is None:
+            raise ValueError("Storage arguments are not provided")
+
+        self._graph_storage = InMemoryGraphStorageNoPandas(**storage_kwargs)
+
+    def _initialize_partition_index(self, partition):
+        # if self.type_nodes:
+        #     nodes, edges = self._add_type_nodes(self._graph_storage._nodes, self._graph_storage._edges)
+        # else:
+        #     nodes, edges = self._graph_storage._nodes, self._graph_storage._edges
+        all_ids = set(self._graph_storage.get_nodes()["id"]) | set(self._graph_storage.get_edges()["id"])
+        partition = pd.DataFrame.from_dict({"id": list(all_ids)}, orient="columns")
+        partition["train_mask"] = True
+        partition["test_mask"] = True
+        partition["val_mask"] = True
+        self._partition = PartitionIndex(partition)
+
+    def get_num_nodes(self):
+        return self._graph_storage.get_num_nodes()
+
+    def get_num_edges(self):
+        return self._graph_storage.get_num_edges()
+
+    def create_graph(self):
+        return self._create_graph_from_nodes_and_edges(
+            self._graph_storage.get_nodes(),
+            self._graph_storage.get_edges()
+        )
+
+
 def test_dataset():
     import sys
 
@@ -1490,17 +1867,19 @@ def test_dataset():
     # nodes_path = sys.argv[1]
     # edges_path = sys.argv[2]
 
-    dataset = SourceGraphDataset(
+    dataset = SourceGraphDatasetNoPandas(
         data_path, partition,
         use_node_types=False,
         use_edge_types=True,
         no_global_edges=True,
         remove_reverse=False,
-        custom_reverse=["global_mention"],
-        tokenizer_path="/Users/LTV/Downloads/NitroShare/v2_subsample_no_spacy_v3/with_ast/sentencepiece_bpe.model"
+        # custom_reverse=["global_mention"],
+        tokenizer_path="/Users/LTV/Downloads/NitroShare/v2_subsample_no_spacy_v3/with_ast/sentencepiece_bpe.model",
+        # type_nodes=True,
+        # k_hops=2
     )
     # node_names = unpersist("/Users/LTV/Downloads/NitroShare/v2_subsample_v4_new_ast2_fixed_distinct_types/with_ast/node_names.json.bz2")
-    node_names = dataset.load_node_names(min_count=5)
+    # node_names = dataset.load_node_names(min_count=5)
     # token_names = dataset.load_token_prediction()
     # global_edges = dataset.load_global_edges_prediction()
     # type_labels = dataset.load_type_prediction()
@@ -1510,17 +1889,24 @@ def test_dataset():
     # from SourceCodeTools.models.graph.ElementEmbedderBase import ElementEmbedderBase
     # from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedder
     # from SourceCodeTools.models.graph.ElementEmbedder import ElementEmbedderWithBpeSubwords
-    from SourceCodeTools.code.data.dataset.DataLoader import SGNodesDataLoader
-    dataloader = SGNodesDataLoader(dataset, labels_for="nodes", number_of_hops=3, batch_size=512, labels=node_names,
-        masker_fn=dataset.create_node_name_masker,
-        label_loader_class=TargetLoader,
-        label_loader_params={
-            "emb_size": 100,
-            "tokenizer_path": "/Users/LTV/Downloads/NitroShare/v2_subsample_no_spacy_v3/with_ast/sentencepiece_bpe.model"
-        })
-    dataloader.get_dataloader(
-        partition_label="train",
-    )
+
+
+    # from SourceCodeTools.code.data.dataset.DataLoader import SGNodesDataLoader
+    # dataloader = SGNodesDataLoader(dataset, labels_for="nodes", number_of_hops=3, batch_size=512, labels=node_names,
+    #     masker_fn=dataset.create_node_name_masker,
+    #     label_loader_class=TargetLoader,
+    #     label_loader_params={
+    #         "emb_size": 100,
+    #         "tokenizer_path": "/Users/LTV/Downloads/NitroShare/v2_subsample_no_spacy_v3/with_ast/sentencepiece_bpe.model"
+    #     })
+    # train_data = dataloader.get_dataloader(
+    #     partition_label="train",
+    # )
+
+
+    from tqdm import tqdm
+    for graph in tqdm(dataset.iterate_subgraphs(how=SGPartitionStrategies["file"], groups=None, node_data=None, edge_data=None, subgraph_data=None, n_buckets=100)):
+        pass
 
     # sm = dataset.create_subword_masker()
     print(dataset)

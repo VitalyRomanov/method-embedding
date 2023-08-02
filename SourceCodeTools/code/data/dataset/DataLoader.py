@@ -6,11 +6,13 @@ from collections import defaultdict
 from copy import copy
 
 import dgl
+import networkx as nx
 import numpy as np
 import pandas as pd
 import torch
 from dgl.dataloading import MultiLayerFullNeighborSampler, NodeDataLoader, EdgeDataLoader
 import diskcache as dc
+from tqdm import tqdm
 
 from SourceCodeTools.code.data.dataset.Dataset import SGPartitionStrategies
 from SourceCodeTools.code.data.dataset.NewProcessNodeDataLoader import NewProcessNodeDataLoader
@@ -186,11 +188,12 @@ class SGAbstractDataLoader(ABC):
         ):
 
             if masker_fn is not None:
-                cache_key = self._get_df_hash(subgraph["nodes"]) + self._get_df_hash(subgraph["edges"])
-                if cache_key not in self._masker_cache:
-                    # masker = masker_fn(nodes, edges)
-                    self._masker_cache[cache_key] = masker_fn(subgraph["nodes"], subgraph["edges"])
-                masker = self._masker_cache[cache_key]
+                # cache_key = self._get_df_hash(subgraph["nodes"]) + self._get_df_hash(subgraph["edges"])
+                # if cache_key not in self._masker_cache:
+                #     # masker = masker_fn(nodes, edges)
+                #     self._masker_cache[cache_key] = masker_fn(subgraph["nodes"], subgraph["edges"])
+                # masker = self._masker_cache[cache_key]
+                masker = masker_fn(subgraph["nodes"], subgraph["edges"])
             else:
                 masker = None
 
@@ -212,7 +215,8 @@ class SGAbstractDataLoader(ABC):
             partition_mask = node_data[partition]
             with torch.no_grad():
                 if partition_mask.any().item() is True:
-                    nodes_for_batching_mask = node_data["current_type_mask"] & partition_mask  # for current subgraph
+                    # nodes_for_batching_mask = node_data["current_type_mask"] & partition_mask  # for current subgraph
+                    nodes_for_batching_mask = partition_mask  # for current subgraph
                     # labels for subgraphs should be handled differently
                     if "has_label" in node_data and labels_for != SGLabelSpec.subgraphs:
                         nodes_for_batching_mask &= node_data["has_label"]
@@ -469,14 +473,14 @@ class SGNodesDataLoader(SGAbstractDataLoader):
         # loader = NewProcessNodeDataLoader(subgraph, nodes_for_batching, sampler, batch_size=batch_size)
         loader = self._create_node_batch_iterator(subgraph, ids_for_batch, sampler, self.batch_size)
 
-        nodes_in_graph = set(subgraph.nodes("node_")[subgraph.nodes["node_"].data["current_type_mask"]].cpu().numpy())
+        # nodes_in_graph = set(subgraph.nodes("node_")[subgraph.nodes["node_"].data["current_type_mask"]].cpu().numpy())
         # nodes_in_graph = set(nodes_for_batching["node_"].numpy())
 
         for ind, (input_nodes, seeds, blocks) in enumerate(loader):  # 2-3gb consumed here
             if masker is not None:
                 input_mask = masker.get_mask(
                     mask_for=blocks[-1].dstdata["original_id"], input_nodes=blocks[0].srcdata["original_id"]
-                )
+                ).to(self.device)
             else:
                 input_mask = None
 
@@ -489,15 +493,15 @@ class SGNodesDataLoader(SGAbstractDataLoader):
 
             positive_targets, negative_targets = self.positive_negative(labels_loader, indices)
 
-            assert len(set(seeds.numpy()) - nodes_in_graph) == 0
+            # assert len(set(seeds.numpy()) - nodes_in_graph) == 0
 
             assert -1 not in input_nodes.tolist()
 
             batch = {
-                "input_nodes": input_nodes,
+                "input_nodes": input_nodes.to(self.device),
                 "input_mask": input_mask,
                 "indices": indices,
-                "blocks": [block for block in blocks],
+                "blocks": [block.to(self.device) for block in blocks],
                 "positive_indices": positive_targets,
                 "negative_indices": negative_targets,
                 # "labels_loader": labels_loader,
@@ -505,11 +509,11 @@ class SGNodesDataLoader(SGAbstractDataLoader):
 
             yield batch
 
-            for key in list(batch.keys()):
-                if key in ["blocks"]:
-                    for ind in range(len(batch[key])):
-                        del batch[key][0]
-                del batch[key]
+            # for key in list(batch.keys()):
+            #     if key in ["blocks"]:
+            #         for ind in range(len(batch[key])):
+            #             del batch[key][0]
+            #     del batch[key]
 
         self._finalize_batch_iterator(loader)
 
@@ -1109,3 +1113,263 @@ class SGSubgraphDataLoader(SGNodesDataLoader):
             yield self._prepare_batch(batch_subgrap_id, batch_subgraphs, labels_loader, number_of_hops)
             batch_subgrap_id.clear()
             batch_subgraphs.clear()
+
+
+class SGNodesEfficientDataLoader(SGNodesDataLoader):
+    # def batches_from_graph(
+    #         self, graph, sampler, ids_for_batch, masker, labels_loader, **kwargs
+    # ):
+    #     subgraph = graph
+    #     # loader = NewProcessNodeDataLoader(subgraph, nodes_for_batching, sampler, batch_size=batch_size)
+    #     loader = self._create_node_batch_iterator(subgraph, ids_for_batch, sampler, self.batch_size)
+    #     nxg = dgl.to_homogeneous(graph.reverse()).to_networkx()
+    #
+    #     edges_ = set()
+    #     seeds = ids_for_batch["node_"].tolist()
+    #     def extend(graph, seeds, edges, level, max_levels):
+    #         if level < max_levels:
+    #             for seed in seeds:
+    #                 for next_ in graph[seed]:
+    #                     edges.add((next_, seed))
+    #                 extend(graph, graph[seed], edges, level+1, max_levels)
+    #
+    #     extend(nxg, seeds, edges_, 0, 5)
+    #
+    #     # nodes_in_graph = set(subgraph.nodes("node_")[subgraph.nodes["node_"].data["current_type_mask"]].cpu().numpy())
+    #     # nodes_in_graph = set(nodes_for_batching["node_"].numpy())
+    #
+    #     for ind, (input_nodes, seeds, blocks) in enumerate(loader):  # 2-3gb consumed here
+    #         if masker is not None:
+    #             input_mask = masker.get_mask(
+    #                 mask_for=blocks[-1].dstdata["original_id"], input_nodes=blocks[0].srcdata["original_id"]
+    #             ).to(self.device)
+    #         else:
+    #             input_mask = None
+    #
+    #         # indices = self.seeds_to_python(seeds)  # dgl returns torch tensor
+    #         indices = blocks[-1].dstnodes["node_"].data["original_id"].tolist()
+    #         input_nodes = blocks[0].srcnodes["node_"].data["embedding_id"]
+    #
+    #         if isinstance(indices, dict):
+    #             raise NotImplementedError("Using node types is currently not supported. Set use_node_types=False")
+    #
+    #         positive_targets, negative_targets = self.positive_negative(labels_loader, indices)
+    #
+    #         # assert len(set(seeds.numpy()) - nodes_in_graph) == 0
+    #
+    #         assert -1 not in input_nodes.tolist()
+    #
+    #         batch = {
+    #             "input_nodes": input_nodes.to(self.device),
+    #             "input_mask": input_mask,
+    #             "indices": indices,
+    #             "blocks": [block.to(self.device) for block in blocks],
+    #             "positive_indices": positive_targets,
+    #             "negative_indices": negative_targets,
+    #             # "labels_loader": labels_loader,
+    #         }
+    #
+    #         yield batch
+    #
+    #         # for key in list(batch.keys()):
+    #         #     if key in ["blocks"]:
+    #         #         for ind in range(len(batch[key])):
+    #         #             del batch[key][0]
+    #         #     del batch[key]
+    #
+    #     self._finalize_batch_iterator(loader)
+
+    @staticmethod
+    def _get_ids_from_partition_for_nodes(graph, partition, labels_for):
+        nodes = []
+
+        for node in graph.nodes:
+            node_data = graph.nodes[node]
+            in_partition = node_data[partition]
+            if "has_label" in node_data:
+                in_partition &= node_data["has_label"]
+            if in_partition:
+                nodes.append(node)
+
+        return nodes
+
+    def sample_frontier(self, graph, seeds, subgraph_nodes, level, max_levels):
+        if level < max_levels:
+            for seed in seeds:
+                for next_ in graph[seed]:
+                    subgraph_nodes.add(next_)
+                self.sample_frontier(graph, graph[seed], subgraph_nodes, level + 1, max_levels)
+
+    def batches_from_graph(
+            self, graph: nx.DiGraph, sampler, ids_for_batch, masker, labels_loader, **kwargs
+    ):
+        metagraph = kwargs.pop("metagraph")
+        ntypes = kwargs.pop("ntypes")
+        etypes = kwargs.pop("etypes")
+        reversed = graph.reverse(False)
+        # pool = []
+        # target_ids = set()
+
+        for ind in range(0, len(ids_for_batch), self.batch_size):
+            seeds = ids_for_batch[ind: ind + self.batch_size]
+            subgraph_nodes = set(seeds)
+
+            self.sample_frontier(reversed, seeds, subgraph_nodes, 0, self.number_of_hops)
+            s_ = graph.subgraph(subgraph_nodes)
+
+            node_fields = list(graph.nodes[0].keys())
+            edge_fields = list(graph.get_edge_data(0, 1).keys())
+
+            subgraph = dgl.from_networkx(s_, node_attrs=node_fields, edge_attrs=edge_fields)
+            # if len(etypes) > 1:
+            subgraph = dgl.to_heterogeneous(
+                subgraph, ntypes, etypes, ntype_field="type", etype_field="type", metagraph=metagraph
+            )
+
+            target_mask = torch.BoolTensor([seed in seeds for seed in subgraph.ndata["nx_id"].numpy()])
+            input_nodes = subgraph.ndata["embedding_id"]
+            indices = subgraph.ndata["original_id"][target_mask]
+            # target_ids.update(indices.tolist())
+            # pool.append(subgraph)
+
+            # if len(target_ids) >= self.batch_size:
+            #     bgraph = dgl.batch(pool)
+            #     target_mask = torch.BoolTensor([seed in target_ids for seed in subgraph.ndata["original_id"].numpy()])
+            #     input_nodes = subgraph.ndata["embedding_id"]
+            #     indices = subgraph.ndata["original_id"][target_mask]
+            #     pool.clear()
+            #     target_ids.clear()
+
+            if masker is not None:
+                input_mask = masker.get_mask(
+                    mask_for=indices, input_nodes=subgraph.srcdata["original_id"]
+                ).to(self.device)
+            else:
+                input_mask = None
+
+            positive_targets, negative_targets = self.positive_negative(labels_loader, indices.tolist())
+
+            blocks = [subgraph] * self.number_of_hops
+
+            batch = {
+                "input_nodes": input_nodes.to(self.device),
+                "input_mask": input_mask,
+                "indices": indices,
+                "blocks": [block.to(self.device) for block in blocks],
+                "positive_indices": positive_targets,
+                "negative_indices": negative_targets,
+                "target_mask": target_mask.to(self.device),
+                # "labels_loader": labels_loader,
+            }
+
+            yield batch
+
+    def create_batches(self, subgraph_generator, number_of_hops, batch_size, partition, labels_for):
+        metagraph = {}
+
+        ntypes, etypes = self.dataset.get_graph_types()
+        for etype in etypes:
+            signature = ("node_", etype, "node_")
+            metagraph[signature] = []
+
+        metagraph = dgl.heterograph(metagraph).metagraph()
+
+        for subgraph_ in subgraph_generator:
+            group = subgraph_["group"]
+            subgraph = subgraph_["subgraph"]
+            masker = subgraph_["masker"]
+            labels_loader = subgraph_["labels_loader"]
+            edges_bloom_filter = subgraph_["edges_bloom_filter"]
+
+            # logging.info("Preparing new DGL graph for batching")
+
+            for_batching = self._get_ids_from_partition(subgraph, partition, labels_for)
+            _num_for_batching_total = self._num_for_batching_total(for_batching)
+
+            yield from self.batches_from_graph(
+                subgraph, sampler=None, ids_for_batch=for_batching, masker=masker, labels_loader=labels_loader,
+                metagraph=metagraph, ntypes=ntypes, etypes=etypes
+            )
+
+            # if _num_for_batching_total == 0:
+            #     continue
+            # else:
+            #     pool.append(subgraph)
+            #     in_pool += _num_for_batching_total
+            #
+            # if in_pool < self.batch_size:
+            #     continue
+            #
+            # graphs = [s for s in pool]
+            # graph = dgl.batch(graphs)
+            # for_batching = self._get_ids_from_partition(graph, partition, labels_for)
+            # in_pool = 0
+            # pool.clear()
+            #
+            # yield from self.batches_from_graph(
+            #     graph=graph,
+            #     sampler=sampler,
+            #     ids_for_batch=for_batching,
+            #     masker=masker,
+            #     labels_loader=labels_loader,
+            # )
+
+
+class SGMisuseNodesEfficientDataLoader(SGNodesEfficientDataLoader):
+    def __init__(self, *args, **kwargs):
+        super(SGMisuseNodesEfficientDataLoader, self).__init__(*args, **kwargs)
+
+    def batches_from_graph(
+            self, graph: nx.DiGraph, sampler, ids_for_batch, masker, labels_loader, **kwargs
+    ):
+        metagraph = kwargs.pop("metagraph")
+        ntypes = kwargs.pop("ntypes")
+        etypes = kwargs.pop("etypes")
+        reversed = graph.reverse(False)
+
+        for ind in range(0, len(ids_for_batch), self.batch_size):
+            seeds = ids_for_batch[ind: ind + self.batch_size]
+            subgraph_nodes = set(seeds)
+
+            self.sample_frontier(reversed, seeds, subgraph_nodes, 0, self.number_of_hops)
+            s_ = graph.subgraph(subgraph_nodes)
+
+            node_fields = list(graph.nodes[0].keys())
+            edge_fields = list(graph.get_edge_data(0, 1).keys())
+
+            subgraph = dgl.from_networkx(s_, node_attrs=node_fields, edge_attrs=edge_fields)
+            subgraph = dgl.to_heterogeneous(
+                subgraph, ntypes, etypes, ntype_field="type", etype_field="type", metagraph=metagraph
+            )
+
+            target_mask = torch.BoolTensor([seed in seeds for seed in subgraph.ndata["nx_id"].numpy()])
+            input_nodes = subgraph.ndata["embedding_id"]
+            indices = subgraph.ndata["original_id"][target_mask]
+
+            positive_targets, negative_targets = self.positive_negative(labels_loader, indices.tolist())
+
+            if positive_targets is not None and positive_targets.sum() == 0:
+                continue
+
+            if masker is not None:
+                input_mask = masker.get_mask(
+                    mask_for=indices, input_nodes=subgraph.srcdata["original_id"]
+                ).to(self.device)
+            else:
+                input_mask = None
+
+            blocks = [subgraph] * self.number_of_hops
+
+            batch = {
+                "input_nodes": input_nodes.to(self.device),
+                "input_mask": input_mask,
+                "indices": indices,
+                "blocks": [block.to(self.device) for block in blocks],
+                "positive_indices": positive_targets,
+                "negative_indices": negative_targets,
+                "target_mask": target_mask.to(self.device),
+                # "labels_loader": labels_loader,
+                "misuse_node_mask": None
+            }
+
+            yield batch

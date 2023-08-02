@@ -1,10 +1,66 @@
 import os
 import sqlite3
 from enum import Enum
+from itertools import chain, islice
 
 import pandas as pd
 from sqlalchemy import create_engine
 from sqlalchemy.types import Boolean, Date, String, Integer
+
+
+class Chunk:
+    def __init__(self, *chunks):  #, column_names=None):
+        self.chunks = list(chunks)
+        # self.column_names = column_names
+
+    def __len__(self):
+        return sum(map(len, self.chunks))
+
+    def __iter__(self):
+        return iter(chain(*self.chunks))
+
+    # def slice_column(self, ind):
+    #     if isinstance(ind, str):
+    #         assert self.column_names is not None
+    #         ind = self.column_names.index(ind)
+    #     for row in iter(self):
+    #         yield row[ind]
+
+    def slice_column(self, field):
+        for row in iter(self):
+            yield row[field]
+
+    def extend(self, new):
+        new_chunk = Chunk(*self.chunks, *new.chunks)  # , column_names=self.column_names)
+        assert len(set(map(lambda x: len(x[0]), self.chunks)))
+        return new_chunk
+
+    def filter(self, fn, inplace=True):
+        if inplace is False:
+            return Chunk(row for row in self if fn(row))
+
+        self.chunks = [
+            [row for row in self if fn(row)]
+        ]
+
+    def __getitem__(self, item):
+        if isinstance(item, slice):
+            return Chunk(list(islice(iter(self), item.start, item.stop, item.step)))  # , column_names=self.column_names)
+        elif isinstance(item, int):
+            return Chunk(list(islice(iter(self), item, item+1)))  # , column_names=self.column_names)
+        elif isinstance(item, str):
+            return self.slice_column(item)
+        elif isinstance(item, list):
+            return zip(*(self[col] for col in item))
+        else:
+            raise ValueError
+
+    def __setitem__(self, key, value):
+        seen = 0
+        for row, value_ in zip(self, value):
+            row[key] = value_
+            seen += 1
+        assert seen == len(self)
 
 
 class AbstractDBStorage:
@@ -56,8 +112,31 @@ class AbstractDBStorage:
         if create_index is not None and create_index is not False:
             self.create_index_for_table(table, table_name, create_index=create_index)
 
-    def query(self, query_string, **kwargs):
-        return pd.read_sql(query_string, self.conn, **kwargs)
+    def _query_output_to_dict(self, output, column_names):
+        assert len(output[0]) == len(column_names)
+        return [dict(zip(column_names, row)) for row in output]
+
+    def query(self, query_string, as_table=True, **kwargs):
+        column_names = kwargs.pop("column_names", None)
+        if as_table:
+            return pd.read_sql(query_string, self.conn, **kwargs)
+        else:
+            assert column_names is not None
+            assert len(set(column_names)) == len(column_names)
+            chunksize = kwargs.pop("chunksize", None)
+            cursor = self.conn.cursor()
+            cursor.execute(query_string)
+
+            if chunksize is None:
+                return Chunk(self._query_output_to_dict(cursor.fetchall(), column_names=column_names))
+            else:
+                def iterate_chunks():
+                    while True:
+                        chunk = cursor.fetchmany(chunksize)
+                        if len(chunk) == 0:
+                            break
+                        yield Chunk(self._query_output_to_dict(chunk, column_names=column_names))
+                return iterate_chunks()
 
     def commit(self):
         self.conn.commit()
