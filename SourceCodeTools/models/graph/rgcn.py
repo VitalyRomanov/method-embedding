@@ -39,8 +39,8 @@ def get_tensor_metrics(tensor, path):
     with torch.no_grad():
         output_metrics[f"{path}/mean"] = tensor.mean()
         output_metrics[f"{path}/max"] = tensor.max()
-        output_metrics[f"{path}/quantile_0.75"] = torch.quantile(tensor, 0.75)
-        output_metrics[f"{path}/quantile_0.5"] = torch.quantile(tensor, 0.5)
+        # output_metrics[f"{path}/quantile_0.75"] = torch.quantile(tensor, 0.75)
+        # output_metrics[f"{path}/quantile_0.5"] = torch.quantile(tensor, 0.5)
 
     return output_metrics
 
