@@ -7,7 +7,10 @@ from queue import Empty
 from time import sleep
 from typing import Union, Set
 
-from SourceCodeTools.code.data.GraphStorage import AbstractGraphStorage, OnDiskGraphStorageWithFastIteration
+from tqdm import tqdm
+
+from SourceCodeTools.code.data.GraphStorage import AbstractGraphStorage, OnDiskGraphStorageWithFastIteration, \
+    OnDiskGraphStorageWithFastIterationNoPandas
 
 
 class Message:
@@ -31,6 +34,7 @@ class GraphStorageWorker:
         get_num_edges = 11
         get_info_for_subgraphs = 12
         get_info_for_edge_ids = 13
+        get_all_files = 14
 
     class OutboxTypes(Enum):
         iterate_subgraphs = 0
@@ -48,6 +52,7 @@ class GraphStorageWorker:
         info_for_subgraphs = 12
         info_for_edge_ids = 13
         worker_started = 14
+        all_files = 15
 
     inbox_queue: Queue
     outbox_queue: Queue
@@ -84,7 +89,7 @@ class GraphStorageWorker:
         if keep_trying:
             # logging.info(f"Blocking until sent")
             while queue.full():
-                sleep(0.2)
+                sleep(0.02)
         else:
             if queue.full():
                 return False
@@ -99,7 +104,7 @@ class GraphStorageWorker:
         try:
             # if verbose:
             #     logging.info("Checking incoming requests")
-            message = self.inbox_queue.get(timeout=0.2)
+            message = self.inbox_queue.get(timeout=0.0)
             if message.descriptor == self.InboxTypes.iterate_subgraphs:
                 # logging.info("New iteration request has arrived, begin cleanup")
                 while not self.outbox_queue.empty():
@@ -223,6 +228,12 @@ class GraphStorageWorker:
                 content=self.dataset_db.get_info_for_edge_ids(**kwargs)
             ))
 
+        elif message.descriptor == GraphStorageWorker.InboxTypes.get_all_files:
+            self.send_out(Message(
+                descriptor=GraphStorageWorker.OutboxTypes.all_files,
+                content=self.dataset_db.get_all_files(**kwargs)
+            ))
+
         else:
             raise ValueError(f"Unrecognized message descriptor: {message.descriptor.name}")
 
@@ -249,7 +260,7 @@ class GraphStorageWorkerAdapter(AbstractGraphStorage):
     def __init__(self, path, storage_class):
         self.inbox_queue = Queue(maxsize=30)
         self.outbox_queue = Queue()
-        self.iteration_queue = Queue(maxsize=30)
+        self.iteration_queue = Queue(maxsize=100)
 
         self.worker_proc = Process(
             target=start_worker, args=(
@@ -259,13 +270,8 @@ class GraphStorageWorkerAdapter(AbstractGraphStorage):
                 self.iteration_queue
             )
         )
-        # self.history = []
         self.worker_proc.start()
         self.receive_init_confirmation()
-        # self._stop_iteration = False
-
-    # def stop_iteration(self):
-    #     self._stop_iteration = True
 
     def receive_init_confirmation(self):
         self.receive_expected(GraphStorageWorker.OutboxTypes.worker_started, timeout=10)
@@ -426,23 +432,116 @@ class GraphStorageWorkerAdapter(AbstractGraphStorage):
             }
         )
 
+    def get_node_types(self):
+        return self.send_request_and_receive_response(
+            request_descriptor=GraphStorageWorker.InboxTypes.get_node_types,
+            response_descriptor=GraphStorageWorker.OutboxTypes.node_types,
+        )
+
+    def get_all_files(self):
+        return self.send_request_and_receive_response(
+            request_descriptor=GraphStorageWorker.InboxTypes.get_all_files,
+            response_descriptor=GraphStorageWorker.OutboxTypes.all_files,
+        )
+
     def __del__(self):
         # stop iteration
         # terminate
         ...
 
 
+class GraphStorageWorkerMetaAdapter(AbstractGraphStorage):
+    def __init__(self, path, storage_class, num_workers):
+        self._workers = []
+        for _ in range(num_workers):
+            self._workers.append(
+                GraphStorageWorkerAdapter(path, storage_class)
+            )
+
+    def get_node_type_descriptions(self):
+        return self._workers[0].get_node_type_descriptions()
+
+    def get_edge_type_descriptions(self):
+        return self._workers[0].get_edge_type_descriptions()
+
+    def get_num_nodes(self):
+        return self._workers[0].get_num_nodes()
+
+    def get_num_edges(self):
+        return self._workers[0].get_num_edges()
+
+    def get_nodes(self, type_filter=None):
+        return self._workers[0].get_nodes(type_filter)
+
+    def get_edges(self, type_filter=None):
+        return self._workers[0].get_edges(type_filter)
+
+    def iterate_subgraphs(self, how, groups=None):
+        if groups is None:
+            groups = self.get_all_files()
+        ids = list(groups)
+        ids_per_worker = len(ids) // len(self._workers)
+        workers_iterators = []
+        start = 0
+        ignore_workers = []
+        for ind, worker in enumerate(self._workers):
+            ids_ = ids[start: start + ids_per_worker]
+            if len(ids_) == 0:
+                ignore_workers.append(ind)
+                continue
+            start += ids_per_worker
+            # workers_iterators.append((worker, iter(worker.iterate_subgraphs(how, ids_))))
+            workers_iterators.append(worker.iterate_subgraphs(how, ids_))
+
+        # for subgraphs in zip(*workers_iterators):
+        #     for subgraph in subgraphs:
+        #         yield subgraph
+
+        terminate = False
+        while terminate is False:
+            for ind, iterator in enumerate(workers_iterators):
+                if ind in ignore_workers:
+                    continue
+                try:
+                    yield next(iterator)
+                except StopIteration:
+                    ignore_workers.append(ind)
+
+                if len(ignore_workers) == len(self._workers):
+                    terminate = True
+
+    def get_nodes_with_subwords(self):
+        return self._workers[0].get_nodes_with_subwords()
+
+    def get_nodes_for_classification(self):
+        return self._workers[0].get_nodes_for_classification()
+
+    def get_info_for_subgraphs(self, subgraph_ids, field):
+        return self._workers[0].get_info_for_subgraphs(subgraph_ids, field)
+
+    def get_info_for_node_ids(self, node_ids, field):
+        return self._workers[0].get_info_for_node_ids(node_ids, field)
+
+    def get_info_for_edge_ids(self, edge_ids, field):
+        return self._workers[0].get_info_for_edge_ids(edge_ids, field)
+
+    def get_node_types(self):
+        return self._workers[0].get_node_types()
+
+    def get_all_files(self):
+        return self._workers[0].get_all_files()
+
+
 def test_adapter():
-    storage = GraphStorageWorkerAdapter(
-        path="/Users/LTV/dev/method-embeddings/examples/large_graph/dataset.db",
-        storage_class=OnDiskGraphStorageWithFastIteration
+    storage = GraphStorageWorkerMetaAdapter(
+        path="/Users/LTV/Downloads/NitroShare/codeseatchnet_dedicated_type_pred/dataset.db",
+        storage_class=OnDiskGraphStorageWithFastIterationNoPandas,
+        num_workers=4
     )
 
     from SourceCodeTools.code.data.dataset.partition_strategies import SGPartitionStrategies
-    iterator = storage.iterate_subgraphs(SGPartitionStrategies.mention, groups=None)
-
-    for i in range(4):
-        next(iterator)
+    for graph in tqdm(storage.iterate_subgraphs(SGPartitionStrategies.file, groups=None)):
+        pass
 
     print()
 

@@ -1,13 +1,14 @@
 import logging
 from copy import copy
-from torch.multiprocessing import Queue, Process
+from multiprocessing import Queue, Process
 from enum import Enum
 from queue import Empty
+from threading import Thread
 from time import sleep
 from typing import Union, Set
 
 from SourceCodeTools.code.data.dataset.DataLoader import SGAbstractDataLoader
-from SourceCodeTools.code.data.dataset.Dataset import SourceGraphDataset
+from SourceCodeTools.code.data.dataset.Dataset import SourceGraphDataset, SourceGraphDatasetNoPandas
 
 
 class Message:
@@ -47,7 +48,7 @@ class DataLoaderWorker:
 
     def __init__(self, config, dataloader_class, inbox_queue, outbox_queue, iteration_queue):
         dataset_config = config["dataset"]
-        config["dataset"] = SourceGraphDataset(**dataset_config)
+        config["dataset"] = SourceGraphDatasetNoPandas(**dataset_config)
         self.dataloader = dataloader_class(**config)
 
         self.inbox_queue = inbox_queue
@@ -84,7 +85,7 @@ class DataLoaderWorker:
     def check_for_new_messages(self):
         interrupt_iteration = False
         try:
-            message = self.inbox_queue.get(timeout=0.2)
+            message = self.inbox_queue.get(timeout=0.0)
             if message.descriptor == self.InboxTypes.iterate_subgraphs:
                 while not self.outbox_queue.empty():
                     self.outbox_queue.get()
@@ -218,7 +219,7 @@ class DataLoaderWorkerAdapter(SGAbstractDataLoader):
             negative_sampling_strategy="w2v", neg_sampling_factor=1, base_path=None, objective_name=None,
             embedding_table_size=300000
     ):
-        pass
+        self.device = device
 
     def get_label_loader(self, partition):
         return self.send_request_and_receive_response(
@@ -329,6 +330,18 @@ class DataLoaderWorkerAdapter(SGAbstractDataLoader):
             )
             if received is None:
                 break
+            # for key, item in received.items():
+            #     if isinstance(item, list):
+            #         try:
+            #             for item_ in item:
+            #                 item_.to(self.device)
+            #         except:
+            #             continue
+            #     else:
+            #         try:
+            #             item.to(self.device)
+            #         except:
+            #             continue
             yield received
 
     def partition_iterator(self, partition_label):
@@ -342,3 +355,38 @@ class DataLoaderWorkerAdapter(SGAbstractDataLoader):
                 return iterate_partition(self.partition_label)
 
         return MPSGDLIter()
+
+
+# def test_dataloader():
+#
+#     dataset_config = {
+#         "data_path": "/Users/LTV/Downloads/NitroShare/codeseatchnet_dedicated_type_pred",
+#         "partition": "/Users/LTV/Downloads/NitroShare/codeseatchnet_dedicated_type_pred/partition_type_prediction.json.bz2",
+#         "use_node_types": False,
+#         "use_edge_types": True,
+#         "no_global_edges": True,
+#         "remove_reverse": False,
+#         # "custom_reverse": ["global_mention"],
+#         "tokenizer_path": "/Users/LTV/Downloads/NitroShare/v2_subsample_no_spacy_v3/with_ast/sentencepiece_bpe.model",
+#         # "type_nodes": True,
+#         # "k_hops": 2
+#     }
+#
+#     dataloader = DataLoaderWorkerAdapter(
+#         dataset=dataset_config, labels_for="file", number_of_hops=3, batch_size=64,
+#         preload_for=preload_for, labels=labels,
+#         masker_fn=masker_fn, label_loader_class=label_loader_class, label_loader_params=label_loader_params,
+#         negative_sampling_strategy="w2v" if self.force_w2v else "closest", neg_sampling_factor=self.neg_sampling_factor,
+#         base_path=self.base_path, objective_name=self.name, device=self.device,
+#         embedding_table_size=self.embedding_table_size,
+#         dataloader_class=self.dataloader_class
+#     )
+#
+#
+#     dataloader = DataLoaderWorkerAdapter(SourceGraphDatasetNoPandas, **config)
+#
+#     for subgraph in dataloader
+#
+#
+# if __name__ == "__main__":
+#     test_dataloader()
