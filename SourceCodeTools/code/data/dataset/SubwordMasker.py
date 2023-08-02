@@ -1,7 +1,8 @@
 import pandas as pd
 import torch
 
-from SourceCodeTools.code.data.DBStorage import SQLiteStorage
+from SourceCodeTools.code.data.DBStorage import SQLiteStorage, Chunk
+
 
 # TODO
 # masking using edge weight
@@ -87,6 +88,32 @@ class SubwordMasker:
             get_masked_ids(mask_for.tolist(), for_masking)
 
         return self.apply_mask(input_nodes, for_masking)
+
+
+class SubwordMaskerNoPandas(SubwordMasker):
+    def instantiate(self, nodes: Chunk, edges: Chunk, **kwargs):
+        self.lookup = dict()
+
+        for dst_id, src_id in edges.filter(lambda row: row["type_backup"] == "subword", inplace=False)[["dst", "src"]]:
+            if dst_id in self.lookup:
+                self.lookup[dst_id].append(src_id)
+            else:
+                self.lookup[dst_id] = [src_id]
+
+        # node2type = dict(zip(nodes["id"], nodes["type"]))
+        # # node2typed_id = dict(zip(nodes["id"], nodes["typed_id"]))
+        # get_node_type = lambda x: node2type.get(id, pd.NA)
+        # edges.eval("dst_type = dst.map(@node2type)", local_dict={"node2type": get_node_type}, inplace=True)
+        # # edges.eval("dst_typed_id = dst.map(@node2typed_id.get)", local_dict={"node2typed_id": node2typed_id}, inplace=True)
+        # edges.eval("src_type = src.map(@node2type)", local_dict={"node2type": get_node_type}, inplace=True)
+        # # edges.eval("src_typed_id = src.map(@node2typed_id.get)", local_dict={"node2typed_id": node2typed_id}, inplace=True)
+
+        # for node_type, dst_id, src_type, src_typed_id in edges[["dst_type", "dst_typed_id", "src_type", "src_typed_id"]].values:
+        #     key = (node_type, dst_id)
+        #     if key in self.lookup:
+        #         self.lookup[key].append((src_type, src_typed_id))
+        #     else:
+        #         self.lookup[key] = [(src_type, src_typed_id)]
 
 
 class NodeNameMasker(SubwordMasker):
