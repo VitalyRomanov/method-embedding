@@ -19,7 +19,8 @@ import logging
 from tqdm import tqdm
 
 from SourceCodeTools.code.data.dataset.DataLoader import SGNodesDataLoader, SGEdgesDataLoader, SGSubgraphDataLoader, \
-    SGMisuseEdgesDataLoader, SGMisuseNodesDataLoader, SGTrueEdgesDataLoader
+    SGMisuseEdgesDataLoader, SGMisuseNodesDataLoader, SGTrueEdgesDataLoader, SGNodesEfficientDataLoader, \
+    SGMisuseNodesEfficientDataLoader
 from SourceCodeTools.code.data.file_utils import unpersist
 from SourceCodeTools.models.Embedder import Embedder
 from SourceCodeTools.models.graph.TargetLoader import TargetLoader, GraphLinkTargetLoader, \
@@ -331,7 +332,8 @@ class SamplingMultitaskTrainer:
                 labels_fn=dataset.load_type_prediction,
                 tokenizer_path=tokenizer_path,
                 masker_fn=dataset.__class__.create_subword_masker,
-                preload_for="package",
+                preload_for="file",
+                dataloader_class=SGNodesEfficientDataLoader
             )
         )
 
@@ -492,10 +494,11 @@ class SamplingMultitaskTrainer:
                 label_loader_class=ClassifierTargetMapper,
                 dataset=dataset,
                 labels_fn=load_labels,
-                dataloader_class=SGMisuseNodesDataLoader,
                 tokenizer_path=tokenizer_path,
-                masker_fn=None,
-                preload_for="file"
+                masker_fn=dataset.__class__.create_subword_masker,
+                preload_for="file",
+                # dataloader_class=SGMisuseNodesDataLoader,
+                dataloader_class=SGMisuseNodesEfficientDataLoader
             )
         )
 
