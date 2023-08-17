@@ -181,7 +181,9 @@ class MisuseNodeClassifierObjective(NodeClassifierObjective):
             self, input_nodes, input_mask, blocks, positive_indices, negative_indices,
             update_ns_callback=None, misuse_node_mask=None, **kwargs
     ):
-        gnn_output = self._graph_embeddings(input_nodes, blocks, mask=input_mask)
+        gnn_output = self._graph_embeddings(
+            input_nodes, blocks, mask=input_mask, target_mask=kwargs.get("target_mask", None)
+        )
         graph_emb = gnn_output.output
 
         _, positive_emb, negative_emb, labels_pos, labels_neg = self._prepare_for_prediction(
