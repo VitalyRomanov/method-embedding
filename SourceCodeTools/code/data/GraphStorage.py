@@ -990,10 +990,11 @@ class OnDiskGraphStorageWithFastIterationNoPandas(OnDiskGraphStorageWithFastIter
 
             except StopIteration:
                 # logging.info(f"Last chunk")
-                partition_edges = current_part  # may be empty
-                partition_nodes = self.get_nodes_for_edges(partition_edges)
-                # logging.info(f"Found subgraph with {len(partition_nodes)} nodes and {len(partition_edges)} edges")
-                yield group_encoder(prev_partition_value), partition_nodes, partition_edges
+                if current_part is not None:
+                    partition_edges = current_part
+                    partition_nodes = self.get_nodes_for_edges(partition_edges)
+                    # logging.info(f"Found subgraph with {len(partition_nodes)} nodes and {len(partition_edges)} edges")
+                    yield group_encoder(prev_partition_value), partition_nodes, partition_edges
                 break
 
 
