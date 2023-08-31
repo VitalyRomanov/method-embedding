@@ -10,7 +10,7 @@ import torch.nn as nn
 
 
 @dataclass
-class HybridModelOutput:
+class SemiHybridModelOutput:
     token_embs: torch.Tensor
     graph_embs: Optional[torch.Tensor]
     text_encoder_output: torch.Tensor
@@ -91,7 +91,7 @@ class CodeBertSemiHybridModel(nn.Module):
         x = self.drop(x)
         x = self.fc2(x)
 
-        return HybridModelOutput(
+        return SemiHybridModelOutput(
             token_embs=token_embs_,
             graph_embs=graph_emb,
             text_encoder_output=codebert_output,
