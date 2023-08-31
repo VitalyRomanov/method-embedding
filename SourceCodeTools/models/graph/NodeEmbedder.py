@@ -4,7 +4,7 @@ import torch.nn as nn
 
 
 class SimplestNodeEmbedder(nn.Module):
-    def __init__(self, emb_size, dtype=None, n_buckets=500000):
+    def __init__(self, emb_size, dtype=None, n_buckets=500000, sparse=True):
         super(SimplestNodeEmbedder, self).__init__()
         self.emb_size = emb_size
         self.dtype = dtype
@@ -12,7 +12,7 @@ class SimplestNodeEmbedder(nn.Module):
             self.dtype = torch.float32
         self.n_buckets = n_buckets
 
-        self.buckets = nn.Embedding(self.n_buckets + 1, self.emb_size, padding_idx=self.n_buckets, sparse=True)
+        self.buckets = nn.Embedding(self.n_buckets + 1, self.emb_size, padding_idx=self.n_buckets, sparse=sparse)
 
     def forward(self, input_nodes, mask=None):
         input_nodes = input_nodes + 1  # plus make to make zero ind a masked token
