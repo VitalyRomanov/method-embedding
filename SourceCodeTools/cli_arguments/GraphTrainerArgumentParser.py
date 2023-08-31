@@ -69,7 +69,7 @@ graph_config_specification = {
     },
     "MODEL": {
         "node_emb_size": 100,
-        "h_dim": None,
+        "h_dim": 100,
         "n_layers": 5,
         "use_self_loop": False,
 
