@@ -1,3 +1,7 @@
+import logging
+from dataclasses import dataclass
+from typing import Optional, Dict
+
 import numpy as np
 import torch
 from SourceCodeTools.mltools.torch import to_numpy
@@ -5,37 +9,32 @@ from SourceCodeTools.mltools.torch import to_numpy
 import torch.nn as nn
 
 
+@dataclass
+class HybridModelOutput:
+    token_embs: torch.Tensor
+    graph_embs: Optional[torch.Tensor]
+    logits: torch.Tensor
+    prediction: torch.Tensor
+    loss: Optional[torch.Tensor]
+    scores: Optional[Dict]
+
+
 class CodeBertHybridModel(nn.Module):
     def __init__(
-            self, codebert_model, graph_model, graph_emb, graph_padding_idx, num_classes, dense_hidden=100, dropout=0.1,
+            self, codebert_model, graph_model, node_embedder, graph_padding_idx, num_classes, dense_hidden=100, dropout=0.1,
             bert_emb_size=768, no_graph=False
     ):
         super(CodeBertHybridModel, self).__init__()
 
         self.codebert_model = codebert_model
         self.graph_model = graph_model
-        self.use_graph = not no_graph
+        self.node_embedder = node_embedder
 
-        if self.use_graph:
-            num_emb = graph_padding_idx + 1  # padding id is usually not a real embedding
-            assert graph_emb is not None, "Graph embeddings are not provided, but model requires them"
-            graph_emb_dim = graph_emb.e.shape[1]
-            self.graph_emb = nn.Embedding(
-                num_embeddings=num_emb, embedding_dim=graph_emb_dim, padding_idx=graph_padding_idx
-            )
-
-            pretrained_embeddings = torch.from_numpy(
-                np.concatenate([graph_emb.e, np.zeros((1, graph_emb_dim))], axis=0)
-            ).float()
-            new_param = torch.nn.Parameter(pretrained_embeddings)
-            assert self.graph_emb.weight.shape == new_param.shape
-            self.graph_emb.weight = new_param
-            self.graph_emb.weight.requires_grad = False
-        else:
-            graph_emb_dim = 0
+        graph_emb_dim = graph_model.out_dim
+        self.zero_pad = torch.zeros((1, graph_emb_dim))
 
         self.fc1 = nn.Linear(
-            bert_emb_size + (graph_emb_dim if self.use_graph else 0),
+            bert_emb_size + graph_emb_dim,
             dense_hidden
         )
         self.drop = nn.Dropout(dropout)
@@ -43,36 +42,51 @@ class CodeBertHybridModel(nn.Module):
 
         self.loss_f = nn.CrossEntropyLoss(reduction="mean")
 
-    def get_tensors_for_saliency(self, token_ids, graph_ids, mask):
-        token_embs = self.codebert_model.embeddings.word_embeddings(token_ids)
-        x = self.codebert_model(input_embeds=token_embs, attention_mask=mask).last_hidden_state
+    # def get_tensors_for_saliency(self, token_ids, graph_ids, mask):
+    #     token_embs = self.codebert_model.embeddings.word_embeddings(token_ids)
+    #     x = self.codebert_model(input_embeds=token_embs, attention_mask=mask).last_hidden_state
+    #
+    #     if self.use_graph:
+    #         graph_emb = self.graph_emb(graph_ids)
+    #         x = torch.cat([x, graph_emb], dim=-1)
+    #
+    #     x = torch.relu(self.fc1(x))
+    #     x = self.drop(x)
+    #     logits = self.fc2(x)
+    #
+    #     if self.use_graph:
+    #         return token_embs, graph_emb, logits
+    #     else:
+    #         return token_embs, logits
 
-        if self.use_graph:
-            graph_emb = self.graph_emb(graph_ids)
-            x = torch.cat([x, graph_emb], dim=-1)
+    def forward(self, token_ids, graph_ids, graph, mask, graph_mask, finetune=False):
 
-        x = torch.relu(self.fc1(x))
-        x = self.drop(x)
-        logits = self.fc2(x)
+        if not hasattr(self, "graph_mask_warning"):
+            logging.warning("`forward` is different from CodeBertSemiHybridModel. As a consequence, `graph_mask` is not used.")
+            self.graph_mask_warning = True
 
-        if self.use_graph:
-            return token_embs, graph_emb, logits
-        else:
-            return token_embs, logits
-
-    def forward(self, token_ids, graph_ids, mask, finetune=False):
         with torch.set_grad_enabled(finetune):
-            x = self.codebert_model(input_ids=token_ids, attention_mask=mask).last_hidden_state
+            x_ = self.codebert_model(input_ids=token_ids, attention_mask=mask).last_hidden_state
 
-        if self.use_graph:
-            graph_emb = self.graph_emb(graph_ids)
-            x = torch.cat([x, graph_emb], dim=-1)
+        node_emb = self.node_embedder(graph.ndata["embedding_id"], mask=None)
+        graph_emb = self.graph_model({"_N": node_emb}, graph=graph)
+        graph_emb_shifted = torch.cat([self.zero_pad, graph_emb["_N"]], dim=0)
+
+        graph_emb_aligned = graph_emb_shifted[graph_ids, :]
+
+        x = torch.cat([x_, graph_emb_aligned], dim=-1)
 
         x = torch.relu(self.fc1(x))
         x = self.drop(x)
         x = self.fc2(x)
 
-        return x
+        return HybridModelOutput(
+            token_embs=x_,
+            graph_embs=graph_emb,
+            logits=x,
+            prediction=x.argmax(-1),
+            loss=None, scores=None
+        )
 
     def loss(self, logits, labels, mask, class_weights=None, extra_mask=None):
         if extra_mask is not None:
