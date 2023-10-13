@@ -14,6 +14,21 @@ from SourceCodeTools.code.annotator_utils import get_cum_lens, to_offsets
 from SourceCodeTools.nlp.string_tools import get_byte_to_char_map
 
 
+# def check_availability(edge_definitions_class):
+#     import ast
+#     items = dir(ast)
+#
+#     known_node_types = (
+#         set(edge_definitions_class.node_types()) |
+#         edge_definitions_class.operand_nodes |
+#         edge_definitions_class.control_flow_nodes
+#     )
+#     for item in items:
+#         if item not in known_node_types and \
+#             hasattr(getattr(ast, item), "_fields"):
+#             print(item, getattr(ast, item)._fields)
+
+
 class PythonNodeEdgeDefinitions:
     node_type_enum_initialized = False
     edge_type_enum_initialized = False
@@ -61,6 +76,7 @@ class PythonNodeEdgeDefinitions:
         "Return": ["value"],
         "Raise": ["exc", "cause"],
         "YieldFrom": ["value"],
+        "NamedExpr": ["target", "value"]
     }
 
     overriden_node_type_edges = {

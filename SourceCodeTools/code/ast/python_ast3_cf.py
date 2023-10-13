@@ -54,6 +54,7 @@ class PythonNodeEdgeCFDefinitions(PythonNodeEdgeDefinitions):
         "Return": ["value"],
         "Raise": ["exc", "cause"],
         "YieldFrom": ["value"],
+        "NamedExpr": ["target", "value"]
     }
 
     overriden_collapsing_inside = {
